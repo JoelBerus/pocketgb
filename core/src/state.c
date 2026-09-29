@@ -394,7 +394,9 @@ static void visit(struct io *io, gb *g)
     u16(&local, &cg.hdma_src, 0xFFF0); u16(&local, &cg.hdma_dst, 0x1FF0);
     u8(&local, &cg.hdma_len, 0x7F);
     flag(&local, &cg.hdma_active); flag(&local, &cg.hdma_req);
-    u16(&local, &cg.stall, 128 * 16);   /* un HDMA general de 128 bloques en doble velocidad */
+    /* Máximo alcanzable: un bloque de HBlank en el mismo M-ciclo que arranca un
+     * HDMA general de 128 bloques, en doble velocidad (auditoría M8, H1). */
+    u16(&local, &cg.stall, 16 + 128 * 16);
     u8m(&local, &cg.rp, 0xC1);
     u8(&local, &cg.ff72, 0xFF); u8(&local, &cg.ff73, 0xFF); u8(&local, &cg.ff74, 0xFF);
     u8m(&local, &cg.ff75, 0x70);
@@ -414,6 +416,8 @@ static void visit(struct io *io, gb *g)
         g->mem.svbk = svbk;
         g->mem.wram_bank = svbk ? svbk : 1;
         cgb_update_rgba(g);
+        if (g->cgb.compat)
+            cgb_load_compat_palettes(g);   /* manda la selección actual, no la del archivo (H5) */
     }
 
     s = section_begin(io, TAG('M', 'I', 'S', 'C'));
@@ -469,6 +473,17 @@ gb_result gb_state_save(const gb *g, uint8_t *out, size_t cap)
     visit(&io, (gb *)g);   /* IO_SAVE solo lee la instancia */
     if (!io.ok || io.pos != io.len)
         return GB_ERR_BUFFER_TOO_SMALL;   /* no debería ocurrir: tamaño medido arriba */
+    /* Lo guardado tiene que poder cargarse: se valida con la misma pasada que
+     * gb_state_load (auditoría M8, H1). Si no, es un error del núcleo, y es
+     * mejor fallar ahora que dejar al jugador un estado ilegible. */
+    struct io check = { IO_CHECK, NULL, out + HEADER_BYTES, total - HEADER_BYTES - CRC_BYTES, 0, true };
+    visit(&check, (gb *)g);               /* IO_CHECK no modifica la instancia */
+    if ((!check.ok || check.pos != check.len)
+#ifdef GB_TEST_HOOKS
+        && !g->dbg.unchecked_save
+#endif
+    )
+        return GB_ERR_STATE_CORRUPT;
     put32(out + total - CRC_BYTES, crc32_update(0, out, total - CRC_BYTES));
     return GB_OK;
 }

@@ -50,8 +50,15 @@ void gb_tick(gb *g, unsigned tcycles)
         dma_tick(g);
         g->apu.pending += dots; /* el APU se pone al día al tocar sus registros (apu_sync) */
         ppu_tick(g, dots);
-        if (g->cgb.hdma_req)
-            cgb_hdma_hblank(g); /* HDMA de HBlank: un bloque al entrar en modo 0 */
+        if (g->cgb.hdma_req) {
+            /* HDMA de HBlank: un bloque al entrar en modo 0. Con la CPU en HALT
+             * o STOP la transferencia se detiene y sigue en el siguiente HBlank
+             * tras despertar (Pan Docs, FF55; auditoría M8, H2). */
+            if (g->cpu.halted || g->cpu.stopped)
+                g->cgb.hdma_req = false;
+            else
+                cgb_hdma_hblank(g);
+        }
         if (g->cart.has_rtc)
             rtc_tick(g, dots);
         g->cycles += dots;

@@ -142,6 +142,8 @@ void gb_rtc_set_time(gb *g, int64_t unix_time); /* al volver de background */
 
 /* Save states */
 size_t gb_state_size(const gb *g);
+/* Antes de devolver GB_OK comprueba que el estado se podrá cargar; si no
+ * (error interno del núcleo), GB_ERR_STATE_CORRUPT y el búfer no es válido. */
 gb_result gb_state_save(const gb *g, uint8_t *out, size_t cap);
 gb_result gb_state_load(gb *g, const uint8_t *data, size_t len); /* nunca confía en len internas */
 

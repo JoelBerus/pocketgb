@@ -144,7 +144,10 @@ void unit_apu(struct ut *t)
             CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(g, s, n) == GB_OK);
             int32_t keep = g->apu.ch[2].timer;
             g->apu.ch[2].timer = 0;
+            CHECK(t, gb_state_save(g, s, n) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+            g->dbg.unchecked_save = true;
             CHECK(t, gb_state_save(g, s, n) == GB_OK);
+            g->dbg.unchecked_save = false;
             g->apu.ch[2].timer = keep;
             CHECK(t, gb_state_load(g, s, n) == GB_ERR_STATE_CORRUPT);
             free(s);

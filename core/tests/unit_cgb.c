@@ -278,10 +278,16 @@ static void states(struct ut *t)
         uint8_t *sc = malloc(nc);
         if (sc) {
             c->mem.vbk = 1;
+            CHECK(t, gb_state_save(c, sc, nc) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+            c->dbg.unchecked_save = true;
             CHECK(t, gb_state_save(c, sc, nc) == GB_OK && gb_state_load(c, sc, nc) == GB_ERR_STATE_CORRUPT);
+            c->dbg.unchecked_save = false;
             c->mem.vbk = 0;
             c->cgb.double_speed = true;
+            CHECK(t, gb_state_save(c, sc, nc) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+            c->dbg.unchecked_save = true;
             CHECK(t, gb_state_save(c, sc, nc) == GB_OK && gb_state_load(c, sc, nc) == GB_ERR_STATE_CORRUPT);
+            c->dbg.unchecked_save = false;
             c->cgb.double_speed = false;
             CHECK(t, gb_state_save(c, sc, nc) == GB_OK && gb_state_load(c, sc, nc) == GB_OK);
             free(sc);
@@ -294,8 +300,68 @@ static void states(struct ut *t)
     gb_destroy(c);
 }
 
+/* Regresiones de la auditoría M8. */
+static void audit_regressions(struct ut *t)
+{
+    gb *g = load_cgb(0x80, GB_MODEL_CGB, loop_prog, sizeof loop_prog);
+    CHECK(t, g != NULL);
+    if (g) {
+        /* H1: bloque de HBlank pendiente + HDMA general de 128 bloques en doble
+         * velocidad = 2064 M-ciclos de parada: el estado se guarda y se carga. */
+        g->cgb.double_speed = true;
+        g->cgb.stall = 16;
+        mmu_write(g, 0xFF53, 0x00);
+        mmu_write(g, 0xFF54, 0x00);
+        mmu_write(g, 0xFF55, 0x7F);
+        CHECK(t, g->cgb.stall == 16 + 128 * 16);
+        size_t n = gb_state_size(g);
+        uint8_t *s = malloc(n);
+        CHECK(t, s && gb_state_save(g, s, n) == GB_OK && gb_state_load(g, s, n) == GB_OK);
+        free(s);
+        /* H3: el destino desborda el final de VRAM: la transferencia termina. */
+        g->cgb.stall = 0;
+        mmu_write(g, 0xFF51, 0x02);
+        mmu_write(g, 0xFF52, 0x00);
+        mmu_write(g, 0xFF53, 0x1F);
+        mmu_write(g, 0xFF54, 0xE0);
+        memset(g->mem.vram, 0, 0x20);
+        mmu_write(g, 0xFF55, 0x03);         /* 4 bloques pedidos, caben 2 */
+        CHECK(t, g->mem.vram[0x1FE0] == 0xA0 && g->mem.vram[0x1FF0] == 0xB0);
+        CHECK(t, g->mem.vram[0x0000] == 0x00 && g->mem.vram[0x0010] == 0x00);
+        CHECK(t, mmu_read(g, 0xFF55) == 0xFF && g->cgb.stall == 2 * 16);   /* 2 bloques, doble velocidad */
+        gb_destroy(g);
+    }
+
+    /* H2: con la CPU en HALT el HDMA de HBlank no avanza.
+     * XOR A; LDH (53),A; LDH (54),A; LD A,81; LDH (55),A; HALT (IE=0); JR -2 */
+    static const uint8_t halt_prog[] = { 0xAF, 0xE0, 0x53, 0xE0, 0x54, 0x3E, 0x81, 0xE0, 0x55,
+                                         0x76, 0x18, 0xFE };
+    g = load_cgb(0x80, GB_MODEL_CGB, halt_prog, sizeof halt_prog);
+    CHECK(t, g != NULL);
+    if (g) {
+        gb_run_cycles(g, 456 * 3);
+        CHECK(t, g->cpu.halted && g->cgb.hdma_active && mmu_read(g, 0xFF55) == 0x01);
+        gb_destroy(g);
+    }
+
+    /* H5: en compatibilidad, cargar un estado respeta la paleta elegida ahora. */
+    g = load_titled("POKEMON RED", 0x33, "01");
+    CHECK(t, g != NULL);
+    if (g) {
+        size_t n = gb_state_size(g);
+        uint8_t *s = malloc(n);
+        CHECK(t, s && gb_state_save(g, s, n) == GB_OK);
+        gb_set_compat_palette(g, 5);
+        CHECK(t, s && gb_state_load(g, s, n) == GB_OK);
+        CHECK(t, g->cgb.bg_rgba[1] == 0xFF31FF7Bu);
+        free(s);
+        gb_destroy(g);
+    }
+}
+
 void unit_cgb(struct ut *t)
 {
+    audit_regressions(t);
     model_and_boot(t);
     banks_and_palettes(t);
     hdma(t);

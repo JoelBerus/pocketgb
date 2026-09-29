@@ -105,7 +105,10 @@ static void state_tests(struct ut *t)
     g->dma.index = 160;
     CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(h, s, n) == GB_OK);
     g->dma.active = true;
+    CHECK(t, gb_state_save(g, s, n) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+    g->dbg.unchecked_save = true;
     CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(h, s, n) == GB_ERR_STATE_CORRUPT);
+    g->dbg.unchecked_save = false;
     g->dma.active = false;
     g->dma.index = 0;
 
@@ -118,10 +121,16 @@ static void state_tests(struct ut *t)
     CHECK(t, h->ppu.mode == 0 && h->ppu.next_event == 456);
     gb_run_frame(h);                                    /* con ASan: sin desborde */
     h->ppu.dot = 451;                                   /* dot impar (pasos de 4, o de 2 en doble velocidad) */
+    CHECK(t, gb_state_save(h, s2, n) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+    h->dbg.unchecked_save = true;
     CHECK(t, gb_state_save(h, s2, n) == GB_OK && gb_state_load(g, s2, n) == GB_ERR_STATE_CORRUPT);
+    h->dbg.unchecked_save = false;
     h->ppu.dot = 0;
     h->ppu.mode3_end = 100;                             /* modo 3 imposible */
+    CHECK(t, gb_state_save(h, s2, n) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+    h->dbg.unchecked_save = true;
     CHECK(t, gb_state_save(h, s2, n) == GB_OK && gb_state_load(g, s2, n) == GB_ERR_STATE_CORRUPT);
+    h->dbg.unchecked_save = false;
     h->ppu.mode3_end = 252;
 
     /* Estado de otro ROM */
@@ -247,7 +256,10 @@ static void rtc_tests(struct ut *t)
         CHECK(t, gb_state_load(g, s, n) == GB_OK && r->reg[RTC_DL] == 0x42);
         int64_t keep = r->unix;
         r->unix = -1;                                    /* hora inválida en un estado */
+        CHECK(t, gb_state_save(g, s, n) == GB_ERR_STATE_CORRUPT);   /* autocomprobación */
+        g->dbg.unchecked_save = true;
         CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(g, s, n) == GB_ERR_STATE_CORRUPT);
+        g->dbg.unchecked_save = false;
         r->unix = keep;
         free(s);
     }

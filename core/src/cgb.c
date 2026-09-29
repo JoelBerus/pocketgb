@@ -7,16 +7,28 @@
  * BootROMs/cgb_boot.asm (reimplementación libre del arranque de la CGB, no el
  * boot ROM de Nintendo). Algoritmo: Pan Docs → Power Up Sequence §Compatibility
  * palettes.
- *   Copyright (c) 2015-2026 Lior Halphon. Expat License (MIT):
+ *
+ *   Expat License
+ *
+ *   Copyright (c) 2015-2026 Lior Halphon
+ *
  *   Permission is hereby granted, free of charge, to any person obtaining a copy
  *   of this software and associated documentation files (the "Software"), to deal
  *   in the Software without restriction, including without limitation the rights
  *   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  *   copies of the Software, and to permit persons to whom the Software is
- *   furnished to do so, subject to the following conditions: The above copyright
- *   notice and this permission notice shall be included in all copies or
- *   substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
- *   WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+ *   furnished to do so, subject to the following conditions:
+ *
+ *   The above copyright notice and this permission notice shall be included in all
+ *   copies or substantial portions of the Software.
+ *
+ *   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ *   SOFTWARE.
  */
 #include <string.h>
 
@@ -139,7 +151,7 @@ static void put_palette(uint8_t *dst, unsigned word_off)
     }
 }
 
-static void load_compat_palettes(gb *g)
+void cgb_load_compat_palettes(gb *g)
 {
     uint8_t id = g->opts.compat_palette;
     uint8_t combo = (id >= 1 && id <= GB_COMPAT_PALETTES) ? key_combos[id - 1] : auto_combo(g);
@@ -157,7 +169,7 @@ void gb_set_compat_palette(gb *g, uint8_t id)
         return;
     g->opts.compat_palette = id;
     if (g->rom_loaded && g->cgb.on && g->cgb.compat)
-        load_compat_palettes(g);
+        cgb_load_compat_palettes(g);
 }
 
 /* ---- Paletas ---- */
@@ -212,7 +224,7 @@ void cgb_reset(gb *g)
     }
     if (compat) {
         c->opri = 1;        /* prioridad de objetos DMG */
-        load_compat_palettes(g);
+        cgb_load_compat_palettes(g);
     } else {
         cgb_update_rgba(g);
     }
@@ -231,18 +243,24 @@ static uint8_t hdma_source(gb *g, uint16_t addr)
     return mmu_read(g, addr);
 }
 
-static void hdma_block(gb *g)
+/* Copia un bloque de 16 bytes. Devuelve false si el destino desborda el final
+ * de VRAM: la transferencia termina ahí (Pan Docs, FF55; auditoría M8, H3). */
+static bool hdma_block(gb *g)
 {
     struct gb_cgb *c = &g->cgb;
     uint8_t *bank = g->mem.vram + (g->mem.vbk ? 0x2000 : 0);
     for (unsigned i = 0; i < 16; i++) {
         bank[(c->hdma_dst + i) & 0x1FFF] = hdma_source(g, (uint16_t)(c->hdma_src + i));
     }
+    bool overflow = c->hdma_dst >= 0x1FF0;
     c->hdma_src = (uint16_t)(c->hdma_src + 16);
     c->hdma_dst = (uint16_t)((c->hdma_dst + 16) & 0x1FF0);
     /* 8 M-ciclos por bloque a velocidad normal, 16 en doble velocidad (mismo tiempo real). */
     c->stall = (uint16_t)(c->stall + (c->double_speed ? 16 : 8));
     c->hdma_len = (uint8_t)((c->hdma_len - 1) & 0x7F);
+    if (overflow)
+        c->hdma_len = 0x7F;       /* terminada: FF55 lee 0xFF */
+    return !overflow;
 }
 
 void cgb_hdma_hblank(gb *g)
@@ -252,8 +270,7 @@ void cgb_hdma_hblank(gb *g)
     if (!c->hdma_active)
         return;
     bool last = c->hdma_len == 0;
-    hdma_block(g);
-    if (last)
+    if (!hdma_block(g) || last)
         c->hdma_active = false;   /* hdma_len vuelve a 0x7F: FF55 lee 0xFF */
 }
 
@@ -272,8 +289,8 @@ static void hdma_start(gb *g, uint8_t v)
     }
     /* General: todo de golpe, con la CPU parada el tiempo equivalente. */
     unsigned blocks = (unsigned)c->hdma_len + 1;
-    for (unsigned i = 0; i < blocks; i++)
-        hdma_block(g);
+    for (unsigned i = 0; i < blocks && hdma_block(g); i++)
+        ;
 }
 
 /* ---- Doble velocidad ---- */

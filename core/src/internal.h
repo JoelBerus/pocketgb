@@ -204,6 +204,7 @@ struct gb_debug {
 #ifdef GB_TEST_HOOKS
     int fail_alloc_at;     /* >0: la reserva número n de gb_load_rom falla (1 = la primera) */
     int alloc_count;
+    bool unchecked_save;   /* gb_state_save sin autocomprobación (fabricar estados inválidos) */
 #endif
 };
 
@@ -239,7 +240,8 @@ void cgb_reset(gb *g);                  /* registros y paletas post-arranque */
 uint8_t cgb_title_checksum(const gb *g, bool *nintendo);
 uint8_t cgb_io_read(gb *g, uint16_t addr);    /* FF4C–FF7F */
 void cgb_io_write(gb *g, uint16_t addr, uint8_t v);
-void cgb_update_rgba(gb *g);            /* recalcula la caché RGBA de las paletas */
+void cgb_update_rgba(gb *g);
+void cgb_load_compat_palettes(gb *g);   /* según opts.compat_palette (solo compatibilidad) */            /* recalcula la caché RGBA de las paletas */
 void cgb_hdma_hblank(gb *g);            /* copia un bloque del HDMA de HBlank */
 void cgb_speed_switch(gb *g);           /* STOP con KEY1 bit 0 */
 
