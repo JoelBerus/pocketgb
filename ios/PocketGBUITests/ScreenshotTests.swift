@@ -21,10 +21,13 @@ final class ScreenshotTests: XCTestCase {
             let (name, orientation, style) = (parts[0], parts[1], parts[2])
             let args = parts.dropFirst(3).map { $0.replacingOccurrences(of: "$FIXTURES", with: fixtures) }
 
-            XCUIDevice.shared.orientation = orientation == "landscape" ? .landscapeLeft : .portrait
             let app = XCUIApplication()
             app.launchArguments = ["-uiStyle", style] + args
             app.launch()
+            // Rotar con la app ya en primer plano: en el simulador sin pantalla del CI,
+            // rotar antes de lanzar agota el tiempo de confirmación.
+            let target: UIDeviceOrientation = orientation == "landscape" ? .landscapeLeft : .portrait
+            if XCUIDevice.shared.orientation != target { XCUIDevice.shared.orientation = target }
             Thread.sleep(forTimeInterval: 3) // deja correr la emulación y las animaciones
 
             let shot = XCUIScreen.main.screenshot()
@@ -38,6 +41,5 @@ final class ScreenshotTests: XCTestCase {
             }
             app.terminate()
         }
-        XCUIDevice.shared.orientation = .portrait
     }
 }
