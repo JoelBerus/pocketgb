@@ -39,6 +39,19 @@ void unit_cpu(struct ut *t)
             gb_destroy(g);
         }
     }
+    /* STOP (DMG): DIV se pone a 0 y no cuenta hasta que se pulsa un botón. */
+    {
+        static const uint8_t prog[] = { 0x10, 0x00, 0x3C, 0x18, 0xFE };   /* STOP; INC A; JR -2 */
+        gb *g = run_prog(prog, sizeof prog, 2000);
+        CHECK(t, g != NULL);
+        if (g) {
+            CHECK(t, g->cpu.stopped && g->timer.counter == 0 && g->cpu.a == 0x01);
+            gb_set_buttons(g, GB_BTN_A);
+            gb_run_cycles(g, 8);
+            CHECK(t, !g->cpu.stopped && g->cpu.a == 0x02);
+            gb_destroy(g);
+        }
+    }
     /* Opcode ilegal: la CPU se bloquea y gb_run_frame sigue avanzando el tiempo. */
     {
         static const uint8_t prog[] = { 0xD3 };

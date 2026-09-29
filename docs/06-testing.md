@@ -43,7 +43,7 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 `core/tests/unit_*.c` es un mini framework propio de ~50 líneas (`CHECK(expr)`), sin dependencias. Cubre:
 - validación de cabecera (tamaños absurdos, códigos `0x52–0x54` rechazados, archivo truncado, MBC no soportado, título de 16/15/11 bytes)
 - SHA-256 contra los vectores de FIPS 180-4 (`""`, `"abc"`, 1 MB de `'a'`)
-- `gb_load_rom` con fallo de memoria inyectado (`-DGB_TEST_FAIL_ALLOC=n`) → `GB_ERR_OUT_OF_MEMORY` sin fugas y con la instancia usable
+- (M3) `gb_load_rom` con fallo de memoria inyectado (`-DGB_TEST_FAIL_ALLOC=n`) → `GB_ERR_OUT_OF_MEMORY` sin fugas y con la instancia usable
 - mapeo de bancos con ROMs sintéticos generados en el test (cada banco lleno con su número)
 - flancos del timer
 - round-trip de save states (guardar → cargar → mismo framebuffer tras N frames)

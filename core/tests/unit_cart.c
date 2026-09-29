@@ -240,6 +240,10 @@ static void mbc1_ram(struct ut *t, gb *g)
         return;
     CHECK(t, load(g, rom, 4u * 0x4000) == GB_OK);
     CHECK(t, gb_sram_save_size(g) == 0);
+    mmu_write(g, 0x0000, 0x0A);
+    mmu_write(g, 0xA000, 0x55);
+    mmu_write(g, 0x0000, 0x00);                       /* sin batería no hay "juego guardó" */
+    CHECK(t, !gb_sram_dirty(g));
     free(rom);
 }
 

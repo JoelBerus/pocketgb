@@ -15,7 +15,9 @@
 6. `gb_run_frame`: ejecutar hasta completar 70 224 T-ciclos (o hasta VBlank de la PPU mínima).
 
 **Criterios de aceptación** (pegar la salida en el commit de cierre)
-- [ ] `make -C core test HITO=M1` → todos los casos M1 de [06](../06-testing.md) en PASS.
-- [ ] `make -C core asan HITO=M1` → PASS, sin reportes de ASan/UBSan.
-- [ ] `make -C core check-globals` → vacío. Hace `nm build/libpocketgb.a | grep -E ' [bBdD] '`: no hay datos mutables globales ni `static`; las tablas `const` van en secciones de solo lectura.
-- [ ] Rendimiento: `build/gbtest ... --bench 3600` ≥ 20× tiempo real en la máquina de desarrollo (colchón para el iPhone).
+- [x] `make -C core test HITO=M1` → todos los casos M1 de [06](../06-testing.md) en PASS.
+- [x] `make -C core asan HITO=M1` → PASS, sin reportes de ASan/UBSan.
+- [x] `make -C core check-globals` → vacío. Hace `nm build/libpocketgb.a | grep -E ' [bBdD] '`: no hay datos mutables globales ni `static`; las tablas `const` van en secciones de solo lectura.
+- [x] Rendimiento: `build/gbtest ... --bench 3600` ≥ 20× tiempo real en la máquina de desarrollo (colchón para el iPhone).
+
+Cerrado el 2026-09-29. Evidencia: [M1-evidencia](../auditorias/M1-evidencia.md) · Auditoría: [M1-opus](../auditorias/M1-opus.md) · Respuesta: [M1-respuesta](../auditorias/M1-respuesta.md).

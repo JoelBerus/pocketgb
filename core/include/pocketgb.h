@@ -34,7 +34,7 @@ typedef enum gb_result {
     GB_ERR_BAD_ROM_SIZE_CODE,  /* 0x148 fuera de rango */
     GB_ERR_BAD_RAM_SIZE_CODE,  /* 0x149 fuera de rango */
     GB_ERR_UNSUPPORTED_MBC,    /* 0x147 no soportado */
-    GB_ERR_CGB_ONLY,           /* 0x143 == 0xC0 y se pidió modelo DMG */
+    GB_ERR_CGB_ONLY,           /* 0x143 == 0xC0 y se pidió modelo DMG (hasta M8: con cualquier modelo) */
     GB_ERR_NO_ROM,             /* operación que requiere ROM cargado */
     GB_ERR_SRAM_SIZE,          /* tamaño de .sav distinto al esperado */
     GB_ERR_STATE_MAGIC,

@@ -44,7 +44,8 @@ void gb_destroy(gb *g)
 void gb_tick(gb *g, unsigned tcycles)
 {
     for (; tcycles >= 4; tcycles -= 4) {
-        timer_tick(g);
+        if (!g->cpu.stopped)
+            timer_tick(g);      /* STOP pone DIV a 0 y lo congela hasta salir */
         dma_tick(g);
         ppu_tick(g, 4);
         g->cycles += 4;

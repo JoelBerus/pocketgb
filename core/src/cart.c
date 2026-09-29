@@ -125,6 +125,8 @@ void cart_reset(gb *g)
 {
     struct gb_cart *c = &g->cart;
     c->ram_enabled = false;
+    c->ram_written = false;
+    c->sram_dirty = false;
     c->bank_lo = 0;
     c->bank_hi = 0;
     c->mode = 0;
@@ -153,7 +155,7 @@ void cart_rom_write(gb *g, uint16_t addr, uint8_t v)
     switch (addr >> 13) {
     case 0: {   /* 0000–1FFF: habilitar RAM */
         bool enable = (v & 0x0F) == 0x0A;
-        if (c->ram_enabled && !enable && c->ram_written) {
+        if (c->ram_enabled && !enable && c->ram_written && c->has_battery) {
             c->sram_dirty = true;
             c->ram_written = false;
         }
