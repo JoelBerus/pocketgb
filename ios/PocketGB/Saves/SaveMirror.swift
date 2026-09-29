@@ -259,43 +259,114 @@ enum SaveOpening {
 }
 
 /// Destino de los guardados de una sesión: la copia local (obligatoria) y el espejo
-/// (opcional). Solo se usa desde la cola serie de guardado de `EmulatorSession`.
+/// (opcional). La local se escribe desde la cola de guardado de `EmulatorSession`;
+/// el espejo tiene su propia cola serie y nunca bloquea un flush local.
 final class SaveTarget: @unchecked Sendable {
     let local: SaveStore
     let mirror: SaveMirror?
-    /// El espejo falló o está desfasado: se reintenta en el próximo guardado.
-    private(set) var mirrorPending = false
+    private let mirrorWriter: (@Sendable (Data) throws -> Void)?
+    private let mirrorQueue = DispatchQueue(label: "PocketGB.save-mirror", qos: .utility)
+    private let mirrorLock = NSLock()
+    private var pendingMirrorData: Data?
+    private var mirrorWorkerRunning = false
+    private var mirrorNeedsRetry = false
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "saves")
 
     init(local: SaveStore, mirror: SaveMirror?, mirrorPending: Bool = false) {
         self.local = local
         self.mirror = mirror
-        self.mirrorPending = mirrorPending && mirror != nil
+        if let mirror {
+            mirrorWriter = { @Sendable data in try mirror.write(data) }
+        } else {
+            mirrorWriter = nil
+        }
+        mirrorNeedsRetry = mirrorPending && mirror != nil
     }
 
-    /// Guarda en local (si falla, lanza: la partida no está a salvo) y después en el
-    /// espejo (si falla, se registra y queda pendiente; no lanza).
-    func persist(_ data: Data) throws {
+    /// Inyección para probar un proveedor de archivos lento o bloqueado sin sustituir
+    /// la escritura local real.
+    init(local: SaveStore, mirror: SaveMirror?, mirrorPending: Bool = false,
+         mirrorWriter: @escaping @Sendable (Data) throws -> Void) {
+        self.local = local
+        self.mirror = mirror
+        self.mirrorWriter = mirrorWriter
+        mirrorNeedsRetry = mirrorPending
+    }
+
+    /// Verdadero mientras hay una copia en curso, pendiente o fallida.
+    var mirrorPending: Bool {
+        mirrorLock.lock()
+        defer { mirrorLock.unlock() }
+        return mirrorNeedsRetry || mirrorWorkerRunning || pendingMirrorData != nil
+    }
+
+    /// Guarda primero la copia local atómica. El espejo solo se encola y queda fuera
+    /// de la barrera que usa pausa/background/salida/memoria baja.
+    func persistLocal(_ data: Data) throws {
         try local.save(data)
-        mirrorPending = true
-        syncMirror(data)
+        enqueueMirror(data)
     }
 
-    /// Reintenta el espejo con el contenido dado si quedó pendiente.
+    /// Reintenta en la cola del espejo, también al abrir un juego. Si ya hay una
+    /// escritura remota en curso, esa escritura drenará el último valor pendiente.
     func retryMirrorIfNeeded(_ data: Data) {
-        if mirrorPending { syncMirror(data) }
-    }
-
-    private func syncMirror(_ data: Data) {
-        guard let mirror else {
-            mirrorPending = false
+        guard mirrorWriter != nil else { return }
+        mirrorLock.lock()
+        guard mirrorNeedsRetry else {
+            mirrorLock.unlock()
             return
         }
-        do {
-            try mirror.write(data)
-            mirrorPending = false
-        } catch {
-            log.error("Espejo de la partida sin escribir (se reintentará): \(error.localizedDescription, privacy: .public)")
+        pendingMirrorData = data
+        if mirrorWorkerRunning {
+            mirrorLock.unlock()
+            return
+        }
+        mirrorWorkerRunning = true
+        mirrorLock.unlock()
+        mirrorQueue.async { [self] in drainMirror() }
+    }
+
+    /// Coalescer: una escritura que ya empezó no se puede cancelar, pero mientras está
+    /// bloqueada solo se conserva el contenido más reciente recibido.
+    private func enqueueMirror(_ data: Data) {
+        guard mirrorWriter != nil else { return }
+        mirrorLock.lock()
+        pendingMirrorData = data
+        mirrorNeedsRetry = true
+        if mirrorWorkerRunning {
+            mirrorLock.unlock()
+            return
+        }
+        mirrorWorkerRunning = true
+        mirrorLock.unlock()
+        mirrorQueue.async { [self] in drainMirror() }
+    }
+
+    private func drainMirror() {
+        guard let mirrorWriter else { return }
+        while true {
+            mirrorLock.lock()
+            guard let data = pendingMirrorData else {
+                mirrorNeedsRetry = false
+                mirrorWorkerRunning = false
+                mirrorLock.unlock()
+                return
+            }
+            pendingMirrorData = nil
+            mirrorLock.unlock()
+
+            do {
+                try mirrorWriter(data)
+            } catch {
+                mirrorLock.lock()
+                let retryWasQueuedWhileWriting = pendingMirrorData != nil
+                if !retryWasQueuedWhileWriting { pendingMirrorData = data }
+                mirrorNeedsRetry = true
+                if !retryWasQueuedWhileWriting { mirrorWorkerRunning = false }
+                mirrorLock.unlock()
+                log.error("Espejo de la partida sin escribir (se reintentará): \(error.localizedDescription, privacy: .public)")
+                if !retryWasQueuedWhileWriting { return }
+            }
         }
     }
 }

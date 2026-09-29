@@ -2,6 +2,31 @@ import Foundation
 import Observation
 import UIKit
 
+/// La closure de expiración se fabrica fuera de `MainActor`: UIKit puede invocarla
+/// desde otro hilo (misma precaución que el render block de audio de M5 H0).
+@MainActor
+private final class LocalSaveBackgroundTask {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    func begin() {
+        identifier = UIApplication.shared.beginBackgroundTask(
+            withName: "Guardar partida",
+            expirationHandler: Self.makeExpirationHandler(self))
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+
+    nonisolated private static func makeExpirationHandler(
+        _ task: LocalSaveBackgroundTask
+    ) -> @Sendable () -> Void {
+        { Task { @MainActor in task.end() } }
+    }
+}
+
 /// Tabs de la shell (SPEC §4).
 enum AppTab: Hashable {
     case library, favorites, settings
@@ -188,7 +213,10 @@ final class AppState {
     /// `.inactive`/`.background`: pausar y hacer flush síncrono de la SRAM.
     func enterBackground() {
         guard let session, !paused else { return }
+        let backgroundTask = LocalSaveBackgroundTask()
+        backgroundTask.begin()
         session.pause()
+        backgroundTask.end()
         paused = true
     }
 

@@ -25,3 +25,11 @@
 | N3 | corregido | La cuarentena lleva un sufijo UUID. |
 | N4 | corregido | Comentario en el `catch` de `Refusal`. |
 | N5 | corregido | La colisión se compara en minúsculas. |
+
+## Auditoría Codex
+
+| ID | Estado | Qué se hizo |
+|---|---|---|
+| H1 | **corregido** | La escritura local atómica permanece en `PocketGB.saves-local`; el espejo usa la cola serie independiente `PocketGB.save-mirror`. El flush síncrono de pausa, background, salida y memoria baja solo vacía/espera la cola local y nunca ejecuta ni espera `NSFileCoordinator`. `SaveTarget` coalesce el espejo: una operación ya iniciada termina, pero de todos los contenidos acumulados mientras está bloqueada solo conserva el último. El reintento al abrir también se agenda en la cola del espejo. `AppState.enterBackground()` abre y cierra en el hilo principal una `UIApplication` background task alrededor de `session.pause()`; su expiration handler se fabrica en un método `nonisolated static` para no heredar `@MainActor` al ejecutarse desde otro hilo. El test `blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest` inyecta un escritor detenido por semáforo, comprueba que los flushes locales terminan y actualizan la copia autoritativa, y que al liberarlo el espejo recibe el primer contenido ya iniciado y el último pendiente, omitiendo el intermedio. |
+| H2 | **pendiente de evidencia** | Claude debe regenerar `D2-evidencia.md` y ejecutar el CI completo sobre el commit final: tests, build Release y capturas sin cancelación. |
+- H2 (evidencia): regenerada por Claude en el Mac (ver D2-evidencia, "Verificación en el Mac tras la auditoría Codex"): el CI de GitHub está bloqueado por facturación.

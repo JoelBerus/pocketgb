@@ -2,6 +2,32 @@ import Foundation
 import Testing
 @testable import PocketGB
 
+private final class MirrorWriteRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Data] = []
+
+    func append(_ data: Data) {
+        lock.lock()
+        values.append(data)
+        lock.unlock()
+    }
+
+    var snapshot: [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        Thread.sleep(forTimeInterval: 0.01)
+    }
+    return condition()
+}
+
 /// D2: carga local/espejo (docs/04 §Saves "Carga al abrir un ROM"), espejo que falla,
 /// backups y restauración.
 struct SaveMirrorTests {
@@ -77,26 +103,79 @@ struct SaveMirrorTests {
         let store = SaveStore(directory: dir, fingerprint: "ab")
         // La carpeta del espejo no existe: la escritura del espejo falla.
         let mirror = SaveMirror(url: dir.appendingPathComponent("no-existe/juego.sav"))
-        let target = SaveTarget(local: store, mirror: mirror)
-        try target.persist(Data([1, 2, 3, 4]))
+        let attemptFinished = DispatchSemaphore(value: 0)
+        let target = SaveTarget(local: store, mirror: mirror) { data in
+            defer { attemptFinished.signal() }
+            try mirror.write(data)
+        }
+        try target.persistLocal(Data([1, 2, 3, 4]))
+        #expect(attemptFinished.wait(timeout: .now() + 2) == .success)
         #expect(try store.load() == Data([1, 2, 3, 4]))
         #expect(target.mirrorPending)
         // Vuelve el acceso: el reintento escribe el espejo.
         try FileManager.default.createDirectory(at: mirror.url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
         target.retryMirrorIfNeeded(Data([1, 2, 3, 4]))
-        #expect(!target.mirrorPending)
+        #expect(attemptFinished.wait(timeout: .now() + 2) == .success)
+        #expect(waitUntil { !target.mirrorPending })
         #expect(try mirror.read() == Data([1, 2, 3, 4]))
     }
 
     @Test func persistWritesBothCopies() throws {
         let store = SaveStore(directory: dir, fingerprint: "cd")
         let mirror = SaveMirror(url: dir.appendingPathComponent("juego.sav"))
-        let target = SaveTarget(local: store, mirror: mirror)
-        try target.persist(Data([7, 7, 7, 7]))
+        let mirrorFinished = DispatchSemaphore(value: 0)
+        let target = SaveTarget(local: store, mirror: mirror) { data in
+            try mirror.write(data)
+            mirrorFinished.signal()
+        }
+        try target.persistLocal(Data([7, 7, 7, 7]))
+        #expect(mirrorFinished.wait(timeout: .now() + 2) == .success)
         #expect(try store.load() == Data([7, 7, 7, 7]))
         #expect(try mirror.read() == Data([7, 7, 7, 7]))
-        #expect(!target.mirrorPending)
+        #expect(waitUntil { !target.mirrorPending })
+    }
+
+    @Test func blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest() throws {
+        let store = SaveStore(directory: dir, fingerprint: "blocked")
+        let mirrorStarted = DispatchSemaphore(value: 0)
+        let unblockMirror = DispatchSemaphore(value: 0)
+        let mirrorFinished = DispatchSemaphore(value: 0)
+        let firstLocalFlushFinished = DispatchSemaphore(value: 0)
+        let secondLocalFlushFinished = DispatchSemaphore(value: 0)
+        let thirdLocalFlushFinished = DispatchSemaphore(value: 0)
+        let recorder = MirrorWriteRecorder()
+        let target = SaveTarget(local: store, mirror: nil) { data in
+            mirrorStarted.signal()
+            unblockMirror.wait()
+            recorder.append(data)
+            mirrorFinished.signal()
+        }
+
+        DispatchQueue.global().async {
+            try? target.persistLocal(Data([1]))
+            firstLocalFlushFinished.signal()
+        }
+        #expect(mirrorStarted.wait(timeout: .now() + 2) == .success)
+        #expect(firstLocalFlushFinished.wait(timeout: .now() + 2) == .success)
+
+        DispatchQueue.global().async {
+            try? target.persistLocal(Data([2]))
+            secondLocalFlushFinished.signal()
+        }
+        #expect(secondLocalFlushFinished.wait(timeout: .now() + 2) == .success)
+        DispatchQueue.global().async {
+            try? target.persistLocal(Data([3]))
+            thirdLocalFlushFinished.signal()
+        }
+        #expect(thirdLocalFlushFinished.wait(timeout: .now() + 2) == .success)
+        #expect(try store.load() == Data([3]))
+
+        unblockMirror.signal()
+        #expect(mirrorFinished.wait(timeout: .now() + 2) == .success)
+        unblockMirror.signal()
+        #expect(mirrorFinished.wait(timeout: .now() + 2) == .success)
+        #expect(recorder.snapshot == [Data([1]), Data([3])])
     }
 
     // MARK: Backups y restauración (docs/04 §Restaurar)
@@ -162,7 +241,7 @@ struct SaveMirrorTests {
         try store.save(Data([1, 1, 1, 1]))
         let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: .unavailable, validSizes: [4])
         #expect(outcome.data == Data([1, 1, 1, 1]) && outcome.warning == .mirrorUnavailable)
-        try outcome.target?.persist(Data([3, 3, 3, 3]))
+        try outcome.target?.persistLocal(Data([3, 3, 3, 3]))
         #expect(!FileManager.default.fileExists(atPath: mirror.url.path))   // nunca se escribió
     }
 

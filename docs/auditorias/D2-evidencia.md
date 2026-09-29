@@ -71,3 +71,8 @@ Observación: con un título largo, el badge "Nuevo" pasa a la derecha del texto
 - Reinstalar desde Xcode y recuperar la partida desde el espejo.
 - Revocar el acceso a la carpeta y ver la pantalla "No se puede abrir la carpeta".
 - Ajustes › Partidas: ver las copias y restaurar una.
+
+## Verificación en el Mac tras la auditoría Codex (2026-09-29)
+El CI de `c314a17` no arrancó: GitHub bloqueó el job por facturación ("recent account payments have failed or your spending limit needs to be increased"). Verificación equivalente en el Mac de Joel (Xcode 26.6):
+- `c314a17` (antes de la corrección): núcleo 157/157; `xcodebuild -configuration Release … build` → BUILD SUCCEEDED; `tools/ios-screenshots.sh` → TEST SUCCEEDED, 29 capturas. Claude revisó las 18 de D2 (claro y oscuro): sin errores visuales.
+- Tras la corrección de H1 (Codex): Release → BUILD SUCCEEDED sin warnings del proyecto; `tools/ios-screenshots.sh` → TEST SUCCEEDED, 43 tests `✔` (incluido `blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest`), catálogo completo con la app viva.

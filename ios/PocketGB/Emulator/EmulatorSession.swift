@@ -23,7 +23,7 @@ final class EmulatorSession: @unchecked Sendable {
     private let audioGeneration = Atomic<Int>(0)
     nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
     private let saves: SaveTarget?
-    private let saveQueue = DispatchQueue(label: "PocketGB.saves", qos: .utility)
+    private let localSaveQueue = DispatchQueue(label: "PocketGB.saves-local", qos: .utility)
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "session")
 
     // Estado de control compartido, protegido por `control`.
@@ -213,9 +213,9 @@ final class EmulatorSession: @unchecked Sendable {
             // Lo que ya hay en disco (o la RAM inicial si no había .sav).
             lastQueued = try? core.sramSave()
             control.lock(); confirmed = lastQueued; control.unlock()
-            // Espejo ausente o desfasado al abrir: se pone al día en la cola de guardado.
+            // Espejo ausente o desfasado al abrir: se pone al día en su propia cola.
             if let initial = lastQueued, let saves {
-                saveQueue.async { saves.retryMirrorIfNeeded(initial) }
+                saves.retryMirrorIfNeeded(initial)
             }
             lastCheck = mach_absolute_time()
             #if DEBUG
@@ -369,12 +369,12 @@ final class EmulatorSession: @unchecked Sendable {
             return
         }
         if sync {
-            saveQueue.sync {}
+            localSaveQueue.sync {}
             control.lock()
             let onDisk = confirmed
             control.unlock()
             guard data != onDisk else {
-                saveQueue.sync { saves.retryMirrorIfNeeded(data) } // espejo pendiente
+                saves.retryMirrorIfNeeded(data)
                 return
             }
         } else {
@@ -389,7 +389,7 @@ final class EmulatorSession: @unchecked Sendable {
         let write: @Sendable () -> Void = { [self] in
             do {
                 if injectFailure { throw CocoaError(.fileWriteUnknown) }
-                try saves.persist(data)
+                try saves.persistLocal(data)
                 control.lock()
                 confirmed = data
                 control.unlock()
@@ -400,6 +400,6 @@ final class EmulatorSession: @unchecked Sendable {
                 control.unlock()
             }
         }
-        if sync { saveQueue.sync(execute: write) } else { saveQueue.async(execute: write) }
+        if sync { localSaveQueue.sync(execute: write) } else { localSaveQueue.async(execute: write) }
     }
 }
