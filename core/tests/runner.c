@@ -4,6 +4,7 @@
  *   gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg|cgb|auto] [--max-frames N]
  *          [--expect PATH.rgba] [--dump PATH.rgba] [--input GUION] [--wav PATH.wav]
  *   gbtest <rom> --bench N        velocidad frente a tiempo real (N frames)
+ *   gbtest <rom> --bench-link N   igual, con dos instancias del ROM en el cable virtual (M9)
  *   gbtest --unit                 unit tests (core/tests/unit_*.c)
  *   gbtest --fuzz-seeds DIR       escribe semillas para los fuzzers (make fuzz)
  *
@@ -168,6 +169,7 @@ static int run_unit(void)
         { "state", unit_state },
         { "apu", unit_apu },
         { "cgb", unit_cgb },
+        { "link", unit_link },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -218,6 +220,10 @@ static int fuzz_seeds(const char *dir)
     }
     gb_destroy(g);
     free(rom);
+    /* fuzz_link: lado 0 maestro (SB 0x55, SC 0x81), lado 1 esclavo, los dos en JR -2. */
+    static const uint8_t link_seed[] = { 0x00, 0x80, 0x55, 0x81, 0x18, 0xFE, 0x18, 0xFE };
+    snprintf(path, sizeof path, "%s/fuzz_link/seed_link.bin", dir);
+    rc |= write_file(path, link_seed, sizeof link_seed);
     return rc;
 }
 
@@ -226,7 +232,7 @@ static int usage(void)
     fprintf(stderr,
             "uso: gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg|cgb|auto] [--max-frames N]\n"
             "            [--expect PATH.rgba] [--dump PATH.rgba]\n"
-            "     gbtest <rom> --bench N\n"
+            "     gbtest <rom> --bench N | --bench-link N\n"
             "     gbtest --unit\n");
     return 2;
 }
@@ -243,6 +249,7 @@ int main(int argc, char **argv)
     const char *rom_path = argv[1], *mode = NULL, *expect_path = NULL, *dump_path = NULL;
     const char *input_script = NULL, *wav_path = NULL;
     long max_frames = 3600, bench = 0;
+    bool bench_link = false;
     gb_options opts;
     gb_options_default(&opts);
     opts.model = GB_MODEL_DMG;
@@ -276,6 +283,9 @@ int main(int argc, char **argv)
             input_script = v;
         } else if (strcmp(a, "--bench") == 0) {
             bench = strtol(v, NULL, 10);
+        } else if (strcmp(a, "--bench-link") == 0) {
+            bench = strtol(v, NULL, 10);
+            bench_link = true;
         } else {
             return usage();
         }
@@ -324,12 +334,38 @@ int main(int argc, char **argv)
     opts.serial_byte_cb = on_serial_byte;
     opts.serial_user = log;
     gb_result r = gb_load_rom(g, data, len, &opts);
+    gb *peer = NULL;
+    gb_link *link = NULL;
+    if (r == GB_OK && bench_link) {
+        peer = gb_create();
+        link = gb_link_create();
+        if (!peer || !link) {
+            fprintf(stderr, "sin memoria\n");
+            return 2;
+        }
+        r = gb_load_rom(peer, data, len, &opts);
+        gb_link_attach(link, g, peer);
+    }
     free(data);
     if (r != GB_OK) {
         fprintf(stderr, "gb_load_rom: %s\n", gb_result_str(r));
         return 2;
     }
 
+    if (bench_link) {
+        double t0 = now_seconds();
+        for (long f = 0; f < bench; f++)
+            gb_link_run_frame(link);
+        double dt = now_seconds() - t0;
+        double emulated = (double)gb_cycle_count(g) / GB_CLOCK_HZ;
+        printf("bench-link: %ld frames x 2 instancias, %.3f s emulados en %.3f s reales -> %.1fx tiempo real\n",
+               bench, emulated, dt, dt > 0 ? emulated / dt : 0.0);
+        gb_link_destroy(link);
+        gb_destroy(peer);
+        gb_destroy(g);
+        free(log);
+        return 0;
+    }
     if (bench) {
         double t0 = now_seconds();
         for (long f = 0; f < bench; f++)
