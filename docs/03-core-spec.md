@@ -60,7 +60,7 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 | `FE00–FE9F` | OAM | Inaccesible en modos 2/3 y durante OAM DMA |
 | `FEA0–FEFF` | No usable | Lee `0x00` (DMG) |
 | `FF00–FF7F` | E/S | Bits no implementados leen 1 (máscaras de Pan Docs) |
-| `FF80–FFFE` | HRAM | Durante la copia del OAM DMA la CPU no ve OAM (`FE00–FEFF`) ni el **bus del origen** del DMA: externo (ROM/SRAM/WRAM/eco) o VRAM. Esos accesos leen `0xFF` y las escrituras se ignoran; E/S (`FF00–FF7F`), HRAM e IE siguen accesibles. Pan Docs simplifica el DMG a "solo HRAM", pero las pruebas Mooneye verificadas en DMG real (`reti_timing`, `ret_timing`, `call_timing`, `oam_dma/reg_read`) ejecutan desde ROM durante un DMA con origen en VRAM y leen registros de E/S: se sigue el modelo por bus, igual que en CGB. |
+| `FF80–FFFE` | HRAM | Durante la copia del OAM DMA la CPU no ve OAM (`FE00–FEFF`) ni el **bus del origen** del DMA. En DMG se distinguen VRAM y el bus externo compartido (ROM/SRAM/WRAM/eco); en CGB se distinguen tres buses: VRAM, cartucho (ROM/SRAM) y WRAM/eco. Los accesos bloqueados leen `0xFF` y las escrituras se ignoran; E/S (`FF00–FF7F`), HRAM e IE siguen accesibles. Pan Docs simplifica el DMG a "solo HRAM", pero las pruebas Mooneye verificadas en DMG real (`reti_timing`, `ret_timing`, `call_timing`, `oam_dma/reg_read`) ejecutan desde ROM durante un DMA con origen en VRAM y leen registros de E/S, por lo que se sigue el modelo por bus. |
 | `FFFF` | IE | |
 
 ## CPU SM83
