@@ -216,8 +216,11 @@ struct SaveMirrorTests {
 
         let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
                                                validSizes: [4])
+        // El espejo (d1) tiene fecha más nueva que la local (d2), pero es propio: gana d2.
         #expect(reopened.data == d2)
-        #expect(store.backups().isEmpty)
+        // Único backup: el d1 de la rotación normal al guardar d2; no se añade el espejo.
+        #expect(store.backups().count == 1)
+        #expect(try Data(contentsOf: store.backupURL(1)) == d1)
         reopened.target?.retryMirrorIfNeeded(d2)
 
         blocked.unblock.signal()
