@@ -37,7 +37,7 @@ static void header_errors(struct ut *t, gb *g)
     CHECK(t, load(g, rom, 0x8000) == GB_ERR_BAD_RAM_SIZE_CODE);
     rom[0x149] = 0x00;
 
-    const uint8_t bad_types[] = { 0x05, 0x06, 0x08, 0x20, 0xFF };
+    const uint8_t bad_types[] = { 0x05, 0x06, 0x08, 0x0B, 0x14, 0x1F, 0x20, 0xFF };
     for (size_t i = 0; i < sizeof bad_types; i++) {
         rom[0x147] = bad_types[i];
         CHECK(t, load(g, rom, 0x8000) == GB_ERR_UNSUPPORTED_MBC);
@@ -247,6 +247,62 @@ static void mbc1_ram(struct ut *t, gb *g)
     free(rom);
 }
 
+static void mbc3_mbc5(struct ut *t, gb *g)
+{
+    /* MBC3, 2 MiB = 128 bancos: 7 bits, 0 → 1, 0x20/0x40/0x60 accesibles */
+    uint8_t *rom = banked_rom(128, 0x13, 0x06, 0x03);
+    CHECK(t, rom != NULL);
+    if (!rom)
+        return;
+    CHECK(t, load(g, rom, 128u * 0x4000) == GB_OK);
+    CHECK(t, gb_sram_save_size(g) == 32768);        /* Pokémon Rojo: 0x13 + RAM 0x03 */
+    mmu_write(g, 0x2000, 0x00);
+    CHECK(t, mmu_read(g, 0x4000) == 1);
+    mmu_write(g, 0x2000, 0x20);
+    CHECK(t, mmu_read(g, 0x4000) == 0x20);
+    mmu_write(g, 0x2000, 0xFF);
+    CHECK(t, mmu_read(g, 0x4000) == 0x7F);
+    mmu_write(g, 0x0000, 0x0A);
+    mmu_write(g, 0x4000, 0x03);
+    mmu_write(g, 0xA000, 0x33);
+    mmu_write(g, 0x4000, 0x00);
+    CHECK(t, mmu_read(g, 0xA000) == 0x00);
+    mmu_write(g, 0x4000, 0x03);
+    CHECK(t, mmu_read(g, 0xA000) == 0x33);
+    mmu_write(g, 0x4000, 0x08);                     /* RTC sin timer: lee 0xFF */
+    CHECK(t, mmu_read(g, 0xA000) == 0xFF);
+    free(rom);
+
+    /* MBC5, 2 MiB: 8 bits, el banco 0 es válido; bit 8 se reduce con % */
+    rom = banked_rom(128, 0x1B, 0x06, 0x03);
+    CHECK(t, rom != NULL);
+    if (!rom)
+        return;
+    CHECK(t, load(g, rom, 128u * 0x4000) == GB_OK);
+    CHECK(t, gb_sram_save_size(g) == 32768);        /* Pokémon Amarillo: 0x1B + RAM 0x03 */
+    CHECK(t, mmu_read(g, 0x4000) == 1);
+    mmu_write(g, 0x2000, 0x00);
+    CHECK(t, mmu_read(g, 0x4000) == 0);
+    mmu_write(g, 0x2000, 0x7F);
+    CHECK(t, mmu_read(g, 0x7FFF) == 0x7F);
+    mmu_write(g, 0x3000, 0x01);                     /* banco 0x17F % 128 = 0x7F */
+    CHECK(t, mmu_read(g, 0x4000) == 0x7F);
+    free(rom);
+
+    /* MBC5 con rumble: el bit 3 es el motor, no un bit de banco */
+    rom = banked_rom(4, 0x1E, 0x01, 0x03);
+    CHECK(t, rom != NULL);
+    if (!rom)
+        return;
+    CHECK(t, load(g, rom, 4u * 0x4000) == GB_OK);
+    mmu_write(g, 0x0000, 0x0A);
+    mmu_write(g, 0x4000, 0x01);
+    mmu_write(g, 0xA000, 0x44);
+    mmu_write(g, 0x4000, 0x09);                     /* banco 1 + motor */
+    CHECK(t, g->cart.rumble_on && mmu_read(g, 0xA000) == 0x44);
+    free(rom);
+}
+
 void unit_cart(struct ut *t)
 {
     gb *g = gb_create();
@@ -257,5 +313,6 @@ void unit_cart(struct ut *t)
     header_info(t, g);
     mbc1_banks(t, g);
     mbc1_ram(t, g);
+    mbc3_mbc5(t, g);
     gb_destroy(g);
 }

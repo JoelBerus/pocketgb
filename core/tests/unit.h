@@ -32,6 +32,7 @@ void unit_cart(struct ut *t);
 void unit_cpu(struct ut *t);
 void unit_ppu(struct ut *t);
 void unit_sha256(struct ut *t);
+void unit_state(struct ut *t);
 void unit_timer(struct ut *t);
 
 #endif

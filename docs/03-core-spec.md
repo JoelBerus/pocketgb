@@ -97,8 +97,8 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 | MBC | Registros | Detalles que suelen fallar |
 |---|---|---|
 | MBC1 | `0000–1FFF` RAM enable (`0x0A` en nibble bajo); `2000–3FFF` banco ROM 5 bits (0→1); `4000–5FFF` 2 bits (RAM o bits altos del ROM); `6000–7FFF` modo | El 0→1 aplica solo a los 5 bits bajos (bancos 0x20/0x40/0x60 inaccesibles en `4000`). En modo 1, `0000–3FFF` usa los bits altos. MBC1M (multicart) queda fuera de v1. |
-| MBC3 | RAM enable; `2000–3FFF` banco ROM 7 bits (0→1); `4000–5FFF` banco RAM 0–3 o registro RTC `08–0C`; `6000–7FFF` latch (escribir 0 y luego 1) | **Rojo = `0x13` (sin RTC).** El RTC se implementa igual (para Oro y Plata a futuro): el tiempo avanza con el reloj emulado y se persiste con timestamp Unix al final del `.sav` (formato de 48 bytes compatible con VBA/BGB). |
-| MBC5 | RAM enable; `2000–2FFF` 8 bits bajos del banco ROM (**0 es válido**); `3000–3FFF` bit 8; `4000–5FFF` banco RAM 0–15 | **Amarillo = `0x1B`.** Carros con rumble (`0x1C–0x1E`): el bit 3 de `4000` es el motor, no un bit de banco (hook de háptica opcional). |
+| MBC3 | RAM enable (nibble bajo `0xA`, también habilita el RTC); `2000–3FFF` banco ROM 7 bits (0→1; con ROM > 2 MiB se usan los 8 bits, como el MBC30, que es lo que espera MBC3-Tester); `4000–5FFF` banco RAM 0–7 (`%` bancos) o registro RTC `08–0C` (otro valor → lee `0xFF`); `6000–7FFF` latch (escribir 0 y luego 1) | **Rojo = `0x13` (sin RTC).** El RTC se implementa igual (para Oro y Plata a futuro): ver §RTC. |
+| MBC5 | RAM enable (nibble bajo `0xA`, como el hardware según Pan Docs); `2000–2FFF` 8 bits bajos del banco ROM (**0 es válido**); `3000–3FFF` bit 8; `4000–5FFF` banco RAM 0–15 | **Amarillo = `0x1B`.** Carros con rumble (`0x1C–0x1E`): el bit 3 de `4000` es el motor, no un bit de banco (hook de háptica opcional). |
 
 "RAM dirty": cualquier escritura en la RAM externa pone `dirty = true`. Un **flanco de deshabilitar RAM** (escritura ≠ `0x0A`) mientras está sucia activa `gb_sram_dirty()`, que el frontend usa como señal de "el juego acaba de guardar".
 
@@ -109,13 +109,27 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - **Mezcla y salida:** DACs → `NR51` (paneo) → `NR50` (volumen). Pasa-altos de "capacitor" (como el hardware) para quitar DC. Remuestreo a `opts.sample_rate` con un filtro de caja integrador (media de todos los ciclos del periodo de salida). Es suficiente para v1; un band-limited (BLEP) queda como mejora.
 - Apagar con `NR52` bit 7 pone a 0 todos los registros excepto la wave RAM (y en DMG, los contadores de longitud).
 
+Los offsets de banco se precalculan (y se acotan con `%`) en cada escritura a un registro del MBC, no en cada lectura.
+
+### RTC (MBC3, `rtc.c`)
+- Avanza con el reloj emulado (4 194 304 T-ciclos = 1 s), así que es determinista. Con el bit de halt (`DH` bit 6) se detienen el reloj y su sub-segundo.
+- Anchos reales del chip: S y M de 6 bits, H de 5 y día de 9. Un valor fuera de rango sigue contando hasta desbordar su ancho, y ese desborde lo pone a 0 **sin** acarreo (p. ej. S=63 → 0 sin tocar M). Día 511 → 0 con el bit de acarreo (`DH` bit 7), que se queda puesto hasta que el juego lo borre.
+- Escribir un registro aplica su máscara (`3F 3F 1F FF C1`) y actualiza también la copia latched. Escribir S reinicia el sub-segundo.
+- Hora de pared: `opts.unix_time` en `gb_load_rom`; cada segundo emulado la adelanta. `gb_rtc_set_time(now)` suma al reloj los segundos transcurridos desde esa hora (si no está en halt). Solo se aceptan horas en `[0, 2^40)`; fuera de ese rango se tratan como "sin hora" y el reloj no avanza (sin desbordes al restar).
+- Escribir un registro del RTC en un cartucho con batería cuenta como escritura en la RAM externa: el siguiente flanco de deshabilitar activa `gb_sram_dirty()`, así que un cambio de hora del juego también se guarda.
+- `.sav`: RAM + bloque de 48 bytes (5×u32 vivos S M H DL DH, 5×u32 latched, u64 hora Unix; little-endian, compatible con VBA/BGB). `gb_sram_load` también acepta el bloque antiguo de 44 bytes (hora u32) y el `.sav` sin bloque RTC, para no rechazar partidas de otros emuladores. Al cargarlo, el reloj avanza lo transcurrido desde la hora guardada.
+- Verificación: rtc3test (los 3 subtests) y MBC3-Tester idénticos a sus capturas.
+
 ## Save states
 Formato binario little-endian:
 ```
 "PGBS" | u32 version | u8 rom_sha256[32] | u32 model | secciones {u32 tag, u32 len, bytes} ... | u32 crc32
 ```
-- `gb_state_load` rechaza: magic incorrecto, versión mayor que la soportada, huella de ROM distinta, CRC inválido o longitudes fuera de rango. **Nunca** confía en las longitudes del archivo.
-- Toda la memoria de estado de `struct gb` se serializa campo por campo (sin `memcpy` de structs con punteros).
+- Versión actual: 1. Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `MISC` (contador de ciclos y framebuffer). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
+- `gb_state_load` rechaza, en este orden: magic incorrecto (`STATE_MAGIC`), versión distinta de la soportada (`STATE_VERSION`), CRC inválido o archivo truncado (`STATE_CORRUPT`), huella de ROM distinta (`STATE_ROM_MISMATCH`), modelo distinto, tag o longitud de sección incoherente, o cualquier campo fuera de rango (`STATE_CORRUPT`). **Nunca** confía en las longitudes del archivo.
+- La carga hace una pasada que solo valida y, si todo es correcto, otra que escribe: un estado rechazado deja la instancia intacta. No reserva memoria.
+- Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` múltiplo de 4 y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
+- Toda la memoria de estado de `struct gb` se serializa campo por campo (sin `memcpy` de structs con punteros). Los offsets de banco no se guardan: se recalculan al cargar.
 
 ## Seguridad (resumen de reglas verificables)
 1. Ningún índice derivado de datos del ROM o de registros llega a un array sin `%` o `min()` contra su tamaño real.

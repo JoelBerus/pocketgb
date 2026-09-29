@@ -12,7 +12,9 @@
 5. Fuzzers.
 
 **Criterios de aceptación**
-- [ ] `make -C core test HITO=M3` → casos M3 de [06](../06-testing.md) en PASS, más los unit tests de bancos (ROM sintético de 2 MiB con el número de banco en cada banco) y el round-trip de estado.
-- [ ] `make -C core fuzz FUZZ_SECONDS=600` → 0 crashes en ambos fuzzers. Se reporta `exec/s` y cobertura.
-- [ ] Unit test: estado con CRC alterado, huella distinta, longitud de sección > archivo → rechazados con el código de error correcto.
-- [ ] Unit test: `.sav` de Pokémon Rojo = 32 768 bytes (sin RTC) y de Amarillo = 32 768 bytes. Los tamaños salen de la cabecera sintética `0x13`/`0x1B` con RAM `0x03`.
+- [x] `make -C core test HITO=M3` → casos M3 de [06](../06-testing.md) en PASS, más los unit tests de bancos (ROM sintético de 2 MiB con el número de banco en cada banco) y el round-trip de estado.
+- [x] `make -C core fuzz FUZZ_SECONDS=600` → 0 crashes en ambos fuzzers. Se reporta `exec/s` y cobertura.
+- [x] Unit test: estado con CRC alterado, huella distinta, longitud de sección > archivo → rechazados con el código de error correcto.
+- [x] Unit test: `.sav` de Pokémon Rojo = 32 768 bytes (sin RTC) y de Amarillo = 32 768 bytes. Los tamaños salen de la cabecera sintética `0x13`/`0x1B` con RAM `0x03`.
+
+Cerrado el 2026-09-29. Evidencia: [M3-evidencia](../auditorias/M3-evidencia.md) · Auditorías: [vuelta 1](../auditorias/M3-opus.md), [vuelta 2](../auditorias/M3-opus-v2.md) · Respuesta: [M3-respuesta](../auditorias/M3-respuesta.md).

@@ -12,7 +12,9 @@ Incluye Blargg, Mooneye, dmg-acid2, cgb-acid2, rtc3test, MBC3-Tester y SameSuite
 Un único binario `build/gbtest`:
 ```
 gbtest <rom> --mode {serial|mooneye|acid} [--model dmg|cgb] [--max-frames N] [--expect PATH.rgba] [--dump PATH.rgba]
+gbtest <rom> --mode frames --max-frames N --expect REF.rgba [--input GUION]   # captura tras N frames
 gbtest <rom> --bench N     # N frames sin límite de velocidad; imprime el múltiplo de tiempo real
+gbtest --fuzz-seeds DIR    # semillas para make fuzz
 gbtest --unit              # unit tests (core/tests/unit_*.c)
 ```
 Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. Desde M2 existen todos los modos; `--model cgb` llega en M8. Ejemplo: `tools/png2rgba.py ref.png ref.rgba && build/gbtest dmg-acid2.gb --mode acid --expect ref.rgba --dump out.rgba && tools/png2rgba.py --reverse out.rgba out.png`.
@@ -28,7 +30,7 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 
 `tools/png2rgba.py` convierte los PNG de referencia a RGBA crudo de 160×144. Usa solo la stdlib de Python (`zlib`, `struct`), sin Pillow, para que funcione igual en macOS y en Linux (nube).
 
-`core/tests/suite.txt` lista cada caso `hito|ruta|modo|modelo|max_frames|tipo` (la ruta admite comodines; `unit` = unit tests). `make test HITO=Mn` ejecuta los casos de los hitos ≤ Mn (así se detectan regresiones) e imprime una tabla PASS/FAIL. Sale con código ≠ 0 si falla algún caso de tipo **requerido**. `known-fail` e `info` se reportan pero no bloquean. Los casos `acid` llevan una 7.ª columna con el PNG de referencia (relativo a `core/tests/roms/`); `run_suite.py` lo convierte a RGBA con `tools/png2rgba.py` en `build/refs/`.
+`core/tests/suite.txt` lista cada caso `hito|ruta|modo|modelo|max_frames|tipo` (la ruta admite comodines; `unit` = unit tests). `make test HITO=Mn` ejecuta los casos de los hitos ≤ Mn (así se detectan regresiones) e imprime una tabla PASS/FAIL. Sale con código ≠ 0 si falla algún caso de tipo **requerido**. `known-fail` e `info` se reportan pero no bloquean. Los casos `acid` y `frames` llevan una 7.ª columna con el PNG de referencia (relativo a `core/tests/roms/`); `run_suite.py` lo convierte a RGBA con `tools/png2rgba.py` en `build/refs/`. Una 8.ª columna opcional es el guion de botones de `--input` (`frame:botones,...`, p. ej. `30:A,40:-` para elegir el subtest de rtc3test).
 
 ## Casos requeridos por hito
 | Hito | Casos |
@@ -43,7 +45,7 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 `core/tests/unit_*.c` es un mini framework propio de ~50 líneas (`CHECK(expr)`), sin dependencias. Cubre:
 - validación de cabecera (tamaños absurdos, códigos `0x52–0x54` rechazados, archivo truncado, MBC no soportado, título de 16/15/11 bytes)
 - SHA-256 contra los vectores de FIPS 180-4 (`""`, `"abc"`, 1 MB de `'a'`)
-- (M3) `gb_load_rom` con fallo de memoria inyectado (`-DGB_TEST_FAIL_ALLOC=n`) → `GB_ERR_OUT_OF_MEMORY` sin fugas y con la instancia usable
+- `gb_load_rom` con fallo de memoria inyectado → `GB_ERR_OUT_OF_MEMORY` sin fugas y con la instancia usable. `gbtest` se compila con `-DGB_TEST_HOOKS`, que añade a la instancia el campo `dbg.fail_alloc_at` (la reserva n-ésima falla); la biblioteca normal no lo lleva
 - mapeo de bancos con ROMs sintéticos generados en el test (cada banco lleno con su número)
 - flancos del timer
 - round-trip de save states (guardar → cargar → mismo framebuffer tras N frames)
@@ -52,8 +54,9 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 ## Sanitizers y fuzzing
 - `make asan`: todo lo anterior compilado con `-fsanitize=address,undefined -fno-omit-frame-pointer`.
 - `make fuzz`: dos fuzzers en `core/fuzz/`:
-  - `fuzz_load_rom.c`: los bytes son el ROM. Se carga, se ejecutan 30 frames con botones pseudoaleatorios derivados de los bytes y se destruye.
-  - `fuzz_state_load.c`: carga un ROM sintético fijo y después `gb_state_load` con los bytes.
+  - `fuzz_load_rom.c`: los bytes son el ROM. Se carga, se ejecutan 30 frames con botones pseudoaleatorios derivados de los bytes, se hace el round-trip de SRAM y de save state (un estado recién guardado **tiene** que cargar: si no, `abort()`) y se destruye. Si el archivo es corto para lo que declara, se repite rellenándolo con ceros (máx. 1 MiB) para que la CPU ejecute código arbitrario.
+  - `fuzz_state_load.c`: carga un ROM sintético (MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only según el primer byte) y después `gb_state_load` con los bytes: (1) tal cual; (2) con cabecera y CRC corregidos; (3) **mutación estructurada**: cada 4 bytes son (sección, desplazamiento, desplazamiento, valor) y se **asigna** ese byte dentro de la sección elegida de un estado válido de la instancia (en secciones de más de 256 bytes, solo en sus primeros o últimos 32), con el CRC recalculado, para llegar a combinaciones de campos incoherentes; (4) los bytes como `.sav` (RAM + bloque RTC) en `gb_sram_load` y después `gb_rtc_set_time`. Tras cada carga aceptada se ejecutan frames.
+  - `make fuzz` genera antes unas semillas (`gbtest --fuzz-seeds fuzz/corpus`, ignoradas por git) y compila con `-fno-sanitize-recover=all` para que cualquier UB sea un crash.
 - **Importante:** el clang de Apple **no incluye libFuzzer**. En macOS, `brew install llvm` y `make fuzz CC=$(brew --prefix llvm)/bin/clang`. En Linux (Claude en la nube) sirve el clang del sistema. El Makefile detecta la falta de libFuzzer y lo explica.
 - Criterio de M3: `FUZZ_SECONDS=600` por fuzzer sin crash, leak ni UB.
 

@@ -29,12 +29,13 @@ def load_cases(path, roms, max_hito):
             if not line or line.startswith("#"):
                 continue
             parts = line.split("|")
-            if len(parts) not in (6, 7):
-                sys.exit(f"{path}:{n}: se esperaban 6 o 7 campos, hay {len(parts)}")
+            if len(parts) not in (6, 7, 8):
+                sys.exit(f"{path}:{n}: se esperaban 6 a 8 campos, hay {len(parts)}")
             hito, ruta, modo, modelo, frames, tipo = parts[:6]
-            ref = os.path.join(roms, parts[6]) if len(parts) == 7 else None
-            if modo == "acid" and not ref:
-                sys.exit(f"{path}:{n}: el modo acid necesita la referencia (7.º campo)")
+            ref = os.path.join(roms, parts[6]) if len(parts) >= 7 and parts[6] else None
+            inputs = parts[7] if len(parts) == 8 else None
+            if modo in ("acid", "frames") and not ref:
+                sys.exit(f"{path}:{n}: el modo {modo} necesita la referencia (7.º campo)")
             if ref and not os.path.isfile(ref):
                 sys.exit(f"{path}:{n}: no existe la referencia {parts[6]!r}")
             if tipo not in ("requerido", "known-fail", "info"):
@@ -48,11 +49,11 @@ def load_cases(path, roms, max_hito):
                 if not files:
                     sys.exit(f"{path}:{n}: ninguna ROM coincide con {ruta!r}")
             for f in files:
-                key = (f, modo, modelo)
+                key = (f, modo, modelo, ref, inputs)
                 if key in seen:       # un comodín no repite un caso ya listado
                     continue
                 seen.add(key)
-                cases.append((hito, f, modo, modelo, int(frames), tipo, ref))
+                cases.append((hito, f, modo, modelo, int(frames), tipo, ref, inputs))
     return cases
 
 
@@ -69,7 +70,7 @@ def reference_rgba(ref, workdir):
 
 
 def run_case(binary, case, timeout, workdir):
-    hito, rom, modo, modelo, frames, tipo, ref = case
+    hito, rom, modo, modelo, frames, tipo, ref, inputs = case
     if modo == "unit":
         cmd = [binary, "--unit"]
     else:
@@ -78,6 +79,8 @@ def run_case(binary, case, timeout, workdir):
             cmd += ["--model", modelo]
         if ref:
             cmd += ["--expect", reference_rgba(ref, workdir)]
+        if inputs:
+            cmd += ["--input", inputs]
     t0 = time.monotonic()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -106,8 +109,10 @@ def main():
     blocking, rows = 0, []
     for case in cases:
         ok, detail, dt = run_case(a.bin, case, a.timeout, workdir)
-        hito, rom, modo, _, _, tipo, _ = case
+        hito, rom, modo, _, _, tipo, ref, _ = case
         name = "unit tests" if modo == "unit" else os.path.relpath(rom, a.roms)
+        if ref and os.path.basename(rom) != os.path.basename(ref).split("-dmg")[0] + ".gb":
+            name += f" [{os.path.basename(ref)}]"   # misma ROM, varias referencias
         status = "PASS" if ok else "FAIL"
         if not ok and tipo == "requerido":
             blocking += 1

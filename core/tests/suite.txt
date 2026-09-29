@@ -1,9 +1,10 @@
 # Casos de prueba de PocketGB (docs/06-testing.md).
-# Formato: hito|ruta|modo|modelo|max_frames|tipo[|referencia]
+# Formato: hito|ruta|modo|modelo|max_frames|tipo[|referencia[|botones]]
 #   hito:   M1..M9. `make test HITO=Mn` ejecuta los casos de los hitos <= Mn.
 #   ruta:   relativa a core/tests/roms/ (admite comodines *), o `unit` para los unit tests.
-#   modo:   serial | mooneye | acid | unit.
-#   referencia: solo en acid; PNG relativo a core/tests/roms/ (run_suite lo convierte a RGBA).
+#   modo:   serial | mooneye | acid | frames | unit.
+#   referencia: en acid y frames; PNG relativo a core/tests/roms/ (run_suite lo convierte a RGBA).
+#   botones: guion para --input, "frame:botones,..." (A B S T R L U D, "-" = soltar).
 #   tipo:   requerido (bloquea) | known-fail (se reporta, no bloquea) | info (extra, no bloquea).
 
 # ---- M1: CPU + timer + interrupciones (requeridos por docs/06-testing.md) ----
@@ -59,3 +60,16 @@ M2|mooneye-test-suite/acceptance/ppu/lcdon_timing-GS.gb|mooneye|dmg|1200|known-f
 M2|mooneye-test-suite/acceptance/ppu/lcdon_write_timing-GS.gb|mooneye|dmg|1200|known-fail
 M2|mooneye-test-suite/acceptance/ppu/stat_lyc_onoff.gb|mooneye|dmg|1200|known-fail
 M2|mooneye-test-suite/acceptance/ppu/vblank_stat_intr-GS.gb|mooneye|dmg|1200|known-fail
+
+# ---- M3: MBC1/3/5 + RTC (requeridos por docs/06-testing.md) ----
+M3|mooneye-test-suite/emulator-only/mbc1/bits_*.gb|mooneye|dmg|1200|requerido
+M3|mooneye-test-suite/emulator-only/mbc1/ram_*.gb|mooneye|dmg|1200|requerido
+M3|mooneye-test-suite/emulator-only/mbc1/rom_*.gb|mooneye|dmg|1200|requerido
+M3|mooneye-test-suite/emulator-only/mbc5/*.gb|mooneye|dmg|1200|requerido
+M3|mbc3-tester/mbc3-tester.gb|frames|dmg|40|requerido|mbc3-tester/mbc3-tester-dmg.png
+M3|rtc3test/rtc3test.gb|frames|dmg|1200|requerido|rtc3test/rtc3test-basic-tests-dmg.png|30:A,40:-
+# Extras de rtc3test que también pasan.
+M3|rtc3test/rtc3test.gb|frames|dmg|900|requerido|rtc3test/rtc3test-range-tests-dmg.png|30:D,40:-,50:A,60:-
+M3|rtc3test/rtc3test.gb|frames|dmg|2100|requerido|rtc3test/rtc3test-sub-second-writes-dmg.png|30:D,40:-,50:D,60:-,70:A,80:-
+# Fuera de alcance de v1: MBC1M (multicart).
+M3|mooneye-test-suite/emulator-only/mbc1/multicart_rom_8Mb.gb|mooneye|dmg|1200|known-fail

@@ -89,7 +89,21 @@ struct gb_joypad {
     uint8_t buttons;   /* máscara GB_BTN_*, 1 = pulsado */
 };
 
-enum gb_mbc { MBC_NONE = 0, MBC_MBC1 };
+enum gb_mbc { MBC_NONE = 0, MBC_MBC1, MBC_MBC3, MBC_MBC5 };
+
+/* RTC del MBC3 (docs/03-core-spec.md §MBC). Registros: 0 S, 1 M, 2 H, 3 DL, 4 DH. */
+enum { RTC_S = 0, RTC_M, RTC_H, RTC_DL, RTC_DH, RTC_REGS };
+#define RTC_CYCLES_PER_SECOND GB_CLOCK_HZ
+enum { RTC_SAVE_BYTES = 48 };
+
+struct gb_rtc {
+    uint8_t reg[RTC_REGS];     /* contadores vivos */
+    uint8_t latched[RTC_REGS]; /* copia visible tras el latch 0→1 */
+    uint32_t sub;              /* T-ciclos dentro del segundo actual del RTC */
+    uint32_t wall_sub;         /* T-ciclos dentro del segundo de "reloj de pared" */
+    uint8_t latch_last;        /* último valor escrito en 6000–7FFF */
+    int64_t unix;              /* hora Unix a la que corresponden los registros vivos */
+};
 
 struct gb_cart {
     uint8_t *rom;
@@ -99,19 +113,31 @@ struct gb_cart {
     uint32_t ram_size;
     uint32_t ram_banks;    /* bancos de 8 KiB (0 si no hay RAM) */
     enum gb_mbc mbc;
-    bool has_ram, has_battery;
+    bool has_ram, has_battery, has_rtc, has_rumble;
+    /* Registros del MBC tal como los escribió el juego */
     bool ram_enabled;
-    uint8_t bank_lo;       /* MBC1: 5 bits (0 → 1 al mapear) */
-    uint8_t bank_hi;       /* MBC1: 2 bits */
+    uint8_t bank_lo;       /* MBC1: 5 bits · MBC3: 7 bits · MBC5: 8 bits bajos */
+    uint8_t bank_hi;       /* MBC1: 2 bits · MBC5: bit 8 del banco ROM */
+    uint8_t ram_sel;       /* MBC3: banco RAM (0–7) o registro RTC (08–0C) · MBC5: banco RAM */
     uint8_t mode;          /* MBC1: 0 o 1 */
+    bool rumble_on;        /* MBC5 con motor: bit 3 de 4000–5FFF */
+    /* Mapeo derivado (cart_update_banks): offsets ya acotados */
+    uint32_t rom0_off, romx_off, ram_off;
+    int8_t rtc_reg;        /* registro RTC mapeado en A000–BFFF, o -1 */
+    bool ram_mapped;       /* A000–BFFF apunta a RAM */
     bool ram_written;      /* escrituras en RAM externa desde el último disable */
     bool sram_dirty;       /* "el juego acaba de guardar" (flanco de disable) */
+    struct gb_rtc rtc;
 };
 
 /* Ganchos para el runner de pruebas (no forman parte de la API pública). */
 struct gb_debug {
     bool ld_b_b;           /* se ejecutó LD B,B (fin de las pruebas Mooneye) */
     uint8_t regs[6];       /* B C D E H L en ese momento */
+#ifdef GB_TEST_HOOKS
+    int fail_alloc_at;     /* >0: la reserva número n de gb_load_rom falla (1 = la primera) */
+    int alloc_count;
+#endif
 };
 
 struct gb {
@@ -154,6 +180,7 @@ void ppu_reset(gb *g);
 void ppu_tick(gb *g, unsigned dots);
 uint8_t ppu_read(const gb *g, uint16_t addr);
 void ppu_write(gb *g, uint16_t addr, uint8_t v);
+void ppu_resync(gb *g);                 /* recalcula modo y próximo evento (save states) */
 /* Con el LCD encendido la CPU no ve VRAM en modo 3 ni OAM en modos 2 y 3. */
 static inline bool ppu_vram_blocked(const gb *g)
 {
@@ -189,6 +216,26 @@ uint8_t cart_rom_read(const gb *g, uint16_t addr);
 void cart_rom_write(gb *g, uint16_t addr, uint8_t v);
 uint8_t cart_ram_read(const gb *g, uint16_t addr);
 void cart_ram_write(gb *g, uint16_t addr, uint8_t v);
+void cart_update_banks(gb *g);          /* recalcula offsets tras escribir registros */
+void *cart_alloc(gb *g, size_t size);   /* malloc con el gancho de fallo de los tests */
+
+/* rtc.c */
+void rtc_reset(gb *g, int64_t unix_time);
+void rtc_tick(gb *g, unsigned tcycles);
+uint8_t rtc_read(const gb *g);
+void rtc_write(gb *g, uint8_t v);
+void rtc_latch_write(gb *g, uint8_t v);
+void rtc_add_seconds(struct gb_rtc *r, uint64_t seconds);
+/* Hora Unix aceptada: [0, 2^40) (hasta el año ~36812). Fuera de rango = "sin hora". */
+static inline bool rtc_unix_valid(int64_t t)
+{
+    return t >= 0 && t < ((int64_t)1 << 40);
+}
+void rtc_serialize(const struct gb_rtc *r, uint8_t out[RTC_SAVE_BYTES]);
+void rtc_deserialize(struct gb_rtc *r, const uint8_t in[RTC_SAVE_BYTES]);
+
+/* state.c */
+uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len);
 
 /* sha256.c */
 void sha256(const uint8_t *data, size_t len, uint8_t out[32]);
