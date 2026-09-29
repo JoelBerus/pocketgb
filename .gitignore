@@ -10,6 +10,7 @@
 *.7z
 # ROMs de prueba descargadas por tools/fetch-test-roms.sh
 core/tests/roms/
+core/tests/roms
 tools/oracle/SameBoy/
 # Build
 build/

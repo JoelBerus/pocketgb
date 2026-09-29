@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Synchronization
 
 /// Una partida en marcha: dueña del núcleo y de su hilo de emulación.
 /// Todo acceso a `core` ocurre en ese hilo (docs/02 §Hilos); el resto de hilos
@@ -8,10 +9,17 @@ final class EmulatorSession: @unchecked Sendable {
     let info: RomInfo
     let frames = FrameBuffers()
     let buttons = ButtonMask()
+    let audioRing = AudioRingBuffer()
     /// Aviso para mostrar al abrir (p. ej. .sav con tamaño inesperado).
     let loadWarning: String?
 
     private let core: CoreBridge
+    private let audioOutput: AudioOutput
+    private let audioConsumed = AudioWakeSignal()
+    private let audioMode = Atomic<Int>(0)
+    private let averageFrameMicros = Atomic<Int>(0)
+    private let audioFallbackCount = Atomic<Int>(0)
+    nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
     private let saves: SaveStore?
     private let saveQueue = DispatchQueue(label: "PocketGB.saves", qos: .utility)
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "session")
@@ -24,6 +32,7 @@ final class EmulatorSession: @unchecked Sendable {
     private var finished = false
     private var saveFailed = false
     private var flushRequested = false
+    private var audioPrimed = false
     private var confirmed: Data?           // último contenido que está en disco (o se cargó)
 
     // Solo del hilo de emulación.
@@ -38,12 +47,26 @@ final class EmulatorSession: @unchecked Sendable {
     private static let debounceSeconds = 1.0
     private static let safetyNetSeconds = 60.0
     private static let frameSeconds = Double(70224) / Double(4_194_304) // 59,7275 Hz
+    // 2 frames son 1 607 muestras; 2 048 deja margen para un callback grande
+    // sin elevar la latencia objetivo por encima de ≈43 ms.
+    private static let audioTargetFrames = 2_048
+    private static let audioScratchFrames = 1_024
+    private static let audioWait: DispatchTimeInterval = .milliseconds(25)
+    private static let audioTimeoutLimit = 4 // ≈100 ms sin callbacks antes del fallback
+    private static let audioClock = 0
+    private static let audioPriming = 1
+    private static let audioLive = 2
 
-    init(romData: Data, savesDirectory: URL) throws {
+    @MainActor
+    init(romData: Data, savesDirectory: URL,
+         onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
-        info = try core.loadROM(romData, unixTime: now)
+        info = try core.loadROM(romData, unixTime: now, sampleRate: 48_000)
         self.core = core
+        audioScratch = .allocate(capacity: Self.audioScratchFrames * 2)
+        audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
+                                  onPause: onAudioInterrupted)
 
         var warning: String?
         var saves: SaveStore?
@@ -66,15 +89,31 @@ final class EmulatorSession: @unchecked Sendable {
         loadWarning = warning
     }
 
+    deinit { audioScratch.deallocate() }
+
+    @MainActor
     func start() {
+        audioConsumed.reset()
+        control.lock()
+        audioPrimed = false
+        audioMode.store(Self.audioPriming, ordering: .releasing)
         let thread = Thread { [self] in run() }
         thread.name = "PocketGB.emulation"
         thread.qualityOfService = .userInteractive
         thread.start()
+        while !audioPrimed && !finished { control.wait() }
+        control.unlock()
+        let running = audioOutput.start()
+        audioMode.store(running ? Self.audioLive : Self.audioClock, ordering: .releasing)
+        audioConsumed.signal()
     }
 
     /// Pausa y espera a que el hilo guarde la SRAM pendiente y quede parado.
+    @MainActor
     func pause() {
+        audioOutput.stop()
+        audioMode.store(Self.audioClock, ordering: .releasing)
+        audioConsumed.signal()
         control.lock()
         pauseRequested = true
         control.broadcast()
@@ -82,11 +121,20 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
+    @MainActor
     func resume() {
+        audioRing.clear()
+        audioConsumed.reset()
         control.lock()
+        audioPrimed = false
+        audioMode.store(Self.audioPriming, ordering: .releasing)
         pauseRequested = false
         control.broadcast()
+        while !audioPrimed && !finished { control.wait() }
         control.unlock()
+        let running = audioOutput.start()
+        audioMode.store(running ? Self.audioLive : Self.audioClock, ordering: .releasing)
+        audioConsumed.signal()
     }
 
     /// Pide guardar la SRAM en el próximo frame sin pausar (aviso de memoria baja).
@@ -97,12 +145,32 @@ final class EmulatorSession: @unchecked Sendable {
     }
 
     /// Detiene el hilo; al volver, la SRAM ya está escrita en disco.
+    @MainActor
     func stop() {
+        audioOutput.stop()
+        audioMode.store(Self.audioClock, ordering: .releasing)
+        audioConsumed.signal()
         control.lock()
         stopRequested = true
         control.broadcast()
         while !finished { control.wait() }
         control.unlock()
+    }
+
+    /// Para el HUD de depuración: "audio", "cebado" o "reloj" (sin sonido).
+    var pacingDescription: String {
+        switch audioMode.load(ordering: .relaxed) {
+        case Self.audioLive: "audio"
+        case Self.audioPriming: "cebado"
+        default: "reloj"
+        }
+    }
+
+    /// Veces que el pacing cayó a reloj por falta de callbacks.
+    var audioFallbacks: Int { audioFallbackCount.load(ordering: .relaxed) }
+
+    var averageFrameMilliseconds: Double {
+        Double(averageFrameMicros.load(ordering: .relaxed)) / 1_000
     }
 
     // MARK: - Hilo de emulación
@@ -113,6 +181,7 @@ final class EmulatorSession: @unchecked Sendable {
         ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
         let frameTicks = Self.frameSeconds * ticksPerSecond
         var deadline = Double(mach_absolute_time())
+        var audioTimeouts = 0
         if saves != nil {
             // Lo que ya hay en disco (o la RAM inicial si no había .sav).
             lastQueued = try? core.sramSave()
@@ -154,18 +223,54 @@ final class EmulatorSession: @unchecked Sendable {
             control.unlock()
             if flushNow { flushSRAM(sync: true) }
 
+            let mode = audioMode.load(ordering: .acquiring)
+            if mode != Self.audioClock && audioRing.availableFrames >= Self.audioTargetFrames {
+                if mode == Self.audioPriming { markAudioPrimed() }
+                let waitResult = audioConsumed.wait(timeout: .now() + Self.audioWait)
+                if mode == Self.audioLive {
+                    if waitResult == .success {
+                        audioTimeouts = 0
+                    } else {
+                        audioTimeouts += 1
+                        if audioTimeouts >= Self.audioTimeoutLimit {
+                            // El timeout acumulado evita congelar el juego si muere el callback.
+                            audioMode.store(Self.audioClock, ordering: .releasing)
+                            audioFallbackCount.wrappingAdd(1, ordering: .relaxed)
+                            deadline = Double(mach_absolute_time())
+                            Task { @MainActor [weak self] in
+                                guard let self,
+                                      self.audioMode.load(ordering: .acquiring) == Self.audioClock else { return }
+                                self.audioOutput.stop()
+                            }
+                        }
+                    }
+                } else {
+                    audioTimeouts = 0
+                }
+                continue
+            }
+
+            let frameStarted = mach_absolute_time()
             core.setButtons(buttons.value)
             core.runFrame()
+            drainAudio()
             frames.publish { core.copyFramebuffer(to: $0) }
             checkSRAM()
+            recordFrameDuration(from: frameStarted, to: mach_absolute_time())
 
-            // Pacing por reloj hasta que llegue el audio (M5).
-            deadline += frameTicks
-            let now = Double(mach_absolute_time())
-            if now - deadline > 5 * frameTicks {
-                deadline = now // demasiado atrasados: no intentar recuperar
-            } else if deadline > now {
-                mach_wait_until(UInt64(deadline))
+            if mode == Self.audioPriming && audioRing.availableFrames >= Self.audioTargetFrames {
+                markAudioPrimed()
+            }
+
+            if mode == Self.audioClock {
+                // Fallback si iOS no ofrece salida o el motor no pudo arrancar.
+                deadline += frameTicks
+                let now = Double(mach_absolute_time())
+                if now - deadline > 5 * frameTicks {
+                    deadline = now // demasiado atrasados: no intentar recuperar
+                } else if deadline > now {
+                    mach_wait_until(UInt64(deadline))
+                }
             }
         }
 
@@ -174,6 +279,30 @@ final class EmulatorSession: @unchecked Sendable {
         finished = true
         control.broadcast()
         control.unlock()
+    }
+
+    private func drainAudio() {
+        while true {
+            let count = core.readAudio(into: audioScratch, maxFrames: Self.audioScratchFrames)
+            guard count > 0 else { return }
+            _ = audioRing.write(from: audioScratch, frames: count)
+        }
+    }
+
+    private func markAudioPrimed() {
+        control.lock()
+        if !audioPrimed {
+            audioPrimed = true
+            control.broadcast()
+        }
+        control.unlock()
+    }
+
+    private func recordFrameDuration(from start: UInt64, to end: UInt64) {
+        let sample = Int(seconds(end - start) * 1_000_000)
+        let previous = averageFrameMicros.load(ordering: .relaxed)
+        averageFrameMicros.store(previous == 0 ? sample : (previous * 9 + sample) / 10,
+                                 ordering: .relaxed)
     }
 
     /// Debounce de 1,0 s tras cada "juego guardó" y red de seguridad de 60 s

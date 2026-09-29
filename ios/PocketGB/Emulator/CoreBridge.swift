@@ -75,10 +75,10 @@ final class CoreBridge {
     deinit { gb_destroy(g) }
 
     /// Copia el ROM dentro del núcleo (`gb_load_rom` no retiene `data`).
-    func loadROM(_ data: Data, unixTime: Int64) throws(CoreError) -> RomInfo {
+    func loadROM(_ data: Data, unixTime: Int64, sampleRate: UInt32 = 0) throws(CoreError) -> RomInfo {
         var opts = gb_options()
         gb_options_default(&opts)
-        opts.sample_rate = 0 // el audio llega en M5
+        opts.sample_rate = sampleRate
         opts.unix_time = unixTime
         let r = data.withUnsafeBytes { raw in
             gb_load_rom(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &opts)
@@ -106,6 +106,11 @@ final class CoreBridge {
     func copyFramebuffer(to dst: UnsafeMutablePointer<UInt32>) {
         guard let src = gb_framebuffer(g) else { return }
         dst.update(from: src, count: FrameBuffers.pixelCount)
+    }
+
+    /// Drena frames estéreo intercalados al buffer que posee la sesión.
+    func readAudio(into dst: UnsafeMutablePointer<Int16>, maxFrames: Int) -> Int {
+        Int(gb_audio_read(g, dst, maxFrames))
     }
 
     // MARK: SRAM

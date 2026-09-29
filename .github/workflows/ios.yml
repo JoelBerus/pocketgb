@@ -45,7 +45,8 @@ jobs:
             echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- $(xcodebuild -version | tr '\n' ' ')"
             echo; echo "## Errores y warnings del proyecto"; echo '```'
-            grep -E '(error|warning): ' "$LOG" | grep -v appintentsmetadataprocessor | sort -u || echo "(ninguno)"
+            W=$(grep -E '(error|warning): ' "$LOG" | grep -v appintentsmetadataprocessor | sort -u || true)
+            echo "${W:-(ninguno)}"
             echo '```'; echo; echo "## Tests"; echo '```'
             grep -E 'Test Case .*(passed|failed)|✔ Test|✘ Test|TEST (SUCCEEDED|FAILED)|BUILD FAILED' "$LOG" | tail -80 || true
             echo '```'; echo; echo "## Capturas"

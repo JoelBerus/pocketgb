@@ -1,13 +1,13 @@
-import os
 import PocketGBCore
+import Synchronization
 import SwiftUI
 import UIKit
 
 /// Máscara de botones publicada por la UI y leída por el hilo de emulación cada frame.
 final class ButtonMask: Sendable {
-    private let state = OSAllocatedUnfairLock(initialState: UInt8(0))
-    var value: UInt8 { state.withLock { $0 } }
-    func set(_ mask: UInt8) { state.withLock { $0 = mask } }
+    private let state = Atomic<UInt8>(0)
+    var value: UInt8 { state.load(ordering: .acquiring) }
+    func set(_ mask: UInt8) { state.store(mask, ordering: .releasing) }
 }
 
 /// Una sola UIView multitáctil para todos los controles (docs/04 §Controles).

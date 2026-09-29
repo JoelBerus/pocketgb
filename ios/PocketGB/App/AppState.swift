@@ -23,7 +23,10 @@ final class AppState {
                 return
             }
             let data = try Data(contentsOf: url)
-            let session = try EmulatorSession(romData: data, savesDirectory: SaveStore.defaultDirectory())
+            let session = try EmulatorSession(romData: data,
+                                              savesDirectory: SaveStore.defaultDirectory()) { [weak self] in
+                self?.enterBackground()
+            }
             session.start()
             self.session = session
             paused = false

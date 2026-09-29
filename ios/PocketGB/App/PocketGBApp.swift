@@ -79,6 +79,9 @@ struct StartView: View {
 struct GameScreen: View {
     @Environment(AppState.self) private var state
     let session: EmulatorSession
+    #if DEBUG
+    @State private var showDebugHUD = DebugArguments.debugHUD
+    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -89,6 +92,12 @@ struct GameScreen: View {
                     // Horizontal: pantalla completa; los controles usan el safe area por dentro.
                     ZStack {
                         GameMetalView(frames: session.frames, integerScale: true)
+                            #if DEBUG
+                            .overlay {
+                                ThreeFingerTapInstaller { showDebugHUD.toggle() }
+                                    .allowsHitTesting(false)
+                            }
+                            #endif
                         ControlsOverlay(buttons: session.buttons, portrait: false) { state.closeGame() }
                     }
                     .ignoresSafeArea()
@@ -97,6 +106,12 @@ struct GameScreen: View {
                     VStack(spacing: 0) {
                         GameMetalView(frames: session.frames, integerScale: false)
                             .aspectRatio(10.0 / 9.0, contentMode: .fit)
+                            #if DEBUG
+                            .overlay {
+                                ThreeFingerTapInstaller { showDebugHUD.toggle() }
+                                    .allowsHitTesting(false)
+                            }
+                            #endif
                         ControlsOverlay(buttons: session.buttons, portrait: true) { state.closeGame() }
                             .ignoresSafeArea(edges: .bottom)
                     }
@@ -107,6 +122,15 @@ struct GameScreen: View {
                         .buttonStyle(.borderedProminent)
                         .font(.title2)
                 }
+                #if DEBUG
+                if showDebugHUD {
+                    DebugHUD(session: session)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: .topLeading)
+                        .padding(6)
+                        .allowsHitTesting(false)
+                }
+                #endif
             }
         }
         .persistentSystemOverlays(.hidden)
@@ -143,6 +167,8 @@ struct RomPicker: UIViewControllerRepresentable {
 #if DEBUG
 /// Argumentos de arranque solo para pruebas y capturas (ios/README.md).
 enum DebugArguments {
+    static var debugHUD: Bool { ProcessInfo.processInfo.arguments.contains("-debugHUD") }
+
     /// `-uiStyle light|dark` fuerza la apariencia.
     static var colorScheme: ColorScheme? {
         let args = ProcessInfo.processInfo.arguments
