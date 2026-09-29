@@ -72,6 +72,7 @@ static void oam_scan(gb *g)
     struct gb_ppu *p = &g->ppu;
     unsigned height = (p->lcdc & 0x04) ? 16 : 8;
     unsigned line = p->ly + 16u;
+    p->obj_height = (uint8_t)height;
     p->obj_count = 0;
     for (uint8_t i = 0; i < 40 && p->obj_count < PPU_MAX_OBJS; i++) {
         unsigned y = g->mem.oam[i * 4];
@@ -163,13 +164,17 @@ static void render_line(gb *g)
         order[j] = o;
     }
 
-    unsigned height = (lcdc & 0x04) ? 16 : 8;
+    /* Altura de la búsqueda OAM: si LCDC.2 u OAM (DMA) cambian durante el modo 3,
+     * se descarta el objeto que ya no cubre la línea en vez de dibujar basura. */
+    unsigned height = p->obj_height;
     bool claimed[GB_SCREEN_W] = { false };
     for (unsigned k = 0; k < n; k++) {
         const uint8_t *o = &g->mem.oam[order[k] * 4];
         int oy = (int)o[0] - 16, ox = (int)o[1] - 8;
         uint8_t tile = o[2], attr = o[3];
         unsigned row = (unsigned)(p->ly - oy);
+        if (row >= height)
+            continue;
         if (attr & 0x40)
             row = height - 1 - row;
         if (height == 16)
@@ -256,16 +261,6 @@ void ppu_tick(gb *g, unsigned dots)
         update_stat_line(g);
         p->next_event = next_event(p);
     }
-}
-
-bool ppu_vram_blocked(const gb *g)
-{
-    return (g->ppu.lcdc & 0x80) && g->ppu.mode == 3;
-}
-
-bool ppu_oam_blocked(const gb *g)
-{
-    return (g->ppu.lcdc & 0x80) && (g->ppu.mode == 2 || g->ppu.mode == 3);
 }
 
 uint8_t ppu_read(const gb *g, uint16_t addr)

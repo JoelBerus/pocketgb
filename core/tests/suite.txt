@@ -45,9 +45,7 @@ M1|mooneye-test-suite/acceptance/serial/boot_sclk_align-dmgABCmgb.gb|mooneye|dmg
 
 # ---- M2: PPU DMG (requeridos por docs/06-testing.md) ----
 M2|dmg-acid2/dmg-acid2.gb|acid|dmg|600|requerido|dmg-acid2/dmg-acid2-dmg.png
-M2|mooneye-test-suite/acceptance/oam_dma/basic.gb|mooneye|dmg|1200|requerido
-M2|mooneye-test-suite/acceptance/oam_dma/reg_read.gb|mooneye|dmg|1200|requerido
-M2|mooneye-test-suite/acceptance/oam_dma_start.gb|mooneye|dmg|1200|requerido
+# oam_dma/{basic,reg_read}.gb y oam_dma_start.gb (requeridos de M2) ya se ejecutan desde el bloque M1.
 # ---- M2: extras de la PPU que ya pasan ----
 M2|mooneye-test-suite/acceptance/ppu/intr_2_0_timing.gb|mooneye|dmg|1200|requerido
 M2|mooneye-test-suite/acceptance/ppu/intr_2_mode0_timing.gb|mooneye|dmg|1200|requerido

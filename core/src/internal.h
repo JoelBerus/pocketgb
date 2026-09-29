@@ -64,6 +64,7 @@ struct gb_ppu {
     uint8_t window_line; /* contador interno: solo avanza si la ventana se dibujó */
     bool wy_triggered;   /* LY == WY se cumplió en este frame */
     uint8_t obj_count;   /* objetos de la línea (búsqueda OAM, máx. 10) */
+    uint8_t obj_height;  /* altura de objeto (8/16) usada en la búsqueda */
     uint8_t objs[PPU_MAX_OBJS];
     bool stat_line;      /* OR de las fuentes STAT, para detectar el flanco de subida */
     bool frame_done;     /* se activa al entrar en VBlank */
@@ -153,8 +154,15 @@ void ppu_reset(gb *g);
 void ppu_tick(gb *g, unsigned dots);
 uint8_t ppu_read(const gb *g, uint16_t addr);
 void ppu_write(gb *g, uint16_t addr, uint8_t v);
-bool ppu_vram_blocked(const gb *g);     /* modo 3: la CPU no ve VRAM */
-bool ppu_oam_blocked(const gb *g);      /* modos 2 y 3: la CPU no ve OAM */
+/* Con el LCD encendido la CPU no ve VRAM en modo 3 ni OAM en modos 2 y 3. */
+static inline bool ppu_vram_blocked(const gb *g)
+{
+    return (g->ppu.lcdc & 0x80) && g->ppu.mode == 3;
+}
+static inline bool ppu_oam_blocked(const gb *g)
+{
+    return (g->ppu.lcdc & 0x80) && (g->ppu.mode == 2 || g->ppu.mode == 3);
+}
 
 /* dma.c */
 void dma_reset(gb *g);

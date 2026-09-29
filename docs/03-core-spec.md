@@ -74,7 +74,7 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - El reloj interno de la serie (8192 Hz) es el flanco de bajada del bit 8 del mismo contador.
 
 ## PPU (DMG, luego CGB)
-- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank. En la línea 144, el modo 1 y la IRQ de VBlank llegan 4 dots después del cambio de LY El latch de WY se evalúa al comienzo de cada línea visible (LY == WY) y se reinicia en la línea 0.
+- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank. En la línea 144, el modo 1 y la IRQ de VBlank llegan 4 dots después del cambio de LY. El latch de WY se evalúa al comienzo de cada línea visible (LY == WY) y se reinicia en la línea 0.
 - Registros: `LCDC FF40`, `STAT FF41`, `SCY/SCX FF42/43`, `LY FF44` (solo lectura), `LYC FF45`, `DMA FF46`, `BGP FF47`, `OBP0/1 FF48/49`, `WY/WX FF4A/4B`.
 - **Línea STAT:** OR de (modo0 & bit3) | (modo1 & bit4) | (modo2 & bit5) | (LY==LYC & bit6). La interrupción se pide solo en el **flanco de subida** de esa OR ("STAT blocking").
 - **Render de línea:** fondo (SCX/SCY con wrap), ventana (contador de línea interno propio, que solo avanza si la ventana se dibujó en esa línea, `WX-7`), sprites (máx. 10 por línea en orden OAM; prioridad DMG = menor X y luego menor índice OAM; 8×16 ignora el bit 0 del tile; bit de prioridad BG sobre OBJ contra el color 0 del fondo).

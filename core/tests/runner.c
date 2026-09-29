@@ -224,12 +224,15 @@ int main(int argc, char **argv)
     if (dump_path) {
         framebuffer_bytes(g, frame);
         FILE *f = fopen(dump_path, "wb");
-        if (!f || fwrite(frame, 1, FB_BYTES, f) != FB_BYTES)
+        bool ok = f && fwrite(frame, 1, FB_BYTES, f) == FB_BYTES;
+        if (f && fclose(f) != 0)
+            ok = false;
+        if (!ok) {
             fprintf(stderr, "no se pudo escribir %s\n", dump_path);
-        if (f)
-            fclose(f);
+            result = 2;
+        }
     }
-    printf("%s: %s (frame %ld)\n", result == 0 ? "PASS" : "FAIL", reason, frame_no);
+    printf("%s: %s (frame %ld)\n", result == 0 ? "PASS" : result == 1 ? "FAIL" : "ERROR", reason, frame_no);
     if (strcmp(mode, "mooneye") == 0 && g->dbg.ld_b_b)
         printf("  B=%02X C=%02X D=%02X E=%02X H=%02X L=%02X\n", g->dbg.regs[0], g->dbg.regs[1],
                g->dbg.regs[2], g->dbg.regs[3], g->dbg.regs[4], g->dbg.regs[5]);

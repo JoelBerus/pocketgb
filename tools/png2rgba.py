@@ -28,12 +28,12 @@ def read_png(path):
     data = open(path, "rb").read()
     if not data.startswith(SIG):
         sys.exit(f"{path}: no es un PNG")
-    pos, idat, plte, trns = 8, b"", None, None
+    pos, idat, plte, trns, ihdr = 8, b"", None, None, None
     while pos < len(data):
         n, kind = struct.unpack(">I4s", data[pos:pos + 8])
         chunk = data[pos + 8:pos + 8 + n]
         if kind == b"IHDR":
-            w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", chunk)
+            ihdr = struct.unpack(">IIBBBBB", chunk)
         elif kind == b"PLTE":
             plte = chunk
         elif kind == b"tRNS":
@@ -41,11 +41,16 @@ def read_png(path):
         elif kind == b"IDAT":
             idat += chunk
         pos += 12 + n
+    if ihdr is None:
+        sys.exit(f"{path}: falta IHDR")
+    w, h, depth, ctype, _, _, interlace = ihdr
+    if ctype not in (0, 2, 3, 4, 6):
+        sys.exit(f"{path}: tipo de color {ctype} no válido")
     if interlace:
         sys.exit(f"{path}: PNG entrelazado no soportado")
     channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
-    if depth != 8 and ctype not in (0, 3):
-        sys.exit(f"{path}: profundidad {depth} no soportada para tipo {ctype}")
+    if depth != 8 and not (ctype in (0, 3) and depth in (1, 2, 4)):
+        sys.exit(f"{path}: profundidad {depth} no soportada para tipo {ctype} (solo 8, o 1/2/4 en gris/paleta)")
     bits_pp = channels * depth
     stride = (w * bits_pp + 7) // 8
     bpp = max(1, bits_pp // 8)

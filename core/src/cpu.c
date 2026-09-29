@@ -24,12 +24,10 @@ static inline bool bus_blocked(const gb *g, uint16_t addr)
         if (addr >= 0xFE00 || on_vram_bus(addr) == on_vram_bus(g->dma.src))
             return true;
     }
-    if (!(g->ppu.lcdc & 0x80))
-        return false;
     if (on_vram_bus(addr))
-        return g->ppu.mode == 3;
+        return ppu_vram_blocked(g);
     if (addr >= 0xFE00 && addr < 0xFEA0)
-        return g->ppu.mode == 2 || g->ppu.mode == 3;
+        return ppu_oam_blocked(g);
     return false;
 }
 
