@@ -75,11 +75,14 @@ case 0x09: case 0x19: case 0x29: case 0x39:                     /* ADD HL,rr */
     add_hl(c, get_rr(c, op >> 4));
     break;
 case 0x10:                                                      /* STOP */
-    /* DMG: se trata como HALT profundo hasta que se pulse un botón.
-     * El doble de velocidad (CGB, KEY1) llega en M8. STOP reinicia DIV. */
+    /* CGB con KEY1 bit 0: cambio de velocidad. Si no, HALT profundo hasta que
+     * se pulse un botón. STOP reinicia DIV. (No se emula la pausa de ~2050
+     * M-ciclos del cambio de velocidad.) */
     c->pc++;
     timer_write(g, 0xFF04, 0);
-    if (!g->joy.buttons)
+    if (cgb_native(g) && g->cgb.speed_prepare)
+        cgb_speed_switch(g);
+    else if (!g->joy.buttons)
         c->stopped = true;
     break;
 case 0x18: {                                                    /* JR e */

@@ -291,12 +291,27 @@ static void dispatch_interrupt(gb *g)
 void cpu_reset(gb *g)
 {
     struct gb_cpu *c = &g->cpu;
-    /* DMG rev. ABC tras el boot ROM (docs/03-core-spec.md §Arranque) */
-    c->a = 0x01;
-    c->f = g->cart.rom[0x14D] ? 0xB0 : 0x80;
-    c->b = 0x00; c->c = 0x13;
-    c->d = 0x00; c->e = 0xD8;
-    c->h = 0x01; c->l = 0x4D;
+    /* Registros tras el arranque (docs/03-core-spec.md §Arranque) */
+    if (!g->cgb.on) {           /* DMG rev. ABC */
+        c->a = 0x01;
+        c->f = g->cart.rom[0x14D] ? 0xB0 : 0x80;
+        c->b = 0x00; c->c = 0x13;
+        c->d = 0x00; c->e = 0xD8;
+        c->h = 0x01; c->l = 0x4D;
+    } else if (!g->cgb.compat) { /* CGB nativo */
+        c->a = 0x11; c->f = 0x80;
+        c->b = 0x00; c->c = 0x00;
+        c->d = 0xFF; c->e = 0x56;
+        c->h = 0x00; c->l = 0x0D;
+    } else {                    /* CGB con un ROM DMG */
+        bool nintendo;
+        uint8_t sum = cgb_title_checksum(g, &nintendo);
+        c->a = 0x11; c->f = 0x80;
+        c->b = nintendo ? sum : 0x00; c->c = 0x00;
+        c->d = 0x00; c->e = 0x08;
+        bool logo = c->b == 0x43 || c->b == 0x58;
+        c->h = logo ? 0x99 : 0x00; c->l = logo ? 0x1A : 0x7C;
+    }
     c->sp = 0xFFFE;
     c->pc = 0x0100;
     c->ime = false;
@@ -312,6 +327,11 @@ void cpu_step(gb *g)
     struct gb_cpu *c = &g->cpu;
 
     if (c->locked || c->stopped) {
+        cpu_idle(g);
+        return;
+    }
+    if (g->cgb.stall) {         /* HDMA: la CPU espera mientras se copia */
+        g->cgb.stall--;
         cpu_idle(g);
         return;
     }

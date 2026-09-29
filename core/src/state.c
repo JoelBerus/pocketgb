@@ -1,7 +1,7 @@
 /*
  * state.c — save states (docs/03-core-spec.md §Save states).
  *
- *   "PGBS" | u32 versión (2) | u8 sha256_rom[32] | u32 modelo |
+ *   "PGBS" | u32 versión (3) | u8 sha256_rom[32] | u32 modelo (1 DMG, 2 CGB, 3 compat.) |
  *   secciones {u32 tag, u32 len, bytes}... | u32 crc32
  *
  * Little-endian. Cada campo se serializa por separado (sin memcpy de structs).
@@ -16,7 +16,8 @@
 
 #include "internal.h"
 
-enum { STATE_VERSION = 2, STATE_MODEL_DMG = 1 };   /* v2: sección APU (M5) */
+/* v2: sección APU (M5) · v3: VRAM/WRAM con bancos y sección CGB (M8) */
+enum { STATE_VERSION = 3, STATE_MODEL_DMG = 1, STATE_MODEL_CGB = 2, STATE_MODEL_COMPAT = 3 };
 enum { HEADER_BYTES = 4 + 4 + 32 + 4, CRC_BYTES = 4 };
 
 static const uint32_t crc_table[256] = {
@@ -263,12 +264,12 @@ static void visit(struct io *io, gb *g)
      * al aplicar, para que nunca haya un modo incoherente con LY/dot (auditoría M3, H1). */
     struct gb_ppu *p = &g->ppu;
     s = section_begin(io, TAG('P', 'P', 'U', ' '));
-    u16(io, &p->dot, 452); u16(io, &p->mode3_end, 80 + 172 + 7 + 6 * PPU_MAX_OBJS);
+    u16(io, &p->dot, 454); u16(io, &p->mode3_end, 80 + 172 + 7 + 6 * PPU_MAX_OBJS);
     u16(io, &p->next_event, 456);
     if (loading(io) && io->ok) {
         unsigned dot = io->in[io->pos - 6] | io->in[io->pos - 5] << 8;
         unsigned mode3_end = io->in[io->pos - 4] | io->in[io->pos - 3] << 8;
-        if (dot % 4 != 0 || mode3_end < 80 + 172)
+        if (dot % 2 != 0 || mode3_end < 80 + 172)   /* pasos de 4 dots, o de 2 en doble velocidad */
             io->ok = false;
     }
     u8(io, &p->ly, 153); u8(io, &p->mode, 3);
@@ -339,7 +340,7 @@ static void visit(struct io *io, gb *g)
 
     struct gb_serial *se = &g->serial;
     s = section_begin(io, TAG('S', 'E', 'R', ' '));
-    u8(io, &se->sb, 0xFF); u8m(io, &se->sc, 0x81); u8(io, &se->bits, 7); u8(io, &se->out, 0xFF);
+    u8(io, &se->sb, 0xFF); u8m(io, &se->sc, cgb_native(g) ? 0x83 : 0x81); u8(io, &se->bits, 7); u8(io, &se->out, 0xFF);
     section_end(io, s);
 
     struct gb_joypad *j = &g->joy;
@@ -376,6 +377,49 @@ static void visit(struct io *io, gb *g)
     }
     section_end(io, s);
 
+    /* CGB: se lee en copias locales para validar la relación entre campos (fuera
+     * de CGB nativo, bancos a 0 y sin doble velocidad ni HDMA). */
+    struct gb_cgb cg = g->cgb;
+    uint8_t vbk = g->mem.vbk, svbk = g->mem.svbk;
+    local = *io;
+    if (local.mode == IO_CHECK)
+        local.mode = IO_APPLY;
+    s = section_begin(&local, TAG('C', 'G', 'B', ' '));
+    u8(&local, &vbk, 1); u8(&local, &svbk, 7);
+    flag(&local, &cg.double_speed); flag(&local, &cg.speed_prepare);
+    u8m(&local, &cg.bcps, 0xBF); u8m(&local, &cg.ocps, 0xBF);
+    bytes(&local, cg.bg_pal, sizeof cg.bg_pal);
+    bytes(&local, cg.obj_pal, sizeof cg.obj_pal);
+    u8(&local, &cg.opri, 1);
+    u16(&local, &cg.hdma_src, 0xFFF0); u16(&local, &cg.hdma_dst, 0x1FF0);
+    u8(&local, &cg.hdma_len, 0x7F);
+    flag(&local, &cg.hdma_active); flag(&local, &cg.hdma_req);
+    /* Máximo alcanzable: un bloque de HBlank en el mismo M-ciclo que arranca un
+     * HDMA general de 128 bloques, en doble velocidad (auditoría M8, H1). */
+    u16(&local, &cg.stall, 16 + 128 * 16);
+    u8m(&local, &cg.rp, 0xC1);
+    u8(&local, &cg.ff72, 0xFF); u8(&local, &cg.ff73, 0xFF); u8(&local, &cg.ff74, 0xFF);
+    u8m(&local, &cg.ff75, 0x70);
+    section_end(&local, s);
+    local.mode = io->mode;
+    *io = local;
+    if (loading(io) && ((cg.hdma_src & 0x0F) || (cg.hdma_dst & 0x0F)))
+        io->ok = false;
+    if (loading(io) && !cgb_native(g) &&
+        (vbk || svbk || cg.double_speed || cg.speed_prepare || cg.hdma_active || cg.hdma_req || cg.stall))
+        io->ok = false;
+    if (io->mode == IO_APPLY) {
+        cg.on = g->cgb.on;           /* el modelo lo fija gb_load_rom, no el archivo */
+        cg.compat = g->cgb.compat;
+        g->cgb = cg;
+        g->mem.vbk = vbk;
+        g->mem.svbk = svbk;
+        g->mem.wram_bank = svbk ? svbk : 1;
+        cgb_update_rgba(g);
+        if (g->cgb.compat)
+            cgb_load_compat_palettes(g);   /* manda la selección actual, no la del archivo (H5) */
+    }
+
     s = section_begin(io, TAG('M', 'I', 'S', 'C'));
     u64(io, &g->cycles);
     for (size_t i = 0; i < GB_SCREEN_W * GB_SCREEN_H; i++)
@@ -384,6 +428,13 @@ static void visit(struct io *io, gb *g)
 }
 
 /* ---- API pública ---- */
+
+static uint32_t state_model(const gb *g)
+{
+    if (!g->cgb.on)
+        return STATE_MODEL_DMG;
+    return g->cgb.compat ? STATE_MODEL_COMPAT : STATE_MODEL_CGB;
+}
 
 size_t gb_state_size(const gb *g)
 {
@@ -417,11 +468,22 @@ gb_result gb_state_save(const gb *g, uint8_t *out, size_t cap)
     memcpy(out, "PGBS", 4);
     put32(out + 4, STATE_VERSION);
     memcpy(out + 8, g->info.fingerprint, 32);
-    put32(out + 40, STATE_MODEL_DMG);
+    put32(out + 40, state_model(g));
     struct io io = { IO_SAVE, out + HEADER_BYTES, NULL, total - HEADER_BYTES - CRC_BYTES, 0, true };
     visit(&io, (gb *)g);   /* IO_SAVE solo lee la instancia */
     if (!io.ok || io.pos != io.len)
         return GB_ERR_BUFFER_TOO_SMALL;   /* no debería ocurrir: tamaño medido arriba */
+    /* Lo guardado tiene que poder cargarse: se valida con la misma pasada que
+     * gb_state_load (auditoría M8, H1). Si no, es un error del núcleo, y es
+     * mejor fallar ahora que dejar al jugador un estado ilegible. */
+    struct io check = { IO_CHECK, NULL, out + HEADER_BYTES, total - HEADER_BYTES - CRC_BYTES, 0, true };
+    visit(&check, (gb *)g);               /* IO_CHECK no modifica la instancia */
+    if ((!check.ok || check.pos != check.len)
+#ifdef GB_TEST_HOOKS
+        && !g->dbg.unchecked_save
+#endif
+    )
+        return GB_ERR_STATE_CORRUPT;
     put32(out + total - CRC_BYTES, crc32_update(0, out, total - CRC_BYTES));
     return GB_OK;
 }
@@ -443,8 +505,11 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len)
         return GB_ERR_STATE_CORRUPT;
     if (memcmp(data + 8, g->info.fingerprint, 32) != 0)
         return GB_ERR_STATE_ROM_MISMATCH;
-    if (get32(data + 40) != STATE_MODEL_DMG)
+    uint32_t model = get32(data + 40);
+    if (model < STATE_MODEL_DMG || model > STATE_MODEL_COMPAT)
         return GB_ERR_STATE_CORRUPT;
+    if (model != state_model(g))
+        return GB_ERR_STATE_ROM_MISMATCH;   /* mismo ROM, pero cargado en otro modelo */
 
     size_t body = len - HEADER_BYTES - CRC_BYTES;
     struct io io = { IO_CHECK, NULL, data + HEADER_BYTES, body, 0, true };

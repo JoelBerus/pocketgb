@@ -2,9 +2,9 @@
  * gb.c — ciclo de vida de la instancia, carga del ROM y bucle de ejecución.
  * API pública: include/pocketgb.h. Spec: docs/03-core-spec.md.
  *
- * Pendiente por hito:
- * modo CGB (M8; hasta entonces un ROM solo-CGB devuelve GB_ERR_CGB_ONLY y uno
- * compatible corre como DMG).
+ * Modelo: DMG, CGB nativa o CGB en compatibilidad (ROM DMG con paleta de color).
+ * En doble velocidad la CPU y el timer van a 2×: cada M-ciclo de CPU son 2 dots
+ * de PPU/APU/RTC y 2 T-ciclos de gb_cycle_count (tiempo real).
  */
 #include <stdlib.h>
 #include <string.h>
@@ -43,15 +43,25 @@ void gb_destroy(gb *g)
 
 void gb_tick(gb *g, unsigned tcycles)
 {
+    unsigned dots = g->cgb.double_speed ? 2 : 4;
     for (; tcycles >= 4; tcycles -= 4) {
         if (!g->cpu.stopped)
             timer_tick(g);      /* STOP pone DIV a 0 y lo congela hasta salir */
         dma_tick(g);
-        g->apu.pending += 4;   /* el APU se pone al día al tocar sus registros (apu_sync) */
-        ppu_tick(g, 4);
+        g->apu.pending += dots; /* el APU se pone al día al tocar sus registros (apu_sync) */
+        ppu_tick(g, dots);
+        if (g->cgb.hdma_req) {
+            /* HDMA de HBlank: un bloque al entrar en modo 0. Con la CPU en HALT
+             * o STOP la transferencia se detiene y sigue en el siguiente HBlank
+             * tras despertar (Pan Docs, FF55; auditoría M8, H2). */
+            if (g->cpu.halted || g->cpu.stopped)
+                g->cgb.hdma_req = false;
+            else
+                cgb_hdma_hblank(g);
+        }
         if (g->cart.has_rtc)
-            rtc_tick(g, 4);
-        g->cycles += 4;
+            rtc_tick(g, dots);
+        g->cycles += dots;
     }
 }
 
@@ -60,6 +70,7 @@ void gb_reset(gb *g)
     if (!g || !g->rom_loaded)
         return;
     mmu_reset(g);
+    cgb_reset(g);
     cart_reset(g);
     timer_reset(g);
     apu_reset(g);
@@ -75,6 +86,8 @@ static void unload(gb *g)
 {
     cart_free(g);
     memset(&g->info, 0, sizeof g->info);
+    g->cgb.on = g->cgb.compat = false;
+    g->cgb.double_speed = false;
     g->rom_loaded = false;
 }
 
@@ -106,12 +119,17 @@ gb_result gb_load_rom(gb *g, const uint8_t *data, size_t len, const gb_options *
         return r;
     }
     rtc_reset(g, o.unix_time);
-    /* Hasta M8 no hay modo CGB: un ROM solo-CGB no puede ejecutarse. */
-    if (g->cart.rom[0x143] == 0xC0) {
+    /* Modelo: AUTO (o un valor desconocido) = CGB si el ROM la soporta. */
+    uint8_t flag = g->cart.rom[0x143];
+    bool cgb = o.model == GB_MODEL_CGB || (o.model != GB_MODEL_DMG && (flag & 0x80));
+    if (!cgb && flag == 0xC0) {
         unload(g);
         return GB_ERR_CGB_ONLY;
     }
-    g->info.cgb_mode = false;
+    g->cgb.on = cgb;
+    g->cgb.compat = cgb && !(flag & 0x80);
+    g->info.cgb_mode = cgb;
+    g->info.cgb_compat = g->cgb.compat;
 
     g->opts = o;
     g->rom_loaded = true;

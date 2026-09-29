@@ -5,7 +5,7 @@ Fuente canónica: **Pan Docs** (https://gbdev.io/pandocs/). Si este documento y 
 ## Principios
 - **Modelo de tiempo: la CPU manda.** Cada acceso a memoria de la CPU cuesta 1 M-ciclo (4 T-ciclos) y llama a `gb_tick(gb, 4)`. Esa función avanza timer, PPU, APU, DMA y serial. Así, las lecturas y escrituras ocurren en el ciclo correcto dentro de la instrucción, que es lo que piden `instr_timing` y `mem_timing`.
 - **PPU por scanline** (no FIFO) en v1: la línea se renderiza al entrar en modo 0 (HBlank), con los registros vigentes en ese momento. Modo 3 = 172 dots + `SCX % 8` + 6 por objeto de la línea (penalización simplificada). Basta para dmg-acid2 y Pokémon; el tiempo fino de STAT/LCD de Mooneye (`ppu/*` marcados `known-fail` en `suite.txt`) queda fuera de v1.
-- **Doble velocidad CGB:** la CPU y el timer van a 2×; PPU y APU siguen en tiempo real. `gb_tick` recibe T-ciclos de CPU y convierte.
+- **Doble velocidad CGB:** la CPU y el timer van a 2×; PPU, APU y RTC siguen en tiempo real. `gb_tick` recibe T-ciclos de CPU y convierte: en doble velocidad cada M-ciclo son 2 dots. `gb_cycle_count` y el límite de `gb_run_frame` cuentan tiempo real (70 224 por frame en las dos velocidades). Verificado con Blargg `interrupt_time` (solo-CGB).
 
 ## Arranque (sin boot ROM)
 Estado post-boot (Pan Docs → *Power Up Sequence*):
@@ -24,7 +24,13 @@ Verificación: Mooneye `acceptance/boot_regs-dmgABC.gb` (requerido en M1) y `mis
 
 Los registros de E/S se inicializan con la tabla *Hardware registers* de la misma página, por modelo (p. ej. `LCDC=0x91`, `STAT=0x85`, `BGP=0xFC`, `IF=0xE1`, `NR52=0xF1`, `DIV` interno según el modelo). Los juegos detectan GBC por `A == 0x11`; Amarillo lo usa para activar color.
 
-**Selección de modo:** si `opts.model == GB_MODEL_AUTO`, se usa CGB cuando `rom[0x143] & 0x80`, y DMG en otro caso. En CGB con un ROM DMG se activa el **modo compatibilidad**: se aplica la paleta de compatibilidad por checksum del título (tabla de Pan Docs → *Compatibility palettes*).
+Contador interno del timer tras el arranque: `0xABCC` en DMG; `0x2674` en CGB con un ROM DMG (el único valor con el que pasa Mooneye `misc/boot_div-cgbABCDE`; con licencia Nintendo el arranque real tarda algo más). En CGB nativo no hay prueba que lo fije: se deja el de DMG. Paletas tras el arranque en CGB nativo: todo blanco (`0x7FFF`), también las de objetos (en el hardware quedan con basura). `boot_hwio-C` (valores exactos de E/S) queda como `known-fail`.
+
+**Selección de modo:** si `opts.model == GB_MODEL_AUTO` (o un valor desconocido), se usa CGB cuando `rom[0x143] & 0x80`, y DMG en otro caso. `GB_MODEL_DMG` con `0x143 == 0xC0` → `GB_ERR_CGB_ONLY`. En CGB con un ROM DMG se activa el **modo compatibilidad** (el arranque real escribe `KEY0=0x04` y `OPRI=1`):
+- Los registros exclusivos de CGB (`KEY1`, `VBK`, `HDMA1–5`, `RP`, `BCPS/BCPD`, `OCPS/OCPD`, `OPRI`, `SVBK`, `FF74`) leen `0xFF` e ignoran escrituras. `FF72`, `FF73` y `FF75` siguen accesibles. No hay cambio de velocidad.
+- El fondo usa la paleta de color BG 0 y los objetos OBJ 0/1 según su bit 4; `BGP/OBP0/OBP1` indexan esas paletas. Prioridad de objetos DMG (por X), sin atributos de fondo, tiles del banco 0.
+- **Paleta de compatibilidad** (Pan Docs → *Compatibility palettes*): si la licencia es Nintendo (`0x14B == 0x01`, o `0x33` con `"01"` en `0x144–0x145`), se suma el título completo (`0x134–0x143`) y se busca en la tabla de checksums; los checksums repetidos se desempatan con la 4.ª letra del título. Sin licencia Nintendo o sin coincidencia, combinación 0 (la que usan las referencias de dmg-acid2 en CGB). Cada combinación da 3 paletas (OBJ0, OBJ1, BG) de una tabla de 30. Tablas transcritas de SameBoy v1.0.3 `BootROMs/cgb_boot.asm` (MIT, citado en `cgb.c`). No se emula la copia del mapa del logo que el arranque hace para los checksums `0x43`/`0x58` (dos juegos), aunque B, H y L sí siguen esa regla.
+- **Selección manual:** `opts.compat_palette` (o `gb_set_compat_palette` en caliente; al cargar un estado en compatibilidad se reaplica la selección actual, no la del archivo): `0` = automática; `1..12` = las 12 combinaciones de botones del arranque real (→, ←, ↑, ↓, →+A, ←+A, ↑+A, ↓+A, →+B, ←+B, ↑+B, ↓+B). Fuera de rango = automática.
 
 ## Cabecera del cartucho y validación (entrada no confiable)
 | Campo | Offset | Validación |
@@ -47,9 +53,9 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 |---|---|---|
 | `0000–3FFF` | ROM banco 0 (MBC1 modo 1 puede remapear) | |
 | `4000–7FFF` | ROM banco N | `N %= num_banks` **siempre** (bounds-check) |
-| `8000–9FFF` | VRAM (CGB: 2 bancos, `VBK=FF4F`) | Inaccesible a la CPU en modo 3 → lee `0xFF` |
+| `8000–9FFF` | VRAM (CGB: 2 bancos, `VBK=FF4F`, lee `0xFE`\|banco) | Inaccesible a la CPU en modo 3 → lee `0xFF` |
 | `A000–BFFF` | RAM externa / RTC | Si la RAM está deshabilitada o no existe → lee `0xFF`, ignora escrituras. `bank %= num_ram_banks` |
-| `C000–DFFF` | WRAM (CGB: `D000` bancos 1–7 vía `SVBK=FF70`, 0→1) | |
+| `C000–DFFF` | WRAM (CGB: `D000` bancos 1–7 vía `SVBK=FF70`, 0→1; lee `0xF8`\|valor) | |
 | `E000–FDFF` | Eco de `C000–DDFF` | |
 | `FE00–FE9F` | OAM | Inaccesible en modos 2/3 y durante OAM DMA |
 | `FEA0–FEFF` | No usable | Lee `0x00` (DMG) |
@@ -63,7 +69,7 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - **Opcodes ilegales** `D3 DB DD E3 E4 EB EC ED F4 FC FD`: la CPU se bloquea (`gb->cpu.locked = true`). `gb_run_frame` sigue avanzando la PPU con pantalla fija y `gb_cpu_locked()` expone el estado para que la UI lo muestre.
 - **Interrupciones:** `IE=FFFF`, `IF=FF0F`. Prioridad VBlank(0x40) > STAT(0x48) > Timer(0x50) > Serial(0x58) > Joypad(0x60). El despacho cuesta 5 M-ciclos: el primero es el fetch del opcode, que se descarta. **Muestreo:** en cada M-ciclo primero avanza el hardware y después la CPU accede al bus; `IE & IF` se comprueba al final del M-ciclo de fetch, así que una IRQ pedida en ese mismo M-ciclo ya se atiende. En HALT la CPU repite ese fetch sin avanzar PC: con IME=1 el despacho continúa con los 4 M-ciclos restantes; con IME=0 ejecuta el opcode ya leído, sin M-ciclo extra (verificado con Mooneye `rapid_toggle`, `di_timing-GS`, `halt_ime0_nointr_timing`, `halt_ime1_timing2-GS`). El vector se elige después de escribir el byte alto de PC (si esa escritura cambia IE, PC=0: `ie_push`). `EI` tiene efecto tras la instrucción siguiente; `DI` es inmediato; `RETI` = `RET` + `IME=1` inmediato.
 - **HALT:** sale al haber `IE & IF & 0x1F` aunque `IME=0`. **Bug de HALT:** con `IME=0` y una interrupción pendiente, el siguiente byte se lee 2 veces.
-- **STOP:** en CGB con `KEY1` bit 0 → cambio de velocidad. Si no, se trata como HALT profundo hasta que se pulse un botón (suficiente para v1).
+- **STOP:** en CGB (nativo) con `KEY1` bit 0 → cambio de velocidad inmediato (`KEY1` bit 7 = velocidad actual, bit 0 se borra, DIV a 0). No se emula la pausa de ~2050 M-ciclos del hardware. Si no, se trata como HALT profundo hasta que se pulse un botón (suficiente para v1).
 
 ## Timer
 - Contador interno de 16 bits que avanza 1 por T-ciclo; `DIV` = byte alto. Escribir en `DIV` pone el contador a 0.
@@ -81,7 +87,11 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - **LCD apagado** (`LCDC` bit 7 = 0): `LY=0`, modo 0, el framebuffer se pone blanco y el siguiente encendido empieza en la línea 0.
 - **OAM DMA:** 160 M-ciclos (+1 de arranque), copia `XX00–XX9F` → OAM, 1 byte por M-ciclo. Origen `≥ 0xE0` se lee de WRAM (`XX - 0x20`). Accesos de la CPU según la fila HRAM del mapa de memoria.
 - **Paleta DMG → RGBA:** 4 tonos configurables por el frontend (`opts.dmg_palette`). Por defecto, gris neutro `#FFFFFF #AAAAAA #555555 #000000`.
-- **CGB:** atributos de tile en VRAM banco 1 (paleta, banco, flip X/Y, prioridad), `BCPS/BCPD FF68/69`, `OCPS/OCPD FF6A/6B` (autoincremento), prioridad de sprites por índice OAM, HDMA general y de HBlank (`FF51–FF55`). Color RGB555 → RGBA8888 con `c8 = (c5 << 3) | (c5 >> 2)`; la corrección de color del LCD es opcional.
+- **CGB:** atributos de tile en VRAM banco 1 (paleta, banco, flip X/Y, prioridad), `BCPS/BCPD FF68/69`, `OCPS/OCPD FF6A/6B` (autoincremento, que avanza aunque la escritura caiga en modo 3 y se ignore; leer BCPD/OCPD en modo 3 da `0xFF`), prioridad de sprites por índice OAM salvo con `OPRI` bit 0 = 1, HDMA general y de HBlank (`FF51–FF55`). Color RGB555 → RGBA8888 con `c8 = (c5 << 3) | (c5 >> 2)`; la corrección de color del LCD es opcional (la hará el frontend si se quiere). Las paletas se cachean en RGBA al escribirlas.
+- **Prioridad BG/OBJ en CGB:** con `LCDC` bit 0 = 0 los objetos van siempre encima (el fondo se sigue dibujando); si no, el fondo con color ≠ 0 tapa al objeto cuando el objeto (atributo bit 7) **o** el tile de fondo (atributo bit 7) piden prioridad. Objetos: paleta en bits 2–0, banco del tile en el bit 3. Verificado con cgb-acid2.
+- **HDMA:** origen `FF51/52` (4 bits bajos ignorados; `8000–9FFF` lee `0xFF`, `E000–FFFF` se lee como `A000–BFFF`), destino `FF53/54` dentro de VRAM (banco de `VBK`). `FF55` bit 7 = 0: general, todo de golpe con la CPU parada 8 M-ciclos por bloque de 16 bytes (16 en doble velocidad); bit 7 = 1: de HBlank, un bloque al entrar en modo 0 de cada línea visible (con la misma parada). Escribir bit 7 = 0 durante uno de HBlank lo detiene. Con la CPU en HALT o STOP el de HBlank no avanza (sigue al despertar). Si el destino pasa de `9FF0`, la transferencia termina ahí (no da la vuelta). Lectura: bit 7 = 0 si está activo, bits 6–0 = bloques restantes − 1; `0xFF` al terminar.
+- **Serie en CGB:** `SC` bit 1 = reloj rápido (flanco del bit 3 del contador, 262 144 Hz). `SC` lee `0x7C`|bits.
+- **Registros sin función:** `FF72`, `FF73` (lectura/escritura), `FF74` (solo CGB nativo), `FF75` (bits 6–4). `FF76/FF77` (PCM12/PCM34) leen 0 (no se emula la salida digital). Verificado con Mooneye `misc/bits/unused_hwio-C`.
 
 ## Joypad
 `FF00`: bits 5/4 seleccionan botones o cruceta (activo en 0); bits 3–0 = estado (0 = pulsado). Se pide la interrupción Joypad al pasar cualquier bit seleccionado de 1 a 0. **El núcleo no filtra direcciones opuestas.** Lo hace el frontend (el D-pad por ángulo nunca las genera).
@@ -121,17 +131,18 @@ Los offsets de banco se precalculan (y se acotan con `%`) en cada escritura a un
 - **Detalles verificados con Blargg `dmg_sound` 01–08 y 11:** habilitar la longitud en la primera mitad del periodo (el siguiente paso no cuenta longitud) la cuenta una vez extra, y si llega a 0 sin disparo apaga el canal; un disparo con longitud 0 recarga el máximo (64/256), o el máximo − 1 en esa primera mitad; DAC apagado (`NRx2 & 0xF8 == 0`, `NR30` bit 7) apaga el canal; sweep: sombra, periodo 0 = 8, comprobación de desborde al disparar si shift ≠ 0, y quitar el modo negativo tras usarlo apaga el canal 1. `09/10/12` (acceso a la wave RAM con el canal 3 sonando) quedan como `known-fail`.
 - **Mezcla y salida:** DAC por canal (digital 0..15 → −15..15; DAC apagado → 0) → `NR51` (paneo) → `NR50` (volumen × 1..8). Remuestreo a `opts.sample_rate` (acotado a [8 000, 192 000] Hz; 0 = sin audio) con un filtro de caja integrador (media de todos los ciclos del periodo de salida). Pasa-altos tipo condensador (carga 0.999958 por T-ciclo, como el hardware) para quitar la continua. Escala ×32: un salto de extremo a extremo tras el pasa-altos (±960) da ±30 720, sin saturar. Un band-limited (BLEP) queda como mejora.
 - **Anillo de salida:** 8 192 frames estéreo `int16` dentro de la instancia (sin `malloc`). Si el frontend no lee, las muestras nuevas se descartan (contador `dropped`). No se guarda en los save states.
-- Apagar con `NR52` bit 7 pone a 0 todos los registros excepto la wave RAM (y en DMG, los contadores de longitud, que además se pueden escribir apagado).
+- Apagar con `NR52` bit 7 pone a 0 todos los registros excepto la wave RAM (y en DMG, los contadores de longitud, que además se pueden escribir apagado). En CGB los contadores de longitud también se borran y apagado no se puede escribir nada (Blargg `cgb_sound` 08 y 11).
 
 ## Save states
 Formato binario little-endian:
 ```
 "PGBS" | u32 version | u8 rom_sha256[32] | u32 model | secciones {u32 tag, u32 len, bytes} ... | u32 crc32
 ```
-- Versión actual: 2 (M5 añadió `APU `). Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `APU `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `MISC` (contador de ciclos y framebuffer). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
-- `gb_state_load` rechaza, en este orden: magic incorrecto (`STATE_MAGIC`), versión distinta de la soportada (`STATE_VERSION`), CRC inválido o archivo truncado (`STATE_CORRUPT`), huella de ROM distinta (`STATE_ROM_MISMATCH`), modelo distinto, tag o longitud de sección incoherente, o cualquier campo fuera de rango (`STATE_CORRUPT`). **Nunca** confía en las longitudes del archivo.
+- Versión actual: 3 (M5 añadió `APU `; M8, VRAM de 16 KiB y WRAM de 32 KiB en `MEM ` y la sección `CGB `). Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `APU `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `CGB ` (bancos, velocidad, paletas, HDMA, `OPRI`, `FF56`, `FF72–75`), `MISC` (contador de ciclos y framebuffer). `model`: 1 DMG, 2 CGB, 3 CGB en compatibilidad; debe coincidir con el de la instancia (si no, `STATE_ROM_MISMATCH`: es el mismo ROM cargado en otro modelo). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
+- `gb_state_load` rechaza, en este orden: magic incorrecto (`STATE_MAGIC`), versión distinta de la soportada (`STATE_VERSION`), CRC inválido o archivo truncado (`STATE_CORRUPT`), huella de ROM distinta (`STATE_ROM_MISMATCH`), modelo distinto (`STATE_ROM_MISMATCH`), tag o longitud de sección incoherente, o cualquier campo fuera de rango (`STATE_CORRUPT`). **Nunca** confía en las longitudes del archivo.
+- `gb_state_save` valida su propia salida con la misma pasada que la carga: nunca devuelve `GB_OK` con un estado que luego no cargaría (auditoría M8, H1).
 - La carga hace una pasada que solo valida y, si todo es correcto, otra que escribe: un estado rechazado deja la instancia intacta. No reserva memoria.
-- Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` múltiplo de 4 y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
+- Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` par (pasos de 4, o de 2 en doble velocidad) y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`; fuera de CGB nativo, bancos a 0 y sin doble velocidad ni HDMA; origen y destino del HDMA alineados a 16. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
 - Toda la memoria de estado de `struct gb` se serializa campo por campo (sin `memcpy` de structs con punteros). Los offsets de banco no se guardan: se recalculan al cargar.
 
 ## Seguridad (resumen de reglas verificables)

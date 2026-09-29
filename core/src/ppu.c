@@ -1,9 +1,12 @@
 /*
- * ppu.c — PPU DMG por scanline (docs/03-core-spec.md §PPU).
+ * ppu.c — PPU DMG/CGB por scanline (docs/03-core-spec.md §PPU).
  *
  * 456 dots por línea y 154 líneas; modos 2 (80) → 3 (172 + SCX%8 + objetos)
  * → 0; modo 1 en VBlank. La línea se renderiza entera al entrar en modo 0,
- * con los registros vigentes en ese momento (basta para dmg-acid2 y Pokémon).
+ * con los registros vigentes en ese momento (basta para dmg-acid2, cgb-acid2
+ * y Pokémon). CGB: atributos de fondo en el banco 1 de VRAM, paletas de color
+ * y prioridad de objetos por índice OAM (OPRI); en compatibilidad, BGP/OBP0/OBP1
+ * indexan las paletas de color que dejó el arranque.
  */
 #include "internal.h"
 
@@ -46,7 +49,7 @@ static uint8_t mode_for(const struct gb_ppu *p)
 
 static void clear_screen(gb *g)
 {
-    uint32_t white = g->opts.dmg_palette[0];
+    uint32_t white = g->cgb.on ? 0xFFFFFFFFu : g->opts.dmg_palette[0];
     for (size_t i = 0; i < GB_SCREEN_W * GB_SCREEN_H; i++)
         g->framebuffer[i] = white;
 }
@@ -82,12 +85,14 @@ static void oam_scan(gb *g)
     p->mode3_end = (uint16_t)(MODE2_END + MODE3_BASE + (p->scx & 7) + OBJ_PENALTY * p->obj_count);
 }
 
-/* Los dos bytes (plano bajo y alto) de una fila de tile. `addr` = offset del tile en VRAM. */
-static void tile_row(const gb *g, uint16_t addr, unsigned row, uint8_t *lo, uint8_t *hi)
+/* Los dos bytes (plano bajo y alto) de una fila de tile. `addr` = offset del tile
+ * en el banco de VRAM `bank` (0/1). */
+static void tile_row(const gb *g, unsigned bank, uint16_t addr, unsigned row, uint8_t *lo, uint8_t *hi)
 {
+    const uint8_t *v = g->mem.vram + (bank ? 0x2000 : 0);
     uint16_t a = (uint16_t)((addr + row * 2) & 0x1FFF);
-    *lo = g->mem.vram[a];
-    *hi = g->mem.vram[(a + 1) & 0x1FFF];
+    *lo = v[a];
+    *hi = v[(a + 1) & 0x1FFF];
 }
 
 static uint8_t row_pixel(uint8_t lo, uint8_t hi, unsigned col)
@@ -104,18 +109,25 @@ static uint16_t bg_tile_addr(uint8_t lcdc, uint8_t tile)
     return (uint16_t)(0x1000 + (int8_t)tile * 16);
 }
 
-/* Rellena bg[x0..159] con una fila del mapa `map` empezando en la columna de mapa `mx`. */
+/* Rellena bg[x0..159] con una fila del mapa `map` empezando en la columna de mapa `mx`.
+ * En CGB nativo, attr[x] recibe el atributo del tile (banco 1 del mapa): paleta
+ * (bits 2–0), banco del tile (3), volteo X (5) e Y (6) y prioridad sobre objetos (7). */
 static void draw_tiles(const gb *g, uint8_t lcdc, uint16_t map, unsigned my, unsigned mx,
-                       unsigned x0, uint8_t *bg)
+                       unsigned x0, uint8_t *bg, uint8_t *attr)
 {
-    uint8_t lo = 0, hi = 0;
+    bool native = cgb_native(g);
+    uint8_t lo = 0, hi = 0, a = 0;
     for (unsigned x = x0; x < GB_SCREEN_W; x++, mx++) {
         unsigned px = mx & 0xFF;
         if (x == x0 || (px & 7) == 0) {
-            uint8_t tile = g->mem.vram[map + (my / 8) * 32 + px / 8];
-            tile_row(g, bg_tile_addr(lcdc, tile), my & 7, &lo, &hi);
+            unsigned m = map + (my / 8) * 32 + px / 8;
+            uint8_t tile = g->mem.vram[m];
+            a = native ? g->mem.vram[0x2000 + m] : 0;
+            unsigned row = (a & 0x40) ? 7 - (my & 7) : (my & 7);
+            tile_row(g, a & 0x08, bg_tile_addr(lcdc, tile), row, &lo, &hi);
         }
-        bg[x] = row_pixel(lo, hi, px & 7);
+        bg[x] = row_pixel(lo, hi, (a & 0x20) ? 7 - (px & 7) : (px & 7));
+        attr[x] = a;
     }
 }
 
@@ -131,35 +143,45 @@ static void render_line(gb *g)
         return;   /* defensa en profundidad: nunca escribir fuera del framebuffer */
     uint8_t lcdc = p->lcdc;
     uint32_t *out = g->framebuffer + (size_t)p->ly * GB_SCREEN_W;
-    uint8_t bg[GB_SCREEN_W] = { 0 };
+    uint8_t bg[GB_SCREEN_W] = { 0 }, battr[GB_SCREEN_W] = { 0 };
+    bool native = cgb_native(g), cgb = g->cgb.on;
 
-    /* Fondo y ventana: en DMG, LCDC bit 0 = 0 los deja en blanco (color 0). */
-    if (lcdc & 0x01) {
-        draw_tiles(g, lcdc, (lcdc & 0x08) ? 0x1C00 : 0x1800, (p->ly + p->scy) & 0xFF, p->scx, 0, bg);
+    /* Fondo y ventana: en DMG (y compatibilidad), LCDC bit 0 = 0 los deja en
+     * blanco (color 0). En CGB nativo solo les quita la prioridad sobre los objetos. */
+    if ((lcdc & 0x01) || native) {
+        draw_tiles(g, lcdc, (lcdc & 0x08) ? 0x1C00 : 0x1800, (p->ly + p->scy) & 0xFF, p->scx, 0,
+                   bg, battr);
         if ((lcdc & 0x20) && p->wy_triggered && p->wx <= 166) {
             int wx0 = (int)p->wx - 7;
             unsigned x0 = wx0 < 0 ? 0 : (unsigned)wx0;
             draw_tiles(g, lcdc, (lcdc & 0x40) ? 0x1C00 : 0x1800, p->window_line,
-                       x0 - (unsigned)wx0, x0, bg);
+                       x0 - (unsigned)wx0, x0, bg, battr);
             p->window_line++;
         }
     }
-    uint32_t pal[4];
-    for (uint8_t i = 0; i < 4; i++)
-        pal[i] = shade(g, p->bgp, i);
-    for (unsigned x = 0; x < GB_SCREEN_W; x++)
-        out[x] = pal[bg[x]];
+    if (native) {
+        for (unsigned x = 0; x < GB_SCREEN_W; x++)
+            out[x] = g->cgb.bg_rgba[(battr[x] & 7) * 4 + bg[x]];
+    } else {
+        uint32_t pal[4];
+        for (uint8_t i = 0; i < 4; i++)
+            pal[i] = cgb ? g->cgb.bg_rgba[(p->bgp >> (i * 2)) & 3] : shade(g, p->bgp, i);
+        for (unsigned x = 0; x < GB_SCREEN_W; x++)
+            out[x] = pal[bg[x]];
+    }
 
     if (!(lcdc & 0x02) || p->obj_count == 0)
         return;
 
-    /* Prioridad DMG: menor X y, a igual X, menor índice OAM. Orden por inserción. */
+    /* Prioridad DMG (y OPRI=1 en CGB): menor X y, a igual X, menor índice OAM.
+     * CGB: solo el índice OAM, que es el orden de la búsqueda. */
     uint8_t order[PPU_MAX_OBJS];
     unsigned n = p->obj_count;
+    bool by_x = !cgb || (g->cgb.opri & 1);
     for (unsigned i = 0; i < n; i++) {
         uint8_t o = p->objs[i];
         unsigned j = i;
-        while (j > 0 && g->mem.oam[order[j - 1] * 4 + 1] > g->mem.oam[o * 4 + 1]) {
+        while (by_x && j > 0 && g->mem.oam[order[j - 1] * 4 + 1] > g->mem.oam[o * 4 + 1]) {
             order[j] = order[j - 1];
             j--;
         }
@@ -182,7 +204,7 @@ static void render_line(gb *g)
         if (height == 16)
             tile &= 0xFE;
         uint8_t lo, hi;
-        tile_row(g, (uint16_t)(tile * 16 + (row / 8) * 16), row & 7, &lo, &hi);
+        tile_row(g, native && (attr & 0x08), (uint16_t)(tile * 16 + (row / 8) * 16), row & 7, &lo, &hi);
         uint8_t obp = (attr & 0x10) ? p->obp1 : p->obp0;
         for (unsigned col = 0; col < 8; col++) {
             int sx = ox + (int)col;
@@ -192,9 +214,18 @@ static void render_line(gb *g)
             if (idx == 0)
                 continue;       /* transparente: deja ver objetos de menor prioridad */
             claimed[sx] = true; /* el píxel es de este objeto aunque lo tape el fondo */
+            if (native) {
+                /* LCDC.0 = 0: los objetos siempre encima. Si no, gana el fondo con
+                 * color ≠ 0 si el objeto o el tile de fondo piden prioridad. */
+                if ((lcdc & 0x01) && bg[sx] != 0 && ((attr & 0x80) || (battr[sx] & 0x80)))
+                    continue;
+                out[sx] = g->cgb.obj_rgba[(attr & 7) * 4 + idx];
+                continue;
+            }
             if ((attr & 0x80) && bg[sx] != 0)
                 continue;
-            out[sx] = shade(g, obp, idx);
+            out[sx] = cgb ? g->cgb.obj_rgba[((attr & 0x10) ? 4 : 0) + ((obp >> (idx * 2)) & 3)]
+                          : shade(g, obp, idx);
         }
     }
 }
@@ -234,35 +265,38 @@ static uint16_t next_event(const struct gb_ppu *p)
     return DOTS_PER_LINE;
 }
 
-/* Avanza `dots` (múltiplo de 4) de 4 en 4. Entre eventos solo cuenta dots:
- * la línea STAT no cambia si no cambian el modo, LY o los registros. */
+/* Avanza un M-ciclo: 4 dots (2 en doble velocidad). Entre eventos solo cuenta
+ * dots: la línea STAT no cambia si no cambian el modo, LY o los registros. */
 void ppu_tick(gb *g, unsigned dots)
 {
     struct gb_ppu *p = &g->ppu;
     if (!(p->lcdc & 0x80))
         return;
-    for (; dots >= 4; dots -= 4) {
-        p->dot = (uint16_t)(p->dot + 4);
-        if (p->dot < p->next_event)
-            continue;
-        if (p->dot >= DOTS_PER_LINE) {
-            p->dot = (uint16_t)(p->dot - DOTS_PER_LINE);
-            p->ly = (uint8_t)((p->ly + 1) % LINES);
-            line_start(g);
-        }
-        if (p->ly == VBLANK_LINE && p->dot == VBLANK_DELAY) {
-            g->mem.if_ |= IRQ_VBLANK;
-            p->frame_done = true;
-        }
-        uint8_t old = p->mode;
-        if (old == 2 && p->dot >= MODE2_END)
-            oam_scan(g);
-        p->mode = mode_for(p);
-        if (old == 3 && p->mode == 0)
-            render_line(g);
-        update_stat_line(g);
-        p->next_event = next_event(p);
+    uint16_t prev = p->dot;
+    p->dot = (uint16_t)(p->dot + dots);
+    if (p->dot < p->next_event)
+        return;
+    if (p->dot >= DOTS_PER_LINE) {
+        p->dot = (uint16_t)(p->dot - DOTS_PER_LINE);
+        p->ly = (uint8_t)((p->ly + 1) % LINES);
+        line_start(g);
+        prev = 0;
     }
+    if (p->ly == VBLANK_LINE && prev < VBLANK_DELAY && p->dot >= VBLANK_DELAY) {
+        g->mem.if_ |= IRQ_VBLANK;
+        p->frame_done = true;
+    }
+    uint8_t old = p->mode;
+    if (old == 2 && p->dot >= MODE2_END)
+        oam_scan(g);
+    p->mode = mode_for(p);
+    if (old == 3 && p->mode == 0) {
+        render_line(g);
+        if (g->cgb.hdma_active)
+            g->cgb.hdma_req = true;   /* gb_tick copia un bloque de HDMA */
+    }
+    update_stat_line(g);
+    p->next_event = next_event(p);
 }
 
 /* Tras cargar un estado: el modo y el próximo evento no se toman del archivo,

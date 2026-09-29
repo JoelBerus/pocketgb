@@ -1,7 +1,7 @@
 /*
  * runner.c — ejecutor headless de pruebas (docs/06-testing.md §Runner headless).
  *
- *   gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg] [--max-frames N]
+ *   gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg|cgb|auto] [--max-frames N]
  *          [--expect PATH.rgba] [--dump PATH.rgba] [--input GUION] [--wav PATH.wav]
  *   gbtest <rom> --bench N        velocidad frente a tiempo real (N frames)
  *   gbtest --unit                 unit tests (core/tests/unit_*.c)
@@ -167,6 +167,7 @@ static int run_unit(void)
         { "ppu", unit_ppu },
         { "state", unit_state },
         { "apu", unit_apu },
+        { "cgb", unit_cgb },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -223,7 +224,7 @@ static int fuzz_seeds(const char *dir)
 static int usage(void)
 {
     fprintf(stderr,
-            "uso: gbtest <rom> --mode {serial|mooneye|acid} [--model dmg] [--max-frames N]\n"
+            "uso: gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg|cgb|auto] [--max-frames N]\n"
             "            [--expect PATH.rgba] [--dump PATH.rgba]\n"
             "     gbtest <rom> --bench N\n"
             "     gbtest --unit\n");
@@ -253,8 +254,14 @@ int main(int argc, char **argv)
         if (strcmp(a, "--mode") == 0) {
             mode = v;
         } else if (strcmp(a, "--model") == 0) {
-            if (strcmp(v, "dmg") != 0) {
-                fprintf(stderr, "modelo no soportado todavía: %s (CGB llega en M8)\n", v);
+            if (strcmp(v, "dmg") == 0) {
+                opts.model = GB_MODEL_DMG;
+            } else if (strcmp(v, "cgb") == 0) {
+                opts.model = GB_MODEL_CGB;
+            } else if (strcmp(v, "auto") == 0) {
+                opts.model = GB_MODEL_AUTO;
+            } else {
+                fprintf(stderr, "modelo no válido: %s (dmg | cgb | auto)\n", v);
                 return 2;
             }
         } else if (strcmp(a, "--max-frames") == 0) {

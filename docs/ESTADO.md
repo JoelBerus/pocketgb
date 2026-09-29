@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · M4 y **M5 cerrados** (audio probado por Joel en su iPhone). Nube: **D1** (diseño) y núcleo de **M8**, en paralelo.
+**Actualizado:** 2026-09-29 · M4 y **M5 cerrados**; **núcleo de M8 (CGB) hecho** en la nube (falta la prueba 🍎 en el iPhone). Nube: **D1** (diseño).
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -12,21 +12,24 @@
 - M5 iOS (cerrado; Joel lo oyó bien en su iPhone): `AudioOutput` (AVAudioEngine 48 kHz, `.ambient`), `AudioRingBuffer` SPSC lock-free, pacing guiado por el audio con fallback a reloj, HUD DEBUG, sesión y motor en una cola propia (nada de `setActive` en el hilo principal). Implementado con Codex, auditado por Opus (APROBAR CON CAMBIOS) + un crash de aislamiento Swift 6 encontrado en la prueba real y corregido. Evidencia: `docs/auditorias/M5-ios-*`.
 - M5 (núcleo): APU DMG (`apu.c`) con catch-up (A9), salida PCM a `sample_rate` con pasa-altos, `gb_audio_*`, save state v2, runner `--mode blargg` y `--wav`. dmg_sound 01–08 y 11 PASS (09/10/12 known-fail); 103/103 requeridos. Auditoría: `docs/auditorias/M5-*`.
 
+- M8 (núcleo): CGB en `cgb.c` + PPU/CPU/timer/APU: VRAM y WRAM con bancos, paletas de color, atributos de fondo, prioridad CGB, HDMA general y de HBlank, doble velocidad (STOP + KEY1), arranque CGB nativo y en compatibilidad, paletas de compatibilidad por checksum del título (tablas de SameBoy, MIT) con selección manual, APU CGB (apagar borra longitudes), save state v3. `--model cgb|auto`. cgb-acid2, dmg-acid2 en CGB y boot_regs-cgb idénticos/PASS; 157/157 requeridos (incluye `interrupt_time` en doble velocidad). Evidencia y auditoría: `docs/auditorias/M8-*`.
+
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
 - **En la nube (☁️), dos líneas independientes:**
   1. **Diseño de la app, [D1](hitos/D-README.md):** rama `d1-fundamentos` desde `main`. Leer antes [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Cada lote: push → CI (~8 min) → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Un push por lote (minutos macOS limitados). No tocar `Emulator/`, `Audio/` ni `Saves/` salvo lo que pida el hito. Trampa conocida de Swift 6: un closure que se ejecuta en otro hilo (audio, callbacks de sistema) no puede crearse dentro de un método `@MainActor` (ver M5-ios-respuesta H0).
-  2. **Núcleo de [M8](hitos/M8-cgb.md) (CGB):** rama `m8-cgb` desde `main`; `tools/cloud-setup.sh`; doble velocidad (KEY1/STOP), VRAM/WRAM con bancos, paletas CGB, atributos de tile, HDMA, post-boot CGB y modo compatibilidad con paletas por checksum; `--model cgb`; casos M8 en `suite.txt`; verificar con `make -C core test HITO=M8 && make -C core asan HITO=M8 && make -C core check-globals`; auditoría → PR. No tocar `ios/`; si cambia la API C, anotarlo aquí. Pokémon Amarillo (flag CGB 0x80) es la prueba real en el iPhone.
+  2. ~~Núcleo de M8~~ hecho (ver arriba). Queda la parte 🍎 de [M8](hitos/M8-cgb.md).
+- **En el Mac (🍎), M8:** compilar la app con el núcleo nuevo y cargar Amarillo: con `GB_MODEL_AUTO` (lo que usa hoy `CoreBridge`) ya arranca en CGB y debe verse en color. Rojo sigue en DMG con `AUTO`; para verlo con su paleta de compatibilidad la app tiene que pasar `model = GB_MODEL_CGB` (ajuste por juego, parte de D5/D6). Medir el rendimiento en CGB (en Linux ~6 % más lento que antes en DMG).
+- **API C cambiada en M8 (para la app):** `gb_options.compat_palette` (0 auto, 1..12 = combinaciones de botones del arranque), `gb_set_compat_palette(g, id)` en caliente, `GB_COMPAT_PALETTES`, `gb_rom_info.cgb_compat`; `gb_rom_info.cgb_mode` ahora es verdadero en CGB (nativo o compatibilidad). `GB_ERR_CGB_ONLY` solo con `GB_MODEL_DMG`. Save states v3: los v2 se rechazan (`GB_ERR_STATE_VERSION`), y un estado de otro modelo da `GB_ERR_STATE_ROM_MISMATCH`. `gb_cycle_count` cuenta tiempo real también en doble velocidad.
 
 ## Pendiente en el núcleo (por hito)
 - Herramientas (nota de Codex, M4): `make check-globals` da un falso "OK" si `nm` falla; hacer que falle si `nm` no produce salida.
 - M6 (frontend): tras `gb_state_load` guardar la SRAM, con backup (el estado sustituye la RAM del cartucho). Si `gb_sram_load` devuelve `GB_ERR_SRAM_SIZE`, no sobrescribir el `.sav`.
 - Con el oráculo (M5): contrastar con SameBoy `EI` justo antes de `HALT` con IRQ pendiente (nota de la auditoría M1); `boot_div`/`boot_hwio`/`boot_sclk_align` (known-fail).
 - M2 (known-fail): tiempo fino de STAT/LCD de Mooneye `ppu/*` (fuera de una PPU por scanline).
-- M8: el test acid con paleta gris no distingue R de B; cgb-acid2 lo cubrirá (nota de la auditoría M2).
+- M8 (known-fail/sin emular): `boot_hwio-C` (valores exactos de E/S tras el arranque), `vblank_stat_intr-C` (tiempo fino de STAT), `cgb_sound` 09/12 (wave RAM con el canal 3 sonando), cgb-acid-hell (2 píxeles: efectos a mitad de línea), pausa de ~2050 M-ciclos del cambio de velocidad, mapa del logo en compatibilidad para los checksums 0x43/0x58, DIV post-arranque en CGB nativo sin verificar, salida PCM12/PCM34.
 - M5 (known-fail): `dmg_sound` 09/10/12, acceso a la wave RAM con el canal 3 sonando. Sin emular: "zombie mode" de la envolvente.
-- M8: modo CGB (hasta entonces un ROM `0xC0` → `GB_ERR_CGB_ONLY`). El frame sequencer usa el bit 13 en doble velocidad.
 
 ## Decisiones tomadas (no reabrir sin Joel)
 | Fecha | Decisión |
@@ -45,6 +48,7 @@
 | 2026-09-29 | CI de macOS en GitHub Actions con capturas en `ci-shots/<rama>` para que la nube verifique la UI (Joel acepta el coste en minutos macOS). |
 | 2026-09-29 | Codex puede implementar por encargo de Claude (Joel, para ahorrar tokens); no audita lo que implementa (AGENTS.md). |
 | 2026-09-29 | Flush síncrono de SRAM (pausa/background/salida) compara con lo último guardado en vez de depender del flanco "el juego guardó" (auditoría M4, H1). |
+| 2026-09-29 | M8: paletas de compatibilidad = tablas de la reimplementación libre del arranque CGB de SameBoy (MIT, citadas en `cgb.c`), no el boot ROM de Nintendo. `GB_MODEL_AUTO` elige CGB para ROMs con flag `0x80`/`0xC0`; un ROM DMG solo va en compatibilidad si se pide `GB_MODEL_CGB`. |
 | 2026-09-28 | Controles en horizontal superpuestos y translúcidos (0.30 en reposo / 0.60 pulsado, configurable). |
 
 ## Pendiente de Joel (manual)

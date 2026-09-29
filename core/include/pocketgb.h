@@ -18,7 +18,7 @@ extern "C" {
 
 #define GB_SCREEN_W 160
 #define GB_SCREEN_H 144
-#define GB_CYCLES_PER_FRAME 70224u   /* T-ciclos a velocidad normal */
+#define GB_CYCLES_PER_FRAME 70224u   /* T-ciclos a velocidad normal (dots del LCD) */
 #define GB_CLOCK_HZ 4194304u          /* 59.7275 frames/s */
 #define GB_ROM_MAX_BYTES (8u * 1024u * 1024u)
 
@@ -34,12 +34,12 @@ typedef enum gb_result {
     GB_ERR_BAD_ROM_SIZE_CODE,  /* 0x148 fuera de rango */
     GB_ERR_BAD_RAM_SIZE_CODE,  /* 0x149 fuera de rango */
     GB_ERR_UNSUPPORTED_MBC,    /* 0x147 no soportado */
-    GB_ERR_CGB_ONLY,           /* 0x143 == 0xC0 y se pidió modelo DMG (hasta M8: con cualquier modelo) */
+    GB_ERR_CGB_ONLY,           /* 0x143 == 0xC0 y se pidió modelo DMG */
     GB_ERR_NO_ROM,             /* operación que requiere ROM cargado */
     GB_ERR_SRAM_SIZE,          /* tamaño de .sav distinto al esperado */
     GB_ERR_STATE_MAGIC,
     GB_ERR_STATE_VERSION,
-    GB_ERR_STATE_ROM_MISMATCH,
+    GB_ERR_STATE_ROM_MISMATCH, /* otro ROM, u otro modelo (DMG / CGB / compatibilidad) */
     GB_ERR_STATE_CORRUPT,      /* CRC o longitudes inválidas */
     GB_ERR_BUFFER_TOO_SMALL
 } gb_result;
@@ -47,8 +47,15 @@ typedef enum gb_result {
 typedef enum gb_model {
     GB_MODEL_AUTO = 0,  /* CGB si rom[0x143] & 0x80, si no DMG */
     GB_MODEL_DMG,
-    GB_MODEL_CGB
+    GB_MODEL_CGB        /* con un ROM DMG: modo compatibilidad (paleta de color por título) */
 } gb_model;
+
+/* Paletas de compatibilidad (ROM DMG en CGB). 0 = automática, la que elige el
+ * arranque de la CGB por el checksum del título. 1..12 = las combinaciones de
+ * botones del arranque: 1 →, 2 ←, 3 ↑, 4 ↓, 5 →+A, 6 ←+A, 7 ↑+A, 8 ↓+A,
+ * 9 →+B, 10 ←+B, 11 ↑+B, 12 ↓+B. */
+#define GB_COMPAT_PALETTE_AUTO 0u
+#define GB_COMPAT_PALETTES 12u
 
 /* Máscara de botones: 1 = pulsado. El núcleo no filtra direcciones opuestas. */
 enum {
@@ -77,6 +84,7 @@ typedef struct gb_options {
     gb_serial_byte_cb serial_byte_cb; /* opcional */
     void *serial_user;
     int64_t unix_time;          /* hora inicial para el RTC de MBC3 */
+    uint8_t compat_palette;     /* GB_COMPAT_PALETTE_AUTO o 1..GB_COMPAT_PALETTES (fuera de rango = auto) */
 } gb_options;
 
 typedef struct gb_rom_info {
@@ -89,7 +97,8 @@ typedef struct gb_rom_info {
     bool has_rtc;
     bool header_checksum_ok;
     bool global_checksum_ok;
-    bool cgb_mode;              /* modo en el que se está ejecutando */
+    bool cgb_mode;              /* se ejecuta en una CGB (nativo o compatibilidad) */
+    bool cgb_compat;            /* ROM DMG en CGB: paleta de compatibilidad */
     uint8_t fingerprint[32];    /* SHA-256 del ROM completo (saves y estados) */
 } gb_rom_info;
 
@@ -110,10 +119,14 @@ void gb_run_frame(gb *g);
 /* Avance acotado: ejecuta al menos `cycles` T-ciclos (termina en frontera de
  * instrucción) y devuelve los ejecutados. Para el lockstep del cable virtual. */
 uint32_t gb_run_cycles(gb *g, uint32_t cycles);
-/* T-ciclos emulados desde gb_load_rom (monótono). Para ordenar eventos entre instancias. */
+/* T-ciclos emulados desde gb_load_rom (monótono, en tiempo real: en doble velocidad
+ * un M-ciclo de CPU cuenta 2). Para ordenar eventos entre instancias. */
 uint64_t gb_cycle_count(const gb *g);
 bool gb_cpu_locked(const gb *g);           /* opcode ilegal ejecutado */
 const uint32_t *gb_framebuffer(const gb *g); /* GB_SCREEN_W*GB_SCREEN_H RGBA8888 */
+/* Cambia la paleta de compatibilidad (ver GB_COMPAT_PALETTES) sin reiniciar.
+ * Solo tiene efecto con un ROM DMG en CGB; se aplica desde la siguiente línea. */
+void gb_set_compat_palette(gb *g, uint8_t id);
 
 /* Audio: frames estéreo intercalados int16 (L,R). Devuelve frames copiados. */
 size_t gb_audio_read(gb *g, int16_t *out, size_t max_frames);
@@ -129,6 +142,8 @@ void gb_rtc_set_time(gb *g, int64_t unix_time); /* al volver de background */
 
 /* Save states */
 size_t gb_state_size(const gb *g);
+/* Antes de devolver GB_OK comprueba que el estado se podrá cargar; si no
+ * (error interno del núcleo), GB_ERR_STATE_CORRUPT y el búfer no es válido. */
 gb_result gb_state_save(const gb *g, uint8_t *out, size_t cap);
 gb_result gb_state_load(gb *g, const uint8_t *data, size_t len); /* nunca confía en len internas */
 

@@ -37,17 +37,24 @@ static void counter_set(gb *g, uint16_t next)
     t->counter = next;
     if (timer_signal(t, prev) && !timer_signal(t, next))
         tima_increment(g);
-    if ((prev & 0x100) && !(next & 0x100))
+    /* Serie: bit 8 (8192 Hz); en CGB con SC bit 1, bit 3 (262144 Hz). */
+    uint16_t sbit = (cgb_native(g) && (g->serial.sc & 2)) ? 0x0008 : 0x0100;
+    if ((prev & sbit) && !(next & sbit))
         serial_clock_internal(g);
-    if ((prev & 0x1000) && !(next & 0x1000))
-        apu_frame_step(g);   /* frame sequencer a 512 Hz */
+    /* Frame sequencer a 512 Hz: bit 12, o bit 13 en doble velocidad. */
+    uint16_t fbit = g->cgb.double_speed ? 0x2000 : 0x1000;
+    if ((prev & fbit) && !(next & fbit))
+        apu_frame_step(g);
 }
 
 void timer_reset(gb *g)
 {
     struct gb_timer *t = &g->timer;
-    /* DMG ABC: contador interno 0xABCC al llegar a PC=0x100 (DIV=0xAB). */
-    t->counter = 0xABCC;
+    /* DMG ABC: contador interno 0xABCC al llegar a PC=0x100 (DIV=0xAB).
+     * CGB con un ROM DMG: 0x2674 (el único valor con el que pasa Mooneye
+     * misc/boot_div-cgbABCDE; el arranque real tarda algo más con licencia
+     * Nintendo). CGB nativo: sin verificar, se deja el de DMG. */
+    t->counter = g->cgb.compat ? 0x2674 : 0xABCC;
     t->tima = 0;
     t->tma = 0;
     t->tac = 0;

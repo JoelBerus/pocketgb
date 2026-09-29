@@ -33,12 +33,15 @@ struct gb_cpu {
 };
 
 struct gb_mem {
-    uint8_t vram[0x2000];
-    uint8_t wram[0x2000];
+    uint8_t vram[0x4000];  /* CGB: 2 bancos de 8 KiB (VBK); DMG usa solo el 0 */
+    uint8_t wram[0x8000];  /* CGB: 8 bancos de 4 KiB (SVBK); DMG usa solo el 0 y el 1 */
     uint8_t oam[0xA0];
     uint8_t hram[0x7F];
     uint8_t ie;
     uint8_t if_;
+    uint8_t vbk;           /* banco de VRAM visible para la CPU (0/1) */
+    uint8_t svbk;          /* SVBK tal como se escribió (bits 2–0) */
+    uint8_t wram_bank;     /* banco en D000–DFFF (1–7), derivado de svbk */
 };
 
 /* Recarga retrasada de TIMA (docs/03-core-spec.md §Timer) */
@@ -119,6 +122,29 @@ struct gb_apu {
     uint32_t dropped;      /* frames descartados por anillo lleno */
 };
 
+/* Game Boy Color (docs/03-core-spec.md §PPU CGB, §Arranque). `on` = hardware CGB;
+ * `compat` = ROM DMG en CGB (KEY0=4): los registros exclusivos de CGB no se ven
+ * y BGP/OBP0/OBP1 indexan las paletas de color que dejó el arranque. */
+enum { CGB_PAL_BYTES = 64 };
+
+struct gb_cgb {
+    bool on, compat;
+    bool double_speed;     /* KEY1 bit 7 */
+    bool speed_prepare;    /* KEY1 bit 0 */
+    uint8_t bcps, ocps;    /* índice (bits 5–0) + autoincremento (bit 7) */
+    uint8_t bg_pal[CGB_PAL_BYTES], obj_pal[CGB_PAL_BYTES];   /* RGB555 little-endian */
+    uint8_t opri;          /* bit 0: 1 = prioridad de objetos DMG (por X) */
+    uint16_t hdma_src, hdma_dst;   /* dst: offset en VRAM (0000–1FF0) */
+    uint8_t hdma_len;      /* bloques de 16 bytes restantes − 1 (bits 6–0) */
+    bool hdma_active;      /* HDMA de HBlank en curso */
+    bool hdma_req;         /* la PPU entró en HBlank: copiar un bloque */
+    uint16_t stall;        /* M-ciclos en que la CPU queda parada por HDMA */
+    uint8_t rp;            /* FF56 (infrarrojo, sin emisor ni receptor) */
+    uint8_t ff72, ff73, ff74, ff75;
+    /* Caché RGBA de las paletas (no se guarda: se deriva de bg_pal/obj_pal) */
+    uint32_t bg_rgba[32], obj_rgba[32];
+};
+
 struct gb_serial {
     uint8_t sb, sc;
     uint8_t bits;      /* bits desplazados en la transferencia actual */
@@ -178,6 +204,7 @@ struct gb_debug {
 #ifdef GB_TEST_HOOKS
     int fail_alloc_at;     /* >0: la reserva número n de gb_load_rom falla (1 = la primera) */
     int alloc_count;
+    bool unchecked_save;   /* gb_state_save sin autocomprobación (fabricar estados inválidos) */
 #endif
 };
 
@@ -191,6 +218,7 @@ struct gb {
     struct gb_serial serial;
     struct gb_joypad joy;
     struct gb_cart cart;
+    struct gb_cgb cgb;
     struct gb_debug dbg;
     gb_options opts;
     gb_rom_info info;
@@ -199,8 +227,23 @@ struct gb {
     uint32_t framebuffer[GB_SCREEN_W * GB_SCREEN_H];
 };
 
+static inline bool cgb_native(const gb *g)
+{
+    return g->cgb.on && !g->cgb.compat;
+}
+
 /* gb.c */
 void gb_tick(gb *g, unsigned tcycles);
+
+/* cgb.c */
+void cgb_reset(gb *g);                  /* registros y paletas post-arranque */
+uint8_t cgb_title_checksum(const gb *g, bool *nintendo);
+uint8_t cgb_io_read(gb *g, uint16_t addr);    /* FF4C–FF7F */
+void cgb_io_write(gb *g, uint16_t addr, uint8_t v);
+void cgb_update_rgba(gb *g);
+void cgb_load_compat_palettes(gb *g);   /* según opts.compat_palette (solo compatibilidad) */            /* recalcula la caché RGBA de las paletas */
+void cgb_hdma_hblank(gb *g);            /* copia un bloque del HDMA de HBlank */
+void cgb_speed_switch(gb *g);           /* STOP con KEY1 bit 0 */
 
 /* cpu.c */
 void cpu_reset(gb *g);

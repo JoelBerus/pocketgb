@@ -12,7 +12,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | [M5 · APU + audio](M5-apu-audio.md) | ☁️ núcleo · 🍎 integración iOS | ✅ cerrado 2026-09-29 (núcleo: auditoría Opus; iOS: Codex implementa, Opus audita, Joel lo oye en su iPhone) |
 | [M6 · Biblioteca + saves](M6-biblioteca-saves.md) | — | ➡️ sustituido por D2 + D3 ([D-README](D-README.md)) |
 | [M7 · Controles + extras](M7-controles.md) | — | ➡️ sustituido por D4 + D5 + D6 ([D-README](D-README.md)) |
-| [M8 · CGB](M8-cgb.md) | ☁️ núcleo · 🍎 prueba en iPhone | |
+| [M8 · CGB](M8-cgb.md) | ☁️ núcleo · 🍎 prueba en iPhone | ☁️ núcleo hecho 2026-09-29 (auditoría Opus); 🍎 falta Amarillo/Rojo en el iPhone |
 | [M9 · Cable virtual](M9-link-virtual.md) | ☁️ núcleo · 🍎 UI | |
 
 **Hitos de diseño D1–D8** (app con la propuesta Liquid Glass de Joel): ☁️ nube + CI de macOS con capturas · 🍎 validación final en el iPhone. Plan: [D-README](D-README.md) · Spec: [../diseno/SPEC.md](../diseno/SPEC.md).
