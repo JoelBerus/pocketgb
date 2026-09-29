@@ -1,5 +1,7 @@
 # M9 · Evidencia (núcleo: cable link virtual; la prueba en el iPhone es 🍎)
 
+Secciones 1–8: código de `da23059`. **Sección 9: correcciones de la auditoría ([M9-opus](M9-opus.md), [M9-respuesta](M9-respuesta.md)) en `f1cec9f`; sustituye a las cifras anteriores donde cambian.**
+
 Generada en Claude Code en la nube (Linux, Ubuntu clang version 18.1.3 (1ubuntu1), 4 vCPU) el 2026-09-29, rama `m9-link-virtual` desde `main` (`47b7f12`, M8 cerrado).
 
 ## Qué se añadió
@@ -110,8 +112,63 @@ Dos instancias en el cable (`--bench-link 3000`, dmg-acid2 en los dos lados): 14
 | Las dos SRAM se guardan con la ruta normal tras el intercambio | 🍎 pendiente |
 
 ## 8. Decisiones y riesgos
-- **Orden dentro del bloque:** corre primero el lado con `SC` bit 0 = 1 (reloj interno). Si el maestro corriera segundo, el par ya estaría hasta 456 T-ciclos por delante en el pulso (no se puede rebobinar): no rompe el intercambio (el esclavo espera con `SC=0x80`), pero le quitaría margen. Pokémon deja `SC=0x01` en el maestro entre bytes, así que el orden es estable.
+- **Orden dentro del bloque** (corregido en H1, ver §9): corre primero el lado con una transferencia de reloj interno activa (`SC & 0x81 == 0x81`) y, si ninguno la tiene, el del `SC` bit 0 = 1. Si el maestro corriera segundo, el par ya estaría hasta 456 T-ciclos por delante en el pulso (no se puede rebobinar): no rompe el intercambio (el esclavo espera con `SC=0x80`), pero le quitaría margen. Pokémon deja `SC=0x01` en el maestro entre bytes, así que el orden es estable.
 - **Relojes por instancia:** el cable guarda un desplazamiento por lado; tras `gb_load_rom`/`gb_state_load` el siguiente avance realinea (fuera de `[T, T+912]`) y reinstala los callbacks. Un adelanto dentro de un pulso se limita a 4 bloques; y fuera de `gb_link_run_cycles` (si la app llamara a `gb_run_frame` con el cable puesto) no hay adelanto, solo se entrega el bit.
-- **Contrato con la app:** `gb_link_detach` antes de `gb_destroy` (el cable guarda punteros a las instancias). Todo en el mismo hilo.
+- **Contrato con la app:** un único dueño que llama a `gb_link_detach` antes de `gb_destroy` (el cable guarda punteros a las instancias). Una instancia no puede estar en dos cables: `gb_link_attach` devuelve `false` y deja ese lado vacío (H4). Todo en el mismo hilo.
+- **Framebuffer al realinear (H6, aceptado):** tras `gb_load_rom`/`gb_state_load` se copia el framebuffer vivo al de respaldo; el siguiente VBlank lo sustituye por un frame completo.
 - **Framebuffers de respaldo:** 2 × 92 KiB dentro del contexto; una copia por frame y lado. La app debe pintar `gb_link_framebuffer`.
 - **Audio:** el anillo del juego no activo se llena y descarta (contador `dropped`), inocuo.
+
+## 9. Correcciones de la auditoría (`f1cec9f`)
+
+### `gbtest --unit` y `make -C core test HITO=M9`
+```
+M1    PASS  requerido   unit tests                                                               12.9s  PASS: 1314 comprobaciones, 0 fallos
+157/176 PASS · requeridos: 157/157 PASS · HITO=M9
+OK: todos los casos requeridos en PASS
+```
+Tests nuevos: `causality_case` con el maestro en el lado 1 y `SC=0x80` después del flanco (H2); esclavo con `SC=0x01` (bit 0 a 1 en los dos lados) en el lado 0 y en el lado 1, antes y después del flanco (H1); `ownership` (H4). De 1273 a 1314 comprobaciones.
+
+### `make -C core asan HITO=M9`
+```
+M1    PASS  requerido   unit tests                                                               32.6s  PASS: 1314 comprobaciones, 0 fallos
+157/176 PASS · requeridos: 157/157 PASS · HITO=M9
+OK: todos los casos requeridos en PASS
+líneas con 'runtime error' o 'AddressSanitizer': 0
+```
+
+### `make -C core check-globals check-header`
+```
+Sin estado global mutable: OK
+pocketgb.h compila aislado: OK
+```
+
+### Mutaciones de `link.c` (script en el scratchpad; `link.c` restaurado y `--unit` en PASS después)
+| Mutación | `gbtest --unit` |
+|---|---|
+| Orden antiguo (solo `SC` bit 0) (H1) | FAIL: 3 fallos (`s->serial.bits`, `m->serial.sb == 0xD5`, `bits == 7`) |
+| Orden fijo, `first = 0u` (H2; antes pasaba) | FAIL: 6 fallos |
+| Sin adelanto del par en el pulso | FAIL: 11 fallos |
+| Sin rechazo de una instancia de otro cable (H4) | FAIL: 5 fallos |
+| Sin el flag `busy` (H3) | PASS: 0 fallos. Mutante equivalente: `busy` es defensa en profundidad (el par va por detrás y `gb_serial_clock_external` sobre un maestro devuelve 1) |
+
+### `make -C core fuzz FUZZ_SECONDS=300` (H5: semillas largas y `-len_control=0 -max_len=16384` para `fuzz_link`)
+El corpus de `fuzz_link` se borró antes para medir solo semillas + 300 s; los otros dos fuzzers parten del corpus de la pasada anterior.
+```
+INFO: seed corpus: files: 7 min: 8b max: 98b total: 536b rss: 32Mb
+#8	INITED cov: 829 ft: 1173 corp: 7/536b exec/s: 8 rss: 41Mb
+#1614	DONE   cov: 1267 ft: 4160 corp: 494/56Kb lim: 16384 exec/s: 5 rss: 355Mb
+Done 1614 runs in 301 second(s)
+#927	DONE   cov: 1142 ft: 2787 corp: 282/1606Kb lim: 32768 exec/s: 3 rss: 353Mb
+Done 927 runs in 302 second(s)
+#3360	DONE   cov: 838 ft: 1384 corp: 58/1686Kb lim: 174904 exec/s: 11 rss: 364Mb
+Done 3360 runs in 301 second(s)
+rc=0
+```
+| Fuzzer | Ejecuciones | Cobertura (cov / ft) | Antes (§5) | Crashes / aborts |
+|---|---|---|---|---|
+| fuzz_link | 1614 | 1267 / 4160, `lim: 16384`, corpus 494 entradas / 56 KB | 1183 / 2788, `lim: 8` | 0 |
+| fuzz_load_rom | 927 | 1142 / 2787 | 1069 / 2256 | 0 |
+| fuzz_state_load | 3360 | 838 / 1384 | 760 / 1000 | 0 |
+
+El rendimiento de una instancia sola no cambia: las correcciones solo tocan `link.c` y los tests.
