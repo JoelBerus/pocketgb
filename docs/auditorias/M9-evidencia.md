@@ -172,3 +172,15 @@ rc=0
 | fuzz_state_load | 3360 | 838 / 1384 | 760 / 1000 | 0 |
 
 El rendimiento de una instancia sola no cambia: las correcciones solo tocan `link.c` y los tests.
+
+## Fuzz-link de 600 s (nube, cierre de M9)
+
+Ejecutado en Claude Code en la nube (Linux, Ubuntu clang version 18.1.3 (1ubuntu1)) el 2026-09-29 sobre `d2fe3d3` (las correcciones de la auditoría Codex, implementadas en el Mac). `make -C core test HITO=M9` antes del fuzz: todos los requeridos en PASS.
+
+```
+$ make -C core fuzz-link FUZZ_SECONDS=600
+#3159	DONE   cov: 1292 ft: 4607 corp: 733/116Kb lim: 16384 exec/s: 5 rss: 359Mb
+Done 3159 runs in 601 second(s)
+```
+
+Sin crashes, fugas ni errores de ASan/UBSan (`exit=0`).

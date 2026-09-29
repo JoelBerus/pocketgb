@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. Siguiente: **D2** (biblioteca por carpeta y saves). M9 (núcleo) en la rama `m9-link-virtual`, en corrección tras su auditoría.
+**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. Siguiente: **D2** (biblioteca por carpeta y saves). **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -21,7 +21,7 @@
 ## Siguiente paso exacto
 - **En la nube (☁️), dos líneas independientes:**
   1. **Diseño de la app, [D2](hitos/D-README.md) (siguiente; D1 cerrado):** Leer antes [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Cada lote: push → CI (~8 min) → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Un push por lote (minutos macOS limitados). No tocar `Emulator/`, `Audio/` ni `Saves/` salvo lo que pida el hito. Trampa conocida de Swift 6: un closure que se ejecuta en otro hilo (audio, callbacks de sistema) no puede crearse dentro de un método `@MainActor` (ver M5-ios-respuesta H0).
-  2. **M9 (núcleo), rama `m9-link-virtual`:** los hallazgos de la auditoría Codex (H1–H3) ya están corregidos en el Mac (Codex implementó, Opus aprobó: [auditorias/M8-M9-fix-opus.md](auditorias/M8-M9-fix-opus.md)). **Única tarea pendiente para cerrar M9 en la nube (~10 min):** `make -C core fuzz-link FUZZ_SECONDS=600` (el Mac no tiene libFuzzer), pegar la salida en `M9-evidencia.md`, actualizar ESTADO/tabla y fusionar. Si aparece un crash: reproducirlo, corregirlo y repetir.
+  2. ~~M9 (núcleo)~~ cerrado 2026-09-29: auditorías Opus y Codex corregidas, fuzz-link de 600 s en la nube sin crashes (3159 ejecuciones, `docs/auditorias/M9-evidencia.md`). Pendiente 🍎: UI del cable (pantalla dividida o alternar) e intercambio Rojo ↔ Amarillo en el iPhone. La app debe usar `gb_link_framebuffer` y llamar a `gb_link_detach` antes de `gb_destroy`.
   3. ~~Corrección de M8 (buses de OAM DMA en CGB)~~ hecha en `main` (Codex implementó, Opus: APROBAR).
   4. ~~M8~~ cerrado. Siguiente hito de núcleo: [M9](hitos/M9-link-virtual.md) (cable virtual), cuando Joel lo pida.
 - **Pendiente para la app (D5/D6):** ajuste por juego «Color en juegos de Game Boy» → `model = GB_MODEL_CGB` + selector de paleta (`compat_palette`, 0 auto / 1..12). Sin eso Rojo se ve en blanco y negro. Medir el rendimiento en CGB en el iPhone.
