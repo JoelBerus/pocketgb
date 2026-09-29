@@ -21,7 +21,7 @@ all: lib
 
 lib: $(BUILD)/libpocketgb.a
 
-$(BUILD)/%.o: src/%.c include/pocketgb.h $(wildcard src/*.h)
+$(BUILD)/%.o: src/%.c include/pocketgb.h $(wildcard src/*.h src/*.inc)
 	@mkdir -p $(BUILD)
 	$(CC) $(CSTD) $(CFLAGS) $(INC) -c $< -o $@
 
@@ -30,9 +30,9 @@ $(BUILD)/libpocketgb.a: $(OBJS)
 	@if [ -z "$(OBJS)" ]; then echo "core/src vacío: aún no hay implementación (ver docs/hitos/M1-cpu.md)"; exit 1; fi
 	ar rcs $@ $^
 
-$(BUILD)/gbtest: $(SRCS) $(TEST_SRCS)
+$(BUILD)/gbtest: $(SRCS) $(TEST_SRCS) include/pocketgb.h $(wildcard src/*.h src/*.inc tests/*.h)
 	@mkdir -p $(BUILD)
-	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) $(INC) $^ -o $@
+	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) $(INC) $(SRCS) $(TEST_SRCS) -o $@
 
 check-roms:
 	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba: ejecuta tools/fetch-test-roms.sh"; exit 1; }

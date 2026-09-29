@@ -54,14 +54,14 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 | `FE00–FE9F` | OAM | Inaccesible en modos 2/3 y durante OAM DMA |
 | `FEA0–FEFF` | No usable | Lee `0x00` (DMG) |
 | `FF00–FF7F` | E/S | Bits no implementados leen 1 (máscaras de Pan Docs) |
-| `FF80–FFFE` | HRAM | **DMG:** durante OAM DMA la CPU solo accede a HRAM (el resto lee `0xFF` y las escrituras se ignoran). **CGB:** conflicto de bus solo en el bus del origen del DMA (externo: ROM/SRAM/WRAM, o VRAM); ver Pan Docs *OAM DMA bus conflicts* |
+| `FF80–FFFE` | HRAM | Durante la copia del OAM DMA la CPU no ve OAM (`FE00–FEFF`) ni el **bus del origen** del DMA: externo (ROM/SRAM/WRAM/eco) o VRAM. Esos accesos leen `0xFF` y las escrituras se ignoran; E/S (`FF00–FF7F`), HRAM e IE siguen accesibles. Pan Docs simplifica el DMG a "solo HRAM", pero las pruebas Mooneye verificadas en DMG real (`reti_timing`, `ret_timing`, `call_timing`, `oam_dma/reg_read`) ejecutan desde ROM durante un DMA con origen en VRAM y leen registros de E/S: se sigue el modelo por bus, igual que en CGB. |
 | `FFFF` | IE | |
 
 ## CPU SM83
 - Registros A F B C D E H L SP PC. Nibble bajo de F siempre 0 (`POP AF` lo enmascara).
 - Los 256 opcodes base + 256 con prefijo `CB`, con los ciclos de la tabla de gbdev (incluidas las variantes con salto tomado o no).
-- **Opcodes ilegales** `D3 DB DD E3 E4 EB EC ED F4 FC FD`: la CPU se bloquea (`gb->cpu.locked = true`). `gb_run_frame` sigue avanzando la PPU con pantalla fija y `gb_rom_info` expone el estado para que la UI lo muestre.
-- **Interrupciones:** `IE=FFFF`, `IF=FF0F`. Prioridad VBlank(0x40) > STAT(0x48) > Timer(0x50) > Serial(0x58) > Joypad(0x60). El despacho cuesta 5 M-ciclos. `EI` tiene efecto tras la instrucción siguiente; `DI` es inmediato; `RETI` = `RET` + `IME=1` inmediato.
+- **Opcodes ilegales** `D3 DB DD E3 E4 EB EC ED F4 FC FD`: la CPU se bloquea (`gb->cpu.locked = true`). `gb_run_frame` sigue avanzando la PPU con pantalla fija y `gb_cpu_locked()` expone el estado para que la UI lo muestre.
+- **Interrupciones:** `IE=FFFF`, `IF=FF0F`. Prioridad VBlank(0x40) > STAT(0x48) > Timer(0x50) > Serial(0x58) > Joypad(0x60). El despacho cuesta 5 M-ciclos: el primero es el fetch del opcode, que se descarta. **Muestreo:** en cada M-ciclo primero avanza el hardware y después la CPU accede al bus; `IE & IF` se comprueba al final del M-ciclo de fetch, así que una IRQ pedida en ese mismo M-ciclo ya se atiende. En HALT la CPU repite ese fetch sin avanzar PC: con IME=1 el despacho continúa con los 4 M-ciclos restantes; con IME=0 ejecuta el opcode ya leído, sin M-ciclo extra (verificado con Mooneye `rapid_toggle`, `di_timing-GS`, `halt_ime0_nointr_timing`, `halt_ime1_timing2-GS`). El vector se elige después de escribir el byte alto de PC (si esa escritura cambia IE, PC=0: `ie_push`). `EI` tiene efecto tras la instrucción siguiente; `DI` es inmediato; `RETI` = `RET` + `IME=1` inmediato.
 - **HALT:** sale al haber `IE & IF & 0x1F` aunque `IME=0`. **Bug de HALT:** con `IME=0` y una interrupción pendiente, el siguiente byte se lee 2 veces.
 - **STOP:** en CGB con `KEY1` bit 0 → cambio de velocidad. Si no, se trata como HALT profundo hasta que se pulse un botón (suficiente para v1).
 
@@ -69,10 +69,12 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - Contador interno de 16 bits que avanza 1 por T-ciclo; `DIV` = byte alto. Escribir en `DIV` pone el contador a 0.
 - `TAC` bit 2 = habilitar; bits 1–0 → bit del contador observado: `00→9` (4096 Hz), `01→3` (262144 Hz), `10→5` (65536 Hz), `11→7` (16384 Hz).
 - `TIMA` se incrementa en el **flanco de bajada** de `(bit_observado AND habilitar)`. Esto incluye los glitches al escribir `DIV` o `TAC`.
-- Desbordamiento: `TIMA` queda en 0 durante 1 M-ciclo; después se carga `TMA` y se pide la interrupción Timer. Una escritura en `TIMA` en ese M-ciclo cancela la recarga.
+- Desbordamiento: `TIMA` queda en 0 durante 1 M-ciclo; después se carga `TMA` y se pide la interrupción Timer. Una escritura en `TIMA` en ese M-ciclo cancela la recarga. En el M-ciclo de la recarga, escribir `TIMA` se ignora y escribir `TMA` también llega a `TIMA`.
+- Valor post-boot del contador en DMG ABC: `0xABCC` (DIV=`0xAB`).
+- El reloj interno de la serie (8192 Hz) es el flanco de bajada del bit 8 del mismo contador.
 
 ## PPU (DMG, luego CGB)
-- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank.
+- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank. En la línea 144, el modo 1 y la IRQ de VBlank llegan 4 dots después del cambio de LY (M1: PPU mínima solo de tiempos en `ppu.c`; M2 añade el render).
 - Registros: `LCDC FF40`, `STAT FF41`, `SCY/SCX FF42/43`, `LY FF44` (solo lectura), `LYC FF45`, `DMA FF46`, `BGP FF47`, `OBP0/1 FF48/49`, `WY/WX FF4A/4B`.
 - **Línea STAT:** OR de (modo0 & bit3) | (modo1 & bit4) | (modo2 & bit5) | (LY==LYC & bit6). La interrupción se pide solo en el **flanco de subida** de esa OR ("STAT blocking").
 - **Render de línea:** fondo (SCX/SCY con wrap), ventana (contador de línea interno propio, que solo avanza si la ventana se dibujó en esa línea, `WX-7`), sprites (máx. 10 por línea en orden OAM; prioridad DMG = menor X y luego menor índice OAM; 8×16 ignora el bit 0 del tile; bit de prioridad BG sobre OBJ contra el color 0 del fondo).

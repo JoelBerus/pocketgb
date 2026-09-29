@@ -1,0 +1,43 @@
+# Casos de prueba de PocketGB (docs/06-testing.md).
+# Formato: hito|ruta|modo|modelo|max_frames|tipo
+#   hito:   M1..M9. `make test HITO=Mn` ejecuta los casos de los hitos <= Mn.
+#   ruta:   relativa a core/tests/roms/ (admite comodines *), o `unit` para los unit tests.
+#   modo:   serial | mooneye | unit (acid llega en M2).
+#   tipo:   requerido (bloquea) | known-fail (se reporta, no bloquea) | info (extra, no bloquea).
+
+# ---- M1: CPU + timer + interrupciones (requeridos por docs/06-testing.md) ----
+M1|unit|unit|-|0|requerido
+M1|mooneye-test-suite/acceptance/boot_regs-dmgABC.gb|mooneye|dmg|1200|requerido
+M1|blargg/cpu_instrs/cpu_instrs.gb|serial|dmg|4000|requerido
+M1|blargg/instr_timing/instr_timing.gb|serial|dmg|600|requerido
+M1|blargg/mem_timing/mem_timing.gb|serial|dmg|600|requerido
+M1|mooneye-test-suite/acceptance/timer/*.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/ei_sequence.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/ei_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/rapid_di_ei.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/halt_ime0_ei.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/reti_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/reti_intr_timing.gb|mooneye|dmg|1200|requerido
+
+# ---- M1: extras que ya pasan (CPU, interrupciones, OAM DMA); protegen de regresiones ----
+M1|blargg/cpu_instrs/individual/*.gb|serial|dmg|2000|requerido
+M1|mooneye-test-suite/acceptance/instr/daa.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/interrupts/ie_push.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/bits/*.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/if_ie_registers.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/intr_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/div_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/halt_ime0_nointr_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/halt_ime1_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/*_timing.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/*_timing2.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/oam_dma_*.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/oam_dma/basic.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/oam_dma/reg_read.gb|mooneye|dmg|1200|requerido
+# Dependen del tiempo de la PPU, que M2 rehace: se reportan sin bloquear.
+M1|mooneye-test-suite/acceptance/di_timing-GS.gb|mooneye|dmg|1200|info
+M1|mooneye-test-suite/acceptance/halt_ime1_timing2-GS.gb|mooneye|dmg|1200|info
+# Conocidos: valores exactos de E/S y fase de DIV/serie al arrancar (sin boot ROM).
+M1|mooneye-test-suite/acceptance/boot_div-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
+M1|mooneye-test-suite/acceptance/boot_hwio-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
+M1|mooneye-test-suite/acceptance/serial/boot_sclk_align-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
