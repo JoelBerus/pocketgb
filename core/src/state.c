@@ -152,9 +152,9 @@ static void u32(struct io *io, uint32_t *f, uint32_t max)
         *f = v;
 }
 
-static void u64(struct io *io, uint64_t *f)
+static void u64(struct io *io, uint64_t *f, uint64_t max)
 {
-    uint64_t v = io_uint(io, *f, 8, UINT64_MAX);
+    uint64_t v = io_uint(io, *f, 8, max);
     if (io->mode == IO_APPLY)
         *f = v;
 }
@@ -421,7 +421,9 @@ static void visit(struct io *io, gb *g)
     }
 
     s = section_begin(io, TAG('M', 'I', 'S', 'C'));
-    u64(io, &g->cycles);
+    /* link.c traduce este contador a int64_t; rechazar el bit de signo evita
+     * conversiones y restas fuera de rango al conectar un estado no fiable. */
+    u64(io, &g->cycles, INT64_MAX);
     for (size_t i = 0; i < GB_SCREEN_W * GB_SCREEN_H; i++)
         u32(io, &g->framebuffer[i], UINT32_MAX);
     section_end(io, s);
@@ -528,5 +530,6 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len)
     g->apu.acc_l = g->apu.acc_r = 0;
     g->apu.acc_n = 0;
     memset(&g->dbg, 0, sizeof g->dbg);
+    g->state_load_epoch++;
     return GB_OK;
 }
