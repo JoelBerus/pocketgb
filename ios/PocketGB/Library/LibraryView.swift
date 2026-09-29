@@ -61,7 +61,9 @@ struct LibraryView: View {
                     systemImage: "folder.badge.questionmark",
                     message: "PocketGB ya no tiene acceso a \(folderName.map { "“\($0)”" } ?? "la carpeta de juegos"). Puede que se haya movido o renombrado. Tus partidas siguen guardadas en este iPhone.",
                     primaryTitle: "Elegir de nuevo",
-                    primaryAction: { state.chooseFolder() })
+                    primaryAction: { state.chooseFolder() },
+                    secondaryTitle: "Reintentar",
+                    secondaryAction: { library.restore() })
             }
         case .ready(let folderName):
             if library.entries.isEmpty && !library.isScanning {

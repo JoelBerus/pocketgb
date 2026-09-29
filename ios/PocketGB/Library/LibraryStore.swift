@@ -46,6 +46,8 @@ final class LibraryStore {
     private var folderURL: URL?
     private var accessingURL: URL?
     private var scanGeneration = 0
+    /// Último escaneo terminado: un aviso de progreso que llegue tarde no lo reabre (auditoría D2, H7).
+    private var finishedGeneration = 0
     private static let knownKey = "libraryKnownROMs"
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "library")
 
@@ -107,7 +109,8 @@ final class LibraryStore {
             let found = LibraryScanner.scan(folder: folder) { done, total in
                 guard done == total || done % 8 == 0 else { return }
                 Task { @MainActor [weak self] in
-                    guard let self, self.scanGeneration == generation else { return }
+                    guard let self, self.scanGeneration == generation,
+                          self.finishedGeneration != generation else { return }
                     self.scanProgress = ScanProgress(done: done, total: total)
                 }
             }
@@ -136,6 +139,7 @@ final class LibraryStore {
 
     private func finishScan(_ found: [RomEntry], generation: Int) {
         guard generation == scanGeneration else { return }
+        finishedGeneration = generation
         let defaults = UserDefaults.standard
         let known = Set(defaults.stringArray(forKey: Self.knownKey) ?? [])
         var result = found

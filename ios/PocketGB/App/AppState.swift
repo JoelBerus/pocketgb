@@ -53,7 +53,11 @@ final class AppState {
     /// Volver a primer plano: reescanear la carpeta (docs/04 §Ciclo de vida).
     func enterForeground() {
         guard session == nil else { return }
-        library.refresh()
+        if case .unavailable = library.phase {
+            library.restore()   // quizá vuelve el acceso (iCloud con conexión; auditoría D2, H6)
+        } else {
+            library.refresh()
+        }
     }
 
     /// Abre un juego de la biblioteca: lectura coordinada fuera del hilo principal,
@@ -70,17 +74,27 @@ final class AppState {
         guard !opening else { return }
         opening = true
         let url = entry.url
+        // Dos ROMs con el mismo nombre base (Juego.gb y Juego.gbc) compartirían el .sav
+        // junto al ROM: en ese caso no se usa el espejo (auditoría D2, H5).
+        let mirror = SaveMirror(romURL: url)
+        let shared = library.entries.contains { $0.id != entry.id && SaveMirror(romURL: $0.url).url == mirror.url }
         Task.detached(priority: .userInitiated) { [weak self] in
+            // ROM y espejo se leen aquí, fuera del hilo principal: la lectura coordinada
+            // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
             let result = Result { try LibraryScanner.readROM(url) }
-            await self?.finishOpening(entry: entry, result: result)
+            let snapshot: SaveMirror.Snapshot = shared ? .absent : mirror.snapshot()
+            await self?.finishOpening(entry: entry, result: result, mirror: shared ? nil : mirror,
+                                      snapshot: snapshot, shared: shared)
         }
     }
 
-    private func finishOpening(entry: RomEntry, result: Result<Data, Error>) {
+    private func finishOpening(entry: RomEntry, result: Result<Data, Error>, mirror: SaveMirror?,
+                               snapshot: SaveMirror.Snapshot, shared: Bool) {
         opening = false
         switch result {
         case .success(let data):
-            start(romData: data, mirror: SaveMirror(romURL: entry.url), fileName: entry.fileName)
+            start(romData: data, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
+                  extraWarning: shared ? .mirrorShared : nil)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
             showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
         case .failure(let error):
@@ -94,12 +108,13 @@ final class AppState {
     }
 
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
-    private func start(romData: Data, mirror: SaveMirror?, fileName: String) {
+    private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
+                       fileName: String, extraWarning: SaveLoadWarning? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
-                                              mirror: mirror) { [weak self] in
+                                              mirror: mirror, mirrorSnapshot: snapshot) { [weak self] in
                 self?.enterBackground()
             }
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
@@ -107,11 +122,14 @@ final class AppState {
             session.start()
             self.session = session
             paused = false
-            if let warning = session.loadWarning {
-                showAlert("Partida con tamaño inesperado", warning)
+            if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
+                showAlert(warning.title, warning.message)
             } else if !session.info.headerChecksumOK {
                 showAlert("Cabecera dañada", "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado.")
             }
+        } catch SaveOpening.Refusal.mirrorNotDownloaded {
+            showAlert("Partida de iCloud sin descargar",
+                      "La partida de “\(fileName)” está en iCloud y no se pudo descargar. Para no empezar de cero ni pisarla, el juego no se abre. Vuelve a intentarlo con conexión.")
         } catch let e as CoreError {
             showAlert("No se puede abrir “\(fileName)”", e.description)
         } catch {

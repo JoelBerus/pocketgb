@@ -90,7 +90,8 @@ enum LibraryScanner {
 
         // Sin descargar: se muestra con el nombre del archivo y el estado de nube.
         let status = values?.ubiquitousItemDownloadingStatus
-        if placeholder || (values?.isUbiquitousItem == true && status != nil && status != .current) {
+        // `.downloaded` tiene datos locales (quizá no la última versión): es jugable (auditoría D2, H11).
+        if placeholder || (values?.isUbiquitousItem == true && status == .notDownloaded) {
             let downloading = values?.ubiquitousItemIsDownloading == true
             return make(title: nil, isColor: nil, size: 0, checksumOK: true,
                         cloud: downloading ? .downloading : .notDownloaded, problem: nil)
@@ -121,9 +122,11 @@ enum LibraryScanner {
     /// Lee el ROM completo con lectura coordinada (al abrir un juego). Rechaza > 8 MiB.
     static func readROM(_ url: URL) throws -> Data {
         try coordinatedRead(url) { u in
-            let size = (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= maxROMBytes else { throw CocoaError(.fileReadTooLarge) }
-            let data = try Data(contentsOf: u)
+            // Lectura acotada: aunque el archivo crezca tras mirar su tamaño, nunca se
+            // cargan más de 8 MiB + 1 bytes en memoria (auditoría D2, H13).
+            let handle = try FileHandle(forReadingFrom: u)
+            defer { try? handle.close() }
+            let data = try handle.read(upToCount: maxROMBytes + 1) ?? Data()
             guard data.count <= maxROMBytes else { throw CocoaError(.fileReadTooLarge) }
             return data
         }

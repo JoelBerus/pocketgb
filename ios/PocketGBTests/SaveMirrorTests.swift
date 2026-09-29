@@ -25,34 +25,34 @@ struct SaveMirrorTests {
     @Test func localOnlyIsUsedAndMirrorCreated() {
         let r = SaveResolution.resolve(local: C(data: Data([1, 1, 1, 1]), date: old), mirror: nil, isValidSize: valid)
         #expect(r == .load(data: Data([1, 1, 1, 1]), backupOther: nil, installLocal: false,
-                           updateMirror: true, mirrorIgnored: false))
+                           updateMirror: true, mirrorIgnored: false, quarantineLocal: false))
     }
 
     @Test func mirrorOnlyIsImportedIntoLocal() {
         let r = SaveResolution.resolve(local: nil, mirror: C(data: Data([2, 2, 2, 2]), date: old), isValidSize: valid)
         #expect(r == .load(data: Data([2, 2, 2, 2]), backupOther: nil, installLocal: true,
-                           updateMirror: false, mirrorIgnored: false))
+                           updateMirror: false, mirrorIgnored: false, quarantineLocal: false))
     }
 
     @Test func newerMirrorWinsAndLocalIsKeptByTheInstall() {
         let r = SaveResolution.resolve(local: C(data: Data([1, 1, 1, 1]), date: old),
                                        mirror: C(data: Data([2, 2, 2, 2]), date: new), isValidSize: valid)
         #expect(r == .load(data: Data([2, 2, 2, 2]), backupOther: nil, installLocal: true,
-                           updateMirror: false, mirrorIgnored: false))
+                           updateMirror: false, mirrorIgnored: false, quarantineLocal: false))
     }
 
     @Test func newerLocalWinsAndMirrorIsBackedUp() {
         let r = SaveResolution.resolve(local: C(data: Data([1, 1, 1, 1]), date: new),
                                        mirror: C(data: Data([2, 2, 2, 2]), date: old), isValidSize: valid)
         #expect(r == .load(data: Data([1, 1, 1, 1]), backupOther: Data([2, 2, 2, 2]), installLocal: false,
-                           updateMirror: true, mirrorIgnored: false))
+                           updateMirror: true, mirrorIgnored: false, quarantineLocal: false))
     }
 
     @Test func missingDatesPreferLocal() {
         let r = SaveResolution.resolve(local: C(data: Data([1, 1, 1, 1]), date: nil),
                                        mirror: C(data: Data([2, 2, 2, 2]), date: nil), isValidSize: valid)
         #expect(r == .load(data: Data([1, 1, 1, 1]), backupOther: Data([2, 2, 2, 2]), installLocal: false,
-                           updateMirror: true, mirrorIgnored: false))
+                           updateMirror: true, mirrorIgnored: false, quarantineLocal: false))
     }
 
     @Test func wrongSizeMirrorIsNeverTouched() {
@@ -63,7 +63,7 @@ struct SaveMirrorTests {
         let r = SaveResolution.resolve(local: C(data: Data([1, 1, 1, 1]), date: old),
                                        mirror: C(data: Data([9]), date: new), isValidSize: valid)
         #expect(r == .load(data: Data([1, 1, 1, 1]), backupOther: nil, installLocal: false,
-                           updateMirror: false, mirrorIgnored: true))
+                           updateMirror: false, mirrorIgnored: true, quarantineLocal: false))
     }
 
     @Test func wrongSizeLocalIsNotLoaded() {
@@ -130,5 +130,83 @@ struct SaveMirrorTests {
         index.record(fingerprint: "aa", title: "ALPHA", fileName: "alpha.gb")
         let games = index.savedGames()
         #expect(games.count == 1 && games[0].fingerprint == "aa" && games[0].record?.title == "ALPHA")
+    }
+
+    @Test func wrongSizeLocalWithValidMirrorIsQuarantined() {
+        let r = SaveResolution.resolve(local: C(data: Data([9]), date: new),
+                                       mirror: C(data: Data([2, 2, 2, 2]), date: old), isValidSize: valid)
+        #expect(r == .load(data: Data([2, 2, 2, 2]), backupOther: nil, installLocal: true,
+                           updateMirror: false, mirrorIgnored: false, quarantineLocal: true))
+    }
+
+    // MARK: SaveOpening: la decisión aplicada con E/S real (auditoría D2, H1/H3/H4/H9)
+
+    private func mirrorFile(_ data: Data?) throws -> SaveMirror {
+        let mirror = SaveMirror(url: dir.appendingPathComponent("Juegos/juego.sav"))
+        try FileManager.default.createDirectory(at: mirror.url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        if let data { try data.write(to: mirror.url) }
+        return mirror
+    }
+
+    @Test func iCloudOnlyMirrorIsUnavailableAndNeverWritten() throws {
+        let mirror = try mirrorFile(nil)
+        try Data("plist".utf8).write(to: mirror.placeholderURL)          // ".juego.sav.icloud"
+        #expect(mirror.snapshot() == .unavailable)
+        // Sin partida local: no se abre (se empezaría de cero y se pisaría la de iCloud).
+        let store = SaveStore(directory: dir, fingerprint: "a1")
+        #expect(throws: SaveOpening.Refusal.mirrorNotDownloaded) {
+            _ = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: .unavailable, validSizes: [4])
+        }
+        // Con partida local: se usa la local, el espejo queda fuera y se avisa.
+        try store.save(Data([1, 1, 1, 1]))
+        let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: .unavailable, validSizes: [4])
+        #expect(outcome.data == Data([1, 1, 1, 1]) && outcome.warning == .mirrorUnavailable)
+        try outcome.target?.persist(Data([3, 3, 3, 3]))
+        #expect(!FileManager.default.fileExists(atPath: mirror.url.path))   // nunca se escribió
+    }
+
+    @Test func absentMirrorSnapshot() throws {
+        #expect(try mirrorFile(nil).snapshot() == .absent)
+        let mirror = try mirrorFile(Data([5, 5, 5, 5]))
+        guard case let .read(data, _) = mirror.snapshot() else {
+            Issue.record("se esperaba .read")
+            return
+        }
+        #expect(data == Data([5, 5, 5, 5]))
+    }
+
+    @Test func wrongSizeFilesAreKeptByteForByte() throws {
+        // Espejo con tamaño incorrecto y sin local: la sesión no guarda y el espejo queda intacto.
+        let store = SaveStore(directory: dir, fingerprint: "b2")
+        let mirror = try mirrorFile(Data([9, 9, 9]))
+        let only = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(), validSizes: [4])
+        #expect(only.data == nil && only.target == nil && only.warning == .mirrorWrongSizeOnly)
+        #expect(try Data(contentsOf: mirror.url) == Data([9, 9, 9]))
+        // Local con tamaño incorrecto y espejo válido: la local se aparta intacta.
+        let store2 = SaveStore(directory: dir, fingerprint: "c3")
+        try store2.save(Data([7, 7, 7]))
+        let good = try mirrorFile(Data([4, 4, 4, 4]))
+        let outcome = try SaveOpening.prepare(store: store2, mirror: good, snapshot: good.snapshot(), validSizes: [4])
+        #expect(outcome.data == Data([4, 4, 4, 4]) && outcome.warning == .localQuarantined)
+        #expect(try store2.load() == Data([4, 4, 4, 4]))
+        let quarantined = try FileManager.default.contentsOfDirectory(atPath: store2.backupsDirectory.path)
+            .filter { $0.hasPrefix("c3.wrong-size-") }
+        #expect(quarantined.count == 1)
+        #expect(try Data(contentsOf: store2.backupsDirectory.appendingPathComponent(quarantined[0])) == Data([7, 7, 7]))
+    }
+
+    @Test func losingMirrorGoesToBackupOnceOnly() throws {
+        let store = SaveStore(directory: dir, fingerprint: "d4")
+        try store.save(Data([1, 1, 1, 1]))
+        let mirror = try mirrorFile(Data([2, 2, 2, 2]))
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: mirror.url.path)
+        for _ in 0..<3 {   // tres aperturas con un espejo que no se puede actualizar
+            let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
+                                                  validSizes: [4])
+            #expect(outcome.data == Data([1, 1, 1, 1]))
+        }
+        #expect(try Data(contentsOf: store.backupURL(1)) == Data([2, 2, 2, 2]))
+        #expect(store.backups().count == 1)   // sin duplicados
     }
 }

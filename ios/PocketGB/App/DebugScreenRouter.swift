@@ -51,8 +51,9 @@ enum DebugScreenRouter {
         case .saveDataError:
             state.selectedTab = .library
             if DebugArguments.value("-demoSaveError") == "wrong-size" {
-                state.alertTitle = "Partida con tamaño inesperado"
-                state.alertMessage = "El archivo .sav junto a “DMG-ACID2” tiene un tamaño inesperado. No se tocará; se usa la partida guardada en este iPhone."
+                // El mismo aviso que muestra la app al abrir el juego (auditoría D2, H8).
+                state.alertTitle = SaveLoadWarning.mirrorIgnored.title
+                state.alertMessage = SaveLoadWarning.mirrorIgnored.message
             }
         default:
             state.selectedTab = .library

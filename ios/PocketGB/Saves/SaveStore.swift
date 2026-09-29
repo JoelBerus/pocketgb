@@ -47,8 +47,11 @@ struct SaveStore: Sendable {
 
     /// Guarda `data` como backup `.1` (rotando los demás) sin tocar la partida actual.
     /// Se usa cuando el espejo junto al ROM pierde frente a la copia local.
+    /// Si esa copia ya está entre los backups no se añade otra vez: así un espejo que
+    /// no se puede actualizar no desplaza el historial en cada apertura (auditoría D2, H4).
     func addBackup(_ data: Data) throws {
         let fm = FileManager.default
+        for n in 1...Self.keepBackups where (try? Data(contentsOf: backupURL(n))) == data { return }
         try fm.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
         let oldest = backupURL(Self.keepBackups)
         if fm.fileExists(atPath: oldest.path) { try fm.removeItem(at: oldest) }
@@ -59,6 +62,22 @@ struct SaveStore: Sendable {
         try AtomicFile.writeSynced(data, to: tmp)
         try AtomicFile.rename(tmp, backupURL(1))
         try AtomicFile.syncDirectory(backupsDirectory)
+    }
+
+    /// Aparta la partida actual (tamaño incorrecto) fuera de la rotación de backups:
+    /// `backups/<huella>.wrong-size-<unix>.sav`. Nunca se borra (auditoría D2, H3).
+    func quarantineCurrent(now: Date = Date()) throws {
+        guard let data = try load() else { return }
+        try FileManager.default.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+        let url = quarantineURL(now)
+        let tmp = url.appendingPathExtension("tmp")
+        try AtomicFile.writeSynced(data, to: tmp)
+        try AtomicFile.rename(tmp, url)
+        try AtomicFile.syncDirectory(backupsDirectory)
+    }
+
+    func quarantineURL(_ date: Date) -> URL {
+        backupsDirectory.appendingPathComponent("\(fingerprint).wrong-size-\(Int(date.timeIntervalSince1970)).sav")
     }
 
     /// Restaura el backup `n`: la partida actual pasa antes a ser el backup `.1`

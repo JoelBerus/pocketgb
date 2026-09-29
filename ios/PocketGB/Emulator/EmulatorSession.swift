@@ -11,7 +11,7 @@ final class EmulatorSession: @unchecked Sendable {
     let buttons = ButtonMask()
     let audioRing = AudioRingBuffer()
     /// Aviso para mostrar al abrir (p. ej. .sav con tamaño inesperado).
-    let loadWarning: String?
+    let loadWarning: SaveLoadWarning?
 
     private let core: CoreBridge
     private let audioOutput: AudioOutput
@@ -59,10 +59,14 @@ final class EmulatorSession: @unchecked Sendable {
     private static let audioPriming = 1
     private static let audioLive = 2
 
-    /// - Parameter mirror: `<rom>.sav` junto al ROM en la carpeta de la biblioteca
-    ///   (nil para un ROM suelto). La copia local sigue siendo la autoritativa.
+    /// - Parameters:
+    ///   - mirror: `<rom>.sav` junto al ROM en la carpeta de la biblioteca (nil para un
+    ///     ROM suelto). La copia local sigue siendo la autoritativa.
+    ///   - mirrorSnapshot: el espejo ya leído fuera del hilo principal (`SaveMirror.snapshot()`).
+    /// - Throws: `SaveOpening.Refusal` si la única partida está en iCloud sin descargar.
     @MainActor
     init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
+         mirrorSnapshot: SaveMirror.Snapshot = .absent,
          onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
@@ -72,51 +76,25 @@ final class EmulatorSession: @unchecked Sendable {
         audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
                                   onPause: onAudioInterrupted)
 
-        var warning: String?
+        var warning: SaveLoadWarning?
         var saves: SaveTarget?
         if info.hasBattery, core.sramSaveSize > 0 {
             let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
             do {
                 try store.recoverOrphans(expectedSize: core.sramSaveSize)
-                let local = try store.load().map {
-                    SaveResolution.Candidate(data: $0, date: store.modificationDate)
-                }
-                // Un espejo que no se puede leer (sin acceso, sin descargar) no se toca.
-                var usableMirror = mirror
-                var mirrorCandidate: SaveResolution.Candidate?
-                if let mirror {
-                    do {
-                        mirrorCandidate = try mirror.read().map {
-                            SaveResolution.Candidate(data: $0, date: mirror.modificationDate)
-                        }
-                    } catch {
-                        usableMirror = nil
-                    }
-                }
-                let sizes = Self.validSaveSizes(info)
-                switch SaveResolution.resolve(local: local, mirror: mirrorCandidate,
-                                              isValidSize: { sizes.contains($0) }) {
-                case .none:
-                    saves = SaveTarget(local: store, mirror: usableMirror)
-                case let .load(data, backupOther, installLocal, updateMirror, mirrorIgnored):
-                    if let backupOther { try store.addBackup(backupOther) }
-                    if installLocal { try store.save(data) }
-                    try core.sramLoad(data)
-                    saves = SaveTarget(local: store, mirror: mirrorIgnored ? nil : usableMirror,
-                                       mirrorPending: updateMirror)
-                    if mirrorIgnored {
-                        warning = "El archivo .sav junto al juego tiene un tamaño inesperado. No se tocará; se usa la partida guardada en este iPhone."
-                    }
-                case let .wrongSize(fromMirror):
-                    warning = fromMirror
-                        ? "El archivo .sav junto al juego tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
-                        : "La partida guardada tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
-                }
+                let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirrorSnapshot,
+                                                      validSizes: Self.validSaveSizes(info))
+                if let data = outcome.data { try core.sramLoad(data) }
+                saves = outcome.target
+                warning = outcome.warning
+            } catch let refusal as SaveOpening.Refusal {
+                audioScratch.deallocate()
+                throw refusal
             } catch let e as CoreError where e == .sramSize {
-                // No se sobrescribe un .sav que no entendemos (ESTADO §Pendiente M6).
-                warning = "La partida guardada tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
+                // No se sobrescribe un .sav que no entendemos (no debería llegar: se valida el tamaño antes).
+                warning = .localWrongSize
             } catch {
-                warning = "No se pudo leer la partida (\(error.localizedDescription)). Esta sesión no guardará."
+                warning = .unreadable("No se pudo leer la partida (\(error.localizedDescription)).")
             }
         }
         self.saves = saves
