@@ -1,0 +1,60 @@
+# CI de la app iOS: compila, corre tests (núcleo, unitarios, UI) y publica las capturas
+# del catálogo (ios/PocketGBUITests/screens.txt) en la rama huérfana ci-shots/<rama>.
+# Así Claude en la nube (sin Xcode) puede ver la UI: git fetch origin ci-shots/<rama>.
+# Coste: minutos macOS del plan de GitHub (repo privado). Solo corre si cambian ios/ o core/.
+name: iOS
+on:
+  push:
+    branches-ignore: ['ci-shots/**']
+    paths: ['ios/**', 'core/**', 'tools/ios-screenshots.sh', '.github/workflows/ios.yml']
+  workflow_dispatch:
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 26
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+      - name: ROMs de prueba (libres, hash verificado)
+        run: tools/fetch-test-roms.sh
+      - name: Núcleo
+        run: make -C core test HITO=M5
+      - name: App, tests y capturas
+        id: shots
+        run: tools/ios-screenshots.sh build/screenshots
+      - name: Publicar capturas en ci-shots/${{ github.ref_name }}
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT: ${{ steps.shots.outcome }}
+        run: |
+          OUT=build/screenshots; mkdir -p "$OUT"
+          LOG="$OUT/xcodebuild.log"; touch "$LOG"
+          {
+            echo "# Capturas de CI"
+            echo "- Rama: \`${GITHUB_REF_NAME}\` · commit: \`${GITHUB_SHA}\` · resultado: **${RESULT}**"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- $(xcodebuild -version | tr '\n' ' ')"
+            echo; echo "## Errores y warnings del proyecto"; echo '```'
+            grep -E '(error|warning): ' "$LOG" | grep -v appintentsmetadataprocessor | sort -u || echo "(ninguno)"
+            echo '```'; echo; echo "## Tests"; echo '```'
+            grep -E 'Test Case .*(passed|failed)|✔ Test|✘ Test|TEST (SUCCEEDED|FAILED)|BUILD FAILED' "$LOG" | tail -80 || true
+            echo '```'; echo; echo "## Capturas"
+            for f in "$OUT"/*.png; do [ -e "$f" ] && echo "- $(basename "$f")"; done
+          } > "$OUT/SUMMARY.md"
+          tail -400 "$LOG" > "$OUT/log-tail.txt"
+          rm -rf "$OUT/result.xcresult" "$LOG"
+          cd "$OUT"
+          git init -q && git checkout -q -b shots
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "Capturas de ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ci-shots/${GITHUB_REF_NAME}"

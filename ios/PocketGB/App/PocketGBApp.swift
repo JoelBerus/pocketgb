@@ -12,6 +12,9 @@ struct PocketGBApp: App {
             RootView()
                 .environment(state)
                 .statusBarHidden()
+                #if DEBUG
+                .preferredColorScheme(DebugArguments.colorScheme)
+                #endif
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     state.memoryWarning()
@@ -136,3 +139,19 @@ struct RomPicker: UIViewControllerRepresentable {
         }
     }
 }
+
+#if DEBUG
+/// Argumentos de arranque solo para pruebas y capturas (ios/README.md).
+enum DebugArguments {
+    /// `-uiStyle light|dark` fuerza la apariencia.
+    static var colorScheme: ColorScheme? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-uiStyle"), i + 1 < args.count else { return nil }
+        switch args[i + 1] {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
+    }
+}
+#endif

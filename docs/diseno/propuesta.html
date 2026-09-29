@@ -1,0 +1,783 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Pocket Emulator Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&family=Silkscreen&display=swap">
+<style>
+/* Layout: spec sheet — hero con gameplay interactivo, luego secciones con galerías de iPhones escalados y tablas de tokens */
+:root{
+  --bg:#ECEEF2; --surface:#F7F8FA; --fg:#12151B; --muted:#586070; --line:#D2D7DF; --accent:#2B5FDB; --chip:#E1E5EC;
+  --f-display:"Bricolage Grotesque",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --f-pixel:"Silkscreen",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0B0D11;--surface:#13161C;--fg:#E8EBF0;--muted:#9299A7;--line:#252932;--accent:#7FA3FF;--chip:#1B1F27;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0B0D11;--surface:#13161C;--fg:#E8EBF0;--muted:#9299A7;--line:#252932;--accent:#7FA3FF;--chip:#1B1F27;color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--f-body);padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h2{font-size:clamp(26px,3.4vw,36px);font-weight:800;letter-spacing:-.02em}
+h3{font-size:18px;font-weight:700}
+p{margin:0;max-width:66ch}
+.eyebrow{font:600 11px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+section{padding-block:56px 8px;display:grid;gap:22px}
+section>header{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:22px}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+
+/* hero */
+.hero{display:grid;gap:18px;padding-block:40px 8px}
+.hero h1{font-size:clamp(38px,6.4vw,76px);font-weight:800;letter-spacing:-.035em;line-height:.95}
+.hero h1 em{font-style:normal;font-family:var(--f-pixel);font-weight:400;font-size:.62em;letter-spacing:0;vertical-align:.12em;color:var(--accent)}
+.lede{font-size:17px;color:var(--muted);max-width:60ch}
+.play{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+@media (max-width:900px){.play{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;gap:16px}
+.panel label,.panel .lbl{font:600 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.seg{display:flex;background:var(--chip);border-radius:10px;padding:3px;gap:2px}
+.seg button{flex:1;border:0;background:transparent;color:var(--fg);font:500 13px var(--f-body);padding:7px 4px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.15);font-weight:650}
+.seg button:focus-visible,.sw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.swrow{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:14px}
+.sw{appearance:none;width:44px;height:26px;border-radius:13px;background:var(--chip);border:1px solid var(--line);position:relative;cursor:pointer;flex:none;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.sw:checked{background:#34C759;border-color:#34C759}.sw:checked::after{transform:translateX(18px)}
+.readout{font:600 13px var(--f-mono);display:flex;justify-content:space-between;padding:10px 12px;background:var(--chip);border-radius:10px}
+.note{font-size:13px;color:var(--muted)}
+
+/* gallery */
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:28px 22px}
+.gal.wide{grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
+figure{margin:0;display:grid;gap:10px;align-content:start;min-width:0}
+figcaption{display:grid;gap:3px;font-size:13px;min-width:0}
+figcaption b{font-size:14px}
+figcaption .n{font:600 11px var(--f-mono);color:var(--accent)}
+.frame{position:relative;width:100%;overflow:hidden}
+.stage{position:absolute;left:0;top:0;transform-origin:0 0}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:640px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+.sw8{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(128,128,128,.35)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.card ul,.card ol{margin:0;padding-left:18px;display:grid;gap:5px;font-size:14px}
+.tree{font:13px/1.7 var(--f-mono);white-space:pre;overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+.layers{display:grid;gap:10px}
+.layer{display:grid;grid-template-columns:120px minmax(0,1fr);gap:14px;align-items:center;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--surface)}
+.layer b{font-family:var(--f-display);font-size:16px}
+.pill{display:inline-block;font:600 10.5px var(--f-mono);padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--muted);margin:2px 4px 2px 0}
+.icons{display:flex;flex-wrap:wrap;gap:22px;align-items:end}
+.icons figure{justify-items:center;text-align:center}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;counter-reset:s}
+.steps div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;font-size:13.5px;display:grid;gap:6px}
+.steps .t{font:600 11px var(--f-mono);color:var(--accent)}
+
+/* ============ iPhone mockups ============ */
+.ph{position:absolute;left:8px;top:8px;width:280px;height:606px;border-radius:46px;overflow:hidden;background:var(--p-bg);color:var(--p-fg);
+  font:12px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  box-shadow:0 0 0 6px #17191E,0 0 0 7px #43464F,0 24px 50px -18px rgba(0,0,0,.45);isolation:isolate}
+.ph.l{width:606px;height:280px}
+.ph *{box-sizing:border-box}
+.pd{--p-bg:#0E1014;--p-bg2:#1A1D23;--p-fg:#F2F4F7;--p-mut:#8D94A2;--p-sep:rgba(255,255,255,.08);--p-fill:rgba(255,255,255,.08);--p-fill2:rgba(255,255,255,.16);--tint:#5A96FF;--danger:#FF5B52;--g-bg:rgba(44,48,57,.44);--g-edge:rgba(255,255,255,.2);--g-hi:rgba(255,255,255,.34);--solid:#262930;--m-bg:rgba(30,33,40,.74)}
+.pl{--p-bg:#F2F3F7;--p-bg2:#FFFFFF;--p-fg:#0B0D12;--p-mut:#6B7281;--p-sep:rgba(0,0,0,.09);--p-fill:rgba(0,0,0,.055);--p-fill2:rgba(0,0,0,.12);--tint:#1F68F5;--danger:#E3342F;--g-bg:rgba(255,255,255,.58);--g-edge:rgba(255,255,255,.85);--g-hi:rgba(255,255,255,.95);--solid:#FFFFFF;--m-bg:rgba(250,250,252,.8)}
+.ph .a{position:absolute}
+.island{position:absolute;top:10px;left:50%;width:78px;height:22px;margin-left:-39px;background:#000;border-radius:12px;z-index:20}
+.ph.l .island{top:50%;left:10px;width:22px;height:78px;margin:-39px 0 0}
+.hi{position:absolute;bottom:6px;left:50%;width:96px;height:4px;margin-left:-48px;border-radius:2px;background:var(--p-fg);opacity:.85;z-index:20}
+.ph.l .hi{width:130px;margin-left:-65px;bottom:5px}
+.game .hi{background:#fff;opacity:.45}
+.sb{position:absolute;top:0;left:0;right:0;height:42px;display:flex;justify-content:space-between;align-items:center;padding:3px 26px 0 32px;font-weight:600;font-size:11.5px;z-index:15}
+.sb svg{display:block}
+.body{position:absolute;inset:0;padding:48px 14px 0;overflow:hidden}
+.lt{font-size:24px;font-weight:700;letter-spacing:-.4px}
+.nt{font-size:12.5px;font-weight:600;text-align:center}
+.sh{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:700;margin:14px 0 8px}
+.sh span{font-size:11px;font-weight:400;color:var(--tint)}
+.pm{color:var(--p-mut)}
+.row{display:flex;align-items:center}
+.btw{justify-content:space-between}
+.gp{gap:6px}
+.gb{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--p-fg);flex:none}
+.srch{height:30px;border-radius:15px;background:var(--p-fill);display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--p-mut);font-size:12px}
+.chips{display:flex;gap:6px;margin-top:10px;overflow:hidden}
+.chip{flex:none;height:24px;padding:0 10px;border-radius:12px;background:var(--p-fill);display:flex;align-items:center;font-size:10.5px;font-weight:500;gap:4px}
+.chip.on{background:var(--p-fg);color:var(--p-bg)}
+.px{font-family:var(--f-pixel);font-size:8.5px;letter-spacing:.4px;line-height:1}
+.con{display:inline-flex;align-items:center;height:14px;padding:0 5px;border-radius:5px;background:var(--p-fill);color:var(--p-mut)}
+canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block}
+.cv{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:3/4;box-shadow:0 6px 14px -8px rgba(0,0,0,.6)}
+.cv canvas{width:100%;height:100%}
+.ct{font-size:11.5px;font-weight:600;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cs{font-size:9.5px;color:var(--p-mut);display:flex;gap:4px;align-items:center}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px 12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 8px}
+/* glass */
+.g{background:var(--g-bg);-webkit-backdrop-filter:blur(14px) saturate(175%);backdrop-filter:blur(14px) saturate(175%);box-shadow:inset 0 .6px 0 var(--g-hi),inset 0 0 0 .6px var(--g-edge),0 8px 20px -8px rgba(0,0,0,.35)}
+.gm{background:var(--m-bg);-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%);box-shadow:inset 0 .6px 0 var(--g-hi),inset 0 0 0 .6px var(--g-edge),0 -8px 40px rgba(0,0,0,.35)}
+.rt .g{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--solid);box-shadow:inset 0 0 0 1px var(--p-sep),0 6px 16px -8px rgba(0,0,0,.4)}
+.rt .gm{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--p-bg2)}
+.tab{position:absolute;left:30px;right:30px;bottom:20px;height:50px;border-radius:25px;display:flex;padding:4px;z-index:12}
+.ti{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:8.5px;font-weight:600;border-radius:21px;color:var(--p-fg)}
+.ti.on{background:var(--p-fill);color:var(--tint)}
+.edge{position:absolute;left:0;right:0;top:0;height:70px;z-index:10;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);background:linear-gradient(var(--p-bg) 25%,transparent);-webkit-mask-image:linear-gradient(#000 45%,transparent);mask-image:linear-gradient(#000 45%,transparent)}
+.cap{height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:12.5px}
+.cap.tint{background:var(--tint);color:#fff}
+.cap.fill{background:var(--p-fill);color:var(--p-fg)}
+.cap.inv{background:var(--p-fg);color:var(--p-bg)}
+.cap.red{background:var(--p-fill);color:var(--danger)}
+.grp{background:var(--p-bg2);border-radius:14px;overflow:hidden}
+.ri{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;font-size:11.5px;border-bottom:.6px solid var(--p-sep)}
+.ri:last-child{border-bottom:0}
+.ri .v{margin-left:auto;color:var(--p-mut);display:flex;align-items:center;gap:4px}
+.gh{font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--p-mut);margin:14px 12px 5px}
+.gf{font-size:9.5px;color:var(--p-mut);margin:5px 12px 0;line-height:1.35}
+.sq{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;flex:none}
+.tg{width:34px;height:20px;border-radius:10px;background:#34C759;position:relative;flex:none;margin-left:auto}
+.tg::after{content:"";position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tg.off{background:var(--p-fill2)}.tg.off::after{right:auto;left:2px}
+.sg{display:flex;background:var(--p-fill);border-radius:8px;padding:2px;margin-left:auto}
+.sg b{font-weight:500;font-size:10px;padding:3px 7px;border-radius:6px}
+.sg b.on{background:var(--p-bg2);box-shadow:0 1px 2px rgba(0,0,0,.2);font-weight:600}
+.pd .sg b.on{background:#5b606b}
+.sl{height:4px;border-radius:2px;background:var(--p-fill2);position:relative;flex:1}
+.sl i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--tint)}
+.sl u{position:absolute;top:-7px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);margin-left:-9px}
+.tag{font-size:9px;font-weight:600;padding:2px 6px;border-radius:6px;background:var(--p-fill);color:var(--p-mut);display:inline-flex;gap:3px;align-items:center}
+.tag.cu{color:var(--tint);background:color-mix(in srgb,var(--tint) 18%,transparent)}
+.sheet{position:absolute;left:6px;right:6px;bottom:6px;border-radius:40px;padding:10px 14px 22px;z-index:14}
+.grab{width:34px;height:4px;border-radius:2px;background:var(--p-fill2);margin:0 auto 10px}
+.alert{position:absolute;left:50%;top:50%;width:212px;transform:translate(-50%,-50%);border-radius:26px;padding:18px 14px 12px;text-align:center;z-index:14;display:grid;gap:8px}
+.alert h4{margin:0;font-size:13.5px}
+.alert p{font-size:10.5px;color:var(--p-mut);line-height:1.4}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:13}
+.toast{position:absolute;left:50%;top:44px;transform:translateX(-50%);height:32px;border-radius:16px;padding:0 12px 0 8px;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;white-space:nowrap;z-index:16}
+.kb{position:absolute;left:0;right:0;bottom:0;height:190px;background:var(--p-bg2);padding:8px 3px 30px;display:grid;gap:7px;align-content:start;z-index:12}
+.pl .kb{background:#D1D4DB}
+.kb div{display:flex;justify-content:center;gap:4px}
+.kb span{width:22px;height:30px;border-radius:5px;background:var(--p-fill2);display:grid;place-items:center;font-size:12px}
+.pl .kb span{background:#fff}
+.kb span.w{width:128px}.kb span.m{width:34px}
+
+/* gameplay */
+.game{--p-bg:#0A0B0E;background:linear-gradient(#08090B 0%,#101217 48%,#15171D 100%)}
+.vp{position:absolute;overflow:hidden;background:#000}
+.vp canvas,canvas.full{width:100%;height:100%}
+canvas.full{object-fit:cover}
+.dimmed canvas{filter:brightness(.45) saturate(.8)}
+.lcd::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);pointer-events:none}
+.ctl{position:absolute;display:grid;place-items:center;color:#fff;font-weight:700;-webkit-user-select:none;user-select:none;touch-action:none;--op:1}
+.ctl .surf{position:absolute;inset:0;border-radius:inherit;background:rgba(20,22,28,.3);-webkit-backdrop-filter:blur(5px) saturate(160%);backdrop-filter:blur(5px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 0 0 .75px rgba(255,255,255,.3),0 4px 12px rgba(0,0,0,.22);opacity:var(--op);transition:transform 70ms ease-out,opacity .2s,background 70ms}
+.ctl .lab{position:relative;opacity:calc(.5 + var(--op) * .5);text-shadow:0 1px 2px rgba(0,0,0,.6);font-size:15px;transition:transform 70ms ease-out;display:grid;place-items:center}
+.pctl .ctl .surf{background:rgba(255,255,255,.075)}
+.round{border-radius:50%}
+.cpill{border-radius:999px}
+.ctl.down .surf{transform:scale(.9);background:rgba(255,255,255,.3)}
+.ctl.down .lab{transform:scale(.9)}
+.ctl.A .surf{box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 0 0 1.5px rgba(255,196,120,.45),0 4px 12px rgba(0,0,0,.22)}
+.ctl.B .surf{box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 0 0 1.5px rgba(150,190,255,.45),0 4px 12px rgba(0,0,0,.22)}
+.sm .lab{font-size:8.5px;letter-spacing:.8px;font-weight:700}
+.dpad .surf{border-radius:0;clip-path:polygon(33% 0,67% 0,67% 33%,100% 33%,100% 67%,67% 67%,67% 100%,33% 100%,33% 67%,0 67%,0 33%,33% 33%)}
+.dpad svg{position:absolute;inset:0;width:100%;height:100%;opacity:calc(.5 + var(--op) * .5)}
+.dpad .hl{fill:#fff;fill-opacity:0;transition:fill-opacity 60ms}
+.dpad[data-dir~="u"] .hu,.dpad[data-dir~="d"] .hd,.dpad[data-dir~="l"] .hL,.dpad[data-dir~="r"] .hr{fill-opacity:.32}
+.rt .ctl .surf{-webkit-backdrop-filter:none;backdrop-filter:none;background:#2B2E36;opacity:max(var(--op),.9);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
+.rt .ctl .lab{opacity:1}
+.hidectl .ctl{opacity:0;pointer-events:none}
+.ctls{transition:opacity .25s}
+.hud{position:absolute;height:40px;border-radius:20px;display:flex;align-items:center;gap:0;padding:0 5px;z-index:12;color:var(--p-fg)}
+.hud i{width:31px;height:31px;display:grid;place-items:center;border-radius:50%}
+.hud i.on{background:var(--p-fill2)}
+.sel{outline:1.5px dashed var(--tint);outline-offset:4px}
+.hdl{position:absolute;width:8px;height:8px;border-radius:50%;background:#fff;border:1.5px solid var(--tint);z-index:3}
+.guide{position:absolute;background:var(--tint);opacity:.9;z-index:2}
+.dots{background-image:radial-gradient(rgba(255,255,255,.12) 1px,transparent 1.2px);background-size:12px 12px}
+@media (prefers-reduced-motion:reduce){.ctl .surf,.ctl .lab,.ctls,.sw::after{transition:none}}
+</style>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="eyebrow">Propuesta UI/UX · iPhone · Liquid Glass</span>
+    <h1>Pocket <em>retro core</em></h1>
+    <p class="lede">Un emulador de portátiles retro para iPhone donde el juego es el contenido y iOS es la interfaz. El vidrio solo vive en la capa de controles, navegación y modales; nunca en las portadas ni en el viewport.</p>
+    <div class="play">
+      <figure>
+        <div class="frame" id="heroFrame" data-w="622" data-h="296"></div>
+        <figcaption><span class="n">18 · 19 · 20 — interactivo</span><b>Gameplay Landscape</b><span class="muted">Toca A, B, L, R o arrastra sobre la cruceta (detecta diagonales). El juego corre bajo los controles para mostrar cómo el vidrio toma su color.</span></figcaption>
+      </figure>
+      <div class="panel" aria-label="Ajustes de controles">
+        <div style="display:grid;gap:8px"><span class="lbl" id="opL">Button Opacity</span>
+          <div class="seg" role="group" aria-labelledby="opL" id="opSeg">
+            <button data-v=".3">30%</button><button data-v=".5" aria-pressed="true">50%</button><button data-v=".7">70%</button><button data-v="1">100%</button></div></div>
+        <div style="display:grid;gap:8px"><span class="lbl" id="visL">Visibility</span>
+          <div class="seg" role="group" aria-labelledby="visL" id="visSeg">
+            <button data-v="always" aria-pressed="true">Always</button><button data-v="touch">On Touch</button><button data-v="hidden">Hidden</button></div></div>
+        <div class="swrow"><span>Reduce Transparency</span><input type="checkbox" class="sw" id="rtSw" aria-label="Reduce Transparency"></div>
+        <div class="swrow"><span>Juego en movimiento</span><input type="checkbox" class="sw" id="animSw" checked aria-label="Animar juego"></div>
+        <div class="readout"><span>Input</span><span id="inp">—</span></div>
+        <p class="note">La opacidad cambia la superficie, no el área táctil. La etiqueta nunca baja de 65% para seguir siendo legible, y un scrim oscuro bajo cada botón mantiene contraste sobre flashes del juego.</p>
+      </div>
+    </div>
+  </div>
+
+  <section id="principios">
+    <header><span class="eyebrow">01 · Sistema</span><h2>Contenido primero, controles flotando encima</h2>
+      <p class="muted">Tres capas fijas. Cada superficie pertenece a una sola, y el vidrio nunca se apila sobre vidrio.</p></header>
+    <div class="layers">
+      <div class="layer"><b>L1 Content</b><div><span class="pill">artwork</span><span class="pill">covers</span><span class="pill">screenshots</span><span class="pill">GameViewport</span><span class="pill">fondos</span><p class="note" style="margin-top:6px">Sin vidrio. Opaco, a color, sin bordes brillantes. Se extiende bajo barras y controles para que el vidrio lo refracte.</p></div></div>
+      <div class="layer"><b>L2 Functional Glass</b><div><span class="pill">FloatingTabBar</span><span class="pill">SearchField</span><span class="pill">GlassToolbar</span><span class="pill">FloatingHUD</span><span class="pill">EmulatorButton</span><span class="pill">context actions</span><p class="note" style="margin-top:6px">Regular Glass en navegación; Clear Glass solo para controles sobre gameplay, con scrim adaptativo.</p></div></div>
+      <div class="layer"><b>L3 Modal Glass</b><div><span class="pill">Pause</span><span class="pill">Save / Load</span><span class="pill">Alert</span><span class="pill">Confirmation</span><span class="pill">ContextMenu</span><span class="pill">BottomSheet</span><p class="note" style="margin-top:6px">Mayor separación: blur 28, más opacidad, el contenido detrás se atenúa al 45% para priorizar legibilidad.</p></div></div>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>Arquitectura de información</h3>
+<div class="tree" style="border:0;padding:0;background:none">Tab: Library
+├─ Search (filtros All · GB · GBC · GBA · ★)
+├─ Continue Playing  → Gameplay
+├─ All Games (Grid | List)
+│   └─ Game Details
+│       ├─ Play / Continue → Gameplay
+│       ├─ Save States → Load / Replace / Delete
+│       └─ Game Settings (overrides)
+└─ + Import Game → Files picker → Confirm
+Tab: Favorites
+├─ Recently Played
+└─ Favorites grid
+Tab: Settings
+├─ Emulation · Controls · Audio
+├─ Display · Appearance · Library
+├─ Storage · About
+└─ Controls › Customize Layout
+Gameplay (modal full screen, sin tab bar)
+├─ HUD → Pause sheet
+└─ Pause → Save/Load · Cheats · Controls</div></div>
+      <div class="card"><h3>Reglas de navegación</h3><ul>
+        <li>Tab bar flotante de 3 tabs; se contrae a íconos al hacer scroll hacia abajo y se expande al volver.</li>
+        <li>Gameplay es un <code>fullScreenCover</code>: oculta tab bar, status bar y bloquea gestos de sistema del borde con <em>defer</em> para evitar salir por error.</li>
+        <li>Títulos grandes que colapsan a inline con <em>scroll edge effect</em> (desenfoque suave, no barra sólida).</li>
+        <li>Cover → Game Details con transición <em>zoom</em> desde la portada de origen.</li>
+        <li>Botón <b>+</b> del toolbar se transforma en menú (Import from Files, Scan Folder).</li>
+        <li>Todo gesto tiene un botón equivalente visible.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section id="biblioteca">
+    <header><span class="eyebrow">02 · Biblioteca</span><h2>Portadas grandes, cero cajas de vidrio</h2>
+      <p class="muted">Las cards no tienen contenedor: portada, título y una línea de metadatos. El vidrio aparece solo en el botón Continue flotando sobre el screenshot y en la tab bar.</p></header>
+    <div class="gal" id="galLib"></div>
+  </section>
+
+  <section id="gameplay">
+    <header><span class="eyebrow">03 · Gameplay</span><h2>Portrait tipo Game Boy, landscape tipo GBA</h2>
+      <p class="muted">Portrait: juego arriba, controles abajo sobre superficie oscura neutra. Landscape: juego maximizado al alto total; los controles se superponen como vidrio claro. Cada orientación guarda su propio layout.</p></header>
+    <div class="gal" id="galGameP"></div>
+    <div class="gal wide" id="galGameL"></div>
+  </section>
+
+  <section id="overlays">
+    <header><span class="eyebrow">04 · Overlays y modales</span><h2>El juego sigue visible detrás</h2>
+      <p class="muted">Sheets flotantes con esquinas concéntricas al hardware (radio pantalla 46 − inset 6 = 40). Alerts con botones cápsula apilados. Los capturas de save states dominan, el vidrio solo agrupa acciones.</p></header>
+    <div class="gal" id="galOv"></div>
+  </section>
+
+  <section id="ajustes">
+    <header><span class="eyebrow">05 · Personalización y Settings</span><h2>Controles nativos, sin reinventar</h2>
+      <p class="muted">Settings usa listas agrupadas, toggles, sliders y menús de iOS. La edición de layout es la única pantalla con herramientas propias: handles, guías de alineación y snap a 4 pt.</p></header>
+    <div class="gal" id="galSet"></div>
+    <div class="gal wide" id="galSetL"></div>
+  </section>
+
+  <section id="a11y">
+    <header><span class="eyebrow">06 · Accesibilidad y variantes</span><h2>Nada depende del efecto de vidrio</h2>
+      <p class="muted">Con Reduce Transparency los controles pasan a superficie sólida con borde de 1.5 pt y etiquetas al 100%. La jerarquía, las siluetas y los touch targets no cambian.</p></header>
+    <div class="gal wide" id="galA11y"></div>
+    <div class="cols">
+      <div class="card"><h3>Reduce Transparency</h3><ul><li>Glass → <code>--solid</code> + borde 1 pt; modales a <code>--p-bg2</code> opaco.</li><li>Controles de juego: opacidad mínima 90% aunque el usuario elija 30%.</li><li>Scroll edge effect → barra sólida con separador.</li></ul></div>
+      <div class="card"><h3>Reduce Motion</h3><ul><li>Sin morphing botón→menú: fade 150 ms.</li><li>Cover→Details: crossfade en lugar de zoom.</li><li>Rotación: el viewport hace fade 200 ms, sin interpolar posición.</li><li>Feedback de botones intacto (es estado, no decoración).</li></ul></div>
+      <div class="card"><h3>VoiceOver y Dynamic Type</h3><ul><li>Cada control con label y hint: “A button”, “D-Pad, swipe to change direction”.</li><li>Gameplay expone acción “Open Menu” como <em>magic tap</em>.</li><li>Biblioteca y Settings escalan hasta AX5; en gameplay el texto es fijo y los botones se redimensionan desde Controls.</li><li>Estados nunca solo por color: Customized lleva punto + texto; favorito lleva estrella.</li></ul></div>
+      <div class="card"><h3>Safe areas</h3><ul><li>Landscape: controles dentro del inset lateral (Dynamic Island a la izquierda o derecha); el juego puede invadirlo.</li><li>Start/Select a los lados, nunca en el centro inferior del Home Indicator.</li><li>Home Indicator auto-oculto y gestos de borde diferidos durante gameplay.</li><li>Portrait en iPhone SE / mini: viewport se reduce antes que la cruceta.</li></ul></div>
+    </div>
+  </section>
+
+  <section id="motion">
+    <header><span class="eyebrow">07 · Movimiento</span><h2>Portrait → Landscape sin cortar el juego</h2>
+      <p class="muted">La emulación no se pausa. El framebuffer es la ancla espacial; los controles salen y entran por separado porque cada orientación tiene su layout.</p></header>
+    <div class="steps">
+      <div><span class="t">0–80 ms</span><b>Congelar geometría</b>El viewport conserva su frame actual; el emulador sigue renderizando dentro.</div>
+      <div><span class="t">0–120 ms</span><b>Salida de controles</b>Controles portrait: fade + scale 0.96. Sin rotarlos.</div>
+      <div><span class="t">80–380 ms</span><b>Viewport a su nuevo frame</b>Spring (response 0.38, damping 0.86) con aspect ratio bloqueado. Fondo de controles se disuelve a negro.</div>
+      <div><span class="t">260–480 ms</span><b>Entrada landscape</b>Carga perfil Landscape (global o por juego). D-pad y A/B aparecen desde los bordes con stagger de 40 ms.</div>
+      <div><span class="t">Reduce Motion</span><b>Crossfade</b>Un solo fade de 200 ms entre layouts. Sin flashes: el último frame se mantiene hasta que llega el siguiente.</div>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>Microinteracciones de control</h3><ul><li>Touch down: scale 0.90 en 70 ms, surface +20% brillo, haptic <code>.light</code>.</li><li>Touch up: vuelve en 90 ms ease-out. Nunca spring en gameplay.</li><li>D-pad: resalta el brazo activo; diagonales resaltan dos brazos; haptic <code>.selection</code> al cambiar dirección.</li><li>Botón menú → HUD: el círculo se estira a cápsula (morph glass).</li></ul></div>
+      <div class="card"><h3>Gestos opcionales</h3><ul><li>Swipe down desde el viewport → Pause sheet.</li><li>Swipe up en zona de controles → HUD.</li><li>Double tap en viewport → Fast Forward on/off.</li><li>Long press en menú → Quick Save (haptic <code>.success</code> + toast).</li><li>Todos desactivables en Controls › Gestures; cada uno tiene botón en el HUD.</li></ul></div>
+      <div class="card"><h3>Haptics</h3><ul><li>Botones: <code>impact(.light)</code>, intensidad 0.6.</li><li>Save state / import: <code>notification(.success)</code>.</li><li>Fast forward: <code>impact(.rigid)</code>.</li><li>Confirmación destructiva: <code>notification(.warning)</code>.</li><li>Un toggle global en Controls › Haptic Feedback.</li></ul></div>
+    </div>
+  </section>
+
+  <section id="tokens">
+    <header><span class="eyebrow">08 · Design tokens</span><h2>Tokens base</h2><p class="muted">Nombres listos para Figma Variables y un <code>enum</code> en SwiftUI.</p></header>
+    <div class="tbl"><table><thead><tr><th>Token</th><th>Light</th><th>Dark</th><th>Uso</th></tr></thead><tbody>
+      <tr><td>bg.base</td><td><span class="sw8" style="background:#F2F3F7"></span>#F2F3F7</td><td><span class="sw8" style="background:#0E1014"></span>#0E1014</td><td>Fondo de biblioteca y settings. Dark no es negro absoluto.</td></tr>
+      <tr><td>bg.elevated</td><td><span class="sw8" style="background:#FFFFFF"></span>#FFFFFF</td><td><span class="sw8" style="background:#1A1D23"></span>#1A1D23</td><td>Grupos de settings, sheets con Reduce Transparency.</td></tr>
+      <tr><td>bg.gameplay</td><td colspan="2"><span class="sw8" style="background:#101217"></span>#08090B → #15171D (siempre oscuro)</td><td>Zona de controles portrait y bordes letterbox.</td></tr>
+      <tr><td>label.primary / secondary</td><td>#0B0D12 / #6B7281</td><td>#F2F4F7 / #8D94A2</td><td>Texto. Secondary pasa AA sobre bg.base.</td></tr>
+      <tr><td>tint</td><td><span class="sw8" style="background:#1F68F5"></span>#1F68F5</td><td><span class="sw8" style="background:#5A96FF"></span>#5A96FF</td><td>Único acento. Puede tomarse del artwork en Game Details.</td></tr>
+      <tr><td>danger</td><td>#E3342F</td><td>#FF5B52</td><td>Delete, Exit Game, Remove.</td></tr>
+      <tr><td>glass.regular</td><td>white 58% · blur 14 · sat 175%</td><td>#2C3039 44% · blur 14 · sat 175%</td><td>Tab bar, toolbar, HUD, search. Edge 0.6 pt + highlight superior.</td></tr>
+      <tr><td>glass.clear</td><td colspan="2">#14161C × op(0.3–1) · blur 5 · edge 0.75 pt white 30%</td><td>Controles sobre gameplay. Scrim oscuro asegura contraste de la etiqueta.</td></tr>
+      <tr><td>glass.modal</td><td>white 80% · blur 28</td><td>#1E2128 74% · blur 28</td><td>Pause, save/load, alerts. Contenido detrás a 45% brillo.</td></tr>
+      <tr><td>control.accent.A / B</td><td colspan="2">anillo cálido 45% / anillo frío 45%</td><td>Diferencia sutil A/B, además de tamaño, posición y label.</td></tr>
+    </tbody></table></div>
+    <div class="cols">
+      <div class="card"><h3>Spacing</h3><p class="mono">4 · 8 · 12 · 16 · 20 · 24 · 32</p><p class="note">Márgenes de pantalla 16 (20 en Pro Max). Gap de grid 12. Separación mínima entre controles 8.</p></div>
+      <div class="card"><h3>Radios concéntricos</h3><p class="mono">r = r_padre − inset</p><p class="note">Pantalla ≈ 55 pt → sheet 47 (inset 8) → botón interno 31. Covers 14, thumbnails 8, cápsulas = altura/2.</p></div>
+      <div class="card"><h3>Tipografía</h3><p class="mono">SF Pro: Large Title 34 · Title 3 20 · Headline 17 · Body 17 · Subhead 15 · Footnote 13 · Caption 12</p><p class="note">Pixel (<span style="font-family:var(--f-pixel)">Silkscreen</span>) solo en ConsoleChip y badges, nunca en texto largo.</p></div>
+      <div class="card"><h3>Touch targets</h3><p class="mono">min 44 · A/B 64 · D-pad 132 · L/R 120×44</p><p class="note">Tamaño ajustable 80–140%. El área táctil del D-pad es 20% mayor que su silueta.</p></div>
+      <div class="card"><h3>Motion</h3><p class="mono">press 70ms · release 90ms · HUD 220ms spring · sheet 350ms spring · autohide 3s</p><p class="note">Ninguna animación bloquea input.</p></div>
+      <div class="card"><h3>Iconografía</h3><p class="mono">SF Symbols · weight .semibold en toolbars, .regular en listas</p><p class="note">gamecontroller, square.and.arrow.down, clock.arrow.circlepath, forward.fill, camera, slider.horizontal.3, xmark.</p></div>
+    </div>
+  </section>
+
+  <section id="componentes">
+    <header><span class="eyebrow">09 · Componentes</span><h2>Librería reutilizable</h2><p class="muted">Cada componente mapea 1:1 a un View de SwiftUI.</p></header>
+    <div class="tbl"><table><thead><tr><th>Componente</th><th>Capa</th><th>Variantes</th><th>Estados</th></tr></thead><tbody id="compT"></tbody></table></div>
+  </section>
+
+  <section id="pantallas">
+    <header><span class="eyebrow">10 · Cobertura</span><h2>35 pantallas y estados</h2><p class="muted">Dibujadas arriba o especificadas aquí cuando reutilizan un patrón ya mostrado.</p></header>
+    <div class="tbl"><table><thead><tr><th>#</th><th>Pantalla</th><th>Resolución de diseño</th></tr></thead><tbody id="scrT"></tbody></table></div>
+  </section>
+
+  <section id="icono">
+    <header><span class="eyebrow">11 · App icon</span><h2>Pantalla + cruceta, en capas</h2><p class="muted">Tres capas para Icon Composer: fondo, pantalla, y glifo D-pad + botón. El sistema aporta brillo, máscara y refracción; no se dibujan reflejos.</p></header>
+    <div class="icons" id="icons"></div>
+  </section>
+</div>
+
+<script>
+/* ---------- data ---------- */
+const G=[
+ {t:'Moss Knight',s:'GBA',pal:['#86CBE6','#5FA374','#3C7A4B','#8A5A3B','#6A432A','#F4D46A'],last:'2h ago',fav:1,played:'12h 40m',slot:'Tower gate'},
+ {t:'Tidepool Tactics',s:'GBC',pal:['#FFB68C','#E07A5F','#3D405B','#81B29A','#5E8C77','#F4F1DE'],last:'Yesterday',fav:0,played:'5h 02m',slot:'Reef 3'},
+ {t:'Lantern Run',s:'GB',pal:['#C4CFA1','#8B956D','#4D533C','#8B956D','#4D533C','#1F2418'],last:'Today',fav:1,played:'3h 12m',slot:'World 2-1'},
+ {t:'Orbit Garden',s:'GBA',pal:['#1B1E3C','#3B3F7A','#6C5BA7','#2A2D5C','#1E2148','#FFD166'],last:'3d ago',fav:0,played:'48m',slot:'Moon bed'},
+ {t:'Brass Racers',s:'GBC',pal:['#F6E7B0','#D9A441','#A05A2C','#5B3A29','#43291D','#E4572E'],last:'1w ago',fav:1,played:'7h 15m',slot:'Cup 2'},
+ {t:'Hollow Pines',s:'GB',pal:['#E0F0E8','#A8C8B8','#5A7A6A','#3A4A42','#2A3530','#101814'],last:'2w ago',fav:0,played:'1h 30m',slot:'Cabin'}
+];
+/* ---------- icons ---------- */
+const P={
+ books:'<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="M16.2 5.2l3.6-1 3.2 15.4-3.6 1z" transform="translate(-2 0)"/>',
+ star:'<path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1L3.2 9.4l6.1-.8z"/>',
+ starF:'<path fill="currentColor" d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1L3.2 9.4l6.1-.8z"/>',
+ gear:'<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+ list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".8"/><circle cx="4.5" cy="12" r=".8"/><circle cx="4.5" cy="18" r=".8"/>',
+ search:'<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
+ play:'<path fill="currentColor" stroke="none" d="M7 4.5v15l12.5-7.5z"/>',
+ pause:'<path fill="currentColor" stroke="none" d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/>',
+ ff:'<path fill="currentColor" stroke="none" d="M3 6v12l8.5-6zM12.5 6v12L21 12z"/>',
+ cam:'<rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.5" r="3.5"/><path d="M8.5 7l1.5-2.5h4L15.5 7"/>',
+ save:'<path d="M12 3v11M7.5 9.5L12 14l4.5-4.5"/><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/>',
+ load:'<path d="M12 14V3M7.5 7.5L12 3l4.5 4.5"/><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/>',
+ x:'<path d="M6 6l12 12M18 6L6 18"/>',
+ chev:'<path d="M9 5l7 7-7 7"/>',
+ back:'<path d="M15 5l-7 7 7 7"/>',
+ dots:'<circle cx="5.5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18.5" cy="12" r="1.3" fill="currentColor"/>',
+ heart:'<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0112 7.6 4.3 4.3 0 0119.5 10c0 5.4-7.5 10-7.5 10z"/>',
+ trash:'<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
+ restart:'<path d="M4.5 12a7.5 7.5 0 102.2-5.3"/><path d="M4 4v4.5h4.5"/>',
+ cart:'<path d="M5 3h11l3 3v15H5z"/><rect x="8" y="7" width="8" height="6" rx="1"/><path d="M8 17h2M14 17h2"/>',
+ pencil:'<path d="M4 20l4-1 11-11-3-3L5 16z"/>',
+ photo:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 16l5-5 4 4 3-3 6 6"/>',
+ check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+ checkF:'<circle cx="12" cy="12" r="9.5" fill="currentColor" stroke="none"/><path d="M7.5 12.3l3 3 6-6" stroke="#fff"/>',
+ warn:'<path d="M12 3.5L21.5 20h-19z"/><path d="M12 10v4.5M12 17.2v.3"/>',
+ slider:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+ speaker:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
+ display:'<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/>',
+ paint:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17" /><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor"/>',
+ folder:'<path d="M3 6.5A1.5 1.5 0 014.5 5H10l2 2.5h7.5A1.5 1.5 0 0121 9v9.5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/>',
+ disk:'<ellipse cx="12" cy="6.5" rx="8" ry="3"/><path d="M4 6.5v11c0 1.7 3.6 3 8 3s8-1.3 8-3v-11M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.3"/>',
+ bolt:'<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>',
+ pad:'<rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="15.5" cy="11" r=".9" fill="currentColor"/><circle cx="17.5" cy="13.8" r=".9" fill="currentColor"/>',
+ updown:'<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>',
+ rotate:'<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>'
+};
+const ic=(n,s=16,w=2)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+const sbIcons=`<span class="row" style="gap:4px"><svg width="15" height="10" viewBox="0 0 15 10"><rect x="0" y="6" width="2.6" height="4" rx=".7" fill="currentColor"/><rect x="4" y="4" width="2.6" height="6" rx=".7" fill="currentColor"/><rect x="8" y="2" width="2.6" height="8" rx=".7" fill="currentColor"/><rect x="12" y="0" width="2.6" height="10" rx=".7" fill="currentColor"/></svg><svg width="14" height="10" viewBox="0 0 14 10"><path d="M7 9.5l2-2.3a3 3 0 00-4 0zM3.4 5.4a5.2 5.2 0 017.2 0l1.3-1.5a7.2 7.2 0 00-9.8 0zM.5 2.5a9.3 9.3 0 0113 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><rect x=".5" y=".5" width="19" height="10" rx="3" fill="none" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="14" height="7" rx="1.8" fill="currentColor"/><rect x="20.3" y="3.6" width="1.4" height="3.8" rx=".7" fill="currentColor" opacity=".5"/></svg></span>`;
+const SB=`<div class="sb"><span>9:41</span>${sbIcons}</div>`;
+const TAB=a=>`<div class="tab g"><div class="ti ${a==0?'on':''}">${ic('books',17)}<span>Library</span></div><div class="ti ${a==1?'on':''}">${ic('star',17)}<span>Favorites</span></div><div class="ti ${a==2?'on':''}">${ic('gear',17)}<span>Settings</span></div></div>`;
+const cover=i=>`<canvas data-cover="${i}" width="48" height="64"></canvas>`;
+const scene=(i,cls='')=>{const gba=G[i].s==='GBA';return `<canvas data-scene="${i}" width="${gba?240:160}" height="${gba?160:144}" class="${cls}"></canvas>`};
+const card=(i,small)=>`<div><div class="cv">${cover(i)}<span class="a px con g" style="left:6px;top:6px;color:#fff;background:rgba(0,0,0,.35)">${G[i].s}</span></div><div class="ct">${G[i].t}</div>${small?'':`<div class="cs">${G[i].fav?`<span style="color:#FFC53D">${ic('starF',9)}</span>`:''}${G[i].last}</div>`}</div>`;
+const cont=(i,w)=>`<div style="flex:none;width:${w}px"><div class="cv" style="aspect-ratio:${G[i].s==='GBA'?'3/2':'10/9'}">${scene(i)}<div class="a g cap" style="left:8px;bottom:8px;height:28px;padding:0 11px 0 9px;font-size:11px;color:#fff;background:rgba(30,32,38,.35)">${ic('play',11)}Continue</div></div><div class="ct">${G[i].t}</div><div class="cs">${G[i].s} · Auto-save · ${G[i].last}</div></div>`;
+
+/* ---------- controls ---------- */
+const dpadSVG=`<svg viewBox="0 0 100 100" aria-hidden="true"><path class="hl hu" d="M33 0H67V33H33z"/><path class="hl hd" d="M33 67H67V100H33z"/><path class="hl hL" d="M0 33H33V67H0z"/><path class="hl hr" d="M67 33H100V67H67z"/><path d="M33 1H67V33H99V67H67V99H33V67H1V33H33Z" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.2" stroke-linejoin="round"/><circle cx="50" cy="50" r="8" fill="rgba(0,0,0,.25)"/><g fill="rgba(255,255,255,.85)"><path d="M50 9l6 8H44z"/><path d="M50 91l6-8H44z"/><path d="M9 50l8 6V44z"/><path d="M91 50l-8 6V44z"/></g></svg>`;
+const dpad=(x,y,s,cls='')=>`<div class="ctl dpad ${cls}" data-k="dpad" style="left:${x-s/2}px;top:${y-s/2}px;width:${s}px;height:${s}px"><div class="surf"></div>${dpadSVG}</div>`;
+const btn=(k,x,y,s,cls='')=>`<div class="ctl round ${k} ${cls}" data-k="${k}" style="left:${x-s/2}px;top:${y-s/2}px;width:${s}px;height:${s}px"><div class="surf"></div><span class="lab">${k}</span></div>`;
+const pillb=(k,x,y,w,h,lab,cls='')=>`<div class="ctl cpill ${lab.length>1?'sm':''} ${cls}" data-k="${k}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="surf"></div><span class="lab">${lab}</span></div>`;
+const menuB=(x,y,cls='')=>`<div class="ctl round ${cls}" data-k="menu" style="left:${x}px;top:${y}px;width:30px;height:30px"><div class="surf"></div><span class="lab">${ic('dots',16)}</span></div>`;
+
+function portraitGame(i,opts={}){
+  const gba=G[i].s==='GBA';const vw=264,vh=gba?176:238,vy=42;
+  const cy=gba?420:430;
+  return `<div class="vp ${opts.dim?'dimmed':''} ${opts.lcd?'lcd':''}" style="left:8px;top:${vy}px;width:${vw}px;height:${vh}px;border-radius:12px 12px 6px 6px">${scene(i)}</div>
+  <div class="ctls pctl" style="--op:1">
+   ${gba?pillb('L',10,vy+vh+14,88,30,'L')+pillb('R',182,vy+vh+14,88,30,'R'):''}
+   ${menuB(125,vy+vh+14)}
+   ${dpad(72,cy,112,opts.selD?'sel':'')}
+   ${btn('A',224,cy-24,60,opts.selA?'sel':'')}
+   ${btn('B',162,cy+22,60)}
+   ${pillb('select',80,540,54,20,'SELECT')}${pillb('start',146,540,54,20,'START')}
+  </div>`;
+}
+function landGame(i,op,opts={}){
+  return `<div class="vp" style="left:93px;top:0;width:420px;height:280px">${scene(i,'hero-cv')}</div>
+  <div class="ctls ${opts.hide?'hidectl':''}" style="--op:${op}">
+   ${pillb('L',48,14,108,34,'L')}${pillb('R',450,14,108,34,'R')}
+   ${menuB(288,12)}
+   ${dpad(100,158,112,opts.selD?'sel':'')}
+   ${btn('A',534,136,58)}${btn('B',478,188,58)}
+   ${pillb('select',58,238,52,20,'SELECT')}${pillb('start',496,238,52,20,'START')}
+  </div>`;
+}
+
+/* ---------- screens ---------- */
+const libGrid=()=>`${SB}<div class="edge"></div><div class="body" style="padding-bottom:0">
+ <div class="row btw"><div class="lt">Library</div><div class="row gp"><span class="gb g">${ic('plus',15)}</span><span class="gb g">${ic('list',15)}</span></div></div>
+ <div class="srch" style="margin-top:8px">${ic('search',13)}Games, systems</div>
+ <div class="chips"><span class="chip on">All</span><span class="chip">GB</span><span class="chip">GBC</span><span class="chip">GBA</span><span class="chip">${ic('star',10)}Favorites</span></div>
+ <div class="sh">Continue Playing <span>See All</span></div>
+ <div class="row" style="gap:12px;align-items:flex-start;margin-right:-14px">${cont(0,196)}${cont(2,150)}</div>
+ <div class="sh">All Games <span class="row" style="gap:2px">Recent ${ic('updown',10)}</span></div>
+ <div class="g2">${card(1)}${card(3)}${card(4)}${card(5)}</div></div>${TAB(0)}`;
+
+const libList=()=>`${SB}<div class="body">
+ <div class="row btw"><div class="lt">Library</div><div class="row gp"><span class="gb g">${ic('plus',15)}</span><span class="gb g">${ic('grid',14)}</span></div></div>
+ <div class="srch" style="margin-top:8px">${ic('search',13)}Games, systems</div>
+ <div class="chips"><span class="chip on">All</span><span class="chip">GB</span><span class="chip">GBC</span><span class="chip">GBA</span><span class="chip">${ic('star',10)}Favorites</span></div>
+ <div style="margin-top:12px">${G.map((g,i)=>`<div class="row" style="gap:10px;padding:7px 0;border-bottom:.6px solid var(--p-sep)"><div class="cv" style="width:36px;flex:none;border-radius:6px;box-shadow:none">${cover(i)}</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:12px">${g.t}</div><div class="cs" style="margin-top:3px"><span class="px con">${g.s}</span> ${g.last}</div></div>${g.fav?`<span style="color:#F2A900">${ic('starF',12)}</span>`:''}<span class="pm">${ic('chev',11)}</span></div>`).join('')}</div>
+ </div>${TAB(0)}`;
+
+const favs=()=>`${SB}<div class="body">
+ <div class="lt">Favorites</div>
+ <div class="sh">Recently Played</div>
+ <div class="row" style="gap:10px;margin-right:-14px">${[2,0,1,4].map(i=>`<div style="width:62px;flex:none"><div class="cv">${cover(i)}</div><div class="cs" style="margin-top:4px">${G[i].last}</div></div>`).join('')}</div>
+ <div class="sh">Favorites <span>Edit</span></div>
+ <div class="g3">${[0,2,4].map(i=>card(i,1)).join('')}</div>
+ <p class="pm" style="font-size:10px;text-align:center;margin:14px 20px 0">Long press any game and choose Add to Favorites.</p>
+ </div>${TAB(1)}`;
+
+const kb=`<div class="kb"><div>${'QWERTYUIOP'.split('').map(c=>`<span>${c.toLowerCase()}</span>`).join('')}</div><div>${'ASDFGHJKL'.split('').map(c=>`<span>${c.toLowerCase()}</span>`).join('')}</div><div><span class="m">⇧</span>${'ZXCVBNM'.split('').map(c=>`<span>${c.toLowerCase()}</span>`).join('')}<span class="m">⌫</span></div><div><span class="m">123</span><span class="w">space</span><span class="m" style="width:54px;background:var(--tint);color:#fff">search</span></div></div>`;
+const search=()=>`${SB}<div class="body">
+ <div class="row gp"><div class="srch" style="flex:1;color:var(--p-fg);box-shadow:inset 0 0 0 1.5px var(--tint)">${ic('search',13)}<span>o<span style="display:inline-block;width:1.5px;height:14px;background:var(--tint);vertical-align:-3px"></span></span><span class="pm" style="margin-left:auto">${ic('x',11)}</span></div><span style="color:var(--tint);font-size:12px">Cancel</span></div>
+ <div class="chips"><span class="chip on">All</span><span class="chip">GB</span><span class="chip">GBC</span><span class="chip">GBA</span><span class="chip">${ic('star',10)}Favorites</span></div>
+ <div class="pm" style="font-size:9.5px;text-transform:uppercase;margin:14px 0 4px">4 results</div>
+ ${[0,1,3,5].map(i=>`<div class="row" style="gap:10px;padding:6px 0;border-bottom:.6px solid var(--p-sep)"><div class="cv" style="width:30px;flex:none;border-radius:5px;box-shadow:none">${cover(i)}</div><div style="flex:1"><div style="font-size:12px">${G[i].t.replace(/o/i,m=>`<b>${m}</b>`)}</div><div class="cs"><span class="px con">${G[i].s}</span></div></div></div>`).join('')}
+ </div>${kb}`;
+
+const noRes=()=>`${SB}<div class="body">
+ <div class="row gp"><div class="srch" style="flex:1;color:var(--p-fg)">${ic('search',13)}castle quest<span class="pm" style="margin-left:auto">${ic('x',11)}</span></div><span style="color:var(--tint);font-size:12px">Cancel</span></div>
+ <div class="chips"><span class="chip">All</span><span class="chip on">GBC</span><span class="chip">GB</span><span class="chip">GBA</span></div>
+ <div style="display:grid;justify-items:center;text-align:center;gap:6px;margin-top:120px"><span class="pm">${ic('search',38,1.6)}</span><div style="font-size:15px;font-weight:700">No Results for “castle quest”</div><div class="pm" style="font-size:11px;max-width:200px">Check the spelling or search in All systems instead of GBC.</div><div class="cap fill" style="height:32px;padding:0 14px;margin-top:8px;color:var(--tint)">Search All Systems</div></div>
+ </div>${TAB(0)}`;
+
+const empty=()=>`${SB}<div class="body"><div class="lt">Library</div>
+ <div style="display:grid;justify-items:center;text-align:center;gap:8px;margin-top:130px"><span class="pm">${ic('cart',46,1.4)}</span><div style="font-size:16px;font-weight:700">No Games Yet</div><div class="pm" style="font-size:11px;max-width:200px;line-height:1.4">Add .gb, .gbc or .gba files you own from Files or iCloud Drive.</div><div class="cap tint" style="padding:0 20px;margin-top:10px">${ic('plus',14)}Import Game</div><div style="color:var(--tint);font-size:11px;margin-top:4px">About Supported Files</div></div>
+ </div>${TAB(0)}`;
+
+const launch=()=>`<div class="a" style="inset:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 45%,#1B1F28,#0B0C10 70%)"><div style="display:grid;justify-items:center;gap:0">${appIcon('dark',72)}</div></div>`;
+
+const details=(extra='')=>`<div class="a" style="left:0;right:0;top:0;height:330px">${scene(0,'full')}</div><div class="a" style="left:0;right:0;top:0;height:340px;background:linear-gradient(transparent 45%,var(--p-bg) 97%)"></div>
+ ${SB}<span class="a gb g" style="left:14px;top:46px;color:#fff">${ic('back',15)}</span><div class="a g row" style="right:14px;top:46px;height:30px;border-radius:15px;padding:0 4px;color:#fff"><span class="gb" style="width:28px;color:#FFC53D">${ic('starF',14)}</span><span class="gb" style="width:28px;color:#fff">${ic('dots',15)}</span></div>
+ <div class="a" style="left:16px;right:16px;top:262px;display:grid;gap:6px">
+  <div class="row gp"><span class="px con" style="background:var(--p-fill2);color:var(--p-fg)">GBA</span><span class="pm" style="font-size:10.5px">Homebrew · 2021</span></div>
+  <div style="font-size:22px;font-weight:800;letter-spacing:-.4px">Moss Knight</div>
+  <div class="row" style="gap:0;margin:6px 0 10px;border-top:.6px solid var(--p-sep);border-bottom:.6px solid var(--p-sep);padding:9px 0">${[['Played','12h 40m'],['Last played','2h ago'],['Save states','4']].map(([a,b],k)=>`<div style="flex:1;${k?'border-left:.6px solid var(--p-sep);padding-left:10px':''}"><div class="pm" style="font-size:9px;text-transform:uppercase;letter-spacing:.3px">${a}</div><div style="font-weight:700;font-size:13px;margin-top:2px">${b}</div></div>`).join('')}</div>
+  <div class="cap inv" style="height:44px;font-size:13.5px">${ic('play',13)}Continue <span style="font-weight:400;opacity:.6;font-size:11px">· Auto-save 2h ago</span></div>
+  <div class="cap fill" style="height:38px">${ic('restart',13)}Play from Start</div>
+  <div class="row" style="gap:8px;margin-top:4px">${[['heart','Favorite'],['save','Save States'],['slider','Game Settings']].map(([a,b])=>`<div style="flex:1;border-radius:14px;background:var(--p-fill);padding:9px 6px;display:grid;justify-items:center;gap:4px;font-size:9.5px;font-weight:600">${ic(a,15)}${b}</div>`).join('')}</div>
+ </div>${extra}`;
+
+const ctxMenu=()=>`<div class="a" style="inset:0;filter:blur(10px) brightness(.5)">${libGrid()}</div>
+ <div class="a" style="left:78px;top:70px;width:124px"><div class="cv" style="box-shadow:0 20px 40px rgba(0,0,0,.6)">${cover(3)}</div></div>
+ <div class="a gm" style="left:40px;right:40px;top:248px;border-radius:20px;padding:4px 0;font-size:12px">${[['play','Play'],['star','Add to Favorites'],['save','Save States'],['slider','Game Settings'],null,['pencil','Rename'],['photo','Change Artwork'],null,['trash','Remove From Library','danger']].map(r=>r?`<div class="row btw" style="padding:9px 14px;${r[2]?'color:var(--danger)':''}"><span>${r[1]}</span>${ic(r[0],14)}</div>`:`<div style="height:6px;background:var(--p-sep)"></div>`).join('')}</div><div class="hi"></div>`;
+
+const importSheet=()=>`<div class="a" style="inset:0;filter:brightness(.45)">${libGrid()}</div>
+ <div class="sheet gm" style="top:170px">
+  <div class="grab"></div>
+  <div class="row btw"><span class="gb" style="background:var(--p-fill)">${ic('x',13)}</span><span class="nt">Add Game</span><span style="width:30px"></span></div>
+  <div class="row" style="gap:12px;margin:14px 0"><div class="cv" style="width:78px;flex:none">${cover(3)}</div><div style="display:grid;gap:4px"><span class="pm" style="font-size:9.5px;text-transform:uppercase">Detected title</span><div class="row gp" style="font-size:16px;font-weight:700">Orbit Garden <span class="pm">${ic('pencil',12)}</span></div><span class="px con" style="width:max-content">GBA</span><span class="pm" style="font-size:10px">Artwork matched from file header</span></div></div>
+  <div class="grp" style="background:var(--p-fill)">${[['System','Game Boy Advance'],['File','orbit_garden.gba'],['Size','8.0 MB'],['From','iCloud Drive › Games']].map(([a,b])=>`<div class="ri">${a}<span class="v">${b}</span></div>`).join('')}</div>
+  <div class="cap tint" style="margin-top:14px;height:44px">Add to Library</div>
+ </div>`;
+
+const importOK=()=>libGrid().replace('<div class="g2">','<div class="g2" id="x">')+`<div class="toast g">${`<span style="color:#34C759">${ic('checkF',18)}</span>`}Orbit Garden added to Library</div>`;
+
+const importErr=()=>`<div class="a" style="inset:0">${libGrid()}</div><div class="scrim"></div>
+ <div class="alert gm"><span style="color:#FFB020;justify-self:center">${ic('warn',26)}</span><h4>Can’t Add This File</h4><p>“notes.zip” isn’t a Game Boy, Game Boy Color or Game Boy Advance game file.</p><div class="cap tint" style="height:36px;margin-top:4px">Choose Another File</div><div class="cap fill" style="height:36px">OK</div></div>`;
+
+const gameP=(extra='',o={})=>portraitGame(o.i??2,o)+extra;
+const hud=`<div class="hud g" style="left:16px;right:16px;top:232px;justify-content:space-between">${[['pause'],['save'],['load'],['ff','on'],['cam'],['gear'],['x']].map(([a,b])=>`<i class="${b||''}">${ic(a,15)}</i>`).join('')}</div>
+<div class="toast g" style="top:48px"><span style="color:#34C759">${ic('checkF',16)}</span>Saved to Slot 3</div>`;
+
+const pauseM=()=>gameP('',{dim:1})+`<div class="sheet gm" style="top:232px;padding-bottom:26px">
+  <div class="grab"></div>
+  <div class="row" style="gap:10px"><div class="cv" style="width:30px;border-radius:5px">${cover(2)}</div><div><div style="font-weight:700;font-size:13px">Lantern Run</div><div class="pm" style="font-size:10px">Paused · 3h 12m played</div></div><span class="gb" style="margin-left:auto;background:var(--p-fill)">${ic('x',12)}</span></div>
+  <div class="cap inv" style="margin:12px 0 10px;height:42px">${ic('play',12)}Resume</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${[['save','Save'],['load','Load'],['ff','Fast Fwd'],['cam','Screenshot']].map(([a,b])=>`<div style="background:var(--p-fill);border-radius:14px;padding:9px 2px;display:grid;justify-items:center;gap:4px;font-size:9px;font-weight:600">${ic(a,15)}${b}</div>`).join('')}</div>
+  <div class="grp" style="background:var(--p-fill);margin-top:10px">${[['restart','Restart'],['bolt','Cheats'],['pad','Controls'],['slider','Game Settings']].map(([a,b])=>`<div class="ri">${ic(a,14)}${b}<span class="v">${ic('chev',10)}</span></div>`).join('')}</div>
+  <div class="cap red" style="margin-top:10px;height:36px">Exit Game</div></div>`;
+
+const slot=(i,k,name,when,sel)=>`<div><div class="cv" style="aspect-ratio:10/9;border-radius:12px;${sel?'box-shadow:0 0 0 2.5px var(--tint)':''}">${scene(i)}${sel?`<span class="a" style="right:6px;top:6px;color:var(--tint);background:#fff;border-radius:50%;line-height:0">${ic('checkF',16)}</span>`:''}<span class="a px" style="left:6px;bottom:6px;color:#fff;text-shadow:0 1px 2px #000">${k}</span></div><div class="ct">${name}</div><div class="cs">${when}</div></div>`;
+const saveStates=(extra='')=>`${SB}<div class="body">
+ <div class="row btw"><span class="gb g">${ic('back',15)}</span><span class="nt">Save States</span><span style="color:var(--tint);font-size:12px">Select</span></div>
+ <div class="sg" style="margin:12px 0 12px;display:flex"><b class="on" style="flex:1;text-align:center">Manual</b><b style="flex:1;text-align:center">Auto (3)</b></div>
+ <div class="g2">${slot(2,'SLOT 1','World 2-1','Today 14:02 · 3h 12m',1)}${slot(2,'SLOT 2','Before the bridge','Today 11:40 · 2h 58m')}${slot(2,'SLOT 3','Lantern shop','Yesterday · 2h 10m')}
+ <div><div style="aspect-ratio:10/9;border-radius:12px;border:1.5px dashed var(--p-fill2);display:grid;place-items:center;color:var(--tint);font-size:11px;font-weight:600"><span style="display:grid;justify-items:center;gap:4px">${ic('plus',18)}New State</span></div></div></div>
+ </div>
+ <div class="a g row" style="left:30px;right:30px;bottom:22px;height:48px;border-radius:24px;padding:4px;gap:4px;z-index:12"><div class="cap tint" style="flex:1.4;height:40px">${ic('load',13)}Load</div><div class="cap" style="flex:1;height:40px">${ic('save',13)}Replace</div><div class="cap" style="width:40px;height:40px;color:var(--danger)">${ic('trash',15)}</div></div>${extra}`;
+
+const loadConfirm=()=>saveStates(`<div class="scrim"></div><div class="alert gm"><h4>Load Slot 1?</h4><p>You’ll lose 12 minutes of progress since your last save.</p><div class="cap tint" style="height:36px;margin-top:4px">Load</div><div class="cap fill" style="height:36px">Save Current, Then Load</div><div class="cap fill" style="height:36px">Cancel</div></div>`);
+
+const custP=()=>`<div class="a dots" style="left:0;right:0;top:230px;bottom:0"></div>`+portraitGame(0,{dim:1,selA:1})+
+ `<div class="guide" style="left:224px;top:230px;width:1px;bottom:0"></div><div class="guide" style="left:0;right:0;top:396px;height:1px"></div>
+ <span class="hdl" style="left:190px;top:362px"></span><span class="hdl" style="left:250px;top:362px"></span><span class="hdl" style="left:190px;top:422px"></span><span class="hdl" style="left:250px;top:422px"></span>
+ <div class="a g" style="left:185px;top:340px;height:18px;padding:0 7px;border-radius:9px;font-size:8.5px;font-weight:700;display:flex;align-items:center;color:#fff;z-index:4">Snapped · 16 pt</div>
+ <div class="a g row btw" style="left:10px;right:10px;top:44px;height:38px;border-radius:19px;padding:0 12px;z-index:12;color:#fff;font-size:11.5px"><span>Cancel</span><div class="sg" style="margin:0"><b class="on">Portrait</b><b>Landscape</b></div><b style="color:var(--tint)">Done</b></div>
+ <div class="a g" style="left:10px;right:10px;bottom:18px;border-radius:24px;padding:12px 14px;z-index:12;display:grid;gap:10px;color:#fff">
+  <div class="row btw"><b style="font-size:12px">A Button</b><span style="color:var(--tint);font-size:11px">Reset</span></div>
+  <div class="row" style="gap:10px;font-size:10px"><span style="width:44px">Size</span><div class="sl"><i style="width:60%"></i><u style="left:60%"></u></div><span style="width:30px;text-align:right">110%</span></div>
+  <div class="row" style="gap:10px;font-size:10px"><span style="width:44px">Opacity</span><div class="sl"><i style="width:50%"></i><u style="left:50%"></u></div><span style="width:30px;text-align:right">50%</span></div></div>`;
+
+const custL=()=>landGame(0,.7,{selD:1})+`<div class="a" style="left:93px;top:0;width:420px;height:280px;background:rgba(0,0,0,.45)"></div>
+ <div class="guide" style="left:100px;top:0;width:1px;bottom:0"></div>
+ <span class="hdl" style="left:40px;top:98px"></span><span class="hdl" style="left:152px;top:98px"></span><span class="hdl" style="left:40px;top:210px"></span><span class="hdl" style="left:152px;top:210px"></span>
+ <div class="a g row" style="left:190px;top:10px;width:226px;height:36px;border-radius:18px;padding:0 12px;justify-content:space-between;color:#fff;font-size:11px;z-index:12"><span>Cancel</span><div class="sg" style="margin:0"><b>Portrait</b><b class="on">Landscape</b></div><b style="color:var(--tint)">Done</b></div>
+ <div class="a g" style="left:200px;width:206px;bottom:14px;border-radius:22px;padding:10px 14px;z-index:12;display:grid;gap:8px;color:#fff">
+  <div class="row btw" style="font-size:11px"><b>D-Pad</b><span class="pm">Classic Cross</span></div>
+  <div class="row" style="gap:8px;font-size:9.5px"><span style="width:38px">Size</span><div class="sl"><i style="width:70%"></i><u style="left:70%"></u></div><span>120%</span></div></div>`;
+
+const setMain=()=>`${SB}<div class="body"><div class="lt">Settings</div>
+ <div class="grp" style="margin-top:12px">${[['pad','#FF9F0A','Emulation','2× FF'],['pad','#5E5CE6','Controls','50%'],['speaker','#FF375F','Audio',''],['display','#0A84FF','Display','LCD Grid']].map(([a,c,b,v])=>`<div class="ri"><span class="sq" style="background:${c}">${ic(a,13)}</span>${b}<span class="v">${v} ${ic('chev',10)}</span></div>`).join('')}</div>
+ <div class="grp" style="margin-top:14px">${[['paint','#8E8E93','Appearance','System'],['books','#30B0C7','Library','Grid'],['disk','#34C759','Storage','111 MB'],['info','#8E8E93','About','1.0']].map(([a,c,b,v])=>`<div class="ri"><span class="sq" style="background:${c}">${ic(a,13)}</span>${b}<span class="v">${v} ${ic('chev',10)}</span></div>`).join('')}</div>
+ <div class="gf" style="margin-top:12px">Pocket doesn’t include games. Import only files you own.</div>
+ </div>${TAB(2)}`;
+
+const setCtl=()=>`${SB}<div class="body">
+ <div class="row btw"><span class="gb g">${ic('back',15)}</span><span class="nt">Controls</span><span style="width:30px"></span></div>
+ <div class="gh">Appearance</div>
+ <div class="grp">
+  <div class="ri">Button Opacity<div class="sg"><b>30</b><b class="on">50</b><b>70</b><b>100</b></div></div>
+  <div class="ri" style="gap:10px">Size<div class="sl" style="margin-left:6px"><i style="width:55%"></i><u style="left:55%"></u></div><span class="pm" style="font-size:10px">100%</span></div>
+  <div class="ri">Visibility<span class="v" style="color:var(--tint)">Show On Touch ${ic('updown',10)}</span></div>
+  <div class="ri">D-Pad Style<span class="v">Classic Cross ${ic('updown',10)}</span></div></div>
+ <div class="gf">Opacity changes how buttons look, not where you can touch.</div>
+ <div class="gh">Feedback</div>
+ <div class="grp"><div class="ri">Haptic Feedback<span class="tg"></span></div><div class="ri">Gestures<span class="v">3 on ${ic('chev',10)}</span></div></div>
+ <div class="gh">Layout</div>
+ <div class="grp"><div class="ri" style="color:var(--tint)">Customize Portrait Layout<span class="v">${ic('chev',10)}</span></div><div class="ri" style="color:var(--tint)">Customize Landscape Layout<span class="v">${ic('chev',10)}</span></div><div class="ri" style="color:var(--danger)">Reset Layout</div></div>
+ </div>`;
+
+const setDisp=()=>`${SB}<div class="body">
+ <div class="row btw"><span class="gb g">${ic('back',15)}</span><span class="nt">Display</span><span style="width:30px"></span></div>
+ <div class="cv lcd" style="aspect-ratio:10/9;width:150px;margin:12px auto 4px;border-radius:10px">${scene(2)}</div>
+ <div class="pm" style="text-align:center;font-size:9.5px">Preview · LCD Grid</div>
+ <div class="grp" style="margin-top:10px"><div class="ri">Integer Scaling<span class="tg"></span></div><div class="ri">Aspect Ratio<span class="v">Original ${ic('updown',10)}</span></div><div class="ri">Pixel Filter<span class="v">Nearest ${ic('updown',10)}</span></div><div class="ri">Bilinear Filtering<span class="tg off"></span></div></div>
+ <div class="gh">Shader</div>
+ <div class="row" style="gap:8px">${['None','LCD Grid','Scanlines','DMG Green'].map((s,k)=>`<div style="flex:1;display:grid;gap:4px;justify-items:center;font-size:9px"><div class="cv ${k==1?'lcd':''}" style="width:100%;aspect-ratio:1;border-radius:8px;${k==1?'box-shadow:0 0 0 2px var(--tint)':''};${k==3?'filter:sepia(1) hue-rotate(40deg) saturate(1.5)':''}">${scene(2)}</div>${s}</div>`).join('')}</div>
+ <div class="grp" style="margin-top:12px"><div class="ri">Full Screen<span class="tg off"></span></div></div></div>`;
+
+const gameSet=()=>`${SB}<div class="body">
+ <div class="row btw"><span class="gb g">${ic('back',15)}</span><span class="nt">Game Settings</span><span style="width:30px"></span></div>
+ <div class="row" style="gap:10px;margin:14px 0 4px"><div class="cv" style="width:34px;border-radius:5px">${cover(0)}</div><div><b style="font-size:13px">Moss Knight</b><div class="pm" style="font-size:10px">Changes here apply only to this game.</div></div></div>
+ ${[['Controls',[['Control Layout','Custom',1],['Button Opacity','70%',1]]],['Audio & Display',[['Volume','80%',0],['Aspect Ratio','Original',0],['Shader','LCD Grid',1]]],['Emulation',[['Fast Forward','2×',0],['Cheats','2 on',1]]]].map(([h,rows])=>`<div class="gh">${h}</div><div class="grp">${rows.map(([a,b,c])=>`<div class="ri">${a}<span class="v">${c?`<span class="tag cu">● Customized</span>`:`<span class="tag">Global</span>`} ${b} ${ic('chev',9)}</span></div>`).join('')}</div>`).join('')}
+ <div class="cap red" style="margin-top:14px;height:36px">Reset All to Global</div></div>`;
+
+const storage=()=>`${SB}<div class="body">
+ <div class="row btw"><span class="gb g">${ic('back',15)}</span><span class="nt">Storage</span><span style="width:30px"></span></div>
+ <div style="margin:16px 4px 6px;display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:18px">111 MB</b><span class="pm" style="font-size:10px">of 42 GB free</span></div>
+ <div class="row" style="height:12px;border-radius:6px;overflow:hidden;gap:2px">${[['#0A84FF',58],['#FF9F0A',11],['#34C759',27],['#8E8E93',4]].map(([c,w])=>`<i style="background:${c};width:${w}%;height:100%"></i>`).join('')}</div>
+ <div class="grp" style="margin-top:14px">${[['#0A84FF','Games','64 MB'],['#FF9F0A','Save States','12 MB · 19'],['#34C759','Screenshots','30 MB · 48'],['#8E8E93','Cache','5 MB']].map(([c,a,b])=>`<div class="ri"><i style="width:9px;height:9px;border-radius:3px;background:${c}"></i>${a}<span class="v">${b} ${ic('chev',9)}</span></div>`).join('')}</div>
+ <div class="grp" style="margin-top:14px"><div class="ri" style="color:var(--tint)">Clear Cache</div><div class="ri">Keep Auto-Saves<span class="v">Last 3 ${ic('updown',10)}</span></div></div>
+ <div class="gf">Save states are stored in iCloud Drive › Pocket and follow your iCloud settings.</div></div>`;
+
+const delConf=()=>`<div class="a" style="inset:0">${details()}</div><div class="scrim"></div>
+ <div class="sheet gm" style="padding:16px 14px 18px">
+  <div style="text-align:center;display:grid;gap:5px;margin-bottom:12px"><b style="font-size:13px">Remove Moss Knight?</b><span class="pm" style="font-size:10.5px;line-height:1.4">4 save states and 12 screenshots will be deleted. The original file in Files is not affected.</span></div>
+  <div class="cap" style="height:40px;background:var(--danger);color:#fff">Remove Game and Data</div>
+  <div class="cap fill" style="height:40px;margin-top:6px">Remove Game, Keep Saves</div>
+  <div class="cap fill" style="height:40px;margin-top:6px;font-weight:700">Cancel</div></div>`;
+
+/* ---------- app icon ---------- */
+function appIcon(v,s){
+  const V={light:['#F4F5F8','#EDEFF3','#1B1E25','#2F6BFF','#9CB6FF'],dark:['#1C1F26','#0F1115','#E9ECF2','#7FA6FF','#3D4350'],clear:['rgba(255,255,255,.28)','rgba(255,255,255,.12)','rgba(255,255,255,.92)','rgba(255,255,255,.95)','rgba(255,255,255,.5)'],tinted:['#1A1A1A','#0E0E0E','#E8B04A','#E8B04A','#7A5E28']}[v];
+  return `<svg width="${s}" height="${s}" viewBox="0 0 100 100" role="img" aria-label="Pocket icon ${v}"><defs><linearGradient id="bg${v}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${V[0]}"/><stop offset="1" stop-color="${V[1]}"/></linearGradient></defs><rect width="100" height="100" rx="22.5" fill="url(#bg${v})" ${v==='clear'?'stroke="rgba(255,255,255,.55)" stroke-width="1"':''}/><rect x="18" y="16" width="64" height="40" rx="10" fill="${V[2]}" opacity="${v==='clear'?.35:1}"/><rect x="42" y="30" width="6" height="6" fill="${V[4]}"/><rect x="50" y="30" width="6" height="6" fill="${V[3]}"/><rect x="46" y="38" width="6" height="6" fill="${V[4]}"/><path d="M29 64h8v8h8v8h-8v8h-8v-8h-8v-8h8z" fill="${V[2]}" transform="translate(0 -2)"/><circle cx="71" cy="72" r="7.5" fill="${V[3]}"/></svg>`;
+}
+
+/* ---------- phone factory ---------- */
+function phone(o){
+  const L=o.o==='l',W=L?622:296,H=L?296:622;
+  return `<div class="frame" data-w="${W}" data-h="${H}" style="aspect-ratio:${W}/${H}"><div class="stage" style="width:${W}px;height:${H}px"><div class="ph ${L?'l':''} ${o.th||'pd'} ${o.game?'game':''} ${o.rt?'rt':''}">${o.h}<div class="island"></div><div class="hi"></div></div></div></div>`;
+}
+function fig(o){return `<figure>${phone(o)}<figcaption><span class="n">${o.n}</span><b>${o.name}</b><span class="muted">${o.note}</span></figcaption></figure>`}
+const put=(id,arr)=>document.getElementById(id).innerHTML=arr.map(fig).join('');
+
+put('galLib',[
+ {n:'01',name:'Launch Screen',note:'Solo el glifo del icono sobre degradado oscuro. Sin texto ni spinner; dura lo que tarda en cargar la biblioteca.',h:launch()},
+ {n:'02 · 24',name:'First Launch / Empty Library',note:'Un símbolo, una frase y un CTA. Sin onboarding.',h:empty()},
+ {n:'03 · 05',name:'Library — Grid + Continue Playing',note:'Continue muestra el último frame real; el botón glass flota sobre el screenshot. Scroll edge effect arriba.',h:libGrid()},
+ {n:'04',name:'Library — List (Light)',note:'Thumbnail, título, ConsoleChip pixel y última partida. Mismos datos, más densidad.',h:libList(),th:'pl'},
+ {n:'06 · 07',name:'Favorites + Recent Games',note:'Recientes en carril horizontal; favoritos en grid de 3.',h:favs()},
+ {n:'08 · 09',name:'Search — typing + results',note:'Resultados en vivo con coincidencia en negrita. Filtros de sistema persistentes.',h:search()},
+ {n:'10',name:'No Results',note:'Explica y ofrece la acción que probablemente resuelve el caso (quitar el filtro).',h:noRes()},
+ {n:'11',name:'Game Details',note:'El artwork se extiende bajo los botones glass y tiñe su refracción. Continue es la acción dominante.',h:details()},
+ {n:'Context menu',name:'Long press en portada',note:'Preview elevado + menú modal glass. Acción destructiva separada y en rojo.',h:ctxMenu()},
+ {n:'12 · 13',name:'Import Game — Confirmation',note:'Llega tras el picker nativo de Files (On My iPhone, iCloud Drive). Título detectado editable.',h:importSheet()},
+ {n:'14',name:'Import Success',note:'Toast glass con haptic .success; la nueva portada entra con un leve scale-in.',h:importOK()},
+ {n:'15',name:'Import Error',note:'Variantes: Incompatible file, Invalid ROM (checksum), Duplicate → “Open Game” / “Add Copy”.',h:importErr()}
+]);
+put('galGameP',[
+ {n:'16',name:'Gameplay Portrait',note:'Viewport 10:9 arriba con letterbox neutro. Controles sobre superficie oscura; A con anillo cálido, B frío.',h:gameP(),game:1},
+ {n:'17',name:'Portrait + HUD',note:'El botón ••• se estira en una cápsula de 7 acciones. Se oculta a los 3 s. Toast de guardado.',h:gameP(hud),game:1},
+ {n:'21',name:'Pause Menu',note:'Juego visible y atenuado detrás. Resume primero, acciones rápidas en grid, Exit separado.',h:pauseM(),game:1},
+ {n:'24',name:'Customize Controls — Portrait',note:'Handles, guía de alineación y snap. Inspector glass para tamaño y opacidad. Juego GBA con L/R.',h:custP(),game:1}
+]);
+put('galGameL',[
+ {n:'18',name:'Gameplay Landscape · 70%',note:'Juego a alto completo. L/R arriba en las esquinas; Start/Select a los lados del Home Indicator.',h:landGame(0,.7),o:'l',game:1},
+ {n:'19',name:'Landscape + Transparent Controls · 30%',note:'La superficie casi desaparece, la silueta y la etiqueta se mantienen.',h:landGame(3,.3),o:'l',game:1},
+ {n:'20',name:'Landscape + Hidden Controls',note:'Solo el juego. Una pista aparece 2 s al entrar; tocar muestra los controles (modo Show On Touch).',h:landGame(1,.5,{hide:1})+`<div class="a g" style="left:50%;top:238px;transform:translateX(-50%);height:26px;border-radius:13px;padding:0 12px;display:flex;align-items:center;font-size:10.5px;font-weight:600;color:#fff;--g-bg:rgba(30,32,38,.35)">Tap to show controls</div>`,o:'l',game:1}
+]);
+put('galOv',[
+ {n:'22',name:'Save States',note:'Capturas dominantes, sin cards glass. El glass solo en el toolbar de acciones y en la selección.',h:saveStates()},
+ {n:'23',name:'Load State',note:'Confirmación que dice cuánto progreso se pierde y ofrece guardar antes.',h:loadConfirm()},
+ {n:'35',name:'Delete Game Confirmation',note:'Action sheet flotante. Deja claro qué se borra y qué no.',h:delConf()}
+]);
+put('galSet',[
+ {n:'27',name:'General Settings (Light)',note:'Lista agrupada nativa con íconos de color de iOS.',h:setMain(),th:'pl'},
+ {n:'28',name:'Controls Settings',note:'Opacidad como segmented de 4 pasos. Visibility como menú.',h:setCtl()},
+ {n:'29',name:'Display Settings',note:'Preview en vivo y selector visual de shader.',h:setDisp()},
+ {n:'26',name:'Game Settings',note:'Cada valor dice Global o ● Customized, con texto además de color.',h:gameSet()},
+ {n:'32',name:'Storage (Light)',note:'Barra de uso con leyenda y tamaños por categoría.',h:storage(),th:'pl'}
+]);
+put('galSetL',[
+ {n:'25',name:'Customize Controls — Landscape',note:'Layout independiente del portrait. D-pad seleccionado con handles; toolbar e inspector flotantes.',h:custL(),o:'l',game:1}
+]);
+put('galA11y',[
+ {n:'RT',name:'Landscape — Reduce Transparency',note:'Superficies sólidas, borde 1.5 pt, opacidad mínima 90%.',h:landGame(0,.3),o:'l',game:1,rt:1},
+ {n:'RT',name:'Library — Reduce Transparency',note:'Tab bar y botones sólidos. Misma jerarquía.',h:libGrid(),rt:1}
+]);
+
+/* ---------- tables ---------- */
+const comps=[
+['GameCard','L1','Grid L / M / S; con badge de consola','default · pressed · focused · lifted (context menu) · new (ring)'],
+['GameListItem','L1','con/sin star · con chevron','default · pressed · swipe (Favorite / Remove)'],
+['ConsoleChip','L1','GB · GBC · GBA (pixel font)','default · on-dark'],
+['SearchField','L2','inline · bottom (iOS 26)','inactive · focused · typing · results · no results'],
+['FilterChip','L2','text · icon+text','off · on · disabled'],
+['SectionHeader','—','con acción · sin acción','—'],
+['EmulatorButton','L2 clear','round A/B · pill Start/Select · menu','idle · pressed · turbo · editing · hidden · RT'],
+['DPad','L2 clear','Classic Cross · Floating (analógico)','idle · 8 direcciones · editing · RT'],
+['ABButtonCluster','L2 clear','diagonal · horizontal','—'],
+['ShoulderButton','L2 clear','L · R · 120×44','idle · pressed · editing'],
+['StartSelectCluster','L2 clear','centro (portrait) · lados (landscape)','idle · pressed'],
+['GameViewport','L1','fit · integer · stretch; shaders','running · paused (dim) · loading · error'],
+['GlassToolbar','L2','top · bottom floating','default · scrolled (compact)'],
+['FloatingHUD','L2','collapsed (••• ) · expanded','hidden · visible · auto-hiding · RT'],
+['SettingsRow','—','nav · toggle · value · menu · slider · segmented · destructive','default · pressed · disabled · Global/Customized'],
+['Toggle / Slider','—','nativos','on/off · disabled'],
+['BottomSheet','L3','medium · large · floating','presenting · dragging · dismissing'],
+['Alert','L3','1–3 acciones · destructiva','—'],
+['SaveStateCard','L1','manual · auto · empty slot','default · selected · loading'],
+['EmptyState','—','library · search · favorites · save states','—'],
+['FloatingTabBar','L2','3 tabs','expanded · minimized on scroll · hidden (gameplay) · RT'],
+['ContextMenu','L3','con preview · simple','—'],
+['ProgressIndicator','L2','import (determinate) · loading core (indeterminate)','—'],
+['Toast','L2','success · info · error','in · out (2.5 s)']];
+document.getElementById('compT').innerHTML=comps.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');
+const scr=[['1','Launch Screen','Dibujada'],['2','First Launch / Empty Library','Dibujada'],['3','Library — Grid','Dibujada'],['4','Library — List','Dibujada (light)'],['5','Continue Playing','Dentro de Library + “See All” lista vertical con screenshots'],['6','Recent Games','Carril en Favorites; “See All” ordena por fecha'],['7','Favorites','Dibujada'],['8','Search','Dibujada (focused/typing)'],['9','Search Results','Dibujada'],['10','No Results','Dibujada'],['11','Game Details','Dibujada'],['12','Import Game','Menú del botón + → document picker nativo (Files, On My iPhone, iCloud Drive)'],['13','Import Confirmation','Dibujada'],['14','Import Success','Dibujada'],['15','Import Error','Dibujada; variantes duplicate / incompatible / invalid'],['16','Gameplay Portrait','Dibujada'],['17','Portrait + HUD','Dibujada'],['18','Gameplay Landscape','Dibujada + interactiva'],['19','Landscape + Transparent','Dibujada'],['20','Landscape + Hidden','Dibujada'],['21','Pause Menu','Dibujada'],['22','Save States','Dibujada'],['23','Load State','Dibujada (confirmación)'],['24','Customize — Portrait','Dibujada'],['25','Customize — Landscape','Dibujada'],['26','Game Settings','Dibujada'],['27','General Settings','Dibujada'],['28','Controls Settings','Dibujada'],['29','Display Settings','Dibujada'],['30','Audio Settings','Patrón 28: Master Volume (slider), Game Audio (slider), Mute (toggle), Audio in Background (toggle), footnote sobre modo silencio'],['31','Library Settings','Patrón 28: Default View (Grid/List segmented), Sort (menu: Recent, Name, System), Scan Folder (nav), Artwork (Auto-match toggle, Clear cache)'],['32','Storage Settings','Dibujada'],['33','Appearance Settings','Lista con checkmark: System / Light / Dark + toggle “Dark UI During Gameplay”'],['34','About','Versión, Emulator Cores (nombre + licencia por núcleo), Licenses, Privacy (sin tracking)'],['35','Delete Game Confirmation','Dibujada']];
+document.getElementById('scrT').innerHTML=scr.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');
+document.getElementById('icons').innerHTML=['light','dark','clear','tinted'].map(v=>`<figure><div style="${v==='clear'?'background:linear-gradient(135deg,#6A8CFF,#F29A7A);padding:14px;border-radius:26px':'padding:14px'}">${appIcon(v,96)}</div><figcaption><b style="text-transform:capitalize">${v}</b></figcaption></figure>`).join('');
+
+/* ---------- hero ---------- */
+const heroFrame=document.getElementById('heroFrame');
+heroFrame.style.aspectRatio='622/296';
+heroFrame.innerHTML=`<div class="stage" style="width:622px;height:296px"><div class="ph l pd game" id="heroPh">${landGame(0,.5)}<div class="island"></div><div class="hi"></div></div></div>`;
+heroFrame.dataset.w=622;heroFrame.dataset.h=296;
+
+/* ---------- pixel rendering ---------- */
+function rng(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const lum=h=>{const n=parseInt(h.slice(1),16);return((n>>16)*.3+((n>>8)&255)*.59+(n&255)*.11)/255};
+const HERO=["..####..",".#oooo#.","#oo#o#o#","#oooooo#",".#oooo#.","..#xx#..",".#xxxx#.","#x#xx#x#",".#x##x#.",".##..##."];
+function drawScene(c,t=0){
+  const i=+c.dataset.scene,p=G[i].pal,ctx=c.getContext('2d'),w=c.width,h=c.height,r=rng(i*97+3),night=lum(p[0])<.3;
+  ctx.fillStyle=p[0];ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=p[1];for(let y=Math.floor(h*.36);y<h*.5;y+=2)for(let x=(y/2)%2;x<w;x+=(y<h*.43?4:2))ctx.fillRect(x,y,1,1);
+  if(night){ctx.fillStyle=p[5];for(let k=0;k<45;k++){const x=(r()*w+t*.05)%w;ctx.fillRect(x|0,(r()*h*.45)|0,1,1)}ctx.beginPath();ctx.arc(w*.78,h*.18,8,0,7);ctx.fill()}
+  else{ctx.fillStyle='rgba(255,255,255,.85)';for(let k=0;k<4;k++){const cw=18+r()*16,x=((r()*w*1.4-t*.15)%(w+40)+w+40)%(w+40)-30,y=8+r()*h*.25;ctx.fillRect(x|0,y|0,cw|0,5);ctx.fillRect((x+4)|0,(y-3)|0,(cw-8)|0,3)}}
+  for(let x=0;x<w;x++){const y=h*.5+Math.sin((x+t*.25)/14+i)*6+Math.sin((x+t*.25)/5)*1.5;ctx.fillStyle=p[1];ctx.fillRect(x,y|0,1,h)}
+  for(let x=0;x<w;x++){const y=h*.63+Math.sin((x+t*.6)/22+i*2)*7;ctx.fillStyle=p[2];ctx.fillRect(x,y|0,1,h)}
+  const gy=h-26,off=(t*1.2)%16;
+  for(let x=-16;x<w+16;x+=8)for(let y=gy;y<h;y+=8){ctx.fillStyle=((x/8+y/8)&1)?p[3]:p[4];ctx.fillRect(Math.round(x-off%8),y,8,8)}
+  ctx.fillStyle=p[2];ctx.fillRect(0,gy,w,2);
+  // platforms & coins
+  for(let k=0;k<3;k++){const bx=((k*110+60-t*1.2)%(w+120)+w+120)%(w+120)-60;ctx.fillStyle=p[4];for(let b=0;b<3;b++){ctx.fillRect((bx+b*9)|0,gy-34,8,8)}ctx.fillStyle=p[5];ctx.fillRect((bx+11)|0,gy-46,4,6)}
+  // hero sprite
+  const hx=Math.round(w*.3),bob=Math.round(Math.sin(t*.25))*1,hy=gy-HERO.length+bob;
+  HERO.forEach((row,y)=>[...row].forEach((ch,x)=>{if(ch==='.')return;ctx.fillStyle=ch==='#'?'#141414':ch==='o'?p[5]:p[2];ctx.fillRect(hx+x,hy+y,1,1)}));
+}
+function drawCover(c){
+  const i=+c.dataset.cover,p=G[i].pal,ctx=c.getContext('2d'),w=48,h=64,r=rng(i*31+7);
+  ctx.fillStyle=p[0];ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=p[1];for(let y=20;y<44;y+=1)for(let x=(y%2);x<w;x+=(y<30?3:2))ctx.fillRect(x,y,1,1);
+  ctx.fillStyle=p[1];ctx.fillRect(0,44,w,h);ctx.fillStyle=p[3];ctx.fillRect(0,52,w,12);ctx.fillStyle=p[4];for(let x=0;x<w;x+=4)ctx.fillRect(x+((x/4)%2)*2,56,2,2);
+  const cells=[];for(let y=0;y<8;y++){cells[y]=[];for(let x=0;x<4;x++)cells[y][x]=r()<.52}
+  const ox=8,oy=16,s=4;
+  for(let y=0;y<8;y++)for(let x=0;x<8;x++){const v=cells[y][x<4?x:7-x];if(!v)continue;ctx.fillStyle='#141414';ctx.fillRect(ox+x*s-1,oy+y*s-1,s+2,s+2)}
+  for(let y=0;y<8;y++)for(let x=0;x<8;x++){const v=cells[y][x<4?x:7-x];if(!v)continue;ctx.fillStyle=(y+x)%3?p[5]:p[2];ctx.fillRect(ox+x*s,oy+y*s,s,s)}
+  ctx.fillStyle='#141414';ctx.fillRect(ox+2*s,oy+3*s,s,s);ctx.fillRect(ox+5*s,oy+3*s,s,s);
+}
+document.querySelectorAll('canvas[data-scene]').forEach(c=>drawScene(c,c.closest('#heroPh')?0:(+c.dataset.scene*40)));
+document.querySelectorAll('canvas[data-cover]').forEach(drawCover);
+
+/* ---------- scaling ---------- */
+function fit(){document.querySelectorAll('.frame').forEach(f=>{const W=+f.dataset.w,k=f.clientWidth/W;f.style.height=(+f.dataset.h*k)+'px';f.firstElementChild.style.transform=`scale(${k})`})}
+new ResizeObserver(fit).observe(document.body);fit();
+
+/* ---------- hero interaction ---------- */
+const heroPh=document.getElementById('heroPh'),ctls=heroPh.querySelector('.ctls'),inp=document.getElementById('inp'),heroCv=heroPh.querySelector('canvas');
+let vis='always',hideT;
+function segWire(id,fn){const s=document.getElementById(id);s.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;s.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));fn(b.dataset.v)})}
+segWire('opSeg',v=>ctls.style.setProperty('--op',v));
+segWire('visSeg',v=>{vis=v;clearTimeout(hideT);ctls.classList.toggle('hidectl',v!=='always');ctls.style.opacity='';});
+document.getElementById('rtSw').addEventListener('change',e=>heroPh.classList.toggle('rt',e.target.checked));
+function showTouch(){if(vis!=='touch')return;ctls.classList.remove('hidectl');clearTimeout(hideT);hideT=setTimeout(()=>ctls.classList.add('hidectl'),3000)}
+heroPh.addEventListener('pointerdown',showTouch);
+const names={u:'↑ Up',d:'↓ Down',l:'← Left',r:'→ Right','u r':'↗ Up-Right','u l':'↖ Up-Left','d r':'↘ Down-Right','d l':'↙ Down-Left'};
+heroPh.querySelectorAll('.ctl').forEach(el=>{
+  const k=el.dataset.k;
+  const dir=e=>{const b=el.getBoundingClientRect(),x=(e.clientX-b.left)/b.width-.5,y=(e.clientY-b.top)/b.height-.5;if(Math.hypot(x,y)<.1)return'';const a=Math.atan2(y,x)*180/Math.PI;const seg=Math.round(((a+360)%360)/45)%8;return['r','d r','d','d l','l','u l','u','u r'][seg]};
+  el.addEventListener('pointerdown',e=>{if(vis==='hidden')return;el.setPointerCapture(e.pointerId);el.classList.add('down');if(k==='dpad'){const d=dir(e);el.dataset.dir=d;inp.textContent=names[d]||'·'}else inp.textContent=k==='menu'?'Menu → HUD':k.toUpperCase()});
+  el.addEventListener('pointermove',e=>{if(k!=='dpad'||!el.classList.contains('down'))return;const d=dir(e);if(d!==el.dataset.dir){el.dataset.dir=d;inp.textContent=names[d]||'·'}});
+  const up=()=>{el.classList.remove('down');el.dataset.dir='';inp.textContent='—'};
+  el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+});
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const animSw=document.getElementById('animSw');if(reduce)animSw.checked=false;
+let t=0,last=0;
+function loop(ts){if(animSw.checked&&ts-last>33){t+=1;drawScene(heroCv,t);last=ts}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script>
+
+</body></html>

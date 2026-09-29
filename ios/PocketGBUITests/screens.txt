@@ -1,0 +1,9 @@
+# Catálogo de capturas para CI y revisión de diseño (docs/diseno/VERIFICACION.md).
+# Formato: <id> <portrait|landscape> <light|dark> [argumentos de arranque...]
+# $FIXTURES = carpeta con ROMs de prueba libres (tools/ios-screenshots.sh la prepara).
+# Cada hito de diseño añade aquí sus pantallas y estados.
+start               portrait  light
+start               portrait  dark
+game-acid           portrait  dark   -rom $FIXTURES/dmg-acid2.gb
+game-acid           landscape dark   -rom $FIXTURES/dmg-acid2.gb
+game-paused         portrait  dark   -rom $FIXTURES/dmg-acid2.gb -paused

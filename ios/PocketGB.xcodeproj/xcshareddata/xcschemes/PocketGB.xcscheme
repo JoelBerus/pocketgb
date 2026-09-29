@@ -27,6 +27,28 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
+      <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+                  BuildableIdentifier = "primary"
+                  BlueprintIdentifier = "AA0000000000000000000041"
+                  BuildableName = "PocketGBTests.xctest"
+                  BlueprintName = "PocketGBTests"
+                  ReferencedContainer = "container:PocketGB.xcodeproj">
+               </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+                  BuildableIdentifier = "primary"
+                  BlueprintIdentifier = "AA0000000000000000000042"
+                  BuildableName = "PocketGBUITests.xctest"
+                  BlueprintName = "PocketGBUITests"
+                  ReferencedContainer = "container:PocketGB.xcodeproj">
+               </BuildableReference>
+         </TestableReference>
+      </Testables>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
