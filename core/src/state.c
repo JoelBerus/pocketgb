@@ -259,9 +259,19 @@ static void visit(struct io *io, gb *g)
     u8(io, &t->reload, TIMA_RELOAD_B);
     section_end(io, s);
 
+    /* PPU: dot múltiplo de 4 y mode3_end en su rango real (172 + SCX%8 + 6×10 como
+     * máximo). El modo y next_event del archivo se ignoran: ppu_resync los deriva
+     * al aplicar, para que nunca haya un modo incoherente con LY/dot (auditoría M3, H1). */
     struct gb_ppu *p = &g->ppu;
     s = section_begin(io, TAG('P', 'P', 'U', ' '));
-    u16(io, &p->dot, 455); u16(io, &p->mode3_end, 456); u16(io, &p->next_event, 456);
+    u16(io, &p->dot, 452); u16(io, &p->mode3_end, 80 + 172 + 7 + 6 * PPU_MAX_OBJS);
+    u16(io, &p->next_event, 456);
+    if (loading(io) && io->ok) {
+        unsigned dot = io->in[io->pos - 6] | io->in[io->pos - 5] << 8;
+        unsigned mode3_end = io->in[io->pos - 4] | io->in[io->pos - 3] << 8;
+        if (dot % 4 != 0 || mode3_end < 80 + 172)
+            io->ok = false;
+    }
     u8(io, &p->ly, 153); u8(io, &p->mode, 3);
     u8(io, &p->lcdc, 0xFF); u8m(io, &p->stat, 0x78);
     u8(io, &p->scy, 0xFF); u8(io, &p->scx, 0xFF); u8(io, &p->lyc, 0xFF); u8(io, &p->dma, 0xFF);
@@ -321,6 +331,13 @@ static void visit(struct io *io, gb *g)
         u32(io, &r->wall_sub, RTC_CYCLES_PER_SECOND - 1);
         u8(io, &r->latch_last, 0xFF);
         i64(io, &r->unix);
+        if (loading(io) && io->ok) {
+            int64_t unix_read = 0;
+            for (int k = 0; k < 8; k++)
+                unix_read |= (int64_t)((uint64_t)io->in[io->pos - 8 + k] << (8 * k));
+            if (!rtc_unix_valid(unix_read))
+                io->ok = false;   /* H2: hora fuera de rango (evita desbordes al restar) */
+        }
     }
     section_end(io, s);
 
@@ -403,6 +420,7 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len)
     io = (struct io){ IO_APPLY, NULL, data + HEADER_BYTES, body, 0, true };
     visit(&io, g);
     cart_update_banks(g);
+    ppu_resync(g);
     memset(&g->dbg, 0, sizeof g->dbg);
     return GB_OK;
 }

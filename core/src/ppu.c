@@ -127,6 +127,8 @@ static uint32_t shade(const gb *g, uint8_t palette, uint8_t idx)
 static void render_line(gb *g)
 {
     struct gb_ppu *p = &g->ppu;
+    if (p->ly >= GB_SCREEN_H)
+        return;   /* defensa en profundidad: nunca escribir fuera del framebuffer */
     uint8_t lcdc = p->lcdc;
     uint32_t *out = g->framebuffer + (size_t)p->ly * GB_SCREEN_W;
     uint8_t bg[GB_SCREEN_W] = { 0 };
@@ -259,6 +261,22 @@ void ppu_tick(gb *g, unsigned dots)
         if (old == 3 && p->mode == 0)
             render_line(g);
         update_stat_line(g);
+        p->next_event = next_event(p);
+    }
+}
+
+/* Tras cargar un estado: el modo y el próximo evento no se toman del archivo,
+ * se derivan de LY/dot/LCDC para que siempre sean coherentes. */
+void ppu_resync(gb *g)
+{
+    struct gb_ppu *p = &g->ppu;
+    if (p->lcdc & 0x80) {
+        p->mode = mode_for(p);
+        p->next_event = next_event(p);
+    } else {
+        p->ly = 0;
+        p->dot = 0;
+        p->mode = 0;
         p->next_event = next_event(p);
     }
 }

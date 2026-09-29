@@ -288,15 +288,21 @@ gb_result gb_sram_load(gb *g, const uint8_t *data, size_t len)
     if (!g->rom_loaded)
         return GB_ERR_NO_ROM;
     size_t ram = g->info.sram_bytes;
-    /* Con RTC se acepta también el .sav sin el bloque de 48 bytes (reloj a cero). */
-    bool with_rtc = g->cart.has_rtc && len == ram + RTC_SAVE_BYTES;
-    if (len != ram && !with_rtc)
+    /* Con RTC se aceptan el bloque de 48 bytes (hora u64), el antiguo de 44 (hora u32)
+     * y el .sav sin bloque (reloj a cero): rechazar una partida válida es peor. */
+    bool rtc48 = g->cart.has_rtc && len == ram + RTC_SAVE_BYTES;
+    bool rtc44 = g->cart.has_rtc && len == ram + RTC_SAVE_BYTES - 4;
+    if (len != ram && !rtc48 && !rtc44)
         return GB_ERR_SRAM_SIZE;
     if (ram)
         memcpy(g->cart.ram, data, ram);
-    if (with_rtc) {
+    if (rtc48 || rtc44) {
+        uint8_t block[RTC_SAVE_BYTES] = { 0 };
+        memcpy(block, data + ram, len - ram);   /* 44 bytes: los 4 altos de la hora quedan a 0 */
         int64_t now = g->cart.rtc.unix;
-        rtc_deserialize(&g->cart.rtc, data + ram);
+        rtc_deserialize(&g->cart.rtc, block);
+        if (!rtc_unix_valid(g->cart.rtc.unix))
+            g->cart.rtc.unix = now;   /* hora guardada inválida: "sin hora", no se avanza */
         gb_rtc_set_time(g, now);   /* el reloj avanza lo que pasó con la consola apagada */
     }
     return GB_OK;
@@ -334,9 +340,11 @@ void gb_rtc_set_time(gb *g, int64_t unix_time)
     if (!g || !g->rom_loaded || !g->cart.has_rtc)
         return;
     struct gb_rtc *r = &g->cart.rtc;
+    if (!rtc_unix_valid(unix_time) || !rtc_unix_valid(r->unix))
+        return;   /* ambos en [0, 2^40): la resta no puede desbordar */
     if (unix_time > r->unix) {
         if (!(r->reg[RTC_DH] & 0x40))
-            rtc_add_seconds(r, (uint64_t)(unix_time - r->unix));
+            rtc_add_seconds(r, (uint64_t)unix_time - (uint64_t)r->unix);
         r->unix = unix_time;
     }
 }

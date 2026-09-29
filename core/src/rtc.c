@@ -19,7 +19,7 @@ void rtc_reset(gb *g, int64_t unix_time)
     r->sub = 0;
     r->wall_sub = 0;
     r->latch_last = 0xFF;
-    r->unix = unix_time;
+    r->unix = rtc_unix_valid(unix_time) ? unix_time : 0;
 }
 
 /* Un segundo del RTC, con los acarreos y desbordes del hardware. */
@@ -49,7 +49,8 @@ static void rtc_second(struct gb_rtc *r)
 
 void rtc_add_seconds(struct gb_rtc *r, uint64_t seconds)
 {
-    /* Mientras algún campo esté fuera de rango, segundo a segundo (≤ ~2 días). */
+    /* Mientras algún campo esté fuera de rango, segundo a segundo
+     * (peor caso ≈ 8 h 4 min: H 24→31 y M 60→63). */
     while (seconds > 0 && (r->reg[RTC_S] > 59 || r->reg[RTC_M] > 59 || r->reg[RTC_H] > 23)) {
         rtc_second(r);
         seconds--;
@@ -75,7 +76,8 @@ void rtc_tick(gb *g, unsigned tcycles)
     r->wall_sub += tcycles;
     if (r->wall_sub >= RTC_CYCLES_PER_SECOND) {
         r->wall_sub -= RTC_CYCLES_PER_SECOND;
-        r->unix++;   /* el tiempo emulado también es tiempo transcurrido */
+        if (rtc_unix_valid(r->unix + 1))
+            r->unix++;   /* el tiempo emulado también es tiempo transcurrido */
     }
     if (r->reg[RTC_DH] & 0x40)
         return;      /* halt: el reloj (y su sub-segundo) se detiene */
@@ -98,6 +100,8 @@ void rtc_write(gb *g, uint8_t v)
     int i = g->cart.rtc_reg;
     r->reg[i] = v & reg_mask[i];
     r->latched[i] = r->reg[i];   /* lo escrito se lee de vuelta sin nuevo latch */
+    if (g->cart.has_battery)
+        g->cart.ram_written = true;   /* el juego cambió la hora: señal de guardado (H4) */
     if (i == RTC_S)
         r->sub = 0;
 }

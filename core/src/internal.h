@@ -180,6 +180,7 @@ void ppu_reset(gb *g);
 void ppu_tick(gb *g, unsigned dots);
 uint8_t ppu_read(const gb *g, uint16_t addr);
 void ppu_write(gb *g, uint16_t addr, uint8_t v);
+void ppu_resync(gb *g);                 /* recalcula modo y próximo evento (save states) */
 /* Con el LCD encendido la CPU no ve VRAM en modo 3 ni OAM en modos 2 y 3. */
 static inline bool ppu_vram_blocked(const gb *g)
 {
@@ -225,6 +226,11 @@ uint8_t rtc_read(const gb *g);
 void rtc_write(gb *g, uint8_t v);
 void rtc_latch_write(gb *g, uint8_t v);
 void rtc_add_seconds(struct gb_rtc *r, uint64_t seconds);
+/* Hora Unix aceptada: [0, 2^40) (hasta el año ~36812). Fuera de rango = "sin hora". */
+static inline bool rtc_unix_valid(int64_t t)
+{
+    return t >= 0 && t < ((int64_t)1 << 40);
+}
 void rtc_serialize(const struct gb_rtc *r, uint8_t out[RTC_SAVE_BYTES]);
 void rtc_deserialize(struct gb_rtc *r, const uint8_t in[RTC_SAVE_BYTES]);
 

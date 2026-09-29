@@ -120,7 +120,7 @@ size_t gb_audio_read(gb *g, int16_t *out, size_t max_frames);
 size_t gb_audio_available(const gb *g);
 
 /* SRAM (partida del cartucho) */
-gb_result gb_sram_load(gb *g, const uint8_t *data, size_t len); /* len == sram_bytes [+48 si RTC; también sin ellos] */
+gb_result gb_sram_load(gb *g, const uint8_t *data, size_t len); /* len == sram_bytes [+48 o +44 si RTC; también sin ellos] */
 size_t gb_sram_save_size(const gb *g);                          /* sram_bytes [+48 si RTC] */
 gb_result gb_sram_save(const gb *g, uint8_t *out, size_t cap);
 bool gb_sram_dirty(const gb *g);   /* verdadero tras "juego guardó" (flanco RAM disable con datos sucios) */

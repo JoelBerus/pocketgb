@@ -115,8 +115,9 @@ Los offsets de banco se precalculan (y se acotan con `%`) en cada escritura a un
 - Avanza con el reloj emulado (4 194 304 T-ciclos = 1 s), así que es determinista. Con el bit de halt (`DH` bit 6) se detienen el reloj y su sub-segundo.
 - Anchos reales del chip: S y M de 6 bits, H de 5 y día de 9. Un valor fuera de rango sigue contando hasta desbordar su ancho, y ese desborde lo pone a 0 **sin** acarreo (p. ej. S=63 → 0 sin tocar M). Día 511 → 0 con el bit de acarreo (`DH` bit 7), que se queda puesto hasta que el juego lo borre.
 - Escribir un registro aplica su máscara (`3F 3F 1F FF C1`) y actualiza también la copia latched. Escribir S reinicia el sub-segundo.
-- Hora de pared: `opts.unix_time` en `gb_load_rom`; cada segundo emulado la adelanta. `gb_rtc_set_time(now)` suma al reloj los segundos transcurridos desde esa hora (si no está en halt).
-- `.sav`: RAM + bloque de 48 bytes (5×u32 vivos S M H DL DH, 5×u32 latched, u64 hora Unix; little-endian, compatible con VBA/BGB). `gb_sram_load` también acepta el `.sav` sin bloque RTC, para no rechazar partidas de otros emuladores. Al cargarlo, el reloj avanza lo transcurrido desde la hora guardada.
+- Hora de pared: `opts.unix_time` en `gb_load_rom`; cada segundo emulado la adelanta. `gb_rtc_set_time(now)` suma al reloj los segundos transcurridos desde esa hora (si no está en halt). Solo se aceptan horas en `[0, 2^40)`; fuera de ese rango se tratan como "sin hora" y el reloj no avanza (sin desbordes al restar).
+- Escribir un registro del RTC en un cartucho con batería cuenta como escritura en la RAM externa: el siguiente flanco de deshabilitar activa `gb_sram_dirty()`, así que un cambio de hora del juego también se guarda.
+- `.sav`: RAM + bloque de 48 bytes (5×u32 vivos S M H DL DH, 5×u32 latched, u64 hora Unix; little-endian, compatible con VBA/BGB). `gb_sram_load` también acepta el bloque antiguo de 44 bytes (hora u32) y el `.sav` sin bloque RTC, para no rechazar partidas de otros emuladores. Al cargarlo, el reloj avanza lo transcurrido desde la hora guardada.
 - Verificación: rtc3test (los 3 subtests) y MBC3-Tester idénticos a sus capturas.
 
 ## Save states
@@ -127,6 +128,7 @@ Formato binario little-endian:
 - Versión actual: 1. Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `MISC` (contador de ciclos y framebuffer). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
 - `gb_state_load` rechaza, en este orden: magic incorrecto (`STATE_MAGIC`), versión distinta de la soportada (`STATE_VERSION`), CRC inválido o archivo truncado (`STATE_CORRUPT`), huella de ROM distinta (`STATE_ROM_MISMATCH`), modelo distinto, tag o longitud de sección incoherente, o cualquier campo fuera de rango (`STATE_CORRUPT`). **Nunca** confía en las longitudes del archivo.
 - La carga hace una pasada que solo valida y, si todo es correcto, otra que escribe: un estado rechazado deja la instancia intacta. No reserva memoria.
+- Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` múltiplo de 4 y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
 - Toda la memoria de estado de `struct gb` se serializa campo por campo (sin `memcpy` de structs con punteros). Los offsets de banco no se guardan: se recalculan al cargar.
 
 ## Seguridad (resumen de reglas verificables)

@@ -109,6 +109,21 @@ static void state_tests(struct ut *t)
     g->dma.active = false;
     g->dma.index = 0;
 
+    /* Regresión (auditoría M3, H1): LY=143, dot=452 y modo 3 escritos a mano con CRC
+     * válido. El modo se recalcula al cargar, así que no se renderiza la línea 144
+     * (antes: escritura fuera del framebuffer). */
+    h->ppu.ly = 143; h->ppu.dot = 452; h->ppu.mode = 3;
+    CHECK(t, gb_state_save(h, s2, n) == GB_OK);
+    CHECK(t, gb_state_load(h, s2, n) == GB_OK);
+    CHECK(t, h->ppu.mode == 0 && h->ppu.next_event == 456);
+    gb_run_frame(h);                                    /* con ASan: sin desborde */
+    h->ppu.dot = 450;                                   /* dot no múltiplo de 4 */
+    CHECK(t, gb_state_save(h, s2, n) == GB_OK && gb_state_load(g, s2, n) == GB_ERR_STATE_CORRUPT);
+    h->ppu.dot = 0;
+    h->ppu.mode3_end = 100;                             /* modo 3 imposible */
+    CHECK(t, gb_state_save(h, s2, n) == GB_OK && gb_state_load(g, s2, n) == GB_ERR_STATE_CORRUPT);
+    h->ppu.mode3_end = 252;
+
     /* Estado de otro ROM */
     uint8_t *rom2 = ut_make_rom(0x8000, 0x00, 0x00, 0x00, NULL, 0);
     gb *o = rom2 ? load(rom2, 0x8000) : NULL;
@@ -193,11 +208,34 @@ static void rtc_tests(struct ut *t)
             CHECK(t, h->cart.rtc.reg[RTC_H] == 1 && h->cart.rtc.reg[RTC_M] == 2 &&
                      h->cart.rtc.reg[RTC_S] == 1);
             CHECK(t, gb_sram_load(h, sav, 32768) == GB_OK);        /* sin bloque RTC */
+            CHECK(t, gb_sram_load(h, sav, 32768 + 44) == GB_OK);   /* bloque antiguo de 44 */
+            CHECK(t, h->cart.rtc.reg[RTC_H] == 1);
             CHECK(t, gb_sram_load(h, sav, 32768 + 47) == GB_ERR_SRAM_SIZE);
         }
         gb_destroy(h);
         free(sav);
     }
+
+    /* Regresión (auditoría M3, H2): hora guardada fuera de rango en el .sav → "sin hora",
+     * sin desbordes al restar (UBSan) y sin tocar el reloj. */
+    uint8_t *bad = calloc(1, 32768 + 48);
+    if (bad) {
+        bad[32768 + 47] = 0x80;                          /* u64 = INT64_MIN */
+        int64_t now = r->unix;
+        CHECK(t, gb_sram_load(g, bad, 32768 + 48) == GB_OK);
+        CHECK(t, r->unix == now && r->reg[RTC_S] == 0);
+        gb_rtc_set_time(g, INT64_MIN);
+        gb_rtc_set_time(g, INT64_MAX);
+        CHECK(t, r->unix == now);
+        free(bad);
+    }
+    /* Escribir un registro del RTC cuenta como "el juego guardó" al deshabilitar. */
+    gb_sram_clear_dirty(g);
+    mmu_write(g, 0x0000, 0x0A);
+    mmu_write(g, 0x4000, 0x0A);
+    mmu_write(g, 0xA000, 5);
+    mmu_write(g, 0x0000, 0x00);
+    CHECK(t, gb_sram_dirty(g));
 
     /* El RTC también viaja en los save states */
     size_t n = gb_state_size(g);
@@ -207,6 +245,10 @@ static void rtc_tests(struct ut *t)
         CHECK(t, gb_state_save(g, s, n) == GB_OK);
         r->reg[RTC_DL] = 0x00;
         CHECK(t, gb_state_load(g, s, n) == GB_OK && r->reg[RTC_DL] == 0x42);
+        int64_t keep = r->unix;
+        r->unix = -1;                                    /* hora inválida en un estado */
+        CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(g, s, n) == GB_ERR_STATE_CORRUPT);
+        r->unix = keep;
         free(s);
     }
     gb_destroy(g);
