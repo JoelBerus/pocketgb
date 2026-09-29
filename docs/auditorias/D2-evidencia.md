@@ -76,3 +76,12 @@ Observación: con un título largo, el badge "Nuevo" pasa a la derecha del texto
 El CI de `c314a17` no arrancó: GitHub bloqueó el job por facturación ("recent account payments have failed or your spending limit needs to be increased"). Verificación equivalente en el Mac de Joel (Xcode 26.6):
 - `c314a17` (antes de la corrección): núcleo 157/157; `xcodebuild -configuration Release … build` → BUILD SUCCEEDED; `tools/ios-screenshots.sh` → TEST SUCCEEDED, 29 capturas. Claude revisó las 18 de D2 (claro y oscuro): sin errores visuales.
 - Tras la corrección de H1 (Codex): Release → BUILD SUCCEEDED sin warnings del proyecto; `tools/ios-screenshots.sh` → TEST SUCCEEDED, 43 tests `✔` (incluido `blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest`), catálogo completo con la app viva.
+
+## CI del runner propio tras A1–A3 (rama `d2-a1-wip`, 2026-09-29)
+- `f42014f` (run 36628920658): 1 fallo, una aserción mal planteada en el test (`store.backups().isEmpty`: la rotación normal ya deja d1 en `.1`). Se corrigió en `ede7c11`. Capturas publicadas en `ci-shots/d2-a1-wip`: Claude revisó las 29 (claro y oscuro) según `docs/diseno/VERIFICACION.md` y no encontró defectos.
+- `ede7c11` (run 36629920277), en el Mac de Joel (Xcode 26.6):
+  - Núcleo: 157/157.
+  - Tests unitarios: `✔ Test run with 45 tests in 5 suites passed`, incluidos `staleOwnedMirrorCannotReplaceNewerLocalWhenGameReopens`, `newerExternalMirrorWinsAndBacksUpLocal`, `synchronousSessionFlushDoesNotWaitForBlockedRealMirror` y `blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest`.
+  - UI: 4/4 (`ScreenshotTests`, `ShellFolderPickerTests` ×2, `ShellTests`), `** TEST SUCCEEDED **`.
+  - Release: `** BUILD SUCCEEDED **`. Resultado: `RESULT: success`.
+  - Solo falló la publicación posterior en `ci-shots` (`failed to store: -25308`, `RPC failed; HTTP 408`): el push desde el Mac agotó el tiempo, así que el job figura como fallido. `ede7c11` solo cambia un test respecto a `f42014f` y el código de la app es el mismo, de modo que las capturas revisadas de `f42014f` siguen siendo válidas.

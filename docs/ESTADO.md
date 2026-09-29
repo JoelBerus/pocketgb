@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. **D2 (☁️) implementado** en la rama `claude/amazing-babbage-lgip5y` (auditoría Opus 2 rondas; falta la auditoría local con Codex, la prueba en el iPhone y el merge). **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
+**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. **D2 (☁️) implementado** en la rama `claude/amazing-babbage-lgip5y` (auditoría Opus 2 rondas + A1–A3 en `d2-a1-wip` con CI verde; falta la auditoría local con Codex, la prueba en el iPhone y el merge). **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -21,13 +21,11 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-- **PASO 0 (☁️, prioridad): terminar las correcciones A1–A3 de D2 en la rama `d2-a1-wip`** (parte de `cf62b31` de `claude/amazing-babbage-lgip5y`; su último commit `WIP D2 A1-A3` lo empezó Codex y se cortó por cuota).
-  - Contexto: auditoría Codex de D2 = RECHAZAR ([auditorias/D2-codex.md](auditorias/D2-codex.md)); H1 (el espejo iCloud bloqueaba la escritura local) ya está corregido en `cf62b31`. La auditoría Opus de esa corrección (APROBAR CON CAMBIOS) abrió A1–A3, descritos en la sección "Auditoría Opus de la corrección (cf62b31)" de [auditorias/D2-respuesta.md](auditorias/D2-respuesta.md):
-    - **A1 (alta, regla 6):** el espejo asíncrono puede quedar con contenido más viejo pero fecha más nueva que la local → al reabrir gana la vieja. Diseño pedido: registro local atómico de las huellas SHA-256 que PocketGB escribió con éxito en el espejo (últimas 8); si el espejo coincide con una huella propia y difiere de la local, gana la local y se reencola al espejo; solo un espejo externo usa la regla por fecha (con backup del perdedor). Cola/estado del espejo compartido por huella de ROM entre sesiones.
-    - **A2 (media):** la background task de `enterBackground` debe durar hasta que el espejo quede en reposo o expire.
-    - **A3 (baja):** test en la barrera real (`flushSRAM(sync:)`/`localSaveQueue`) con espejo bloqueado; tests de la secuencia de A1 y del caso de espejo externo.
-  - Estado del WIP: la app compila; **el target de tests no**: `SaveMirrorTests.swift`, un `#require`/`#expect` con una llamada que lanza sin `try`. Revisar todo el diff del WIP (no fue verificado), completar lo que falte y documentar en `D2-respuesta.md`.
-  - **El CI de GitHub no arranca (facturación de Joel)**: no hay capturas ni build macOS en la nube. Verificar en Linux lo posible, empujar a `d2-a1-wip` y dejar anotado; Joel/Claude en el Mac corren `tools/ios-screenshots.sh` y el build Release. Después, auditoría Codex (read-only) en el Mac cuando haya cuota; solo entonces fusionar en `claude/amazing-babbage-lgip5y` y pedir a Joel las pruebas del iPhone (`D2-evidencia.md` §5).
+- **PASO 0 hecho (☁️, 2026-09-29): A1–A3 de D2 terminados en la rama `d2-a1-wip`** (sin fusionar en `claude/amazing-babbage-lgip5y`). Claude revisó el WIP de Codex y corrigió W1–W4 ([auditorias/D2-respuesta.md](auditorias/D2-respuesta.md)). El CI del runner propio sobre `ede7c11` pasó: 45 tests unitarios, 4 de UI, Release y núcleo 157/157 ([auditorias/D2-evidencia.md](auditorias/D2-evidencia.md), última sección). Solo falló la publicación en `ci-shots` (HTTP 408 / llavero -25308 en el Mac). Siguiente:
+  1. En el Mac: la auditoría Codex (read-only) de `d2-a1-wip` con el comando del punto 0 de abajo, pero haciendo checkout de `d2-a1-wip` en vez de `claude/amazing-babbage-lgip5y` (diff contra `origin/main`).
+  2. Si aprueba, fusionar `d2-a1-wip` en `claude/amazing-babbage-lgip5y`.
+  3. Hacer las pruebas del iPhone (`D2-evidencia.md` §5) y abrir la PR a `main`.
+  4. Opcional: revisar la red o las credenciales git del runner para que `ci-shots` se publique.
 - **En la nube (☁️), dos líneas independientes:**
   0. **Auditoría local de D2 con Codex (en el Mac), antes del merge:** la rama `claude/amazing-babbage-lgip5y` contiene `main` actual + D2 (solo `ios/` y docs). Comando:
      ```bash
