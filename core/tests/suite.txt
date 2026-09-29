@@ -126,3 +126,8 @@ M8|mooneye-test-suite/misc/ppu/vblank_stat_intr-C.gb|mooneye|cgb|1200|known-fail
 M8|blargg/cgb_sound/rom_singles/09*.gb|blargg|cgb|2000|known-fail
 M8|blargg/cgb_sound/rom_singles/12*.gb|blargg|cgb|2000|known-fail
 M8|cgb-acid-hell/cgb-acid-hell.gbc|acid|cgb|600|known-fail|cgb-acid-hell/cgb-acid-hell.png
+
+# ---- M9: cable link virtual ----
+# Los tests del cable (deriva, causalidad, cable suelto, intercambio DMG/CGB/doble
+# velocidad/compatibilidad) están en tests/unit_link.c y corren dentro de `M1|unit`.
+# Entre las ROMs de prueba libres no hay ninguna de serie entre dos instancias.

@@ -32,6 +32,10 @@ void unit_apu(struct ut *t);
 void unit_cart(struct ut *t);
 void unit_cgb(struct ut *t);
 void unit_cpu(struct ut *t);
+void unit_link(struct ut *t);
+/* Programa de intercambio serie de unit_link.c (para las semillas de fuzz_link):
+ * lo escribe en `out` y devuelve su longitud (0 si no cabe). */
+size_t ut_link_exchange_prog(uint8_t *out, size_t cap, bool double_speed, uint8_t sc, uint8_t key);
 void unit_ppu(struct ut *t);
 void unit_sha256(struct ut *t);
 void unit_state(struct ut *t);

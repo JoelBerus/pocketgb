@@ -152,6 +152,50 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len); /* nunca confí
  * con reloj externo, no cambia nada y devuelve 1. */
 uint8_t gb_serial_clock_external(gb *g, uint8_t bit_in);
 
+/* Cable link virtual (M9; docs/03-core-spec.md §Serial): dos instancias en el
+ * MISMO hilo, avanzadas en lockstep.
+ * - Avance por deadline absoluto (sin deriva): el tiempo del cable T sube en
+ *   bloques de GB_LINK_BLOCK_CYCLES; cada instancia con t_i < T ejecuta
+ *   gb_run_cycles(g_i, T - t_i). Tras cada bloque, T ≤ t_i y |t_a - t_b| ≤ 44.
+ * - Causalidad: en cada pulso del reloj interno de un extremo (maestro), el otro
+ *   se adelanta hasta ese instante antes de recibir el bit, así que un SC=0x80
+ *   que el esclavo escriba justo antes del flanco ya cuenta.
+ * - En cada bloque corre primero el maestro (transferencia SC=0x81 activa o,
+ *   si no, SC bit 0 = 1). Un maestro que activa SC=0x81 a mitad de un bloque en
+ *   el que el par ya corrió puede encontrarlo hasta 456 T-ciclos por delante.
+ * - Reentrada: mientras se adelanta al par dentro de un pulso, los pulsos del
+ *   par (los dos con reloj interno: indefinido en el hardware) reciben 1.
+ * - Una instancia pertenece a un solo cable: la app debe tener un único dueño
+ *   que llame a gb_link_detach antes de gb_destroy.
+ * El contexto se reserva una sola vez en gb_link_create; el avance no reserva
+ * memoria. Al conectar, el cable sustituye el serial_bit_cb de cada instancia
+ * (el serial_byte_cb del llamador se sigue llamando) y los restaura al
+ * desconectar. Tras gb_load_rom o gb_state_load en una instancia conectada no
+ * hace falta reconectar: el siguiente avance reinstala los callbacks y vuelve a
+ * alinear su reloj. Desconectar (o destruir el cable) ANTES de gb_destroy. */
+#define GB_LINK_BLOCK_CYCLES 456u     /* una línea del LCD */
+
+typedef struct gb_link gb_link;
+
+gb_link *gb_link_create(void);        /* NULL si no hay memoria */
+void gb_link_destroy(gb_link *l);     /* desconecta primero */
+/* Conecta a y b (lado 0 y lado 1). Cualquiera puede ser NULL: cable suelto de
+ * ese lado (el otro recibe 0xFF como maestro). Reconectar desconecta antes.
+ * Una instancia ya conectada a OTRO cable, o b == a, deja su lado vacío y la
+ * función devuelve false (true si se conectó todo lo pedido). */
+bool gb_link_attach(gb_link *l, gb *a, gb *b);
+void gb_link_detach(gb_link *l);
+/* Avanza las dos instancias `cycles` T-ciclos de tiempo real (en bloques de
+ * GB_LINK_BLOCK_CYCLES) y devuelve los avanzados. Cada instancia puede pasarse
+ * hasta una instrucción (≤ 24 T-ciclos, o poco más con un pulso). */
+uint32_t gb_link_run_cycles(gb_link *l, uint32_t cycles);
+/* Un frame de tiempo real: gb_link_run_cycles(l, GB_CYCLES_PER_FRAME). */
+void gb_link_run_frame(gb_link *l);
+/* Último frame COMPLETO del lado 0 o 1 (copiado al entrar en VBlank, sin
+ * cortes aunque el avance termine a mitad de pantalla; con el LCD apagado, la
+ * pantalla actual). NULL si side > 1. Válido hasta gb_link_destroy. */
+const uint32_t *gb_link_framebuffer(const gb_link *l, unsigned side);
+
 const char *gb_result_str(gb_result r);
 
 #ifdef __cplusplus
