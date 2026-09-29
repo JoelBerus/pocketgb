@@ -71,3 +71,6 @@ Test Case '-[PocketGBUITests.ShellTests testTabsAndSettingsNavigation]' passed (
 ```
 - En el run intermedio `119f1e7`, los dos tests del selector fallaron al lanzar la app ("background assertion" agotado). Eran los primeros UI tests tras los unitarios, que usan la app como host. Pasan desde que corren después del catálogo (`ShellOpenFileTests`).
 - Capturas revisadas otra vez: `library-no-folder`/`library-empty` en dark con el acento `#3F7FEF` ✅; `game-acid portrait light` sigue oscuro ✅; `launch` solo en dark ✅.
+
+## 7. iPhone (🍎)
+2026-09-29: Joel instaló la rama en su iPhone y confirma que funciona bien: tabs con Liquid Glass, launch oscuro, barra de estado (visible en biblioteca y ajustes, oculta en el juego), "Abrir un archivo…" y apariencia Claro/Oscuro con el juego siempre oscuro.
