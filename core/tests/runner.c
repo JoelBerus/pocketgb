@@ -1,12 +1,14 @@
 /*
  * runner.c — ejecutor headless de pruebas (docs/06-testing.md §Runner headless).
  *
- *   gbtest <rom> --mode {serial|mooneye} [--model dmg] [--max-frames N]
+ *   gbtest <rom> --mode {serial|mooneye|acid} [--model dmg] [--max-frames N]
+ *          [--expect PATH.rgba] [--dump PATH.rgba]
  *   gbtest <rom> --bench N        velocidad frente a tiempo real (N frames)
  *   gbtest --unit                 unit tests (core/tests/unit_*.c)
  *
+ * acid: al ejecutarse LD B,B se compara el framebuffer con --expect (RGBA crudo
+ * de 160×144, ver tools/png2rgba.py). --dump escribe el último framebuffer.
  * Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga.
- * El modo `acid` (--expect/--dump) llega en M2.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +47,20 @@ static uint8_t *read_file(const char *path, size_t *len)
     return buf;
 }
 
+/* Framebuffer como bytes R,G,B,A (independiente del endianness). */
+static void framebuffer_bytes(const gb *g, uint8_t *out)
+{
+    const uint32_t *fb = gb_framebuffer(g);
+    for (size_t i = 0; i < GB_SCREEN_W * GB_SCREEN_H; i++) {
+        out[4 * i] = (uint8_t)fb[i];
+        out[4 * i + 1] = (uint8_t)(fb[i] >> 8);
+        out[4 * i + 2] = (uint8_t)(fb[i] >> 16);
+        out[4 * i + 3] = (uint8_t)(fb[i] >> 24);
+    }
+}
+
+enum { FB_BYTES = GB_SCREEN_W * GB_SCREEN_H * 4 };
+
 static double now_seconds(void)
 {
     struct timespec ts;
@@ -60,6 +76,7 @@ static int run_unit(void)
         { "cart", unit_cart },
         { "timer", unit_timer },
         { "cpu", unit_cpu },
+        { "ppu", unit_ppu },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -73,7 +90,8 @@ static int run_unit(void)
 static int usage(void)
 {
     fprintf(stderr,
-            "uso: gbtest <rom> --mode {serial|mooneye} [--model dmg] [--max-frames N]\n"
+            "uso: gbtest <rom> --mode {serial|mooneye|acid} [--model dmg] [--max-frames N]\n"
+            "            [--expect PATH.rgba] [--dump PATH.rgba]\n"
             "     gbtest <rom> --bench N\n"
             "     gbtest --unit\n");
     return 2;
@@ -86,7 +104,7 @@ int main(int argc, char **argv)
     if (argc < 3)
         return usage();
 
-    const char *rom_path = argv[1], *mode = NULL;
+    const char *rom_path = argv[1], *mode = NULL, *expect_path = NULL, *dump_path = NULL;
     long max_frames = 3600, bench = 0;
     gb_options opts;
     gb_options_default(&opts);
@@ -105,14 +123,36 @@ int main(int argc, char **argv)
             }
         } else if (strcmp(a, "--max-frames") == 0) {
             max_frames = strtol(v, NULL, 10);
+        } else if (strcmp(a, "--expect") == 0) {
+            expect_path = v;
+        } else if (strcmp(a, "--dump") == 0) {
+            dump_path = v;
         } else if (strcmp(a, "--bench") == 0) {
             bench = strtol(v, NULL, 10);
         } else {
             return usage();
         }
     }
-    if (!bench && (!mode || (strcmp(mode, "serial") != 0 && strcmp(mode, "mooneye") != 0)))
+    if (!bench && (!mode || (strcmp(mode, "serial") != 0 && strcmp(mode, "mooneye") != 0 &&
+                             strcmp(mode, "acid") != 0)))
         return usage();
+    bool acid = mode && strcmp(mode, "acid") == 0;
+    if (acid && !expect_path) {
+        fprintf(stderr, "el modo acid necesita --expect\n");
+        return 2;
+    }
+    static uint8_t expect[FB_BYTES], frame[FB_BYTES];
+    if (expect_path) {
+        size_t n = 0;
+        uint8_t *e = read_file(expect_path, &n);
+        if (!e || n != FB_BYTES) {
+            fprintf(stderr, "%s: se esperaban %d bytes RGBA\n", expect_path, FB_BYTES);
+            free(e);
+            return 2;
+        }
+        memcpy(expect, e, FB_BYTES);
+        free(e);
+    }
 
     size_t len = 0;
     uint8_t *data = read_file(rom_path, &len);
@@ -150,13 +190,29 @@ int main(int argc, char **argv)
 
     int result = 1;
     const char *reason = "se alcanzó --max-frames";
-    long frame = 0;
-    for (; frame < max_frames; frame++) {
+    long frame_no = 0;
+    for (; frame_no < max_frames; frame_no++) {
         gb_run_frame(g);
         if (strcmp(mode, "serial") == 0) {
             if (strstr(log->text, "Passed")) { result = 0; reason = "serie: Passed"; break; }
             if (strstr(log->text, "Failed")) { reason = "serie: Failed"; break; }
-        } else if (g->dbg.ld_b_b) {
+        } else if (acid && g->dbg.ld_b_b) {
+            framebuffer_bytes(g, frame);
+            size_t diff = 0, first = 0;
+            for (size_t i = 0; i < FB_BYTES; i += 4)
+                if (memcmp(frame + i, expect + i, 4) != 0 && diff++ == 0)
+                    first = i / 4;
+            static char msg[96];
+            if (diff == 0) {
+                result = 0;
+                reason = "acid: framebuffer idéntico a la referencia";
+            } else {
+                snprintf(msg, sizeof msg, "acid: %zu píxeles distintos (primero en x=%zu y=%zu)",
+                         diff, first % GB_SCREEN_W, first / GB_SCREEN_W);
+                reason = msg;
+            }
+            break;
+        } else if (!acid && g->dbg.ld_b_b) {
             static const uint8_t fib[6] = { 3, 5, 8, 13, 21, 34 };
             result = memcmp(g->dbg.regs, fib, sizeof fib) == 0 ? 0 : 1;
             reason = result == 0 ? "mooneye: registros Fibonacci" : "mooneye: registros de fallo";
@@ -165,7 +221,15 @@ int main(int argc, char **argv)
         if (gb_cpu_locked(g)) { reason = "CPU bloqueada (opcode ilegal)"; break; }
     }
 
-    printf("%s: %s (frame %ld)\n", result == 0 ? "PASS" : "FAIL", reason, frame);
+    if (dump_path) {
+        framebuffer_bytes(g, frame);
+        FILE *f = fopen(dump_path, "wb");
+        if (!f || fwrite(frame, 1, FB_BYTES, f) != FB_BYTES)
+            fprintf(stderr, "no se pudo escribir %s\n", dump_path);
+        if (f)
+            fclose(f);
+    }
+    printf("%s: %s (frame %ld)\n", result == 0 ? "PASS" : "FAIL", reason, frame_no);
     if (strcmp(mode, "mooneye") == 0 && g->dbg.ld_b_b)
         printf("  B=%02X C=%02X D=%02X E=%02X H=%02X L=%02X\n", g->dbg.regs[0], g->dbg.regs[1],
                g->dbg.regs[2], g->dbg.regs[3], g->dbg.regs[4], g->dbg.regs[5]);

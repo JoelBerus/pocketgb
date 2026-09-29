@@ -51,14 +51,22 @@ struct gb_timer {
     uint8_t reload;    /* TIMA_RELOAD_* */
 };
 
-/* PPU mínima de M1: solo tiempos (LY, modos, STAT, VBlank). El render llega en M2. */
+/* PPU DMG por scanline (docs/03-core-spec.md §PPU). */
+enum { PPU_MAX_OBJS = 10 };
+
 struct gb_ppu {
-    uint16_t dot;      /* 0..455 dentro de la línea */
-    uint8_t ly;        /* 0..153 */
-    uint8_t mode;      /* 0..3 */
+    uint16_t dot;        /* 0..455 dentro de la línea */
+    uint16_t mode3_end;  /* dot en que termina el modo 3 de la línea actual */
+    uint16_t next_event; /* próximo dot con cambio de estado (camino rápido de ppu_tick) */
+    uint8_t ly;          /* 0..153 */
+    uint8_t mode;        /* 0..3 */
     uint8_t lcdc, stat, scy, scx, lyc, dma, bgp, obp0, obp1, wy, wx;
-    bool stat_line;    /* OR de las fuentes STAT, para detectar el flanco de subida */
-    bool frame_done;   /* se activa al entrar en VBlank */
+    uint8_t window_line; /* contador interno: solo avanza si la ventana se dibujó */
+    bool wy_triggered;   /* LY == WY se cumplió en este frame */
+    uint8_t obj_count;   /* objetos de la línea (búsqueda OAM, máx. 10) */
+    uint8_t objs[PPU_MAX_OBJS];
+    bool stat_line;      /* OR de las fuentes STAT, para detectar el flanco de subida */
+    bool frame_done;     /* se activa al entrar en VBlank */
 };
 
 struct gb_dma {
@@ -145,6 +153,8 @@ void ppu_reset(gb *g);
 void ppu_tick(gb *g, unsigned dots);
 uint8_t ppu_read(const gb *g, uint16_t addr);
 void ppu_write(gb *g, uint16_t addr, uint8_t v);
+bool ppu_vram_blocked(const gb *g);     /* modo 3: la CPU no ve VRAM */
+bool ppu_oam_blocked(const gb *g);      /* modos 2 y 3: la CPU no ve OAM */
 
 /* dma.c */
 void dma_reset(gb *g);

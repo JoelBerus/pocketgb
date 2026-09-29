@@ -15,7 +15,7 @@ gbtest <rom> --mode {serial|mooneye|acid} [--model dmg|cgb] [--max-frames N] [--
 gbtest <rom> --bench N     # N frames sin límite de velocidad; imprime el múltiplo de tiempo real
 gbtest --unit              # unit tests (core/tests/unit_*.c)
 ```
-Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. En M1 existen `serial`, `mooneye`, `--bench` y `--unit`; `acid`, `--expect` y `--dump` llegan en M2, y `--model cgb` en M8.
+Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. Desde M2 existen todos los modos; `--model cgb` llega en M8. Ejemplo: `tools/png2rgba.py ref.png ref.rgba && build/gbtest dmg-acid2.gb --mode acid --expect ref.rgba --dump out.rgba && tools/png2rgba.py --reverse out.rgba out.png`.
 | Suite | Condición de salida | Éxito |
 |---|---|---|
 | Blargg (`cpu_instrs`, `instr_timing`, `mem_timing`, `dmg_sound`) | La salida serie contiene `Passed` o `Failed`, o se alcanza `--max-frames` | Contiene `Passed` |
@@ -28,7 +28,7 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 
 `tools/png2rgba.py` convierte los PNG de referencia a RGBA crudo de 160×144. Usa solo la stdlib de Python (`zlib`, `struct`), sin Pillow, para que funcione igual en macOS y en Linux (nube).
 
-`core/tests/suite.txt` lista cada caso `hito|ruta|modo|modelo|max_frames|tipo` (la ruta admite comodines; `unit` = unit tests). `make test HITO=Mn` ejecuta los casos de los hitos ≤ Mn (así se detectan regresiones) e imprime una tabla PASS/FAIL. Sale con código ≠ 0 si falla algún caso de tipo **requerido**. `known-fail` e `info` se reportan pero no bloquean. En M2 se añade una 7.ª columna opcional con la referencia de acid2.
+`core/tests/suite.txt` lista cada caso `hito|ruta|modo|modelo|max_frames|tipo` (la ruta admite comodines; `unit` = unit tests). `make test HITO=Mn` ejecuta los casos de los hitos ≤ Mn (así se detectan regresiones) e imprime una tabla PASS/FAIL. Sale con código ≠ 0 si falla algún caso de tipo **requerido**. `known-fail` e `info` se reportan pero no bloquean. Los casos `acid` llevan una 7.ª columna con el PNG de referencia (relativo a `core/tests/roms/`); `run_suite.py` lo convierte a RGBA con `tools/png2rgba.py` en `build/refs/`.
 
 ## Casos requeridos por hito
 | Hito | Casos |
