@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · M4 y **M5 cerrados**; **núcleo de M8 (CGB) hecho** en la nube (falta la prueba 🍎 en el iPhone). Nube: **D1** (diseño).
+**Actualizado:** 2026-09-29 · M4, M5 y **M8 cerrados** (Amarillo en color en el iPhone de Joel). Siguiente: **D1** (diseño).
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -12,15 +12,15 @@
 - M5 iOS (cerrado; Joel lo oyó bien en su iPhone): `AudioOutput` (AVAudioEngine 48 kHz, `.ambient`), `AudioRingBuffer` SPSC lock-free, pacing guiado por el audio con fallback a reloj, HUD DEBUG, sesión y motor en una cola propia (nada de `setActive` en el hilo principal). Implementado con Codex, auditado por Opus (APROBAR CON CAMBIOS) + un crash de aislamiento Swift 6 encontrado en la prueba real y corregido. Evidencia: `docs/auditorias/M5-ios-*`.
 - M5 (núcleo): APU DMG (`apu.c`) con catch-up (A9), salida PCM a `sample_rate` con pasa-altos, `gb_audio_*`, save state v2, runner `--mode blargg` y `--wav`. dmg_sound 01–08 y 11 PASS (09/10/12 known-fail); 103/103 requeridos. Auditoría: `docs/auditorias/M5-*`.
 
-- M8 (núcleo): CGB en `cgb.c` + PPU/CPU/timer/APU: VRAM y WRAM con bancos, paletas de color, atributos de fondo, prioridad CGB, HDMA general y de HBlank, doble velocidad (STOP + KEY1), arranque CGB nativo y en compatibilidad, paletas de compatibilidad por checksum del título (tablas de SameBoy, MIT) con selección manual, APU CGB (apagar borra longitudes), save state v3. `--model cgb|auto`. cgb-acid2, dmg-acid2 en CGB y boot_regs-cgb idénticos/PASS; 157/157 requeridos (incluye `interrupt_time` en doble velocidad). Evidencia y auditoría: `docs/auditorias/M8-*`.
+- M8 (núcleo): CGB en `cgb.c` + PPU/CPU/timer/APU: VRAM y WRAM con bancos, paletas de color, atributos de fondo, prioridad CGB, HDMA general y de HBlank, doble velocidad (STOP + KEY1), arranque CGB nativo y en compatibilidad, paletas de compatibilidad por checksum del título (tablas de SameBoy, MIT) con selección manual, APU CGB (apagar borra longitudes), save state v3. `--model cgb|auto`. cgb-acid2, dmg-acid2 en CGB y boot_regs-cgb idénticos/PASS; 157/157 requeridos (incluye `interrupt_time` en doble velocidad). Evidencia y auditoría: `docs/auditorias/M8-*`. Tests también en el Mac de Joel. **iPhone (2026-09-29):** Amarillo en color, jugado un rato sin problemas; Rojo sigue en DMG (esperado: la paleta de compatibilidad necesita `GB_MODEL_CGB`, que pedirá la app en D5/D6).
 
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
 - **En la nube (☁️), dos líneas independientes:**
   1. **Diseño de la app, [D1](hitos/D-README.md):** rama `d1-fundamentos` desde `main`. Leer antes [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Cada lote: push → CI (~8 min) → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Un push por lote (minutos macOS limitados). No tocar `Emulator/`, `Audio/` ni `Saves/` salvo lo que pida el hito. Trampa conocida de Swift 6: un closure que se ejecuta en otro hilo (audio, callbacks de sistema) no puede crearse dentro de un método `@MainActor` (ver M5-ios-respuesta H0).
-  2. ~~Núcleo de M8~~ hecho (ver arriba). Queda la parte 🍎 de [M8](hitos/M8-cgb.md).
-- **En el Mac (🍎), M8:** compilar la app con el núcleo nuevo y cargar Amarillo: con `GB_MODEL_AUTO` (lo que usa hoy `CoreBridge`) ya arranca en CGB y debe verse en color. Rojo sigue en DMG con `AUTO`; para verlo con su paleta de compatibilidad la app tiene que pasar `model = GB_MODEL_CGB` (ajuste por juego, parte de D5/D6). Medir el rendimiento en CGB (en Linux ~6 % más lento que antes en DMG).
+  2. ~~M8~~ cerrado. Siguiente hito de núcleo: [M9](hitos/M9-link-virtual.md) (cable virtual), cuando Joel lo pida.
+- **Pendiente para la app (D5/D6):** ajuste por juego «Color en juegos de Game Boy» → `model = GB_MODEL_CGB` + selector de paleta (`compat_palette`, 0 auto / 1..12). Sin eso Rojo se ve en blanco y negro. Medir el rendimiento en CGB en el iPhone.
 - **API C cambiada en M8 (para la app):** `gb_options.compat_palette` (0 auto, 1..12 = combinaciones de botones del arranque), `gb_set_compat_palette(g, id)` en caliente, `GB_COMPAT_PALETTES`, `gb_rom_info.cgb_compat`; `gb_rom_info.cgb_mode` ahora es verdadero en CGB (nativo o compatibilidad). `GB_ERR_CGB_ONLY` solo con `GB_MODEL_DMG`. Save states v3: los v2 se rechazan (`GB_ERR_STATE_VERSION`), y un estado de otro modelo da `GB_ERR_STATE_ROM_MISMATCH`. `gb_cycle_count` cuenta tiempo real también en doble velocidad.
 
 ## Pendiente en el núcleo (por hito)
