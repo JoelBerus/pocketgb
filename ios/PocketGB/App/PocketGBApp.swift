@@ -11,10 +11,6 @@ struct PocketGBApp: App {
         WindowGroup {
             RootView()
                 .environment(state)
-                .statusBarHidden()
-                #if DEBUG
-                .preferredColorScheme(DebugArguments.colorScheme)
-                #endif
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     state.memoryWarning()
@@ -29,22 +25,54 @@ struct PocketGBApp: App {
     }
 }
 
+/// Raíz: la shell de tabs o, con un juego abierto, el gameplay a pantalla completa
+/// (sin tab bar ni barra de estado).
 struct RootView: View {
     @Environment(AppState.self) private var state
-    @State private var picking = false
+    @AppStorage(AppearancePreference.storageKey) private var appearance = AppearancePreference.system.rawValue
+
+    /// Apariencia elegida en Ajustes; en DEBUG, `-uiStyle` manda. Con un juego
+    /// abierto, siempre oscuro (también sus alertas; auditoría D1, H5).
+    private var colorScheme: ColorScheme? {
+        if state.session != nil { return .dark }
+        #if DEBUG
+        if let forced = DebugArguments.colorScheme { return forced }
+        #endif
+        return AppearancePreference(rawValue: appearance)?.colorScheme
+    }
 
     var body: some View {
         @Bindable var state = state
         Group {
             if let session = state.session {
                 GameScreen(session: session)
+                    .environment(\.colorScheme, .dark)   // gameplay siempre oscuro (SPEC §9)
             } else {
-                StartView(picking: $picking)
+                #if DEBUG
+                if state.debugShowsLaunch {
+                    LaunchPreviewView()
+                } else if let unknown = state.debugUnknownScreen {
+                    UnknownScreenView(id: unknown)
+                } else {
+                    LibraryRootView()
+                }
+                #else
+                LibraryRootView()
+                #endif
             }
         }
-        .sheet(isPresented: $picking) {
+        .statusBarHidden(state.session != nil || state.debugShowsLaunch)
+        .preferredColorScheme(colorScheme)
+        .tint(PocketColor.accent)
+        .sheet(isPresented: $state.pickingROM) {
             RomPicker { url in state.open(url: url) }
                 .ignoresSafeArea()
+        }
+        .alert("La carpeta de juegos llega pronto", isPresented: $state.folderNoticeShown) {
+            Button("Abrir un archivo") { state.pickAfterNotice = true }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("La biblioteca por carpeta con iCloud Drive llega en la próxima fase (D2). Mientras tanto puedes abrir un ROM suelto.")
         }
         .alert("PocketGB", isPresented: Binding(get: { state.alertMessage != nil },
                                                 set: { if !$0 { state.alertMessage = nil } })) {
@@ -55,26 +83,19 @@ struct RootView: View {
     }
 }
 
-struct StartView: View {
-    @Binding var picking: Bool
+#if DEBUG
+/// `-screen` con un id que el router no conoce: error visible para que el CI lo detecte.
+private struct UnknownScreenView: View {
+    let id: String
 
     var body: some View {
-        VStack(spacing: 24) {
-            Text("PocketGB").font(.largeTitle.bold())
-            Button {
-                picking = true
-            } label: {
-                Label("Abrir ROM", systemImage: "folder")
-                    .font(.title3)
-            }
-            .buttonStyle(.borderedProminent)
-            Text("Solo ROMs volcados de tus propios cartuchos.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ContentUnavailableView("Pantalla desconocida",
+                               systemImage: "exclamationmark.triangle",
+                               description: Text(id))
+            .accessibilityIdentifier("debug-unknown-screen")
     }
 }
+#endif
 
 struct GameScreen: View {
     @Environment(AppState.self) private var state
@@ -163,21 +184,3 @@ struct RomPicker: UIViewControllerRepresentable {
         }
     }
 }
-
-#if DEBUG
-/// Argumentos de arranque solo para pruebas y capturas (ios/README.md).
-enum DebugArguments {
-    static var debugHUD: Bool { ProcessInfo.processInfo.arguments.contains("-debugHUD") }
-
-    /// `-uiStyle light|dark` fuerza la apariencia.
-    static var colorScheme: ColorScheme? {
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-uiStyle"), i + 1 < args.count else { return nil }
-        switch args[i + 1] {
-        case "light": return .light
-        case "dark": return .dark
-        default: return nil
-        }
-    }
-}
-#endif

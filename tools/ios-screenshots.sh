@@ -33,6 +33,14 @@ TEST_RUNNER_SCREENSHOT_DIR="$OUT" TEST_RUNNER_FIXTURE_DIR="$FIX" \
   -derivedDataPath build/DerivedData -resultBundlePath "$OUT/result.xcresult" \
   CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$OUT/xcodebuild.log" | grep -E '(error|warning): |Test (Suite|Case).*(passed|failed)|✔|✘|BUILD|TEST' | grep -v appintents
 STATUS=${PIPESTATUS[0]}
+# Release: el router y los argumentos DEBUG no deben existir (si algo los usa fuera de
+# #if DEBUG, este build falla). Sin firma, para el simulador genérico.
+xcodebuild build -project ios/PocketGB.xcodeproj -scheme PocketGB -configuration Release \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO 2>&1 | tee -a "$OUT/xcodebuild.log" | grep -E '(error|warning): |BUILD' | grep -v appintents
+RELEASE=${PIPESTATUS[0]}
+echo "xcodebuild Release: exit $RELEASE"
+[ "$STATUS" -eq 0 ] && STATUS=$RELEASE
 set -e
 ls "$OUT"/*.png 2>/dev/null | sed "s|$OUT/||" || true
 echo "xcodebuild test: exit $STATUS"
