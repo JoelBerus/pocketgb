@@ -26,8 +26,11 @@ Claude en la nube no tiene Xcode ni simulador. La UI se verifica así:
 - Tamaños táctiles < 44 pt; controles que se salen de la pantalla en horizontal.
 - Diferencias con la propuesta no justificadas en SPEC.md.
 
-## Ahorro de minutos macOS
-El repo es privado: los minutos macOS del plan de GitHub son limitados. Agrupar cambios y hacer **un push por lote**; no hacer push de cambios solo de documentación con código iOS pendiente (el workflow solo corre si cambian `ios/`, `core/`, el script o el workflow). `workflow_dispatch` permite relanzar a mano.
+## Runner (2026-09-29)
+El CI corre en un **runner propio en el Mac de Joel** (`mac-joel`, etiquetas `self-hosted, macOS, pocketgb`): sin coste. Si el Mac está apagado o dormido, el job queda en cola y corre al despertar; tenlo en cuenta al esperar capturas. Una sola corrida a la vez.
+
+## Ahorro de tiempo del runner
+El runner es el Mac de Joel: no lo satures. Agrupar cambios y hacer **un push por lote**; no hacer push de cambios solo de documentación con código iOS pendiente (el workflow solo corre si cambian `ios/`, `core/`, el script o el workflow). `workflow_dispatch` permite relanzar a mano.
 
 ## Lo que el CI no ve (se valida en el iPhone de Joel, en una sesión en el Mac)
 Tacto real (multitoque, deslizar entre botones), háptica, audio, rendimiento a 60 fps, iCloud Drive real, mandos físicos y la sensación del vidrio en movimiento. Cada hito lista estos puntos como "pendiente del iPhone".

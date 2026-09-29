@@ -1,7 +1,8 @@
 # CI de la app iOS: compila, corre tests (núcleo, unitarios, UI) y publica las capturas
 # del catálogo (ios/PocketGBUITests/screens.txt) en la rama huérfana ci-shots/<rama>.
 # Así Claude en la nube (sin Xcode) puede ver la UI: git fetch origin ci-shots/<rama>.
-# Coste: minutos macOS del plan de GitHub (repo privado). Solo corre si cambian ios/ o core/.
+# Corre en el runner propio del Mac de Joel (sin coste; solo si el Mac está encendido,
+# si no, el job espera en cola). Solo corre si cambian ios/ o core/.
 name: iOS
 on:
   push:
@@ -15,15 +16,14 @@ permissions:
   contents: write
 jobs:
   ios:
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, pocketgb]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Xcode 26
         run: |
-          XC=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
-          sudo xcode-select -s "$XC"
           xcodebuild -version
+          xcodebuild -version | grep -q '^Xcode 26' || { echo "El runner necesita Xcode 26"; exit 1; }
       - name: ROMs de prueba (libres, hash verificado)
         run: tools/fetch-test-roms.sh
       - name: Núcleo
