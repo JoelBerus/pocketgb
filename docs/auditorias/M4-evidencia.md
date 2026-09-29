@@ -18,7 +18,7 @@ OK: todos los casos requeridos en PASS
 ## 1. Build para iPhone (criterio 1)
 `xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO clean build` (filtrado a errores, warnings y resultado):
 ```
-2026-09-29 08:35:15.635 appintentsmetadataprocessor[61483:2175478] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+2026-09-29 08:43:28.554 appintentsmetadataprocessor[65344:2198752] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 ** BUILD SUCCEEDED **
 ```
 El único warning lo emite `appintentsmetadataprocessor` (herramienta de Xcode que avisa de que la app no usa AppIntents); no sale del código del proyecto.
@@ -47,7 +47,13 @@ Captura: [M4-simulador-acid2.png](M4-simulador-acid2.png). La cara de dmg-acid2 
 
 Nota: en el Mac, el simulador se queda bloqueado en `getxattr` si el ROM está en `~/Documents` (permiso TCC de macOS, no es un fallo de la app); por eso se usa una copia en un directorio temporal.
 
-## 4. Pendiente de Joel (criterio 3, en el iPhone)
+## 4. Partida: H1 de Codex (SRAM escrita sin flanco "el juego guardó")
+Simulador, ROM `blargg/dmg_sound/rom_singles/01-registers.gb` (MBC1+RAM+BATTERY; escribe su resultado en la SRAM). Background = abrir Ajustes con `xcrun simctl launch <UDID> com.apple.Preferences`.
+1. Sin `.sav` previo, tras 4 s jugando: `Saves/` vacío (el juego no deshabilitó la RAM: sin flanco dirty, sin guardado por debounce). Tras pasar a background: `Saves/c6b9fa4b9d9d26919b33ebe78a6ef19a.sav` (8192 bytes) con `...a01-registers\n\n\nPassed`. Antes de la corrección, este camino no escribía nada.
+2. Reabrir con el mismo contenido → background: no se crea `backups/` (sin cambios, sin rotación).
+3. Alterar el byte 19 del `.sav` (`P`→`X`), reabrir (el test lo reescribe) → background: `.sav` actual con `Passed` y `backups/c6b9….1.sav` con `Xassed` (el anterior, intacto).
+
+## 5. Pendiente de Joel (criterio 3, en el iPhone)
 - dmg-acid2 correcto en el iPhone.
 - Pokémon Rojo llega al menú y responde a los botones.
 - Girar a horizontal: escala entera y controles translúcidos superpuestos (no probado en el simulador).

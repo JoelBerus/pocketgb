@@ -42,7 +42,10 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .cgbOnly: return "Este juego es solo de Game Boy Color (llega en M8)."
         case .sramSize: return "La partida guardada tiene un tamaño distinto al esperado."
         case .outOfMemory: return "Sin memoria para cargar el ROM."
-        default: return "Error del núcleo: \(self)"
+        case .unknown(let code): return "Error desconocido del núcleo (\(code))."
+        case .nullArgument, .noROM, .stateMagic, .stateVersion, .stateROMMismatch,
+             .stateCorrupt, .bufferTooSmall:
+            return "Error interno del núcleo."
         }
     }
 }

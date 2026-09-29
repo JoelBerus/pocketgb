@@ -2,7 +2,8 @@
 
 iOS 17.0+, Swift 6 (strict concurrency), SwiftUI, sin dependencias externas. Bundle ID: `com.joelbermudez.pocketgb` (cámbialo si ya existe en tu Personal Team).
 
-## Proyecto Xcode (paso manual de Joel, una vez, en M4)
+## Proyecto Xcode (creado en M4)
+`ios/PocketGB.xcodeproj` ya está en el repo (lo generó Claude en M4, formato Xcode 16+ `objectVersion 77`). Lo único manual es la firma: conectar el iPhone y pulsar Run una vez ([07](07-instalacion-iphone.md)). La receta de abajo documenta cómo está configurado, por si hubiera que recrearlo:
 1. Xcode → *File › New › Project › iOS App*. Nombre `PocketGB`, interfaz SwiftUI, lenguaje Swift, sin Core Data ni tests por ahora. Guardar en `pocketgb/ios/`.
 2. En el navegador del proyecto, borrar el grupo `PocketGB` generado y arrastrar la carpeta `ios/PocketGB/` como **carpeta sincronizada** (Xcode 16+, icono de carpeta azul). Así, cualquier `.swift` que añada el agente entra al target sin editar `project.pbxproj`.
 3. Añadir `core/src` al target como carpeta sincronizada también. En *Build Settings*:
@@ -19,7 +20,8 @@ App/        PocketGBApp.swift, AppState.swift
 Library/    LibraryView.swift, LibraryStore.swift (bookmark + escaneo), RomEntry.swift
 Emulator/   EmulatorSession.swift (hilo), CoreBridge.swift (wrapper seguro de pocketgb.h),
             FrameBuffers.swift (triple buffer), RingBuffer.swift (SPSC int16)
-Video/      GameMetalView.swift (UIViewRepresentable), Renderer.swift, Shaders.metal
+Video/      GameMetalView.swift (UIViewRepresentable), Renderer.swift, Shaders.swift (fuente MSL compilada en runtime:
+            así no hace falta el Metal Toolchain, que en Xcode 26 es una descarga aparte)
 Audio/      AudioOutput.swift (AVAudioEngine + AVAudioSourceNode)
 Input/      ControlsOverlayView.swift (UIView multitouch), ControlsLayout.swift,
             GamepadInput.swift (GameController), Haptics.swift
@@ -59,7 +61,7 @@ Una sola `UIView` (`ControlsOverlayView`) con `isMultipleTouchEnabled = true` ge
 - **Estilo:** relleno blanco con la opacidad indicada, borde de 1,5 pt al doble de opacidad y letras (A, B, START, SELECT) con la misma opacidad que el borde. Se dibuja con `CAShapeLayer` y no con imágenes, para que no se pixele.
 - **D-pad por ángulo:** vector del toque al centro. Si la distancia es menor que el 25 % del radio (zona muerta), no se pulsa nada. Si no, se toma el ángulo en 8 sectores de 45°, de modo que las diagonales pulsan 2 direcciones. **Nunca** se generan direcciones opuestas.
 - **Seguimiento de toques:** `[UITouch: Control]`. En `touchesMoved` se recalcula el control bajo cada toque, lo que permite deslizar de B a A o rodar el pulgar en el D-pad. El D-pad "captura" el toque que empezó en él hasta que se levanta, aunque salga de su radio (ampliado ×1,5).
-- **Salida:** máscara `UInt8`, publicada con un atómico (`Synchronization.Atomic<UInt8>`) que el hilo de emulación lee cada frame.
+- **Salida:** máscara `UInt8`, publicada con `OSAllocatedUnfairLock` (M4, iOS 17; `Synchronization.Atomic<UInt8>` exige iOS 18) que el hilo de emulación lee cada frame.
 - **Háptica:** `UIImpactFeedbackGenerator(style: .light)` al pasar de no pulsado a pulsado. Desactivable.
 - **Editor de disposición (M7):** en Ajustes se pueden arrastrar los controles y guardar sus posiciones relativas por orientación.
 

@@ -145,9 +145,11 @@ final class ControlsOverlayView: UIView {
         for (control, layers) in shapes {
             let isPressed = pressed.contains(control)
                 || (control == .a || control == .b) && pressed.contains(.ab)
-            let fill: CGFloat = portrait ? (isPressed ? 0.55 : 0.30) : (isPressed ? Self.pressedAlpha : Self.idleAlpha)
-            let stroke: CGFloat = portrait ? 1 : min(1, fill * 2)
-            layers.shape.fillColor = UIColor(white: 1, alpha: fill).cgColor
+            // Vertical: opacos (gris sólido, más claro al pulsar). Horizontal: blanco translúcido.
+            let fill = portrait ? UIColor(white: isPressed ? 0.55 : 0.38, alpha: 1)
+                                : UIColor(white: 1, alpha: isPressed ? Self.pressedAlpha : Self.idleAlpha)
+            let stroke: CGFloat = portrait ? 1 : min(1, (isPressed ? Self.pressedAlpha : Self.idleAlpha) * 2)
+            layers.shape.fillColor = fill.cgColor
             layers.shape.strokeColor = UIColor(white: 1, alpha: stroke).cgColor
             layers.label?.foregroundColor = UIColor(white: 1, alpha: stroke).cgColor
         }

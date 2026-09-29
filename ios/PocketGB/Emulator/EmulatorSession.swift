@@ -27,6 +27,7 @@ final class EmulatorSession: @unchecked Sendable {
     // Solo del hilo de emulación.
     private var dirtySinceFirst: UInt64?   // ticks del primer cambio sin guardar
     private var dirtyLast: UInt64 = 0      // ticks del último "juego guardó"
+    private var lastSaved: Data?           // contenido del último .sav escrito o cargado
 
     private static let debounceSeconds = 1.0
     private static let safetyNetSeconds = 60.0
@@ -99,6 +100,7 @@ final class EmulatorSession: @unchecked Sendable {
         let ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
         let frameTicks = Self.frameSeconds * ticksPerSecond
         var deadline = Double(mach_absolute_time())
+        if saves != nil { lastSaved = try? core.sramSave() } // lo que ya hay en disco (o la RAM inicial)
 
         while true {
             control.lock()
@@ -122,6 +124,7 @@ final class EmulatorSession: @unchecked Sendable {
             }
             if saveFailed {
                 saveFailed = false
+                lastSaved = nil // forzar la reescritura
                 if dirtySinceFirst == nil { dirtySinceFirst = mach_absolute_time() }
             }
             control.unlock()
@@ -166,16 +169,12 @@ final class EmulatorSession: @unchecked Sendable {
     }
 
     /// Copia la SRAM aquí (hilo de emulación) y la escribe en la cola de guardado.
+    /// El flush síncrono (pausa, background, salida) no depende del flanco "el juego
+    /// guardó": un juego puede escribir la SRAM y no deshabilitarla todavía. Por eso
+    /// compara siempre con lo último escrito y guarda si difiere (incluye el RTC).
     private func flushSRAM(sync: Bool) {
         guard let saves else { return }
-        if core.sramDirty {
-            core.clearSRAMDirty()
-            if dirtySinceFirst == nil { dirtySinceFirst = mach_absolute_time() }
-        }
-        guard dirtySinceFirst != nil else {
-            if sync { saveQueue.sync {} } // espera a escrituras ya encoladas
-            return
-        }
+        if core.sramDirty { core.clearSRAMDirty() }
         dirtySinceFirst = nil
         let data: Data
         do {
@@ -184,6 +183,11 @@ final class EmulatorSession: @unchecked Sendable {
             log.error("gb_sram_save falló: \(String(describing: error), privacy: .public)")
             return
         }
+        guard data != lastSaved else {
+            if sync { saveQueue.sync {} } // espera a escrituras ya encoladas
+            return
+        }
+        lastSaved = data
         let write: @Sendable () -> Void = { [self] in
             do {
                 try saves.save(data)
