@@ -330,7 +330,7 @@ static void channel_step(struct gb_apu *a, int ch)
         c->pos = (uint8_t)((c->pos + 1) & 31);
         uint8_t byte = a->regs[WAVE + c->pos / 2];
         a->wave_sample = (c->pos & 1) ? (byte & 0x0F) : (byte >> 4);
-    } else {
+    } else if ((a->regs[NR43] >> 4) < 14) {   /* shift 14–15: el LFSR no recibe relojes */
         uint16_t x = (uint16_t)((a->lfsr ^ (a->lfsr >> 1)) & 1);
         a->lfsr = (uint16_t)((a->lfsr >> 1) | (x << 14));
         if (a->regs[NR43] & 0x08)
@@ -426,7 +426,8 @@ void apu_sync(gb *g)
                     continue;
                 c->timer -= (int32_t)step;
                 if (c->timer <= 0) {
-                    channel_step(a, ch);
+                    while (c->timer <= 0)   /* defensa: nunca queda ≤ 0 (auditoría M5, H1) */
+                        channel_step(a, ch);
                     a->mix_dirty = true;
                 }
             }

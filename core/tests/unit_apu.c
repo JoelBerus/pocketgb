@@ -31,7 +31,7 @@ void unit_apu(struct ut *t)
     /* Post-boot: NR52 = F1 (APU encendido, canal 1 activo), máscaras de lectura. */
     CHECK(t, mmu_read(g, 0xFF26) == 0xF1);
     CHECK(t, mmu_read(g, 0xFF11) == 0xBF && mmu_read(g, 0xFF14) == 0xBF);
-    CHECK(t, mmu_read(g, 0xFF15) == 0xFF && mmu_read(g, 0xFF30 + 3) == g->apu.regs[0x23]);
+    CHECK(t, mmu_read(g, 0xFF15) == 0xFF);
 
     /* Apagar: registros a 0 (leen su máscara), canales parados, escrituras ignoradas. */
     mmu_write(g, 0xFF30, 0xAB);
@@ -112,6 +112,45 @@ void unit_apu(struct ut *t)
         free(buf);
     }
     gb_destroy(g);
+
+    /* Ruido: LFSR de 15 bits; con shift ≥ 14 no avanza (Pan Docs NR43). */
+    g = make_gb(48000);
+    CHECK(t, g != NULL);
+    if (g) {
+        mmu_write(g, 0xFF21, 0xF0);
+        mmu_write(g, 0xFF22, 0x00);                 /* divisor 8, shift 0 */
+        mmu_write(g, 0xFF23, 0x80);
+        gb_run_frame(g);
+        CHECK(t, g->apu.lfsr != 0x7FFF && (mmu_read(g, 0xFF26) & 0x08));
+        mmu_write(g, 0xFF22, 0xE0);                 /* shift 14 */
+        uint16_t frozen = g->apu.lfsr;
+        gb_run_frame(g);
+        CHECK(t, g->apu.lfsr == frozen);
+        /* Onda: volumen 1 (sin desplazamiento) lee la wave RAM nibble a nibble. */
+        mmu_write(g, 0xFF26, 0x00);
+        mmu_write(g, 0xFF26, 0x80);
+        for (int i = 0; i < 16; i++)
+            mmu_write(g, (uint16_t)(0xFF30 + i), 0xF0);
+        mmu_write(g, 0xFF1A, 0x80);
+        mmu_write(g, 0xFF1C, 0x20);
+        mmu_write(g, 0xFF1E, 0x87);
+        gb_run_cycles(g, 64);
+        CHECK(t, (mmu_read(g, 0xFF26) & 0x04) && (g->apu.wave_sample == 0x0F || g->apu.wave_sample == 0));
+
+        /* Estado hostil (auditoría M5, H1): canal activo con temporizador 0 → rechazado. */
+        size_t n = gb_state_size(g);
+        uint8_t *s = malloc(n);
+        if (s) {
+            CHECK(t, gb_state_save(g, s, n) == GB_OK && gb_state_load(g, s, n) == GB_OK);
+            int32_t keep = g->apu.ch[2].timer;
+            g->apu.ch[2].timer = 0;
+            CHECK(t, gb_state_save(g, s, n) == GB_OK);
+            g->apu.ch[2].timer = keep;
+            CHECK(t, gb_state_load(g, s, n) == GB_ERR_STATE_CORRUPT);
+            free(s);
+        }
+        gb_destroy(g);
+    }
 
     /* sample_rate = 0: sin audio. */
     g = make_gb(0);

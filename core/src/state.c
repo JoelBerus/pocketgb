@@ -314,7 +314,16 @@ static void visit(struct io *io, gb *g)
         u16(io, &c->length, i == 2 ? 256 : 64);
         u16(io, &c->freq, 2047);
         uint32_t timer = (uint32_t)c->timer;
-        u32(io, &timer, 1u << 23);         /* ≥ 0 y ≤ el mayor periodo posible */
+        u32(io, &timer, 1u << 23);         /* ≤ el mayor periodo posible */
+        /* Un canal activo siempre tiene el temporizador > 0 (auditoría M5, H1):
+         * con 0, apu_sync lo dejaría bajar sin cota hasta desbordar. */
+        if (loading(io) && io->ok) {
+            bool en = io->in[io->pos - 4 - 2 - 2 - 1 - 1 - 1] != 0;   /* flag enabled */
+            uint32_t tr = (uint32_t)io->in[io->pos - 4] | (uint32_t)io->in[io->pos - 3] << 8 |
+                          (uint32_t)io->in[io->pos - 2] << 16 | (uint32_t)io->in[io->pos - 1] << 24;
+            if (en && tr == 0)
+                io->ok = false;
+        }
         if (io->mode == IO_APPLY)
             c->timer = (int32_t)timer;
         u8(io, &c->duty, 3);
@@ -449,6 +458,8 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len)
     ppu_resync(g);
     g->apu.head = g->apu.count = 0;   /* audio del estado anterior: descartado */
     g->apu.mix_dirty = true;
+    g->apu.phase = 0;                  /* salida PCM determinista tras cargar */
+    g->apu.cap_l = g->apu.cap_r = 0.0;
     g->apu.acc_l = g->apu.acc_r = 0;
     g->apu.acc_n = 0;
     memset(&g->dbg, 0, sizeof g->dbg);
