@@ -8,3 +8,4 @@ Implementación: Codex (workspace-write) por encargo de Claude. Auditoría: suba
 | H1 (media) | **Corregido.** `AVAudioEngineConfigurationChange` (del motor propio) y `routeChangeNotification` con `oldDeviceUnavailable` pausan el juego como una interrupción; "Continuar" rearranca el motor con cebado. |
 | H2 (baja) | **Corregido.** El HUD muestra el modo de pacing (`audio` / `cebado` / `reloj`) y el número de caídas a reloj; la evidencia del criterio 3 exige modo `audio` durante toda la prueba. |
 | Nota (tiempo real) | **Corregido.** `AudioRingBuffer.read` usa locales en el bucle y escribe `lastLeft/lastRight` una vez al final. |
+| Aviso de iOS en el iPhone (`setActive` en el hilo principal) | **Corregido.** `AudioOutput` confinado a una cola serie; `EmulatorSession` aplica el resultado del arranque con un contador de generación (un arranque tardío no pisa una pausa o parada posterior); el ring se vacía en esa cola justo después de parar el motor. |
