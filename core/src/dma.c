@@ -33,6 +33,10 @@ void dma_start(gb *g, uint8_t page)
 void dma_tick(gb *g)
 {
     struct gb_dma *d = &g->dma;
+    if (!d->active && !d->start_delay) {
+        d->bus_busy = false;
+        return;
+    }
     d->bus_busy = false;
     if (d->active) {
         g->mem.oam[d->index] = mmu_read(g, (uint16_t)(d->src + d->index));

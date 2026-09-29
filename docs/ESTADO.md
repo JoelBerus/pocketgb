@@ -2,22 +2,25 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · **Hito actual:** M1 **cerrado** (auditoría Opus en la nube: APROBAR CON CAMBIOS; 7 hallazgos bajos: 5 corregidos, 2 diferidos a M3) → **siguiente: M2** (☁️ se puede hacer en la nube).
+**Actualizado:** 2026-09-29 · **Hito actual:** M2 **cerrado** (auditoría Opus en la nube: APROBAR CON CAMBIOS; 7 hallazgos, todos corregidos) → **siguiente: M3** (☁️ se puede hacer en la nube).
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
 - M1: núcleo headless en `core/src` (CPU SM83, MMU, timer, serie, joypad, ROM-only + MBC1 con SRAM, SHA-256) + OAM DMA y PPU mínima de tiempos adelantados de M2. Runner `gbtest` (serial/mooneye/--bench/--unit), `run_suite.py`, `suite.txt`. 63/63 casos requeridos en PASS (incluidos 54 Mooneye), ASan limpio, ~50× tiempo real. Auditoría: `docs/auditorias/M1-*`.
+- M2: PPU DMG por scanline (fondo, ventana, objetos), bloqueo VRAM/OAM por modo, modo `acid` en el runner y `tools/png2rgba.py`. dmg-acid2 idéntico píxel a píxel; 70/70 requeridos; ~45× tiempo real con render. Auditoría: `docs/auditorias/M2-*`.
 
 ## Siguiente paso exacto
-1. Tras el merge de M1: `git checkout main && git pull && git checkout -b m2-ppu`
-2. `tools/cloud-setup.sh` (instala el runtime de sanitizers y las ROMs de prueba si faltan)
-3. Implementar [M2](hitos/M2-ppu-dmg.md): render por scanline en `core/src/ppu.c` (hoy solo tiene los tiempos), bloqueo VRAM/OAM por modo, `tools/png2rgba.py` y el modo `acid` (`--expect`/`--dump`) en `core/tests/runner.c`; casos M2 en `core/tests/suite.txt` (7.ª columna: referencia).
-4. Verificar con `make -C core test HITO=M2 && make -C core asan HITO=M2 && make -C core check-globals` (sin regresiones en M1; vigilar `di_timing-GS`/`halt_ime1_timing2-GS`, que dependen de la PPU).
-5. Auditoría → `docs/auditorias/M2-*.md` → PR a `main`.
+1. Tras el merge de M2: rama nueva desde `main` (en la nube, la rama que asigne la sesión; en el Mac, `m3-mbc`).
+2. `tools/cloud-setup.sh` (runtime de sanitizers/libFuzzer y ROMs de prueba).
+3. Implementar [M3](hitos/M3-mbc-fuzz.md): MBC3 (+RTC, `rtc.c`) y MBC5 en `core/src/cart.c`, `state.c` (save states con CRC32), `gb_rtc_set_time`, test de OOM inyectado, fuzzers `core/fuzz/fuzz_load_rom.c` y `fuzz_state_load.c`, `unit_state.c`, casos M3 en `suite.txt`.
+4. Verificar con `make -C core test HITO=M3 && make -C core asan HITO=M3 && make -C core fuzz FUZZ_SECONDS=600 && make -C core check-globals`.
+5. Auditoría → `docs/auditorias/M3-*.md` → PR a `main`.
 
 ## Pendiente en el núcleo (por hito)
 - M3: `gb_state_*` y `gb_rtc_set_time` (declaradas en `pocketgb.h`, sin definir aún), MBC3/MBC5, test de fallo de memoria inyectado.
 - M2/M3: contrastar con SameBoy `EI` justo antes de `HALT` con IRQ pendiente (nota de la auditoría M1); `boot_div`/`boot_hwio`/`boot_sclk_align` (known-fail).
+- M2 (known-fail): tiempo fino de STAT/LCD de Mooneye `ppu/*` (fuera de una PPU por scanline).
+- M8: el test acid con paleta gris no distingue R de B; cgb-acid2 lo cubrirá (nota de la auditoría M2).
 - M5: audio (`gb_audio_*` devuelve 0). M8: modo CGB (hasta entonces un ROM `0xC0` → `GB_ERR_CGB_ONLY`).
 
 ## Decisiones tomadas (no reabrir sin Joel)

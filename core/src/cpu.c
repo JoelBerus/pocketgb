@@ -7,32 +7,40 @@
  */
 #include "internal.h"
 
-/* Mientras el OAM DMA copia, la CPU no ve OAM ni el bus del origen (VRAM o el
- * externo: ROM/SRAM/WRAM); E/S y HRAM siguen accesibles. Lee 0xFF y no escribe. */
+/* Accesos de la CPU que el hardware no deja pasar (leen 0xFF, no escriben):
+ * - OAM DMA copiando: OAM y el bus del origen (VRAM o el externo: ROM/SRAM/WRAM);
+ *   E/S y HRAM siguen accesibles (docs/03-core-spec.md §Mapa de memoria).
+ * - PPU: VRAM en modo 3; OAM en modos 2 y 3. */
 static inline bool on_vram_bus(uint16_t addr)
 {
     return addr >= 0x8000 && addr < 0xA000;
 }
 
-static inline bool dma_blocks(const gb *g, uint16_t addr)
+static inline bool bus_blocked(const gb *g, uint16_t addr)
 {
-    if (!g->dma.bus_busy || addr >= 0xFF00)
-        return false;
-    if (addr >= 0xFE00)
-        return true;
-    return on_vram_bus(addr) == on_vram_bus(g->dma.src);
+    if (addr >= 0xFF00 || (addr < 0x8000 && !g->dma.bus_busy))
+        return false;   /* camino rápido: ROM y E/S/HRAM */
+    if (g->dma.bus_busy) {
+        if (addr >= 0xFE00 || on_vram_bus(addr) == on_vram_bus(g->dma.src))
+            return true;
+    }
+    if (on_vram_bus(addr))
+        return ppu_vram_blocked(g);
+    if (addr >= 0xFE00 && addr < 0xFEA0)
+        return ppu_oam_blocked(g);
+    return false;
 }
 
 static inline uint8_t cpu_read(gb *g, uint16_t addr)
 {
     gb_tick(g, 4);
-    return dma_blocks(g, addr) ? 0xFF : mmu_read(g, addr);
+    return bus_blocked(g, addr) ? 0xFF : mmu_read(g, addr);
 }
 
 static inline void cpu_write(gb *g, uint16_t addr, uint8_t v)
 {
     gb_tick(g, 4);
-    if (!dma_blocks(g, addr))
+    if (!bus_blocked(g, addr))
         mmu_write(g, addr, v);
 }
 

@@ -1,8 +1,9 @@
 # Casos de prueba de PocketGB (docs/06-testing.md).
-# Formato: hito|ruta|modo|modelo|max_frames|tipo
+# Formato: hito|ruta|modo|modelo|max_frames|tipo[|referencia]
 #   hito:   M1..M9. `make test HITO=Mn` ejecuta los casos de los hitos <= Mn.
 #   ruta:   relativa a core/tests/roms/ (admite comodines *), o `unit` para los unit tests.
-#   modo:   serial | mooneye | unit (acid llega en M2).
+#   modo:   serial | mooneye | acid | unit.
+#   referencia: solo en acid; PNG relativo a core/tests/roms/ (run_suite lo convierte a RGBA).
 #   tipo:   requerido (bloquea) | known-fail (se reporta, no bloquea) | info (extra, no bloquea).
 
 # ---- M1: CPU + timer + interrupciones (requeridos por docs/06-testing.md) ----
@@ -34,10 +35,27 @@ M1|mooneye-test-suite/acceptance/*_timing2.gb|mooneye|dmg|1200|requerido
 M1|mooneye-test-suite/acceptance/oam_dma_*.gb|mooneye|dmg|1200|requerido
 M1|mooneye-test-suite/acceptance/oam_dma/basic.gb|mooneye|dmg|1200|requerido
 M1|mooneye-test-suite/acceptance/oam_dma/reg_read.gb|mooneye|dmg|1200|requerido
-# Dependen del tiempo de la PPU, que M2 rehace: se reportan sin bloquear.
-M1|mooneye-test-suite/acceptance/di_timing-GS.gb|mooneye|dmg|1200|info
-M1|mooneye-test-suite/acceptance/halt_ime1_timing2-GS.gb|mooneye|dmg|1200|info
+# Dependen del tiempo de la PPU; pasan desde M1 y siguen pasando con la PPU de M2.
+M1|mooneye-test-suite/acceptance/di_timing-GS.gb|mooneye|dmg|1200|requerido
+M1|mooneye-test-suite/acceptance/halt_ime1_timing2-GS.gb|mooneye|dmg|1200|requerido
 # Conocidos: valores exactos de E/S y fase de DIV/serie al arrancar (sin boot ROM).
 M1|mooneye-test-suite/acceptance/boot_div-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
 M1|mooneye-test-suite/acceptance/boot_hwio-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
 M1|mooneye-test-suite/acceptance/serial/boot_sclk_align-dmgABCmgb.gb|mooneye|dmg|1200|known-fail
+
+# ---- M2: PPU DMG (requeridos por docs/06-testing.md) ----
+M2|dmg-acid2/dmg-acid2.gb|acid|dmg|600|requerido|dmg-acid2/dmg-acid2-dmg.png
+# oam_dma/{basic,reg_read}.gb y oam_dma_start.gb (requeridos de M2) ya se ejecutan desde el bloque M1.
+# ---- M2: extras de la PPU que ya pasan ----
+M2|mooneye-test-suite/acceptance/ppu/intr_2_0_timing.gb|mooneye|dmg|1200|requerido
+M2|mooneye-test-suite/acceptance/ppu/intr_2_mode0_timing.gb|mooneye|dmg|1200|requerido
+M2|mooneye-test-suite/acceptance/ppu/intr_2_mode3_timing.gb|mooneye|dmg|1200|requerido
+M2|mooneye-test-suite/acceptance/ppu/intr_2_oam_ok_timing.gb|mooneye|dmg|1200|requerido
+# Conocidos: tiempo fino de STAT/LCD que la PPU por scanline de v1 no modela.
+M2|mooneye-test-suite/acceptance/ppu/hblank_ly_scx_timing-GS.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/intr_1_2_timing-GS.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/intr_2_mode0_timing_sprites.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/lcdon_timing-GS.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/lcdon_write_timing-GS.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/stat_lyc_onoff.gb|mooneye|dmg|1200|known-fail
+M2|mooneye-test-suite/acceptance/ppu/vblank_stat_intr-GS.gb|mooneye|dmg|1200|known-fail

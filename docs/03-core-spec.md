@@ -4,7 +4,7 @@ Fuente canónica: **Pan Docs** (https://gbdev.io/pandocs/). Si este documento y 
 
 ## Principios
 - **Modelo de tiempo: la CPU manda.** Cada acceso a memoria de la CPU cuesta 1 M-ciclo (4 T-ciclos) y llama a `gb_tick(gb, 4)`. Esa función avanza timer, PPU, APU, DMA y serial. Así, las lecturas y escrituras ocurren en el ciclo correcto dentro de la instrucción, que es lo que piden `instr_timing` y `mem_timing`.
-- **PPU por scanline** (no FIFO) en v1: la línea se renderiza al entrar en modo 0 (HBlank). La duración del modo 3 es fija en 172 dots + penalización de sprites simplificada. Basta para dmg-acid2 y Pokémon.
+- **PPU por scanline** (no FIFO) en v1: la línea se renderiza al entrar en modo 0 (HBlank), con los registros vigentes en ese momento. Modo 3 = 172 dots + `SCX % 8` + 6 por objeto de la línea (penalización simplificada). Basta para dmg-acid2 y Pokémon; el tiempo fino de STAT/LCD de Mooneye (`ppu/*` marcados `known-fail` en `suite.txt`) queda fuera de v1.
 - **Doble velocidad CGB:** la CPU y el timer van a 2×; PPU y APU siguen en tiempo real. `gb_tick` recibe T-ciclos de CPU y convierte.
 
 ## Arranque (sin boot ROM)
@@ -74,7 +74,7 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - El reloj interno de la serie (8192 Hz) es el flanco de bajada del bit 8 del mismo contador.
 
 ## PPU (DMG, luego CGB)
-- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank. En la línea 144, el modo 1 y la IRQ de VBlank llegan 4 dots después del cambio de LY (M1: PPU mínima solo de tiempos en `ppu.c`; M2 añade el render).
+- 456 dots por línea, 154 líneas (0–143 visibles, 144–153 VBlank). Modo 2 (80 dots) → 3 (≈172+) → 0 → … ; modo 1 en VBlank. En la línea 144, el modo 1 y la IRQ de VBlank llegan 4 dots después del cambio de LY. El latch de WY se evalúa al comienzo de cada línea visible (LY == WY) y se reinicia en la línea 0.
 - Registros: `LCDC FF40`, `STAT FF41`, `SCY/SCX FF42/43`, `LY FF44` (solo lectura), `LYC FF45`, `DMA FF46`, `BGP FF47`, `OBP0/1 FF48/49`, `WY/WX FF4A/4B`.
 - **Línea STAT:** OR de (modo0 & bit3) | (modo1 & bit4) | (modo2 & bit5) | (LY==LYC & bit6). La interrupción se pide solo en el **flanco de subida** de esa OR ("STAT blocking").
 - **Render de línea:** fondo (SCX/SCY con wrap), ventana (contador de línea interno propio, que solo avanza si la ventana se dibujó en esa línea, `WX-7`), sprites (máx. 10 por línea en orden OAM; prioridad DMG = menor X y luego menor índice OAM; 8×16 ignora el bit 0 del tile; bit de prioridad BG sobre OBJ contra el color 0 del fondo).

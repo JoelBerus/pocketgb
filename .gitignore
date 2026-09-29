@@ -27,3 +27,4 @@ android/**/build/
 android/.gradle/
 android/local.properties
 .DS_Store
+__pycache__/

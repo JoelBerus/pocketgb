@@ -6,7 +6,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 |---|---|---|
 | [M0 · Instrucciones](M0-instrucciones.md) | cualquiera | ✅ cerrado 2026-09-28 |
 | [M1 · CPU + MMU + timer](M1-cpu.md) | ☁️ nube o Mac | ✅ cerrado 2026-09-29 (auditoría Opus: APROBAR CON CAMBIOS) |
-| [M2 · PPU DMG](M2-ppu-dmg.md) | ☁️ nube o Mac | |
+| [M2 · PPU DMG](M2-ppu-dmg.md) | ☁️ nube o Mac | ✅ cerrado 2026-09-29 (auditoría Opus: APROBAR CON CAMBIOS) |
 | [M3 · MBC + SRAM + fuzzing](M3-mbc-fuzz.md) | ☁️ nube o Mac | |
 | [M4 · App iOS mínima](M4-ios-minima.md) | 🍎 solo Mac (Xcode) | |
 | [M5 · APU + audio](M5-apu-audio.md) | ☁️ núcleo · 🍎 integración iOS | |

@@ -11,6 +11,8 @@
 4. OAM DMA de 160 M-ciclos.
 
 **Criterios de aceptación**
-- [ ] `make -C core test HITO=M2` → dmg-acid2 idéntico píxel a píxel y los casos `oam_dma` en PASS. Los casos M1 siguen en PASS (sin regresiones).
-- [ ] `make -C core asan HITO=M2` limpio.
-- [ ] Captura `build/dmg-acid2.png` adjunta en el informe de auditoría.
+- [x] `make -C core test HITO=M2` → dmg-acid2 idéntico píxel a píxel y los casos `oam_dma` en PASS. Los casos M1 siguen en PASS (sin regresiones).
+- [x] `make -C core asan HITO=M2` limpio.
+- [x] Captura `build/dmg-acid2.png` adjunta en el informe de auditoría.
+
+Cerrado el 2026-09-29. Evidencia: [M2-evidencia](../auditorias/M2-evidencia.md) · Captura: [M2-dmg-acid2.png](../auditorias/M2-dmg-acid2.png) · Auditoría: [M2-opus](../auditorias/M2-opus.md) · Respuesta: [M2-respuesta](../auditorias/M2-respuesta.md).
