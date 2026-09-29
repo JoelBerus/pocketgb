@@ -1,8 +1,10 @@
 import Foundation
 
 /// Partida local de un ROM: `Saves/<huella>.sav` y `Saves/backups/<huella>.<n>.sav`.
-/// Versión básica de M4 (sin espejo en iCloud ni restauración; eso es M6).
+/// La copia local es la autoritativa (docs/04 §Saves); el espejo junto al ROM es `SaveMirror`.
 struct SaveStore: Sendable {
+    static let keepBackups = 5
+
     let directory: URL
     let fingerprint: String
 
@@ -25,7 +27,45 @@ struct SaveStore: Sendable {
     }
 
     func save(_ data: Data) throws {
-        try AtomicFile.write(data, to: saveURL, backup: backupURL)
+        try AtomicFile.write(data, to: saveURL, keep: Self.keepBackups, backup: backupURL)
+    }
+
+    var modificationDate: Date? { Self.modificationDate(saveURL) }
+
+    static func modificationDate(_ url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    /// Backups existentes (1 = el más reciente), con su fecha.
+    func backups() -> [(index: Int, date: Date?)] {
+        (1...Self.keepBackups).compactMap { n in
+            let url = backupURL(n)
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return (n, Self.modificationDate(url))
+        }
+    }
+
+    /// Guarda `data` como backup `.1` (rotando los demás) sin tocar la partida actual.
+    /// Se usa cuando el espejo junto al ROM pierde frente a la copia local.
+    func addBackup(_ data: Data) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+        let oldest = backupURL(Self.keepBackups)
+        if fm.fileExists(atPath: oldest.path) { try fm.removeItem(at: oldest) }
+        for n in stride(from: Self.keepBackups - 1, through: 1, by: -1) where fm.fileExists(atPath: backupURL(n).path) {
+            try AtomicFile.rename(backupURL(n), backupURL(n + 1))
+        }
+        let tmp = backupURL(1).deletingPathExtension().appendingPathExtension("tmp")
+        try AtomicFile.writeSynced(data, to: tmp)
+        try AtomicFile.rename(tmp, backupURL(1))
+        try AtomicFile.syncDirectory(backupsDirectory)
+    }
+
+    /// Restaura el backup `n`: la partida actual pasa antes a ser el backup `.1`
+    /// (lo hace `AtomicFile.write`), así restaurar nunca pierde nada (docs/04 §Restaurar).
+    func restore(backup n: Int) throws {
+        let data = try Data(contentsOf: backupURL(n))
+        try save(data)
     }
 
     /// Paso 6 de docs/04 §Saves: un `.sav.tmp` huérfano se instala si no hay

@@ -22,3 +22,19 @@ game-acid           portrait  dark   -rom $FIXTURES/dmg-acid2.gb
 game-acid           portrait  light  -rom $FIXTURES/dmg-acid2.gb
 game-acid           landscape dark   -rom $FIXTURES/dmg-acid2.gb
 game-paused         portrait  dark   -rom $FIXTURES/dmg-acid2.gb -paused
+
+# ---- D2 · Biblioteca por carpeta y saves ----
+library-folder-unavailable portrait  light  -screen library-folder-unavailable -demoFolderState stale
+library-folder-unavailable portrait  dark   -screen library-folder-unavailable -demoFolderState stale
+library-cloud-pending      portrait  light  -screen library-cloud-pending -demoLibrary cloud -demoCloudState pending
+library-cloud-pending      portrait  dark   -screen library-cloud-pending -demoLibrary cloud -demoCloudState pending
+library-cloud-downloading  portrait  light  -screen library-cloud-downloading -demoLibrary cloud -demoCloudState downloading
+library-cloud-downloading  portrait  dark   -screen library-cloud-downloading -demoLibrary cloud -demoCloudState downloading
+library-scan-progress      portrait  light  -screen library-scan-progress -demoLibrary standard
+library-scan-progress      portrait  dark   -screen library-scan-progress -demoLibrary standard
+library-scan-summary       portrait  light  -screen library-scan-summary -demoLibrary standard
+library-scan-summary       portrait  dark   -screen library-scan-summary -demoLibrary standard
+library-rom-error          portrait  light  -screen library-rom-error -demoLibrary errors
+library-rom-error          portrait  dark   -screen library-rom-error -demoLibrary errors
+save-data-error            portrait  light  -screen save-data-error -demoLibrary standard -demoSaveError wrong-size
+save-data-error            portrait  dark   -screen save-data-error -demoLibrary standard -demoSaveError wrong-size

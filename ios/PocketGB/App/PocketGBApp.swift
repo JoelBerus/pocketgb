@@ -20,7 +20,11 @@ struct PocketGBApp: App {
                 #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { state.enterBackground() }
+            if phase == .active {
+                state.enterForeground()
+            } else {
+                state.enterBackground()
+            }
         }
     }
 }
@@ -64,18 +68,20 @@ struct RootView: View {
         .statusBarHidden(state.session != nil || state.debugShowsLaunch)
         .preferredColorScheme(colorScheme)
         .tint(PocketColor.accent)
-        .sheet(isPresented: $state.pickingROM) {
-            RomPicker { url in state.open(url: url) }
+        .sheet(isPresented: $state.pickingFolder) {
+            FolderPicker { url in state.library.choose(folder: url) }
                 .ignoresSafeArea()
         }
-        .alert("La carpeta de juegos llega pronto", isPresented: $state.folderNoticeShown) {
-            Button("Abrir un archivo") { state.pickAfterNotice = true }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("La biblioteca por carpeta con iCloud Drive llega en la próxima fase (D2). Mientras tanto puedes abrir un ROM suelto.")
+        .overlay {
+            if state.opening {
+                ProgressView("Abriendo…")
+                    .padding(PocketSpacing.lg)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: PocketRadius.group))
+            }
         }
-        .alert("PocketGB", isPresented: Binding(get: { state.alertMessage != nil },
-                                                set: { if !$0 { state.alertMessage = nil } })) {
+        .alert(state.alertTitle ?? "PocketGB",
+               isPresented: Binding(get: { state.alertMessage != nil },
+                                    set: { if !$0 { state.alertMessage = nil; state.alertTitle = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(state.alertMessage ?? "")
@@ -156,31 +162,5 @@ struct GameScreen: View {
         }
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)
-    }
-}
-
-/// `UIDocumentPickerViewController` para un solo archivo, como copia temporal
-/// (la biblioteca con bookmark de carpeta llega en M6).
-struct RomPicker: UIViewControllerRepresentable {
-    let onPick: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true)
-        picker.allowsMultipleSelection = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onPick: (URL) -> Void
-        init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            if let url = urls.first { onPick(url) }
-        }
     }
 }

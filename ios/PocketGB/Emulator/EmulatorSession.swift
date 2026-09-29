@@ -22,7 +22,7 @@ final class EmulatorSession: @unchecked Sendable {
     /// Invalida el resultado de un arranque de audio que llegue tras pausar o parar.
     private let audioGeneration = Atomic<Int>(0)
     nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
-    private let saves: SaveStore?
+    private let saves: SaveTarget?
     private let saveQueue = DispatchQueue(label: "PocketGB.saves", qos: .utility)
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "session")
 
@@ -59,8 +59,10 @@ final class EmulatorSession: @unchecked Sendable {
     private static let audioPriming = 1
     private static let audioLive = 2
 
+    /// - Parameter mirror: `<rom>.sav` junto al ROM en la carpeta de la biblioteca
+    ///   (nil para un ROM suelto). La copia local sigue siendo la autoritativa.
     @MainActor
-    init(romData: Data, savesDirectory: URL,
+    init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
          onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
@@ -71,15 +73,45 @@ final class EmulatorSession: @unchecked Sendable {
                                   onPause: onAudioInterrupted)
 
         var warning: String?
-        var saves: SaveStore?
+        var saves: SaveTarget?
         if info.hasBattery, core.sramSaveSize > 0 {
             let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
             do {
                 try store.recoverOrphans(expectedSize: core.sramSaveSize)
-                if let data = try store.load() {
-                    try core.sramLoad(data)
+                let local = try store.load().map {
+                    SaveResolution.Candidate(data: $0, date: store.modificationDate)
                 }
-                saves = store
+                // Un espejo que no se puede leer (sin acceso, sin descargar) no se toca.
+                var usableMirror = mirror
+                var mirrorCandidate: SaveResolution.Candidate?
+                if let mirror {
+                    do {
+                        mirrorCandidate = try mirror.read().map {
+                            SaveResolution.Candidate(data: $0, date: mirror.modificationDate)
+                        }
+                    } catch {
+                        usableMirror = nil
+                    }
+                }
+                let sizes = Self.validSaveSizes(info)
+                switch SaveResolution.resolve(local: local, mirror: mirrorCandidate,
+                                              isValidSize: { sizes.contains($0) }) {
+                case .none:
+                    saves = SaveTarget(local: store, mirror: usableMirror)
+                case let .load(data, backupOther, installLocal, updateMirror, mirrorIgnored):
+                    if let backupOther { try store.addBackup(backupOther) }
+                    if installLocal { try store.save(data) }
+                    try core.sramLoad(data)
+                    saves = SaveTarget(local: store, mirror: mirrorIgnored ? nil : usableMirror,
+                                       mirrorPending: updateMirror)
+                    if mirrorIgnored {
+                        warning = "El archivo .sav junto al juego tiene un tamaño inesperado. No se tocará; se usa la partida guardada en este iPhone."
+                    }
+                case let .wrongSize(fromMirror):
+                    warning = fromMirror
+                        ? "El archivo .sav junto al juego tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
+                        : "La partida guardada tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
+                }
             } catch let e as CoreError where e == .sramSize {
                 // No se sobrescribe un .sav que no entendemos (ESTADO §Pendiente M6).
                 warning = "La partida guardada tiene un tamaño inesperado. No se tocará y esta sesión no guardará."
@@ -92,6 +124,11 @@ final class EmulatorSession: @unchecked Sendable {
     }
 
     deinit { audioScratch.deallocate() }
+
+    /// Tamaños que acepta `gb_sram_load`: la RAM, y con RTC también +48 o +44 bytes.
+    static func validSaveSizes(_ info: RomInfo) -> Set<Int> {
+        info.hasRTC ? [info.sramBytes, info.sramBytes + 48, info.sramBytes + 44] : [info.sramBytes]
+    }
 
     @MainActor
     func start() {
@@ -196,6 +233,10 @@ final class EmulatorSession: @unchecked Sendable {
             // Lo que ya hay en disco (o la RAM inicial si no había .sav).
             lastQueued = try? core.sramSave()
             control.lock(); confirmed = lastQueued; control.unlock()
+            // Espejo ausente o desfasado al abrir: se pone al día en la cola de guardado.
+            if let initial = lastQueued, let saves {
+                saveQueue.async { saves.retryMirrorIfNeeded(initial) }
+            }
             lastCheck = mach_absolute_time()
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
@@ -352,7 +393,10 @@ final class EmulatorSession: @unchecked Sendable {
             control.lock()
             let onDisk = confirmed
             control.unlock()
-            guard data != onDisk else { return }
+            guard data != onDisk else {
+                saveQueue.sync { saves.retryMirrorIfNeeded(data) } // espejo pendiente
+                return
+            }
         } else {
             guard data != lastQueued else { return }
         }
@@ -365,7 +409,7 @@ final class EmulatorSession: @unchecked Sendable {
         let write: @Sendable () -> Void = { [self] in
             do {
                 if injectFailure { throw CocoaError(.fileWriteUnknown) }
-                try saves.save(data)
+                try saves.persist(data)
                 control.lock()
                 confirmed = data
                 control.unlock()

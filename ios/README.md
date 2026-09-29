@@ -8,6 +8,6 @@
 
 ## Argumentos DEBUG (solo builds Debug; docs/hitos/D-README.md §2.5)
 - `-screen <id>`: abre una pantalla del catálogo (`DebugScreen` en `App/DebugScreenRouter.swift`, IDs de docs/diseno/SPEC.md §9). Un id desconocido muestra "Pantalla desconocida" y `ScreenshotTests` falla.
-- `-demoFolderState none` y `-demoLibrary empty`: biblioteca de demostración en memoria (D1). Los demás valores llegan con D2–D3.
+- `-demoFolderState none|stale`, `-demoLibrary empty|standard|cloud|errors`, `-demoCloudState pending|downloading`, `-demoSaveError wrong-size`: biblioteca de demostración en memoria (D1–D2), sin disco ni iCloud. Con cualquiera de ellos no se resuelve el bookmark real.
 - `-uiStyle light|dark`, `-rom <ruta>`, `-paused`, `-memoryWarningAfter <s>`, `-debugHUD`: como antes.
 - El CI compila también en Release: si algo usa el router fuera de `#if DEBUG`, falla.

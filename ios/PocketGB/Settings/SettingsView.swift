@@ -17,7 +17,9 @@ struct SettingsView: View {
                 }
                 Section("Biblioteca y partidas") {
                     PendingRow(title: "Biblioteca", systemImage: "folder")
-                    PendingRow(title: "Partidas", systemImage: "externaldrive")
+                    NavigationLink(value: SettingsRoute.saves) {
+                        Label("Partidas", systemImage: "externaldrive")
+                    }
                     PendingRow(title: "Almacenamiento", systemImage: "internaldrive")
                 }
                 Section {
@@ -37,6 +39,8 @@ struct SettingsView: View {
                 case .appearance: AppearanceSettingsView()
                 case .about: AboutView()
                 case .licenses: LicensesView()
+                case .saves: SavesSettingsView()
+                case .backups(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
                 }
             }
         }

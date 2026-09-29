@@ -9,37 +9,18 @@ enum AppTab: Hashable {
 
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
-    case appearance, about, licenses
+    case appearance, about, licenses, saves
+    case backups(fingerprint: String)
 }
 
-/// Fase de la biblioteca. En D1 solo existen estos dos estados (demo); la carpeta
-/// real con bookmark, el escaneo e iCloud llegan en D2.
-enum LibraryPhase: Equatable {
-    case noFolder
-    case empty(folderName: String)
-}
-
-/// Estado global de la app: shell de tabs (D1) y el juego abierto.
+/// Estado global de la app: shell de tabs, biblioteca y el juego abierto.
 @MainActor @Observable
 final class AppState {
     var selectedTab: AppTab = .library
     var settingsPath: [SettingsRoute] = []
-    var library: LibraryPhase = .noFolder
-    /// Selector de un ROM suelto (provisional hasta la biblioteca por carpeta de D2).
-    var pickingROM = false
-    /// Aviso de que la carpeta llega en D2, con la alternativa de abrir un archivo.
-    var folderNoticeShown = false {
-        didSet {
-            // El selector se presenta cuando la alerta ya se cerró: presentar una sheet
-            // desde el botón de una alerta que se está cerrando puede fallar (auditoría D1, H1).
-            if !folderNoticeShown && pickAfterNotice {
-                pickAfterNotice = false
-                pickingROM = true
-            }
-        }
-    }
-    /// "Abrir un archivo" pulsado en el aviso de carpeta.
-    var pickAfterNotice = false
+    let library = LibraryStore()
+    /// Selector de carpeta de la biblioteca.
+    var pickingFolder = false
     /// Solo lo rellena el router DEBUG (`-screen`); en Release siempre vale nil/false.
     var debugUnknownScreen: String?
     var debugShowsLaunch = false
@@ -47,57 +28,114 @@ final class AppState {
     private(set) var session: EmulatorSession?
     /// Pausa por ciclo de vida: se sale solo con "Continuar" (docs/04 §Ciclo de vida).
     private(set) var paused = false
+    /// Abriendo un juego (lectura coordinada, quizá esperando a iCloud).
+    private(set) var opening = false
+    var alertTitle: String?
     var alertMessage: String?
 
-    private static let maxROMBytes = 8 * 1024 * 1024
+    private static let maxROMBytes = LibraryScanner.maxROMBytes
 
     init() {
         #if DEBUG
         DebugScreenRouter.apply(to: self)
+        if debugUnknownScreen == nil && !DebugScreenRouter.overridesLibrary {
+            library.restore()
+        }
+        #else
+        library.restore()
         #endif
     }
 
-    /// "Elegir carpeta": hasta D2 explica el estado y ofrece abrir un archivo.
     func chooseFolder() {
-        folderNoticeShown = true
+        pickingFolder = true
     }
 
-    /// `url` es una copia temporal del selector (asCopy); se borra tras leerla.
-    func open(url: URL, deleteAfterReading: Bool = true) {
-        defer { if deleteAfterReading { try? FileManager.default.removeItem(at: url) } }
+    /// Volver a primer plano: reescanear la carpeta (docs/04 §Ciclo de vida).
+    func enterForeground() {
+        guard session == nil else { return }
+        library.refresh()
+    }
+
+    /// Abre un juego de la biblioteca: lectura coordinada fuera del hilo principal,
+    /// y la partida con su espejo junto al ROM.
+    func open(entry: RomEntry) {
+        guard entry.problem == nil else {
+            showAlert("No se puede abrir “\(entry.fileName)”", entry.problem?.message ?? "")
+            return
+        }
+        guard entry.cloud == .current else {
+            library.download(entry)
+            return
+        }
+        guard !opening else { return }
+        opening = true
+        let url = entry.url
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result { try LibraryScanner.readROM(url) }
+            await self?.finishOpening(entry: entry, result: result)
+        }
+    }
+
+    private func finishOpening(entry: RomEntry, result: Result<Data, Error>) {
+        opening = false
+        switch result {
+        case .success(let data):
+            start(romData: data, mirror: SaveMirror(romURL: entry.url), fileName: entry.fileName)
+        case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
+            showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
+        case .failure(let error):
+            showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
+        }
+    }
+
+    private func showAlert(_ title: String, _ message: String) {
+        alertTitle = title
+        alertMessage = message
+    }
+
+    /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
+    private func start(romData: Data, mirror: SaveMirror?, fileName: String) {
         closeGame()
         do {
-            let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
-            guard size <= Self.maxROMBytes else {
-                alertMessage = "El archivo supera los 8 MiB; no es un ROM de Game Boy."
-                return
-            }
-            let data = try Data(contentsOf: url)
-            let session = try EmulatorSession(romData: data,
-                                              savesDirectory: SaveStore.defaultDirectory()) { [weak self] in
+            let savesDirectory = try SaveStore.defaultDirectory()
+            let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
+                                              mirror: mirror) { [weak self] in
                 self?.enterBackground()
             }
+            SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
+                                                        title: session.info.title, fileName: fileName)
             session.start()
             self.session = session
             paused = false
             if let warning = session.loadWarning {
-                alertMessage = warning
+                showAlert("Partida con tamaño inesperado", warning)
             } else if !session.info.headerChecksumOK {
-                alertMessage = "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado."
+                showAlert("Cabecera dañada", "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado.")
             }
         } catch let e as CoreError {
-            alertMessage = e.description
+            showAlert("No se puede abrir “\(fileName)”", e.description)
         } catch {
-            alertMessage = "No se pudo abrir el archivo: \(error.localizedDescription)"
+            showAlert("No se puede abrir “\(fileName)”", error.localizedDescription)
         }
     }
+
+    #if DEBUG
+    /// Solo pruebas en el simulador: abre un ROM por ruta, sin biblioteca ni espejo.
+    func open(url: URL) {
+        guard let data = try? Data(contentsOf: url), data.count <= Self.maxROMBytes else {
+            showAlert("No se puede abrir “\(url.lastPathComponent)”", "No se pudo leer el archivo.")
+            return
+        }
+        start(romData: data, mirror: nil, fileName: url.lastPathComponent)
+    }
+    #endif
 
     #if DEBUG
     /// Solo pruebas en el simulador: `-rom <ruta>` abre ese archivo al arrancar.
     func openFromLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
-        open(url: URL(fileURLWithPath: args[i + 1]), deleteAfterReading: false)
+        open(url: URL(fileURLWithPath: args[i + 1]))
         // `-paused`: abre el juego ya en pausa (captura del estado de pausa).
         if args.contains("-paused") {
             Task { @MainActor in

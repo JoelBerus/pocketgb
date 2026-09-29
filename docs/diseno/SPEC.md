@@ -152,7 +152,7 @@ Gameplay, full-screen y sin tab bar
 └─ Ajustes del juego
 ```
 
-La selección de carpeta reemplaza el flujo “Import Game” de la propuesta original. **Transitorio (D1 → D2):** hasta que exista la carpeta con bookmark, “Elegir carpeta” muestra un aviso y el menú `…` de Biblioteca ofrece “Abrir un archivo…” (un ROM suelto, como en M4) para no dejar a Joel sin forma de jugar; D2 lo retira. Al seleccionar o volver a foreground:
+La selección de carpeta reemplaza el flujo “Import Game” de la propuesta original. (En D1 hubo un “Abrir un archivo…” transitorio; D2 lo retiró al llegar la carpeta con bookmark.) Un `.sav` junto al ROM con tamaño incorrecto nunca se sobrescribe: se avisa y se usa la copia local, o la sesión no guarda si no hay otra. Al seleccionar o volver a foreground:
 
 1. Se resuelve el bookmark.
 2. Se coordina el acceso.
