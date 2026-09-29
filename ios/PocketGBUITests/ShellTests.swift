@@ -29,7 +29,9 @@ final class ShellTests: XCTestCase {
 
 /// La única forma de jugar hasta D2: abrir un ROM suelto. Los dos caminos deben
 /// presentar el selector de documentos (auditoría D1, H1).
-final class OpenFileTests: XCTestCase {
+// Nombre con prefijo "Shell": XCTest ordena las clases por nombre y el primer lanzamiento
+// tras los tests unitarios (que usan la app como host) agotó el tiempo en el CI.
+final class ShellOpenFileTests: XCTestCase {
     @MainActor
     private func launchLibrary() -> XCUIApplication {
         let app = XCUIApplication()
