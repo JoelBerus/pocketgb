@@ -23,6 +23,7 @@ final class EmulatorSession: @unchecked Sendable {
     private var parked = false
     private var finished = false
     private var saveFailed = false
+    private var flushRequested = false
     private var confirmed: Data?           // último contenido que está en disco (o se cargó)
 
     // Solo del hilo de emulación.
@@ -88,6 +89,13 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
+    /// Pide guardar la SRAM en el próximo frame sin pausar (aviso de memoria baja).
+    func requestFlush() {
+        control.lock()
+        flushRequested = true
+        control.unlock()
+    }
+
     /// Detiene el hilo; al volver, la SRAM ya está escrita en disco.
     func stop() {
         control.lock()
@@ -136,12 +144,15 @@ final class EmulatorSession: @unchecked Sendable {
                 control.unlock()
                 break
             }
+            let flushNow = flushRequested
+            flushRequested = false
             if saveFailed {
                 saveFailed = false
                 lastQueued = nil // forzar la reescritura
                 dirtyLast = mach_absolute_time() // reintento tras el debounce
             }
             control.unlock()
+            if flushNow { flushSRAM(sync: true) }
 
             core.setButtons(buttons.value)
             core.runFrame()

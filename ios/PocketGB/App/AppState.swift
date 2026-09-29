@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Estado global de la app en M4: un ROM abierto con el selector de documentos.
 @MainActor @Observable
@@ -44,6 +45,13 @@ final class AppState {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
         open(url: URL(fileURLWithPath: args[i + 1]), deleteAfterReading: false)
+        // `-memoryWarningAfter N`: publica el aviso de memoria baja de UIKit tras N s (prueba H7).
+        if let j = args.firstIndex(of: "-memoryWarningAfter"), j + 1 < args.count, let secs = Double(args[j + 1]) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(secs))
+                NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+            }
+        }
     }
     #endif
 
@@ -59,6 +67,11 @@ final class AppState {
         guard let session, !paused else { return }
         session.pause()
         paused = true
+    }
+
+    /// `didReceiveMemoryWarning`: se guarda y se sigue (docs/04 §Ciclo de vida).
+    func memoryWarning() {
+        session?.requestFlush()
     }
 
     func resume() {

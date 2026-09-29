@@ -12,6 +12,10 @@ struct PocketGBApp: App {
             RootView()
                 .environment(state)
                 .statusBarHidden()
+                .onReceive(NotificationCenter.default.publisher(
+                    for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    state.memoryWarning()
+                }
                 #if DEBUG
                 .task { state.openFromLaunchArguments() }
                 #endif

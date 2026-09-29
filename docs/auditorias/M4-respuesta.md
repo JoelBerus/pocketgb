@@ -16,3 +16,11 @@
 | H6 (bloqueante) | **Corregido.** Se separa `lastQueued` (hilo de emulación, evita encolar lo mismo) de `confirmed` (bajo `control`, lo actualiza la cola de guardado solo si `save` tuvo éxito). El flush síncrono vacía primero la cola y compara con `confirmed`; si la última escritura asíncrona falló, reescribe antes de aparcar o terminar. Verificado con fallo inyectado (`-failAsyncSaves`, solo DEBUG): evidencia §5, T2. |
 | H2, H3 (bloqueantes) | **Pendientes de Joel** (iPhone), sin cambios. |
 | Nota `git diff --check` | Corregido: espacios finales de `Shaders.swift`. |
+
+# Vuelta 3 (RECHAZAR: solo H2, H3 y H7; H1, H4, H5 y H6 confirmados como corregidos)
+
+| ID | Respuesta |
+|---|---|
+| H3 (bloqueante) | **Corregido.** Joel registró su iPhone; el comando literal del criterio 1 da BUILD SUCCEEDED con firma (evidencia §1). |
+| H7 (alta) | **Corregido.** `AppState.memoryWarning()` escucha `didReceiveMemoryWarningNotification` y pide `requestFlush()`: el hilo de emulación hace un flush síncrono en el siguiente frame y sigue jugando. Verificado: evidencia §6. |
+| H2 (bloqueante) | **Parcial.** dmg-acid2 correcto en el iPhone (Joel, evidencia §7). Pokémon Rojo pendiente hasta que Joel vuelque su cartucho; se propone a Joel cerrar M4 con Rojo diferido a cuando tenga el volcado. |

@@ -27,4 +27,3 @@
 - M4 no modifica `core/` ni `gb_state_load`; no aparecen nuevos accesos al ROM o índices de cartucho que auditar.
 - La implementación de `AtomicFile` conserva el `.sav` vigente hasta el `rename(2)` final, sincroniza archivos/directorios y genera backups. El problema bloqueante es que ciertos cambios de SRAM nunca llegan a invocarla.
 - Reejecuté el binario existente, compatible con las fuentes actuales: `1080` comprobaciones unitarias sin fallos y `103/103` casos requeridos M5 en PASS. ASan y Xcode no pudieron recompilarse porque el sandbox impide escribir incluso en `/tmp`; esto no es un hallazgo del proyecto.
-

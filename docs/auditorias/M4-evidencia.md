@@ -23,13 +23,15 @@ OK: todos los casos requeridos en PASS
 ```
 El único warning lo emite `appintentsmetadataprocessor` (herramienta de Xcode que avisa de que la app no usa AppIntents); no sale del código del proyecto.
 
-Con firma (Personal Team `3TC3R6S79G`), el mismo comando sin `CODE_SIGNING_ALLOWED=NO` y con `-allowProvisioningUpdates`:
+Con firma, **comando literal del criterio** tras registrar el iPhone de Joel (2026-09-29, `clean build`):
 ```
-/Users/joelbermudez/Documents/workspace/pocketgb/ios/PocketGB.xcodeproj: error: Communication with Apple failed: Your team has no devices from which to generate a provisioning profile. Connect a device to use or manually add device IDs in Certificates, Identif
-/Users/joelbermudez/Documents/workspace/pocketgb/ios/PocketGB.xcodeproj: error: No profiles for 'com.joelbermudez.pocketgb' were found: Xcode couldn't find any iOS App Development provisioning profiles matching 'com.joelbermudez.pocketgb'. (in target 'PocketGB
-** BUILD FAILED **
+xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -destination 'generic/platform=iOS' clean build
+    Provisioning Profile: "iOS Team Provisioning Profile: com.joelbermudez.pocketgb"
+    Signing Identity:     "Apple Development: joelbermudezacosta@gmail.com (LKS5T7VBG7)"
+** BUILD SUCCEEDED **
+2026-09-29 10:00:17.083 appintentsmetadataprocessor[93819:2387756] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 ```
-Esperado: una cuenta gratuita solo genera perfiles para dispositivos registrados. Se resuelve cuando Joel conecta el iPhone y pulsa Run una vez ([07](../07-instalacion-iphone.md)).
+(El primer intento, antes de conectar el iPhone, fallaba con "Your team has no devices from which to generate a provisioning profile": auditoría H3.)
 
 ## 2. Sin red (criterio 2)
 `grep -rnE 'URLSession|NWConnection|Network\b|http' ios/PocketGB`:
@@ -75,7 +77,17 @@ c6b9fa4b9d9d26919b33ebe78a6ef19a.sav
 - T1: a los 30 s no hay `.sav` (sin flanco, sin debounce); a los 65 s la red de seguridad lo escribió sin pasar a background.
 - T2: a los 60 s falla la escritura asíncrona y se reintenta cada ~1 s (todas fallan, sin `.sav`). Al pasar a background, el flush síncrono vacía la cola, compara con lo **confirmado en disco** (no con lo encolado) y escribe: `.sav` correcto.
 
-## 6. Pendiente de Joel (criterio 3, en el iPhone)
-- dmg-acid2 correcto en el iPhone.
-- Pokémon Rojo llega al menú y responde a los botones.
-- Girar a horizontal: escala entera y controles translúcidos superpuestos (no probado en el simulador).
+## 6. H7 de Codex (vuelta 3): guardar ante memoria baja
+Argumento solo-DEBUG `-memoryWarningAfter 8`: publica `UIApplication.didReceiveMemoryWarningNotification` a los 8 s. Mismo ROM de batería, sin `.sav` previo, app en primer plano todo el rato:
+```
+t=6s (antes del aviso):
+t=10s (tras el aviso a los 8 s, app en primer plano):
+c6b9fa4b9d9d26919b33ebe78a6ef19a.sav
+00000010: 0a0a 0a50 6173 7365 640a 0000 0000 0000  ...Passed.......
+```
+El `.sav` aparece por el aviso (no por la red de 60 s ni por background) y el juego sigue corriendo.
+
+## 7. iPhone (criterio 3), confirmado por Joel el 2026-09-29
+- App instalada y abierta en su iPhone con firma del Personal Team.
+- dmg-acid2 correcto en el iPhone ("funcionó bien las pruebas").
+- **Pokémon Rojo: pendiente.** Joel todavía no tiene el volcado de su cartucho (necesita un lector GBxCart RW o GB Operator, ver [08](../08-roms-legal.md)). No se descarga de internet.
