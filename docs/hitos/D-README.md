@@ -171,7 +171,6 @@ ios/PocketGBUITests/screens.txt
 ### Capturas añadidas
 
 ```text
-launch              portrait light -screen launch -uiStyle light
 launch              portrait dark  -screen launch -uiStyle dark
 library-no-folder   portrait light -screen library-no-folder -demoFolderState none -uiStyle light
 library-no-folder   portrait dark  -screen library-no-folder -demoFolderState none -uiStyle dark

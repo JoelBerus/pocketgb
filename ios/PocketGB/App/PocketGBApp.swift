@@ -31,8 +31,10 @@ struct RootView: View {
     @Environment(AppState.self) private var state
     @AppStorage(AppearancePreference.storageKey) private var appearance = AppearancePreference.system.rawValue
 
-    /// Apariencia elegida en Ajustes; en DEBUG, `-uiStyle` manda.
+    /// Apariencia elegida en Ajustes; en DEBUG, `-uiStyle` manda. Con un juego
+    /// abierto, siempre oscuro (también sus alertas; auditoría D1, H5).
     private var colorScheme: ColorScheme? {
+        if state.session != nil { return .dark }
         #if DEBUG
         if let forced = DebugArguments.colorScheme { return forced }
         #endif
@@ -45,12 +47,18 @@ struct RootView: View {
             if let session = state.session {
                 GameScreen(session: session)
                     .environment(\.colorScheme, .dark)   // gameplay siempre oscuro (SPEC §9)
-            } else if state.debugShowsLaunch {
-                LaunchPreviewView()
-            } else if let unknown = state.debugUnknownScreen {
-                UnknownScreenView(id: unknown)
             } else {
+                #if DEBUG
+                if state.debugShowsLaunch {
+                    LaunchPreviewView()
+                } else if let unknown = state.debugUnknownScreen {
+                    UnknownScreenView(id: unknown)
+                } else {
+                    LibraryRootView()
+                }
+                #else
                 LibraryRootView()
+                #endif
             }
         }
         .statusBarHidden(state.session != nil || state.debugShowsLaunch)
@@ -61,7 +69,7 @@ struct RootView: View {
                 .ignoresSafeArea()
         }
         .alert("La carpeta de juegos llega pronto", isPresented: $state.folderNoticeShown) {
-            Button("Abrir un archivo") { state.pickingROM = true }
+            Button("Abrir un archivo") { state.pickAfterNotice = true }
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text("La biblioteca por carpeta con iCloud Drive llega en la próxima fase (D2). Mientras tanto puedes abrir un ROM suelto.")
@@ -75,6 +83,7 @@ struct RootView: View {
     }
 }
 
+#if DEBUG
 /// `-screen` con un id que el router no conoce: error visible para que el CI lo detecte.
 private struct UnknownScreenView: View {
     let id: String
@@ -86,6 +95,7 @@ private struct UnknownScreenView: View {
             .accessibilityIdentifier("debug-unknown-screen")
     }
 }
+#endif
 
 struct GameScreen: View {
     @Environment(AppState.self) private var state

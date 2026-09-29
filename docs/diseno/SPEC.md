@@ -312,7 +312,7 @@ Todos los colores propios se crean en `Assets.xcassets` con variantes Any/Dark. 
 | `BackgroundBase` | `#F2F3F7` | `#0E1014` | Biblioteca y ajustes |
 | `BackgroundElevated` | `#FFFFFF` | `#1A1D23` | Grupos opacos y fallback accesible |
 | `GameplayBackground` | `#101217` | `#101217` | Controles portrait y letterbox |
-| `AccentPrimary` | `#1F68F5` | `#5A96FF` | Selección y CTA |
+| `AccentPrimary` | `#1F68F5` | `#3F7FEF` | Selección y CTA (dark era `#5A96FF`: texto blanco a 2,9:1; `#3F7FEF` da ~3,9:1, auditoría D1 H2) |
 | `Danger` | `#E3342F` | `#FF5B52` | Acciones destructivas |
 | `ControlScrim` | `#000000` | `#000000` | Dimming localizado bajo `.clear` |
 | `ControlAWarm` | `#E7A65B` | `#FFC478` | Anillo semántico A |

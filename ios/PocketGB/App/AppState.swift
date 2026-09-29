@@ -28,7 +28,18 @@ final class AppState {
     /// Selector de un ROM suelto (provisional hasta la biblioteca por carpeta de D2).
     var pickingROM = false
     /// Aviso de que la carpeta llega en D2, con la alternativa de abrir un archivo.
-    var folderNoticeShown = false
+    var folderNoticeShown = false {
+        didSet {
+            // El selector se presenta cuando la alerta ya se cerró: presentar una sheet
+            // desde el botón de una alerta que se está cerrando puede fallar (auditoría D1, H1).
+            if !folderNoticeShown && pickAfterNotice {
+                pickAfterNotice = false
+                pickingROM = true
+            }
+        }
+    }
+    /// "Abrir un archivo" pulsado en el aviso de carpeta.
+    var pickAfterNotice = false
     /// Solo lo rellena el router DEBUG (`-screen`); en Release siempre vale nil/false.
     var debugUnknownScreen: String?
     var debugShowsLaunch = false

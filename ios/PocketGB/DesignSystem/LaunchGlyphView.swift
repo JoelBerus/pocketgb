@@ -31,6 +31,7 @@ private struct CrossShape: Shape {
     }
 }
 
+#if DEBUG
 /// Composición del launch para capturas (SPEC §9, `launch`): glifo centrado sobre fondo oscuro.
 struct LaunchPreviewView: View {
     var body: some View {
@@ -40,3 +41,4 @@ struct LaunchPreviewView: View {
         }
     }
 }
+#endif

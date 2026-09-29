@@ -4,7 +4,6 @@
 # Cada hito de diseño añade aquí sus pantallas y estados (IDs de docs/diseno/SPEC.md §9).
 
 # ---- D1 · Fundamentos ----
-launch              portrait  light  -screen launch
 launch              portrait  dark   -screen launch
 library-no-folder   portrait  light  -screen library-no-folder -demoFolderState none
 library-no-folder   portrait  dark   -screen library-no-folder -demoFolderState none
@@ -19,5 +18,7 @@ settings-about      portrait  dark   -screen settings-about
 
 # ---- Gameplay actual (M4/M5; D4 y D5 lo rediseñan) ----
 game-acid           portrait  dark   -rom $FIXTURES/dmg-acid2.gb
+# Con la app en claro, el juego y sus alertas siguen oscuros (auditoría D1, H5).
+game-acid           portrait  light  -rom $FIXTURES/dmg-acid2.gb
 game-acid           landscape dark   -rom $FIXTURES/dmg-acid2.gb
 game-paused         portrait  dark   -rom $FIXTURES/dmg-acid2.gb -paused
