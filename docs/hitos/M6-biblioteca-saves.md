@@ -1,5 +1,7 @@
 # M6 · Biblioteca en iCloud Drive + saves robustos
 
+> **Sustituido el 2026-09-29 por D2 + D3** del plan de diseño ([D-README](D-README.md)). Sus criterios siguen valiendo y están incorporados allí; este archivo queda como antecedente.
+
 🍎 Solo Mac. Spec: [04](../04-ios-spec.md) §Biblioteca, §Saves. Este hito cierra A4 y A5 de [01](../01-auditoria.md).
 
 **Archivos:** `ios/PocketGB/Library/*`, `Saves/{SaveStore,AtomicFile}.swift`, `Settings/` (sección Partidas con los backups).

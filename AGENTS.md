@@ -6,8 +6,9 @@ Idioma: español en docs, commits y comentarios de alto nivel. Identificadores d
 | Rol | Quién | Puede |
 |---|---|---|
 | Desarrollador | Claude (Opus) | Editar código, docs, tests; crear ramas `mN-<nombre>`; commits. |
-| Auditor | Codex (`codex exec --sandbox read-only`) | **Solo leer y reportar.** Nunca edita, nunca hace commits. |
-| Auditor de respaldo | Subagente Opus sin historial del desarrollo | Igual que Codex, cuando Codex no está disponible. |
+| Implementador de apoyo | Codex (`codex exec --sandbox workspace-write`), solo en el Mac y por encargo de Claude | Implementar tareas acotadas que Claude le especifica, o redactar borradores por stdout. Claude revisa, prueba y hace el commit (indicando "implementado con Codex"). Decisión de Joel 2026-09-29, para ahorrar tokens. |
+| Auditor | Codex (`codex exec --sandbox read-only`) | **Solo leer y reportar** en las auditorías. Nunca audita un hito en el que implementó código: en ese caso audita el subagente Opus. |
+| Auditor de respaldo | Subagente Opus sin historial del desarrollo | Igual que Codex, cuando Codex no está disponible **o cuando Codex implementó parte del hito**. |
 | Dueño | Joel | Firma en Xcode, instala en el iPhone, vuelca sus cartuchos, aprueba merges. |
 
 Flujo completo: [docs/auditorias/README.md](docs/auditorias/README.md). Ningún hito se cierra sin su informe de auditoría.
@@ -17,7 +18,7 @@ Flujo completo: [docs/auditorias/README.md](docs/auditorias/README.md). Ningún 
 2. **Licencias:** solo se puede copiar código de proyectos MIT/BSD/zlib, citando origen en el archivo. Gambatte (GPLv2), Delta (AGPLv3), el directorio `iOS/` de SameBoy y cualquier GPL/AGPL: **leer sí, copiar no**, ni "adaptado".
 3. **El ROM es entrada no confiable.** Todo acceso a memoria del cartucho pasa por funciones con bounds-check. Tamaños de ROM/RAM se validan contra la cabecera *y* contra el tamaño real del archivo.
 4. **Núcleo (`core/`)**: C11 puro, sin I/O, sin `malloc` dentro de `gb_run_frame`, sin variables globales ni estáticas mutables (debe poder haber 2 instancias para el cable link), determinista (misma entrada → mismo framebuffer).
-5. **App iOS**: sin red. No se añaden claves ATS, ni `URLSession`, ni SDKs, ni paquetes SPM de terceros en runtime.
+5. **App iOS** (iOS 26+, Liquid Glass nativo; diseño en [docs/diseno/](docs/diseno/)): sin red. No se añaden claves ATS, ni `URLSession`, ni SDKs, ni paquetes SPM de terceros en runtime.
 6. **Partidas:** cualquier cambio en la ruta de guardado debe mantener escritura atómica + backups (ver [docs/04-ios-spec.md](docs/04-ios-spec.md) §Saves). Perder una partida es el peor bug posible.
 7. No marcar un criterio de aceptación como cumplido sin haber ejecutado el comando que lo verifica y pegado la salida relevante en la PR/commit.
 
@@ -30,6 +31,7 @@ make -C core asan                          # tests con AddressSanitizer + UBSan
 make -C core fuzz FUZZ_SECONDS=600         # libFuzzer sobre el parser/MBC
 make -C core oracle                        # opcional: compila SameBoy para comparación
 xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -destination 'generic/platform=iOS' build
+tools/ios-screenshots.sh                   # tests de la app + capturas (también en CI)
 ```
 
 ## Mapa de documentos
@@ -37,4 +39,5 @@ xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -destination 'generi
 - [03-core-spec](docs/03-core-spec.md) · [04-ios-spec](docs/04-ios-spec.md) · [05-android-spec](docs/05-android-spec.md)
 - [06-testing](docs/06-testing.md) · [07-instalacion-iphone](docs/07-instalacion-iphone.md) · [08-roms-legal](docs/08-roms-legal.md) · [09-referencias](docs/09-referencias.md)
 - **Estado actual y siguiente paso: [docs/ESTADO.md](docs/ESTADO.md)**. Léelo primero y actualízalo al cerrar cada hito.
+- Diseño de la app: [docs/diseno/](docs/diseno/) (propuesta, SPEC, verificación visual con CI).
 - Hitos: [docs/hitos/](docs/hitos/). Trabajar **un hito a la vez**, en orden.

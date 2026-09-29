@@ -1,6 +1,6 @@
 # 04 · Especificación iOS
 
-iOS 17.0+, Swift 6 (strict concurrency), SwiftUI, sin dependencias externas. Bundle ID: `com.joelbermudez.pocketgb` (cámbialo si ya existe en tu Personal Team).
+iOS 26.0+ (decisión 2026-09-29: Liquid Glass nativo), Swift 6 (strict concurrency), SwiftUI, sin dependencias externas. Bundle ID: `com.joelbermudez.pocketgb` (cámbialo si ya existe en tu Personal Team).
 
 ## Proyecto Xcode (creado en M4)
 `ios/PocketGB.xcodeproj` ya está en el repo (lo generó Claude en M4, formato Xcode 16+ `objectVersion 77`). Lo único manual es la firma: conectar el iPhone y pulsar Run una vez ([07](07-instalacion-iphone.md)). La receta de abajo documenta cómo está configurado, por si hubiera que recrearlo:
@@ -12,7 +12,7 @@ iOS 17.0+, Swift 6 (strict concurrency), SwiftUI, sin dependencias externas. Bun
    - `GCC_C_LANGUAGE_STANDARD = c11`
    - `OTHER_CFLAGS = -Wall -Wextra`
 4. *Signing & Capabilities*: Team = tu Personal Team (Apple ID). **No añadir la capability iCloud** (no está disponible con una cuenta gratuita y no hace falta).
-5. *Deployment target* 17.0. *Supported orientations*: Portrait, Landscape Left, Landscape Right. *Requires full screen* = YES.
+5. *Deployment target* 26.0. *Supported orientations*: Portrait, Landscape Left, Landscape Right. *Requires full screen* = YES.
 
 ## Estructura de fuentes (`ios/PocketGB/`)
 ```
@@ -32,7 +32,7 @@ Resources/  Assets.xcassets, Info.plist
 
 ## Info.plist (claves exigidas)
 - `UIFileSharingEnabled = YES` y `LSSupportsOpeningDocumentsInPlace = YES`: la carpeta de la app se ve en Archivos (útil para sacar saves a mano).
-- `UIRequiresFullScreen = YES`, `UIStatusBarHidden = YES`.
+- `UIStatusBarHidden = YES`. (`UIRequiresFullScreen` está obsoleta desde iOS 26 y se quitó; la app es solo iPhone.)
 - `UIBackgroundModes`: **ninguno**. El audio se detiene en background.
 - **Prohibido**: `NSAppTransportSecurity`, `NSLocalNetworkUsageDescription` o cualquier clave de red. La auditoría hace grep de `URLSession|Network|NWConnection|http` en `ios/`.
 

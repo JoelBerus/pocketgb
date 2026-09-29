@@ -1,5 +1,7 @@
 # M7 · Controles translúcidos pulidos + mandos + avance rápido + save states
 
+> **Sustituido el 2026-09-29 por D4 + D5 + D6** del plan de diseño ([D-README](D-README.md)). Sus criterios siguen valiendo y están incorporados allí; este archivo queda como antecedente.
+
 🍎 Solo Mac. Spec: [04](../04-ios-spec.md) §Controles translúcidos, §Mandos físicos, §Save states.
 
 **Criterios de aceptación**

@@ -45,6 +45,13 @@ final class AppState {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
         open(url: URL(fileURLWithPath: args[i + 1]), deleteAfterReading: false)
+        // `-paused`: abre el juego ya en pausa (captura del estado de pausa).
+        if args.contains("-paused") {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                enterBackground()
+            }
+        }
         // `-memoryWarningAfter N`: publica el aviso de memoria baja de UIKit tras N s (prueba H7).
         if let j = args.firstIndex(of: "-memoryWarningAfter"), j + 1 < args.count, let secs = Double(args[j + 1]) {
             Task { @MainActor in

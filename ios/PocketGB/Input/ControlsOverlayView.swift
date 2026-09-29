@@ -47,7 +47,6 @@ final class ControlsOverlayView: UIView {
                 let l = CATextLayer()
                 l.string = text
                 l.alignmentMode = .center
-                l.contentsScale = UIScreen.main.scale
                 l.font = UIFont.systemFont(ofSize: 12, weight: .bold)
                 layer.addSublayer(l)
                 label = l
@@ -107,7 +106,9 @@ final class ControlsOverlayView: UIView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        let scale = traitCollection.displayScale
         for (control, layers) in shapes {
+            layers.label?.contentsScale = scale
             guard let rect = frames[control] else { continue }
             let path: UIBezierPath
             switch control {

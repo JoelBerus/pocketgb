@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · **Hito actual:** M4 (app iOS mínima) **cerrado** (Codex: 4 vueltas, H1–H7 corregidos; Joel probó dmg-acid2 y Pokémon Rojo en su iPhone) → **siguiente: núcleo de M8 (CGB)** en la nube; **parte iOS de M5** (audio) en el Mac.
+**Actualizado:** 2026-09-29 · M4 **cerrado**. Preparado el trabajo de diseño en la nube: iOS 26, CI de macOS con capturas, spec y plan D1–D8. En el Mac: **M5 iOS (audio) en curso** (rama `m5-ios-audio`). Nube: núcleo de **M8** y, tras el merge de M5 iOS, **D1**.
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -14,13 +14,10 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-- **En el Mac (🍎):** parte iOS de [M5](hitos/M5-apu-audio.md), rama `m5-ios-audio`: subir el deployment target a iOS 18 (decisión 2026-09-29), `RingBuffer.swift` con `Synchronization.Atomic`, `AudioOutput.swift`, pacing guiado por el audio, 10 min sin underruns, A9 de oído y peor caso del APU medido en el iPhone. Para probar en el simulador: `-rom <ruta>` (solo DEBUG, ver `ios/README.md`).
-- **En la nube (☁️):** núcleo de [M8](hitos/M8-cgb.md) (CGB):
-  1. Rama `m8-cgb` desde `main` (ya incluye M4). No tocar `ios/`: en Linux no compila; si M8 cambia la API C, anotarlo aquí para adaptar `CoreBridge.swift` en el Mac.
-  2. `tools/cloud-setup.sh`.
-  3. Doble velocidad (KEY1/STOP), VRAM y WRAM con bancos, paletas CGB, atributos de tile, HDMA, estado post-boot CGB y modo compatibilidad con paletas por checksum; `--model cgb` en el runner; casos M8 en `suite.txt`.
-  4. Verificar con `make -C core test HITO=M8 && make -C core asan HITO=M8 && make -C core check-globals`.
-  5. Auditoría → PR.
+- **En el Mac (🍎):** cerrar la parte iOS de [M5](hitos/M5-apu-audio.md) (rama `m5-ios-audio`; implementada con Codex, audita el subagente Opus): 10 min sin underruns y A9 de oído en el iPhone de Joel.
+- **En la nube (☁️), dos líneas independientes:**
+  1. **Núcleo de [M8](hitos/M8-cgb.md) (CGB):** rama `m8-cgb` desde `main`; `tools/cloud-setup.sh`; doble velocidad (KEY1/STOP), VRAM/WRAM con bancos, paletas CGB, atributos de tile, HDMA, post-boot CGB y modo compatibilidad con paletas por checksum; `--model cgb`; casos M8 en `suite.txt`; verificar con `make -C core test HITO=M8 && make -C core asan HITO=M8 && make -C core check-globals`; auditoría → PR. No tocar `ios/`; si cambia la API C, anotarlo aquí. Pokémon Amarillo (flag CGB 0x80) es la prueba real en el iPhone.
+  2. **Diseño de la app, [D1](hitos/D-README.md)** (cuando M5 iOS esté en `main`): leer [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Rama `d1-fundamentos`. Cada lote: push → CI → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Cuidar los minutos macOS (un push por lote).
 
 ## Pendiente en el núcleo (por hito)
 - Herramientas (nota de Codex, M4): `make check-globals` da un falso "OK" si `nm` falla; hacer que falle si `nm` no produce salida.
@@ -43,7 +40,10 @@
 | 2026-09-29 | MBC3 con ROM > 2 MiB usa banco de 8 bits (MBC30). `gb_sram_load` acepta .sav con RTC de 48, de 44 o sin bloque. |
 | 2026-09-29 | OAM DMA: conflicto por bus (externo vs VRAM, OAM bloqueada, E/S y HRAM libres) también en DMG, en contra de la simplificación "solo HRAM" de Pan Docs; lo exigen las pruebas Mooneye verificadas en DMG real. |
 | 2026-09-29 | El proyecto Xcode lo genera y mantiene Claude (carpetas sincronizadas). Shaders en fuente MSL compilados en runtime (sin depender del Metal Toolchain). En M4, sincronización con `OSAllocatedUnfairLock` (iOS 17). |
-| 2026-09-29 | Deployment target iOS 18 desde M5 (Joel): `Synchronization.Atomic` para el ring buffer de audio y la máscara de botones. |
+| 2026-09-29 | Deployment target **iOS 26** (Joel; sustituye la decisión de iOS 18): Liquid Glass nativo y `Synchronization.Atomic`. |
+| 2026-09-29 | Diseño de la app = propuesta Liquid Glass de Joel ([diseno/propuesta.html](diseno/propuesta.html)) adaptada a GB/GBC en [diseno/SPEC.md](diseno/SPEC.md). Hitos D1–D8 sustituyen a M6/M7. |
+| 2026-09-29 | CI de macOS en GitHub Actions con capturas en `ci-shots/<rama>` para que la nube verifique la UI (Joel acepta el coste en minutos macOS). |
+| 2026-09-29 | Codex puede implementar por encargo de Claude (Joel, para ahorrar tokens); no audita lo que implementa (AGENTS.md). |
 | 2026-09-29 | Flush síncrono de SRAM (pausa/background/salida) compara con lo último guardado en vez de depender del flanco "el juego guardó" (auditoría M4, H1). |
 | 2026-09-28 | Controles en horizontal superpuestos y translúcidos (0.30 en reposo / 0.60 pulsado, configurable). |
 
@@ -51,4 +51,4 @@
 - [x] ~~Crear el proyecto Xcode~~ (lo hizo Claude en M4).
 - [x] ~~Conectar el iPhone y generar el perfil de firma~~ (2026-09-29). Recordatorio: reinstalar cada 7 días ([07](07-instalacion-iphone.md)).
 - [x] ~~Activar el Modo Desarrollador en el iPhone~~.
-- [x] ~~Rojo~~ (en su iCloud Drive privado). [ ] Amarillo ([08](08-roms-legal.md)).
+- [x] ~~Rojo y Amarillo~~ volcados, en su iCloud Drive privado (`rom/`). Amarillo: POKEMON YELLOW, MBC5+RAM+BATTERY, flag CGB 0x80, checksums OK, huella `8cbaa499…`.
