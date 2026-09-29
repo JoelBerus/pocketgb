@@ -71,13 +71,13 @@ enum DebugScreenRouter {
         case .favorites:
             state.selectedTab = .favorites
         case .searchActive:
-            state.librarySearchPresented = true
+            presentSearch(state)
         case .searchResults:
-            state.librarySearchPresented = true
+            presentSearch(state)
             state.librarySearch = "acid"
         case .searchNoResults:
             // En GB no hay "CGB…": la pantalla ofrece "Buscar en todos".
-            state.librarySearchPresented = true
+            presentSearch(state)
             state.libraryFilter = .gb
             state.librarySearch = "CGB"
         case .gameDetails:
@@ -90,6 +90,14 @@ enum DebugScreenRouter {
             state.settingsPath = [.library]
         default:
             state.selectedTab = .library
+        }
+    }
+
+    /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
+    private static func presentSearch(_ state: AppState) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            state.librarySearchPresented = true
         }
     }
 

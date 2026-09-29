@@ -90,11 +90,12 @@ final class AppState {
         #if DEBUG
         // Capturas y tests de UI: preferencias y portadas solo en memoria.
         let inMemory = DebugScreenRouter.overridesLibrary
-        #else
-        let inMemory = false
-        #endif
         libraryPrefs = LibraryPreferences(fileURL: inMemory ? nil : LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: inMemory ? nil : GameArtworkStore.defaultDirectory())
+        #else
+        libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
+        artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
+        #endif
         #if DEBUG
         DebugScreenRouter.apply(to: self)
         if debugUnknownScreen == nil && !DebugScreenRouter.overridesLibrary {
