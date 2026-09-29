@@ -53,7 +53,9 @@ fuzz: $(BUILD)/gbtest
 	@for f in fuzz/fuzz_*.c; do \
 	  n=$$(basename $$f .c); mkdir -p fuzz/corpus/$$n; \
 	  $(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) $$f $(SRCS) -o $(BUILD)/$$n || exit 1; \
-	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) -max_len=1048576 fuzz/corpus/$$n || exit 1; \
+	  opts="-max_len=1048576"; \
+	  [ $$n = fuzz_link ] && opts="-max_len=16384 -len_control=0"; \
+	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) $$opts fuzz/corpus/$$n || exit 1; \
 	done
 
 # Oráculo opcional (dev-only, nunca se enlaza en la app). Requiere git, make y rgbds.

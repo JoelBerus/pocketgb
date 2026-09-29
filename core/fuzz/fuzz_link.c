@@ -12,6 +12,9 @@
  * escribe SB y SC.
  * Invariantes: sin cortes de ASan/UBSan, sin colgarse, y mientras no se
  * realinea ningún reloj, |t_a - t_b| ≤ 44 tras cada frame (el lockstep).
+ * Semillas (gbtest --fuzz-seeds): los programas de intercambio de unit_link.c
+ * en varias combinaciones de modelo y operaciones; el Makefile corre este
+ * fuzzer con -len_control=0 -max_len=16384 para que explore programas largos.
  * (Las variables estáticas de este archivo son del fuzzer, no del núcleo.)
  */
 #include <stdlib.h>

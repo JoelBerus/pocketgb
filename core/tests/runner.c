@@ -224,6 +224,35 @@ static int fuzz_seeds(const char *dir)
     static const uint8_t link_seed[] = { 0x00, 0x80, 0x55, 0x81, 0x18, 0xFE, 0x18, 0xFE };
     snprintf(path, sizeof path, "%s/fuzz_link/seed_link.bin", dir);
     rc |= write_file(path, link_seed, sizeof link_seed);
+    /* Semillas largas (auditoría M9, H5): los programas de intercambio de
+     * unit_link.c, uno por lado, con el reparto a la mitad (d[1] = 0x80; los dos
+     * miden lo mismo). d[0]: modelos por lado y operaciones a mitad. */
+    static const struct {
+        uint8_t flags;
+        bool ds;
+        uint8_t sc;
+        const char *name;
+    } xs[] = {
+        { 0x00, false, 0x81, "xchg_dmg" },
+        { 0x05, false, 0x83, "xchg_cgb_fast" },
+        { 0x05, true, 0x83, "xchg_cgb_2x_fast" },
+        { 0x02, false, 0x81, "xchg_compat_dmg" },
+        { 0x10, false, 0x81, "xchg_state" },
+        { 0x60, false, 0x81, "xchg_reload_detach" },
+    };
+    for (size_t i = 0; i < sizeof xs / sizeof xs[0]; i++) {
+        uint8_t seed[4 + 2 * 256];
+        seed[0] = xs[i].flags;
+        seed[1] = 0x80;
+        seed[2] = 0x00;
+        seed[3] = 0x00;
+        size_t na = ut_link_exchange_prog(seed + 4, 256, xs[i].ds, xs[i].sc, 0x5A);
+        size_t nb = ut_link_exchange_prog(seed + 4 + na, 256, xs[i].ds, 0x80, 0xA5);
+        if (!na || na != nb)
+            return 2;
+        snprintf(path, sizeof path, "%s/fuzz_link/seed_%s.bin", dir, xs[i].name);
+        rc |= write_file(path, seed, 4 + na + nb);
+    }
     return rc;
 }
 

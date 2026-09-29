@@ -13,11 +13,17 @@
  *    acumula, porque el siguiente deadline se mide desde T y no desde local_i.
  * 2) Causalidad: el serial_bit_cb del maestro adelanta al par hasta el instante
  *    del pulso ANTES de darle el bit (gb_serial_clock_external). En cada bloque
- *    corre primero el lado con reloj interno seleccionado (SC bit 0), para que
- *    el par esté siempre detrás del maestro cuando llega un pulso.
+ *    corre primero el maestro, para que el par esté detrás cuando llega un
+ *    pulso: el lado con una transferencia de reloj interno activa
+ *    (SC & 0x81 == 0x81) y, si ninguno la tiene, el que tiene el reloj interno
+ *    seleccionado (SC bit 0; Pokémon lo deja a 1 entre bytes). Límite: un
+ *    maestro que activa SC=0x81 a mitad de un bloque en el que ya corrió el
+ *    par puede encontrárselo hasta un bloque (456 T-ciclos) por delante.
  * 3) Reentrada: `busy` marca que se está adelantando al par dentro de un pulso;
  *    un pulso del par en ese intervalo (los dos con reloj interno) recibe 1 sin
- *    tocar al maestro.
+ *    tocar al maestro. Es defensa en profundidad: aunque no estuviera, el par
+ *    va por detrás (no adelantaría a nadie) y gb_serial_clock_external sobre un
+ *    maestro con reloj interno ya devuelve 1 sin cambiar nada.
  * Sin estado global ni estático mutable, y sin malloc fuera de gb_link_create.
  */
 #include <stdlib.h>
@@ -125,6 +131,10 @@ static void port_ensure(gb_link *l, struct gb_link_port *p)
 {
     if (!port_live(p))
         return;
+    if (!port_installed(p) && p->g->opts.serial_bit_cb == link_bit_cb) {
+        p->g = NULL;                /* ya es de otro cable: no se le quitan los callbacks */
+        return;
+    }
     bool fresh = !port_installed(p);
     if (fresh)
         port_install(p);
@@ -175,13 +185,28 @@ void gb_link_detach(gb_link *l)
     }
 }
 
-void gb_link_attach(gb_link *l, gb *a, gb *b)
+/* Conectada a OTRO cable (el de este ya se desconectó antes de mirar). */
+static bool owned_elsewhere(const gb *g)
+{
+    return g && g->opts.serial_bit_cb == link_bit_cb;
+}
+
+bool gb_link_attach(gb_link *l, gb *a, gb *b)
 {
     if (!l || l->running)
-        return;
+        return false;
     gb_link_detach(l);
+    bool ok = true;
+    if (owned_elsewhere(a)) {
+        a = NULL;
+        ok = false;
+    }
+    if (b == a || owned_elsewhere(b)) {
+        ok = ok && b == NULL;     /* consigo misma o de otro cable: lado vacío */
+        b = NULL;
+    }
     l->port[0].g = a;
-    l->port[1].g = (b != a) ? b : NULL;   /* una instancia no se conecta consigo misma */
+    l->port[1].g = b;
     l->t = 0;
     l->busy = false;
     for (unsigned s = 0; s < 2; s++) {
@@ -193,6 +218,7 @@ void gb_link_attach(gb_link *l, gb *a, gb *b)
         p->offset = -(int64_t)p->g->cycles;
         port_copy_fb(l, s);
     }
+    return ok;
 }
 
 /* Avanza un lado hasta el deadline. */
@@ -205,9 +231,16 @@ static void port_run_to(gb_link *l, struct gb_link_port *p)
         (void)gb_run_cycles(p->g, (uint32_t)(l->t - lt));
 }
 
-static bool internal_clock(const struct gb_link_port *p)
+/* Prioridad para correr primero en un bloque: 2 = transferencia con reloj
+ * interno activa, 1 = reloj interno seleccionado, 0 = esclavo o sin ROM. */
+static unsigned master_rank(const struct gb_link_port *p)
 {
-    return port_live(p) && (p->g->serial.sc & 1);
+    if (!port_live(p))
+        return 0;
+    uint8_t sc = p->g->serial.sc;
+    if ((sc & 0x81) == 0x81)
+        return 2;
+    return sc & 1;
 }
 
 uint32_t gb_link_run_cycles(gb_link *l, uint32_t cycles)
@@ -222,7 +255,7 @@ uint32_t gb_link_run_cycles(gb_link *l, uint32_t cycles)
         int64_t step = end - l->t;
         l->t += step < GB_LINK_BLOCK_CYCLES ? step : GB_LINK_BLOCK_CYCLES;
         /* Primero el maestro, para que sus pulsos encuentren al par detrás. */
-        unsigned first = (internal_clock(&l->port[1]) && !internal_clock(&l->port[0])) ? 1u : 0u;
+        unsigned first = master_rank(&l->port[1]) > master_rank(&l->port[0]) ? 1u : 0u;
         port_run_to(l, &l->port[first]);
         port_run_to(l, &l->port[first ^ 1u]);
         for (unsigned s = 0; s < 2; s++) {

@@ -137,9 +137,12 @@ static void build_late_slave(struct prog *p, int nops)
 }
 
 /* El maestro (lado `ms`) tiene SB=0x55, SC=0x81 y su primer flanco del reloj
- * serie a 300 T-ciclos; el esclavo activa SC=0x80 hacia `nops`*4+30. Los dos
- * instantes caen dentro del primer bloque [0, 456). */
-static void causality_case(struct ut *t, unsigned ms, int nops, bool expect_first_bit)
+ * serie a 300 T-ciclos; el esclavo parte de SC=`slave_sc` (sin transferencia)
+ * y activa SC=0x80 hacia `nops`*4+30. Los dos instantes caen dentro del primer
+ * bloque [0, 456). Con slave_sc=0x01 los dos lados tienen el bit 0 a 1: el
+ * orden del bloque lo decide la transferencia activa (auditoría M9, H1). */
+static void causality_case(struct ut *t, unsigned ms, int nops, bool expect_first_bit,
+                           uint8_t slave_sc)
 {
     struct prog ps = { { 0 }, 0 };
     build_late_slave(&ps, nops);
@@ -153,6 +156,7 @@ static void causality_case(struct ut *t, unsigned ms, int nops, bool expect_firs
     mmu_write(m, 0xFF02, 0x81);
     m->timer.counter = 0x00D4;                      /* flanco de bajada del bit 8 en 75 M-ciclos */
     mmu_write(s, 0xFF01, 0xAA);
+    mmu_write(s, 0xFF02, slave_sc);
     mmu_write(m, 0xFF0F, 0x00);
     mmu_write(s, 0xFF0F, 0x00);
 
@@ -203,8 +207,11 @@ static void no_slave(struct ut *t)
     gb_link_run_cycles(l, 9 * 512);
     CHECK(t, a->serial.sb == 0xFF && !(a->serial.sc & 0x80));
 
-    /* 3) Los dos con reloj interno (indefinido en el hardware): la reentrada
-     * no recurre; cada uno recibe 1 en cada pulso. */
+    /* 3) Los dos con reloj interno (indefinido en el hardware): cada uno recibe
+     * 1 en cada pulso y no hay recursión. No lo garantiza solo el flag `busy`
+     * (defensa en profundidad): el par va por detrás y gb_serial_clock_external
+     * sobre un maestro ya devuelve 1. Ningún test puede aislar `busy` sin
+     * romper esas dos condiciones desde dentro del núcleo (auditoría M9, H3). */
     gb_link_attach(l, a, b);
     mmu_write(a, 0xFF01, 0x0F);
     mmu_write(a, 0xFF02, 0x81);
@@ -256,6 +263,16 @@ static void build_exchange(struct prog *p, bool double_speed, uint8_t sc, uint8_
     EMIT(p, 0x3E, 0x01, 0xEA, 0x00, 0xC1);          /* LD (C100),1 */
     size_t done = p->n;
     jr(p, done);
+}
+
+size_t ut_link_exchange_prog(uint8_t *out, size_t cap, bool double_speed, uint8_t sc, uint8_t key)
+{
+    struct prog p = { { 0 }, 0 };
+    build_exchange(&p, double_speed, sc, key);
+    if (p.n > cap)
+        return 0;
+    memcpy(out, p.b, p.n);
+    return p.n;
 }
 
 struct xchg_side {
@@ -460,7 +477,8 @@ static void robustness(struct ut *t)
     CHECK(t, a->opts.serial_bit_cb == NULL && a->opts.serial_byte_cb == on_byte &&
              a->opts.serial_user == &log);
     CHECK(t, b->opts.serial_bit_cb == NULL && b->opts.serial_byte_cb == NULL);
-    gb_link_attach(l, a, a);                        /* consigo misma: solo el lado 0 */
+    CHECK(t, !gb_link_attach(l, a, a));             /* consigo misma: solo el lado 0 */
+    CHECK(t, a->opts.serial_bit_cb != NULL);
     gb_link_run_cycles(l, 100);
     gb_link_detach(l);
     CHECK(t, a->opts.serial_byte_cb == on_byte && a->opts.serial_user == &log);
@@ -470,13 +488,57 @@ out:
     gb_destroy(b);
 }
 
+/* Una instancia pertenece a un solo cable (auditoría M9, H4). */
+static void ownership(struct ut *t)
+{
+    gb *a = load(&idle_prog, K_DMG, NULL), *b = load(&idle_prog, K_DMG, NULL);
+    gb *c = load(&idle_prog, K_DMG, NULL);
+    gb_link *l1 = gb_link_create(), *l2 = gb_link_create();
+    CHECK(t, a && b && c && l1 && l2);
+    if (!a || !b || !c || !l1 || !l2)
+        goto out;
+    CHECK(t, gb_link_attach(l1, a, b));
+    const gb_options before = a->opts;
+    CHECK(t, !gb_link_attach(l2, a, c));            /* a ya está en l1: lado 0 vacío */
+    CHECK(t, a->opts.serial_bit_cb == before.serial_bit_cb && a->opts.serial_user == before.serial_user);
+    CHECK(t, !gb_link_attach(l2, c, b));            /* b ya está en l1: lado 1 vacío */
+    CHECK(t, b->opts.serial_user != c->opts.serial_user);
+    /* l2 solo tiene a c: su avance no mueve a las instancias de l1. */
+    uint64_t ta = gb_cycle_count(a), tb = gb_cycle_count(b);
+    gb_link_run_cycles(l2, 1000);
+    CHECK(t, gb_cycle_count(a) == ta && gb_cycle_count(b) == tb && gb_cycle_count(c) >= 1000);
+    /* l1 sigue funcionando y, al desconectarlo, a y b quedan libres para l2. */
+    mmu_write(a, 0xFF01, 0x55);
+    mmu_write(a, 0xFF02, 0x81);
+    mmu_write(b, 0xFF01, 0xAA);
+    mmu_write(b, 0xFF02, 0x80);
+    gb_link_run_cycles(l1, 9 * 512);
+    CHECK(t, a->serial.sb == 0xAA && b->serial.sb == 0x55);
+    CHECK(t, gb_link_attach(l1, a, b));             /* reconectar al mismo cable: vale */
+    gb_link_detach(l1);
+    CHECK(t, gb_link_attach(l2, a, b));
+    gb_link_detach(l2);
+    CHECK(t, gb_link_attach(l2, NULL, NULL) && !gb_link_attach(NULL, a, b));
+out:
+    gb_link_destroy(l1);
+    gb_link_destroy(l2);
+    gb_destroy(a);
+    gb_destroy(b);
+    gb_destroy(c);
+}
+
 void unit_link(struct ut *t)
 {
     drift_case(t, K_DMG, false, 1000000);         /* (a) criterio del hito: 10^6 vueltas */
     drift_case(t, K_CGB, true, 100000);             /* CALL en doble velocidad (12 T-ciclos reales) */
-    causality_case(t, 0, 42, true);                 /* (b) SC=0x80 ~200 T, flanco a 300 T */
-    causality_case(t, 1, 42, true);                 /* mismo caso con el maestro en el lado 1 */
-    causality_case(t, 0, 92, false);                /* SC=0x80 ~400 T: después del flanco */
+    causality_case(t, 0, 42, true, 0x00);           /* (b) SC=0x80 ~200 T, flanco a 300 T */
+    causality_case(t, 1, 42, true, 0x00);           /* mismo caso con el maestro en el lado 1 */
+    causality_case(t, 0, 92, false, 0x00);          /* SC=0x80 ~400 T: después del flanco */
+    causality_case(t, 1, 92, false, 0x00);          /* ídem, maestro en el lado 1 (H2) */
+    causality_case(t, 1, 92, false, 0x01);          /* esclavo con SC=0x01 en el lado 0 (H1) */
+    causality_case(t, 0, 92, false, 0x01);
+    causality_case(t, 1, 42, true, 0x01);
+    ownership(t);
     no_slave(t);                                    /* (c) */
     exchange(t);                                    /* (d) */
     framebuffers(t);
