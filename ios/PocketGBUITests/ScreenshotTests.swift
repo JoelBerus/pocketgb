@@ -26,6 +26,8 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments = ["-uiStyle", style] + args
             app.launch()
             Thread.sleep(forTimeInterval: 3) // deja correr la emulación y las animaciones
+            // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
+            XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
 
             let shot = XCUIScreen.main.screenshot()
             let file = "\(name)-\(orientation)-\(style).png"

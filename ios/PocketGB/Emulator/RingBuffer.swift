@@ -58,22 +58,26 @@ final class AudioRingBuffer: Sendable {
         let mask = capacityFrames - 1
         let scale = Float(1.0 / 32768.0)
 
+        // Locales en el bucle: una sola escritura a las propiedades al final.
+        var l = lastLeft, r = lastRight
         for frame in 0..<count {
             let source = ((read + frame) & mask) * 2
-            lastLeft = Float(storage[source]) * scale
-            lastRight = Float(storage[source + 1]) * scale
-            left[frame] = lastLeft
-            right[frame] = lastRight
+            l = Float(storage[source]) * scale
+            r = Float(storage[source + 1]) * scale
+            left[frame] = l
+            right[frame] = r
         }
         readIndex.store(read + count, ordering: .releasing)
 
         if count < frames {
             for frame in count..<frames {
-                left[frame] = lastLeft
-                right[frame] = lastRight
+                left[frame] = l
+                right[frame] = r
             }
             underrunCount.wrappingAdd(1, ordering: .relaxed)
         }
+        lastLeft = l
+        lastRight = r
     }
 
     /// Se usa al reanudar, siempre con el callback detenido y el productor aparcado.

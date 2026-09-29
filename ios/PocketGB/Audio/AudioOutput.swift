@@ -52,6 +52,28 @@ final class AudioOutput {
             let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             Task { @MainActor in self?.handleInterruption(raw) }
         })
+        // Cambio de salida (auriculares, Bluetooth, AirPlay, otra frecuencia): el motor
+        // se detiene solo. Se pausa el juego como en una interrupción; "Continuar"
+        // rearranca el motor con cebado (auditoría M5 iOS, H1).
+        observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange,
+                                             object: nil, queue: nil) { [weak self] notification in
+            let changed = (notification.object as AnyObject?).map(ObjectIdentifier.init)
+            Task { @MainActor in
+                guard let self, let engine = self.engine, changed == ObjectIdentifier(engine) else { return }
+                self.stop()
+                self.onPause()
+            }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification,
+                                             object: nil, queue: nil) { [weak self] notification in
+            let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            Task { @MainActor in
+                guard let self, self.engine != nil,
+                      raw == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+                self.stop()
+                self.onPause()
+            }
+        })
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
                                              object: nil, queue: nil) { [weak self] _ in
             Task { @MainActor in
@@ -82,19 +104,7 @@ final class AudioOutput {
                                              interleaved: false) else {
                 throw AudioOutputError.invalidFormat
             }
-            let ring = ring
-            let consumed = consumed
-            let source = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
-                let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-                guard buffers.count >= 2,
-                      let left = buffers[0].mData?.assumingMemoryBound(to: Float.self),
-                      let right = buffers[1].mData?.assumingMemoryBound(to: Float.self) else {
-                    return kAudio_ParamError
-                }
-                ring.read(intoLeft: left, right: right, frames: Int(frameCount))
-                consumed.signal()
-                return noErr
-            }
+            let source = Self.makeSourceNode(format: format, ring: ring, consumed: consumed)
 
             let engine = AVAudioEngine()
             engine.attach(source)
@@ -109,6 +119,24 @@ final class AudioOutput {
             engine = nil
             try? session.setActive(false)
             return false
+        }
+    }
+
+    /// El bloque de render se crea fuera del `@MainActor`: un closure creado dentro de
+    /// un método aislado hereda ese aislamiento y Swift 6 aborta al ejecutarlo en el
+    /// hilo de audio en tiempo real (`dispatch_assert_queue`).
+    nonisolated private static func makeSourceNode(format: AVAudioFormat, ring: AudioRingBuffer,
+                                                   consumed: AudioWakeSignal) -> AVAudioSourceNode {
+        AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
+            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            guard buffers.count >= 2,
+                  let left = buffers[0].mData?.assumingMemoryBound(to: Float.self),
+                  let right = buffers[1].mData?.assumingMemoryBound(to: Float.self) else {
+                return kAudio_ParamError
+            }
+            ring.read(intoLeft: left, right: right, frames: Int(frameCount))
+            consumed.signal()
+            return noErr
         }
     }
 

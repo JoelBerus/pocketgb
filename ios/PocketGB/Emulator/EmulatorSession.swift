@@ -18,6 +18,7 @@ final class EmulatorSession: @unchecked Sendable {
     private let audioConsumed = AudioWakeSignal()
     private let audioMode = Atomic<Int>(0)
     private let averageFrameMicros = Atomic<Int>(0)
+    private let audioFallbackCount = Atomic<Int>(0)
     nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
     private let saves: SaveStore?
     private let saveQueue = DispatchQueue(label: "PocketGB.saves", qos: .utility)
@@ -156,6 +157,18 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
+    /// Para el HUD de depuración: "audio", "cebado" o "reloj" (sin sonido).
+    var pacingDescription: String {
+        switch audioMode.load(ordering: .relaxed) {
+        case Self.audioLive: "audio"
+        case Self.audioPriming: "cebado"
+        default: "reloj"
+        }
+    }
+
+    /// Veces que el pacing cayó a reloj por falta de callbacks.
+    var audioFallbacks: Int { audioFallbackCount.load(ordering: .relaxed) }
+
     var averageFrameMilliseconds: Double {
         Double(averageFrameMicros.load(ordering: .relaxed)) / 1_000
     }
@@ -222,6 +235,7 @@ final class EmulatorSession: @unchecked Sendable {
                         if audioTimeouts >= Self.audioTimeoutLimit {
                             // El timeout acumulado evita congelar el juego si muere el callback.
                             audioMode.store(Self.audioClock, ordering: .releasing)
+                            audioFallbackCount.wrappingAdd(1, ordering: .relaxed)
                             deadline = Double(mach_absolute_time())
                             Task { @MainActor [weak self] in
                                 guard let self,

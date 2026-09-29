@@ -7,7 +7,8 @@ struct DebugHUD: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            Text(String(format: "U %d  ring %d  emu %.2f ms",
+            Text(String(format: "%@ ·%d  U %d  ring %d  emu %.2f ms",
+                        session.pacingDescription, session.audioFallbacks,
                         session.audioRing.underruns,
                         session.audioRing.availableFrames,
                         session.averageFrameMilliseconds))
