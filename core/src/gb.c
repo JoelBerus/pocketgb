@@ -2,7 +2,7 @@
  * gb.c — ciclo de vida de la instancia, carga del ROM y bucle de ejecución.
  * API pública: include/pocketgb.h. Spec: docs/03-core-spec.md.
  *
- * Pendiente por hito: gb_state_* y gb_rtc_set_time (M3), audio real (M5),
+ * Pendiente por hito: audio real (M5),
  * modo CGB (M8; hasta entonces un ROM solo-CGB devuelve GB_ERR_CGB_ONLY y uno
  * compatible corre como DMG).
  */
@@ -48,6 +48,8 @@ void gb_tick(gb *g, unsigned tcycles)
             timer_tick(g);      /* STOP pone DIV a 0 y lo congela hasta salir */
         dma_tick(g);
         ppu_tick(g, 4);
+        if (g->cart.has_rtc)
+            rtc_tick(g, 4);
         g->cycles += 4;
     }
 }
@@ -96,6 +98,7 @@ gb_result gb_load_rom(gb *g, const uint8_t *data, size_t len, const gb_options *
         unload(g);
         return r;
     }
+    rtc_reset(g, o.unix_time);
     /* Hasta M8 no hay modo CGB: un ROM solo-CGB no puede ejecutarse. */
     if (g->cart.rom[0x143] == 0xC0) {
         unload(g);

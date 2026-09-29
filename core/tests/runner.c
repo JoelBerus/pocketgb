@@ -1,13 +1,18 @@
 /*
  * runner.c — ejecutor headless de pruebas (docs/06-testing.md §Runner headless).
  *
- *   gbtest <rom> --mode {serial|mooneye|acid} [--model dmg] [--max-frames N]
- *          [--expect PATH.rgba] [--dump PATH.rgba]
+ *   gbtest <rom> --mode {serial|mooneye|acid|frames} [--model dmg] [--max-frames N]
+ *          [--expect PATH.rgba] [--dump PATH.rgba] [--input GUION]
  *   gbtest <rom> --bench N        velocidad frente a tiempo real (N frames)
  *   gbtest --unit                 unit tests (core/tests/unit_*.c)
+ *   gbtest --fuzz-seeds DIR       escribe semillas para los fuzzers (make fuzz)
  *
  * acid: al ejecutarse LD B,B se compara el framebuffer con --expect (RGBA crudo
- * de 160×144, ver tools/png2rgba.py). --dump escribe el último framebuffer.
+ * de 160×144, ver tools/png2rgba.py). frames: se ejecutan exactamente
+ * --max-frames frames y se compara con --expect (pruebas sin condición de
+ * salida, como MBC3-Tester o rtc3test). --dump escribe el último framebuffer.
+ * --input: "frame:botones,..." con botones A B S(elect) T(start) R L U D o "-"
+ * (ninguno); p. ej. "30:A,40:-" pulsa A en el frame 30 y suelta en el 40.
  * Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga.
  */
 #include <stdio.h>
@@ -61,6 +66,48 @@ static void framebuffer_bytes(const gb *g, uint8_t *out)
 
 enum { FB_BYTES = GB_SCREEN_W * GB_SCREEN_H * 4 };
 
+enum { MAX_INPUTS = 32 };
+struct input_event {
+    long frame;
+    uint8_t mask;
+};
+
+/* Devuelve el número de eventos o -1 si el guion no es válido. */
+static int parse_input(const char *s, struct input_event *ev)
+{
+    int n = 0;
+    while (*s) {
+        if (n == MAX_INPUTS)
+            return -1;
+        char *end;
+        long f = strtol(s, &end, 10);
+        if (end == s || *end != ':' || f < 0)
+            return -1;
+        s = end + 1;
+        uint8_t mask = 0;
+        for (; *s && *s != ','; s++) {
+            switch (*s) {
+            case 'A': mask |= GB_BTN_A; break;
+            case 'B': mask |= GB_BTN_B; break;
+            case 'S': mask |= GB_BTN_SELECT; break;
+            case 'T': mask |= GB_BTN_START; break;
+            case 'R': mask |= GB_BTN_RIGHT; break;
+            case 'L': mask |= GB_BTN_LEFT; break;
+            case 'U': mask |= GB_BTN_UP; break;
+            case 'D': mask |= GB_BTN_DOWN; break;
+            case '-': break;
+            default: return -1;
+            }
+        }
+        ev[n].frame = f;
+        ev[n].mask = mask;
+        n++;
+        if (*s == ',')
+            s++;
+    }
+    return n;
+}
+
 static double now_seconds(void)
 {
     struct timespec ts;
@@ -77,6 +124,7 @@ static int run_unit(void)
         { "timer", unit_timer },
         { "cpu", unit_cpu },
         { "ppu", unit_ppu },
+        { "state", unit_state },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -85,6 +133,49 @@ static int run_unit(void)
     }
     printf("%s: %d comprobaciones, %d fallos\n", t.failed ? "FAIL" : "PASS", t.checks, t.failed);
     return t.failed ? 1 : 0;
+}
+
+static int write_file(const char *path, const uint8_t *d, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    bool ok = f && fwrite(d, 1, n, f) == n;
+    if (f && fclose(f) != 0)
+        ok = false;
+    if (!ok)
+        fprintf(stderr, "no se pudo escribir %s\n", path);
+    return ok ? 0 : 2;
+}
+
+/* Semillas: un ROM sintético que ejecuta un bucle y un estado válido del ROM
+ * fijo de fuzz_state_load (mismo contenido que fixed_instance()). */
+static int fuzz_seeds(const char *dir)
+{
+    static const uint8_t prog[] = { 0x3C, 0xEA, 0x00, 0xC0, 0x18, 0xFA };
+    char path[1024];
+    int rc = 0;
+    uint8_t *rom = ut_make_rom(0x8000, 0x10, 0x00, 0x03, prog, sizeof prog);
+    if (!rom)
+        return 2;
+    rom[0x134] = 0;   /* el ROM de fuzz_state_load no tiene título */
+    rom[0x135] = rom[0x136] = rom[0x137] = 0;
+    rom[0x14D] = 0;
+    snprintf(path, sizeof path, "%s/fuzz_load_rom/seed_rom.bin", dir);
+    rc |= write_file(path, rom, 0x8000);
+    gb *g = gb_create();
+    if (g && gb_load_rom(g, rom, 0x8000, NULL) == GB_OK) {
+        for (int f = 0; f < 5; f++)
+            gb_run_frame(g);
+        size_t n = gb_state_size(g);
+        uint8_t *s = malloc(n);
+        if (s && gb_state_save(g, s, n) == GB_OK) {
+            snprintf(path, sizeof path, "%s/fuzz_state_load/seed_state.bin", dir);
+            rc |= write_file(path, s, n);
+        }
+        free(s);
+    }
+    gb_destroy(g);
+    free(rom);
+    return rc;
 }
 
 static int usage(void)
@@ -101,10 +192,13 @@ int main(int argc, char **argv)
 {
     if (argc >= 2 && strcmp(argv[1], "--unit") == 0)
         return run_unit();
+    if (argc >= 3 && strcmp(argv[1], "--fuzz-seeds") == 0)
+        return fuzz_seeds(argv[2]);
     if (argc < 3)
         return usage();
 
     const char *rom_path = argv[1], *mode = NULL, *expect_path = NULL, *dump_path = NULL;
+    const char *input_script = NULL;
     long max_frames = 3600, bench = 0;
     gb_options opts;
     gb_options_default(&opts);
@@ -127,6 +221,8 @@ int main(int argc, char **argv)
             expect_path = v;
         } else if (strcmp(a, "--dump") == 0) {
             dump_path = v;
+        } else if (strcmp(a, "--input") == 0) {
+            input_script = v;
         } else if (strcmp(a, "--bench") == 0) {
             bench = strtol(v, NULL, 10);
         } else {
@@ -134,11 +230,18 @@ int main(int argc, char **argv)
         }
     }
     if (!bench && (!mode || (strcmp(mode, "serial") != 0 && strcmp(mode, "mooneye") != 0 &&
-                             strcmp(mode, "acid") != 0)))
+                             strcmp(mode, "acid") != 0 && strcmp(mode, "frames") != 0)))
         return usage();
     bool acid = mode && strcmp(mode, "acid") == 0;
-    if (acid && !expect_path) {
-        fprintf(stderr, "el modo acid necesita --expect\n");
+    bool frames_mode = mode && strcmp(mode, "frames") == 0;
+    if ((acid || frames_mode) && !expect_path) {
+        fprintf(stderr, "los modos acid y frames necesitan --expect\n");
+        return 2;
+    }
+    struct input_event inputs[MAX_INPUTS];
+    int n_inputs = 0;
+    if (input_script && (n_inputs = parse_input(input_script, inputs)) < 0) {
+        fprintf(stderr, "--input no válido: %s\n", input_script);
         return 2;
     }
     static uint8_t expect[FB_BYTES], frame[FB_BYTES];
@@ -192,6 +295,9 @@ int main(int argc, char **argv)
     const char *reason = "se alcanzó --max-frames";
     long frame_no = 0;
     for (; frame_no < max_frames; frame_no++) {
+        for (int i = 0; i < n_inputs; i++)
+            if (inputs[i].frame == frame_no)
+                gb_set_buttons(g, inputs[i].mask);
         gb_run_frame(g);
         if (strcmp(mode, "serial") == 0) {
             if (strstr(log->text, "Passed")) { result = 0; reason = "serie: Passed"; break; }
@@ -212,7 +318,7 @@ int main(int argc, char **argv)
                 reason = msg;
             }
             break;
-        } else if (!acid && g->dbg.ld_b_b) {
+        } else if (strcmp(mode, "mooneye") == 0 && g->dbg.ld_b_b) {
             static const uint8_t fib[6] = { 3, 5, 8, 13, 21, 34 };
             result = memcmp(g->dbg.regs, fib, sizeof fib) == 0 ? 0 : 1;
             reason = result == 0 ? "mooneye: registros Fibonacci" : "mooneye: registros de fallo";
@@ -221,6 +327,20 @@ int main(int argc, char **argv)
         if (gb_cpu_locked(g)) { reason = "CPU bloqueada (opcode ilegal)"; break; }
     }
 
+    if (frames_mode) {
+        framebuffer_bytes(g, frame);
+        size_t diff = 0;
+        for (size_t i = 0; i < FB_BYTES; i += 4)
+            diff += memcmp(frame + i, expect + i, 4) != 0;
+        static char fmsg[80];
+        if (diff == 0) {
+            result = 0;
+            reason = "frames: framebuffer idéntico a la referencia";
+        } else {
+            snprintf(fmsg, sizeof fmsg, "frames: %zu píxeles distintos", diff);
+            reason = fmsg;
+        }
+    }
     if (dump_path) {
         framebuffer_bytes(g, frame);
         FILE *f = fopen(dump_path, "wb");

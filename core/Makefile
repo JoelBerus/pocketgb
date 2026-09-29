@@ -32,7 +32,7 @@ $(BUILD)/libpocketgb.a: $(OBJS)
 
 $(BUILD)/gbtest: $(SRCS) $(TEST_SRCS) include/pocketgb.h $(wildcard src/*.h src/*.inc tests/*.h)
 	@mkdir -p $(BUILD)
-	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) $(INC) $(SRCS) $(TEST_SRCS) -o $@
+	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) -DGB_TEST_HOOKS $(INC) $(SRCS) $(TEST_SRCS) -o $@
 
 check-roms:
 	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba: ejecuta tools/fetch-test-roms.sh"; exit 1; }
@@ -43,15 +43,16 @@ test: check-roms $(BUILD)/gbtest
 asan: check-roms
 	$(MAKE) BUILD=$(BUILD)/asan EXTRA="$(SAN)" CFLAGS="-O1 -g" test
 
-fuzz:
-	@mkdir -p $(BUILD)
+fuzz: $(BUILD)/gbtest
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load
 	@printf 'int LLVMFuzzerTestOneInput(const unsigned char*d,unsigned long n){(void)d;(void)n;return 0;}' > $(BUILD)/probe.c
 	@$(CC) -fsanitize=fuzzer $(BUILD)/probe.c -o $(BUILD)/probe 2>/dev/null || { \
 	  echo "Este clang no trae libFuzzer (el de Apple no lo incluye)."; \
 	  echo "macOS: brew install llvm && make fuzz CC=\$$(brew --prefix llvm)/bin/clang"; exit 1; }
+	$(BUILD)/gbtest --fuzz-seeds fuzz/corpus
 	@for f in fuzz/fuzz_*.c; do \
 	  n=$$(basename $$f .c); mkdir -p fuzz/corpus/$$n; \
-	  $(CC) -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined $(INC) $$f $(SRCS) -o $(BUILD)/$$n || exit 1; \
+	  $(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) $$f $(SRCS) -o $(BUILD)/$$n || exit 1; \
 	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) -max_len=1048576 fuzz/corpus/$$n || exit 1; \
 	done
 
