@@ -23,11 +23,16 @@ final class EmulatorSession: @unchecked Sendable {
     private var parked = false
     private var finished = false
     private var saveFailed = false
+    private var confirmed: Data?           // último contenido que está en disco (o se cargó)
 
     // Solo del hilo de emulación.
-    private var dirtySinceFirst: UInt64?   // ticks del primer cambio sin guardar
-    private var dirtyLast: UInt64 = 0      // ticks del último "juego guardó"
-    private var lastSaved: Data?           // contenido del último .sav escrito o cargado
+    private var ticksPerSecond = 1.0
+    private var dirtyLast: UInt64?         // último "juego guardó" aún sin escribir
+    private var lastCheck: UInt64 = 0      // último flush (para la red de seguridad)
+    private var lastQueued: Data?          // último contenido encolado
+    #if DEBUG
+    private var failAsyncWrites = false    // `-failAsyncSaves`: toda escritura asíncrona falla (prueba H6)
+    #endif
 
     private static let debounceSeconds = 1.0
     private static let safetyNetSeconds = 60.0
@@ -97,10 +102,19 @@ final class EmulatorSession: @unchecked Sendable {
     private func run() {
         var timebase = mach_timebase_info_data_t()
         mach_timebase_info(&timebase)
-        let ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
+        ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
         let frameTicks = Self.frameSeconds * ticksPerSecond
         var deadline = Double(mach_absolute_time())
-        if saves != nil { lastSaved = try? core.sramSave() } // lo que ya hay en disco (o la RAM inicial)
+        if saves != nil {
+            // Lo que ya hay en disco (o la RAM inicial si no había .sav).
+            lastQueued = try? core.sramSave()
+            control.lock(); confirmed = lastQueued; control.unlock()
+            lastCheck = mach_absolute_time()
+            #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            failAsyncWrites = args.contains("-failAsyncSaves")
+            #endif
+        }
 
         while true {
             control.lock()
@@ -124,15 +138,15 @@ final class EmulatorSession: @unchecked Sendable {
             }
             if saveFailed {
                 saveFailed = false
-                lastSaved = nil // forzar la reescritura
-                if dirtySinceFirst == nil { dirtySinceFirst = mach_absolute_time() }
+                lastQueued = nil // forzar la reescritura
+                dirtyLast = mach_absolute_time() // reintento tras el debounce
             }
             control.unlock()
 
             core.setButtons(buttons.value)
             core.runFrame()
             frames.publish { core.copyFramebuffer(to: $0) }
-            checkSRAM(ticksPerSecond: ticksPerSecond)
+            checkSRAM()
 
             // Pacing por reloj hasta que llegue el audio (M5).
             deadline += frameTicks
@@ -151,31 +165,35 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
-    /// Debounce de 1,0 s tras cada "juego guardó" y red de seguridad de 60 s (docs/04 §Saves).
-    private func checkSRAM(ticksPerSecond: Double) {
+    /// Debounce de 1,0 s tras cada "juego guardó" y red de seguridad de 60 s
+    /// (docs/04 §Saves). La red no depende del flanco: un juego puede escribir la
+    /// SRAM y dejarla habilitada; `flushSRAM` compara y solo escribe si cambió.
+    private func checkSRAM() {
         guard saves != nil else { return }
         let now = mach_absolute_time()
         if core.sramDirty {
             core.clearSRAMDirty()
             dirtyLast = now
-            if dirtySinceFirst == nil { dirtySinceFirst = now }
         }
-        guard let first = dirtySinceFirst else { return }
-        let sinceLast = Double(now - dirtyLast) / ticksPerSecond
-        let sinceFirst = Double(now - first) / ticksPerSecond
-        if sinceLast >= Self.debounceSeconds || sinceFirst >= Self.safetyNetSeconds {
+        if let last = dirtyLast, seconds(now - last) >= Self.debounceSeconds {
+            flushSRAM(sync: false)
+        } else if seconds(now - lastCheck) >= Self.safetyNetSeconds {
             flushSRAM(sync: false)
         }
     }
 
+    private func seconds(_ ticks: UInt64) -> Double { Double(ticks) / ticksPerSecond }
+
     /// Copia la SRAM aquí (hilo de emulación) y la escribe en la cola de guardado.
-    /// El flush síncrono (pausa, background, salida) no depende del flanco "el juego
-    /// guardó": un juego puede escribir la SRAM y no deshabilitarla todavía. Por eso
-    /// compara siempre con lo último escrito y guarda si difiere (incluye el RTC).
+    /// - Asíncrono: se compara con lo último encolado.
+    /// - Síncrono (pausa, background, salida): primero se vacía la cola y se compara
+    ///   con lo último **confirmado en disco**, así una escritura asíncrona que falló
+    ///   justo antes se reintenta aquí y no se pierde (auditoría M4, H6).
     private func flushSRAM(sync: Bool) {
         guard let saves else { return }
         if core.sramDirty { core.clearSRAMDirty() }
-        dirtySinceFirst = nil
+        dirtyLast = nil
+        lastCheck = mach_absolute_time()
         let data: Data
         do {
             data = try core.sramSave()
@@ -183,18 +201,32 @@ final class EmulatorSession: @unchecked Sendable {
             log.error("gb_sram_save falló: \(String(describing: error), privacy: .public)")
             return
         }
-        guard data != lastSaved else {
-            if sync { saveQueue.sync {} } // espera a escrituras ya encoladas
-            return
+        if sync {
+            saveQueue.sync {}
+            control.lock()
+            let onDisk = confirmed
+            control.unlock()
+            guard data != onDisk else { return }
+        } else {
+            guard data != lastQueued else { return }
         }
-        lastSaved = data
+        lastQueued = data
+        #if DEBUG
+        let injectFailure = failAsyncWrites && !sync
+        #else
+        let injectFailure = false
+        #endif
         let write: @Sendable () -> Void = { [self] in
             do {
+                if injectFailure { throw CocoaError(.fileWriteUnknown) }
                 try saves.save(data)
+                control.lock()
+                confirmed = data
+                control.unlock()
             } catch {
                 log.error("No se pudo guardar la partida: \(error.localizedDescription, privacy: .public)")
                 control.lock()
-                saveFailed = true // se reintenta en el próximo ciclo
+                saveFailed = true // se reintenta en el próximo ciclo o en el próximo flush síncrono
                 control.unlock()
             }
         }

@@ -53,7 +53,29 @@ Simulador, ROM `blargg/dmg_sound/rom_singles/01-registers.gb` (MBC1+RAM+BATTERY;
 2. Reabrir con el mismo contenido → background: no se crea `backups/` (sin cambios, sin rotación).
 3. Alterar el byte 19 del `.sav` (`P`→`X`), reabrir (el test lo reescribe) → background: `.sav` actual con `Passed` y `backups/c6b9….1.sav` con `Xassed` (el anterior, intacto).
 
-## 5. Pendiente de Joel (criterio 3, en el iPhone)
+## 5. Vuelta 2 de Codex: H1 (red de 60 s sin flanco) y H6 (fallo asíncrono antes de pausar)
+Mismo ROM y simulador, build Debug. Guion: instalar, borrar `Saves/`, T1 = abrir y esperar sin tocar nada; T2 = abrir con el argumento solo-DEBUG `-failAsyncSaves` (toda escritura asíncrona falla; las síncronas no), esperar 65 s y pasar a background. Salida real:
+```
+== T1: red de seguridad de 60 s (sin background)
+t=30s:
+t=65s:
+c6b9fa4b9d9d26919b33ebe78a6ef19a.sav
+00000010: 0a0a 0a50 6173 7365 640a 0000 0000 0000  ...Passed.......
+== T2: escritura de los 60 s falla (-failAsyncSaves: toda escritura asíncrona falla) y luego background
+t=65s (red de 60 s + reintentos, todos fallidos):
+tras background:
+c6b9fa4b9d9d26919b33ebe78a6ef19a.sav
+00000010: 0a0a 0a50 6173 7365 640a 0000 0000 0000  ...Passed.......
+2026-09-29 08:54:00.794 E  PocketGB[70686:21f24b] [com.joelbermudez.pocketgb:session] No se pudo guardar la partida: El archivo no ha podido guardarse.
+2026-09-29 08:54:01.810 E  PocketGB[70686:21f412] [com.joelbermudez.pocketgb:session] No se pudo guardar la partida: El archivo no ha podido guardarse.
+2026-09-29 08:54:02.842 E  PocketGB[70686:21f24b] [com.joelbermudez.pocketgb:session] No se pudo guardar la partida: El archivo no ha podido guardarse.
+2026-09-29 08:54:03.855 E  PocketGB[70686:21f412] [com.joelbermudez.pocketgb:session] No se pudo guardar la partida: El archivo no ha podido guardarse.
+2026-09-29 08:54:04.876 E  PocketGB[70686:21f412] [com.joelbermudez.pocketgb:session] No se pudo guardar la partida: El archivo no ha podido guardarse.
+```
+- T1: a los 30 s no hay `.sav` (sin flanco, sin debounce); a los 65 s la red de seguridad lo escribió sin pasar a background.
+- T2: a los 60 s falla la escritura asíncrona y se reintenta cada ~1 s (todas fallan, sin `.sav`). Al pasar a background, el flush síncrono vacía la cola, compara con lo **confirmado en disco** (no con lo encolado) y escribe: `.sav` correcto.
+
+## 6. Pendiente de Joel (criterio 3, en el iPhone)
 - dmg-acid2 correcto en el iPhone.
 - Pokémon Rojo llega al menú y responde a los botones.
 - Girar a horizontal: escala entera y controles translúcidos superpuestos (no probado en el simulador).
