@@ -1,0 +1,109 @@
+# 04 · Especificación iOS
+
+iOS 17.0+, Swift 6 (strict concurrency), SwiftUI, sin dependencias externas. Bundle ID: `com.joelbermudez.pocketgb` (cámbialo si ya existe en tu Personal Team).
+
+## Proyecto Xcode (paso manual de Joel, una vez, en M4)
+1. Xcode → *File › New › Project › iOS App*. Nombre `PocketGB`, interfaz SwiftUI, lenguaje Swift, sin Core Data ni tests por ahora. Guardar en `pocketgb/ios/`.
+2. En el navegador del proyecto, borrar el grupo `PocketGB` generado y arrastrar la carpeta `ios/PocketGB/` como **carpeta sincronizada** (Xcode 16+, icono de carpeta azul). Así, cualquier `.swift` que añada el agente entra al target sin editar `project.pbxproj`.
+3. Añadir `core/src` al target como carpeta sincronizada también. En *Build Settings*:
+   - `HEADER_SEARCH_PATHS = $(SRCROOT)/../core/include`
+   - `SWIFT_INCLUDE_PATHS = $(SRCROOT)/../core/include` (para el `module.modulemap`)
+   - `GCC_C_LANGUAGE_STANDARD = c11`
+   - `OTHER_CFLAGS = -Wall -Wextra`
+4. *Signing & Capabilities*: Team = tu Personal Team (Apple ID). **No añadir la capability iCloud** (no está disponible con una cuenta gratuita y no hace falta).
+5. *Deployment target* 17.0. *Supported orientations*: Portrait, Landscape Left, Landscape Right. *Requires full screen* = YES.
+
+## Estructura de fuentes (`ios/PocketGB/`)
+```
+App/        PocketGBApp.swift, AppState.swift
+Library/    LibraryView.swift, LibraryStore.swift (bookmark + escaneo), RomEntry.swift
+Emulator/   EmulatorSession.swift (hilo), CoreBridge.swift (wrapper seguro de pocketgb.h),
+            FrameBuffers.swift (triple buffer), RingBuffer.swift (SPSC int16)
+Video/      GameMetalView.swift (UIViewRepresentable), Renderer.swift, Shaders.metal
+Audio/      AudioOutput.swift (AVAudioEngine + AVAudioSourceNode)
+Input/      ControlsOverlayView.swift (UIView multitouch), ControlsLayout.swift,
+            GamepadInput.swift (GameController), Haptics.swift
+Saves/      SaveStore.swift, StateStore.swift, AtomicFile.swift
+Settings/   SettingsView.swift, Settings.swift
+Resources/  Assets.xcassets, Info.plist
+```
+
+## Info.plist (claves exigidas)
+- `UIFileSharingEnabled = YES` y `LSSupportsOpeningDocumentsInPlace = YES`: la carpeta de la app se ve en Archivos (útil para sacar saves a mano).
+- `UIRequiresFullScreen = YES`, `UIStatusBarHidden = YES`.
+- `UIBackgroundModes`: **ninguno**. El audio se detiene en background.
+- **Prohibido**: `NSAppTransportSecurity`, `NSLocalNetworkUsageDescription` o cualquier clave de red. La auditoría hace grep de `URLSession|Network|NWConnection|http` en `ios/`.
+
+## Pantalla de juego
+- **Horizontal:**
+  - La imagen del juego va centrada, escalada al entero máximo que quepa en el alto o, si en Ajustes se elige "llenar", con ajuste de aspecto 10:9 no entero. Fondo negro.
+  - Los controles van **superpuestos** en los laterales, encima de la imagen si se solapan.
+- **Vertical:** imagen arriba (ancho completo, 10:9), controles debajo sobre fondo sólido y con opacidad 1.0.
+- `prefersHomeIndicatorAutoHidden = true` y `preferredScreenEdgesDeferringSystemGestures = .all` mientras se juega, para que un toque en el borde no abra el Centro de Control.
+- El renderizado usa `MTLSamplerState` con `minFilter = magFilter = .nearest` y una textura `.rgba8Unorm` de 160×144, actualizada con `replace(region:)` desde el último buffer listo.
+
+## Controles translúcidos (requisito explícito de Joel)
+Una sola `UIView` (`ControlsOverlayView`) con `isMultipleTouchEnabled = true` gestiona **todos** los toques. No se usan `UIButton` ni gestos de SwiftUI, porque no permiten deslizar entre botones ni pulsar A y B a la vez de forma fiable.
+
+| Elemento | Posición en horizontal (relativa al safe area) | Forma |
+|---|---|---|
+| D-pad | Centro en (18 % ancho, 62 % alto), radio 70 pt | Círculo; dirección por ángulo |
+| A | (88 %, 55 %), radio 34 pt | Círculo |
+| B | (78 %, 68 %), radio 34 pt | Círculo |
+| A+B | Zona entre A y B, radio 18 pt | Invisible; pulsa ambos |
+| Start / Select | (54 %, 92 %) / (46 %, 92 %), 60×24 pt | Píldora |
+| Menú | Esquina superior central, 36 pt | Icono ☰; abre pausa |
+| Avance rápido | Junto a Menú | Mantener = ×N; doble toque = fijo |
+
+- **Opacidad:** en reposo 0.30 y 0.60 al pulsar (animación de 80 ms). Configurable en Ajustes entre 0.10 y 0.80. La opacidad se aplica al **dibujo**, no a la vista, así el hit-testing sigue igual.
+- **Estilo:** relleno blanco con la opacidad indicada, borde de 1,5 pt al doble de opacidad y letras (A, B, START, SELECT) con la misma opacidad que el borde. Se dibuja con `CAShapeLayer` y no con imágenes, para que no se pixele.
+- **D-pad por ángulo:** vector del toque al centro. Si la distancia es menor que el 25 % del radio (zona muerta), no se pulsa nada. Si no, se toma el ángulo en 8 sectores de 45°, de modo que las diagonales pulsan 2 direcciones. **Nunca** se generan direcciones opuestas.
+- **Seguimiento de toques:** `[UITouch: Control]`. En `touchesMoved` se recalcula el control bajo cada toque, lo que permite deslizar de B a A o rodar el pulgar en el D-pad. El D-pad "captura" el toque que empezó en él hasta que se levanta, aunque salga de su radio (ampliado ×1,5).
+- **Salida:** máscara `UInt8`, publicada con un atómico (`Synchronization.Atomic<UInt8>`) que el hilo de emulación lee cada frame.
+- **Háptica:** `UIImpactFeedbackGenerator(style: .light)` al pasar de no pulsado a pulsado. Desactivable.
+- **Editor de disposición (M7):** en Ajustes se pueden arrastrar los controles y guardar sus posiciones relativas por orientación.
+
+## Mandos físicos
+`GameController`: `GCController.controllers()` más las notificaciones de conexión. Mapeo: cruceta y stick izquierdo → D-pad; A/B siguiendo la **posición** del GB (botón derecho = A, inferior = B, configurable); Menu → Start; Options → Select. Con un mando conectado, la superposición se oculta. La máscara del mando se combina (OR) con la táctil.
+
+## Biblioteca (iCloud Drive sin capability iCloud)
+1. En el primer arranque, "Elegir carpeta de juegos" abre `UIDocumentPickerViewController(forOpeningContentTypes: [.folder])`.
+2. Con la URL elegida: `startAccessingSecurityScopedResource()`, se crea `bookmarkData(options: .minimalBookmark)` y se guarda en `UserDefaults`.
+3. En cada arranque o regreso a foreground, se resuelve el bookmark (si `isStale`, se regenera) y se enumeran los `.gb`/`.gbc` con `FileManager.enumerator` a 1 nivel de profundidad.
+4. Los archivos de iCloud aún no descargados (`.icloud` placeholder, `ubiquitousItemDownloadingStatus != .current`) se muestran con icono de nube. Al tocarlos se llama `FileManager.startDownloadingUbiquitousItem(at:)` y se espera con `NSFileCoordinator`.
+5. Cada ROM se lee completo en memoria con `NSFileCoordinator(readingItemAt:)` y se pasa a `gb_load_rom`. Se rechazan archivos de más de 8 MiB.
+6. Cada entrada muestra el título de la cabecera, CGB sí/no, el tipo de MBC, un aviso si el checksum no coincide (A15) y la fecha del último save.
+
+Android equivalente: [05](05-android-spec.md) §Biblioteca.
+
+## Saves (A5): la parte que no puede fallar
+**Cuándo se guarda la SRAM:**
+1. **Guardado del juego detectado:** `gb_sram_dirty()` es verdadero después de un frame. Se hace flush a los 1,0 s con debounce, en una cola serie de guardado (no en el hilo de emulación). Antes se copia la SRAM al buffer de guardado dentro del hilo de emulación.
+2. **`scenePhase` pasa a `.inactive` o `.background`:** flush síncrono, con `beginBackgroundTask` si hace falta.
+3. **Salir del juego al menú:** flush síncrono.
+4. **Red de seguridad:** cada 60 s, si hay datos sucios.
+
+**Cómo se guarda (`AtomicFile`):**
+1. Escribir `<huella>.sav.tmp` y hacer `fsync` (`FileHandle.synchronize()`).
+2. Rotar backups: `.4`→`.5`, …, `.1`→`.2`, y el actual→`.1`. **Solo** si el contenido nuevo difiere del actual (compara SHA-256), para que 5 backups no sean 5 copias iguales.
+3. `rename(tmp, <huella>.sav)` con `FileManager.replaceItemAt`, que es atómico.
+4. Espejo en iCloud: con `NSFileCoordinator(writingItemAt: rom.deletingPathExtension().appendingPathExtension("sav"), options: .forReplacing)`. Si falla (sin acceso a la carpeta), se registra y se reintenta en el próximo guardado. **La copia local es la autoritativa.**
+
+**Carga al abrir un ROM:**
+1. Se usa el `.sav` local por huella.
+2. Si no existe, el `.sav` junto al ROM en iCloud. Esto permite importar partidas de otro emulador o de un volcado del cartucho.
+3. Si existen los dos y difieren, se usa el más reciente por `modificationDate`, pero **antes** se guarda el otro como backup.
+4. Un tamaño incorrecto no se carga: se muestra un error y el archivo no se toca.
+
+**Restaurar:** Ajustes › Partidas lista los backups con fecha y permite restaurar uno. Antes de restaurar, se crea un backup de la partida actual.
+
+## Save states (M7)
+4 slots por juego más un slot "auto" al salir. Se guardan en `Application Support/States/` con `AtomicFile`. Un save state **nunca** sustituye a la SRAM: al cargar un estado, la SRAM del estado pasa a ser la actual y se guarda con la ruta normal, con su backup.
+
+## Audio
+`AVAudioSession` en categoría `.ambient`, para respetar el interruptor de silencio (configurable a `.playback`). `AVAudioEngine` + `AVAudioSourceNode` a 48 kHz en estéreo `Float32`. El callback convierte `int16` a float desde el `RingBuffer`. Las interrupciones (llamadas, Siri) pausan la emulación y al terminar se reanuda en pausa, no jugando.
+
+## Ciclo de vida
+- `background`: pausar la emulación, hacer flush de la SRAM y detener el motor de audio.
+- `foreground`: volver a escanear la biblioteca. El juego queda en pausa hasta que Joel toque "Continuar".
+- Si hay memoria baja (`didReceiveMemoryWarning`), se guarda y se sigue.

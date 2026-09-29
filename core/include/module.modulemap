@@ -1,0 +1,4 @@
+module PocketGBCore {
+    header "pocketgb.h"
+    export *
+}

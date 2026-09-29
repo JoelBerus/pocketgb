@@ -1,0 +1,29 @@
+# ROMs, partidas y estados: NUNCA al repo (ver docs/08-roms-legal.md)
+*.gb
+*.gbc
+*.sgb
+*.sav
+*.rtc
+*.state
+*.ss[0-9]
+*.zip
+*.7z
+# ROMs de prueba descargadas por tools/fetch-test-roms.sh
+core/tests/roms/
+tools/oracle/SameBoy/
+# Build
+build/
+*.o
+*.a
+*.dSYM/
+core/fuzz/corpus/
+core/fuzz/crash-*
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+# Android
+android/**/build/
+android/.gradle/
+android/local.properties
+.DS_Store
