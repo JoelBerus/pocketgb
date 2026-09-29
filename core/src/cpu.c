@@ -8,12 +8,32 @@
 #include "internal.h"
 
 /* Accesos de la CPU que el hardware no deja pasar (leen 0xFF, no escriben):
- * - OAM DMA copiando: OAM y el bus del origen (VRAM o el externo: ROM/SRAM/WRAM);
- *   E/S y HRAM siguen accesibles (docs/03-core-spec.md §Mapa de memoria).
+ * - OAM DMA copiando: OAM y el bus del origen. En CGB, cartucho y WRAM son
+ *   buses separados; en DMG comparten el bus externo. E/S y HRAM siguen
+ *   accesibles (docs/03-core-spec.md §Mapa de memoria).
  * - PPU: VRAM en modo 3; OAM en modos 2 y 3. */
 static inline bool on_vram_bus(uint16_t addr)
 {
     return addr >= 0x8000 && addr < 0xA000;
+}
+
+static inline bool on_cart_bus(uint16_t addr)
+{
+    return addr < 0x8000 || (addr >= 0xA000 && addr < 0xC000);
+}
+
+static inline bool on_wram_bus(uint16_t addr)
+{
+    return addr >= 0xC000 && addr < 0xFE00;
+}
+
+static inline bool same_dma_bus(const gb *g, uint16_t addr)
+{
+    if (!g->cgb.on)
+        return on_vram_bus(addr) == on_vram_bus(g->dma.src);
+    return (on_vram_bus(addr) && on_vram_bus(g->dma.src)) ||
+           (on_cart_bus(addr) && on_cart_bus(g->dma.src)) ||
+           (on_wram_bus(addr) && on_wram_bus(g->dma.src));
 }
 
 static inline bool bus_blocked(const gb *g, uint16_t addr)
@@ -21,7 +41,7 @@ static inline bool bus_blocked(const gb *g, uint16_t addr)
     if (addr >= 0xFF00 || (addr < 0x8000 && !g->dma.bus_busy))
         return false;   /* camino rápido: ROM y E/S/HRAM */
     if (g->dma.bus_busy) {
-        if (addr >= 0xFE00 || on_vram_bus(addr) == on_vram_bus(g->dma.src))
+        if (addr >= 0xFE00 || same_dma_bus(g, addr))
             return true;
     }
     if (on_vram_bus(addr))
