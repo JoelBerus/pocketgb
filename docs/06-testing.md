@@ -52,12 +52,14 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - flancos del timer
 - round-trip de save states (guardar → cargar → mismo framebuffer tras N frames)
 - rechazo de estados corruptos
+- cable link virtual (`unit_link.c`, M9): deriva del lockstep tras 10⁶ bloques, causalidad en el primer flanco, cable suelto y reentrada, intercambio de bytes entre dos ROMs sintéticos (DMG, CGB con reloj rápido, doble velocidad, compatibilidad), framebuffer sin cortes y realineado tras recarga o save state
 
 ## Sanitizers y fuzzing
 - `make asan`: todo lo anterior compilado con `-fsanitize=address,undefined -fno-omit-frame-pointer`.
-- `make fuzz`: dos fuzzers en `core/fuzz/`:
+- `make fuzz`: tres fuzzers en `core/fuzz/`:
   - `fuzz_load_rom.c`: los bytes son el ROM. Se carga, se ejecutan 30 frames con botones pseudoaleatorios derivados de los bytes, se hace el round-trip de SRAM y de save state (un estado recién guardado **tiene** que cargar: si no, `abort()`) y se destruye. Si el archivo es corto para lo que declara, se repite rellenándolo con ceros (máx. 1 MiB) para que la CPU ejecute código arbitrario.
   - `fuzz_state_load.c`: carga un ROM sintético (MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only según el primer byte) y después `gb_state_load` con los bytes: (1) tal cual; (2) con cabecera y CRC corregidos; (3) **mutación estructurada**: cada 4 bytes son (sección, desplazamiento, desplazamiento, valor) y se **asigna** ese byte dentro de la sección elegida de un estado válido de la instancia (en secciones de más de 256 bytes, solo en sus primeros o últimos 32), con el CRC recalculado, para llegar a combinaciones de campos incoherentes; (4) los bytes como `.sav` (RAM + bloque RTC) en `gb_sram_load` y después `gb_rtc_set_time`. Tras cada carga aceptada se ejecutan frames.
+  - `fuzz_link.c` (M9): dos instancias con código arbitrario (tras un prólogo que escribe SB y SC) conectadas por el cable virtual, con modelo por lado, save state, recarga del ROM y desconexión a mitad según el primer byte. Además de ASan/UBSan comprueba el lockstep (`|t_a - t_b| ≤ 44` tras cada frame) y que no se cuelga.
   - `make fuzz` genera antes unas semillas (`gbtest --fuzz-seeds fuzz/corpus`, ignoradas por git) y compila con `-fno-sanitize-recover=all` para que cualquier UB sea un crash.
 - **Importante:** el clang de Apple **no incluye libFuzzer**. En macOS, `brew install llvm` y `make fuzz CC=$(brew --prefix llvm)/bin/clang`. En Linux (Claude en la nube) sirve el clang del sistema. El Makefile detecta la falta de libFuzzer y lo explica.
 - Criterio de M3: `FUZZ_SECONDS=600` por fuzzer sin crash, leak ni UB.

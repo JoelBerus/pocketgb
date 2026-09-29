@@ -8,9 +8,13 @@
 - **Reentrada:** mientras se avanza al par dentro del callback, un `serial_bit_cb` del par (ambos con reloj interno, caso indefinido en hardware) devuelve `1` sin tocar al maestro. Un flag del host lo marca.
 - **Tests:** (a) deriva: instrucciones de 4 y 24 T-ciclos, tras 10⁶ vueltas `|t_a - t_b| ≤ 44`; (b) causalidad: el esclavo activa `SC=0x80` entre el inicio del bloque y el primer flanco del maestro, y el byte se transfiere completo; (c) sin esclavo activo el maestro recibe `0xFF`.
 
+**Núcleo (hecho, rama `m9-link-virtual`):** `core/src/link.c` con la API `gb_link_*` de `pocketgb.h` (documentada en [03-core-spec](../03-core-spec.md) §Serial → Cable link virtual). Además del diseño de arriba: desplazamiento de reloj por instancia (se pueden conectar con tiempos distintos), en cada bloque corre primero el lado con reloj interno (así el par siempre está detrás del maestro en un pulso), realineado automático tras `gb_load_rom`/`gb_state_load`, el `serial_byte_cb` del llamador se sigue llamando, y un framebuffer de respaldo por lado copiado al entrar en VBlank (`gb_link_framebuffer`: sin cortes aunque el avance termine a mitad de pantalla). Tests en `core/tests/unit_link.c`, fuzzer `core/fuzz/fuzz_link.c`. Evidencia: [M9-evidencia](../auditorias/M9-evidencia.md).
+
+**Para la app (🍎):** crear el cable una vez (`gb_link_create`), `gb_link_attach(l, rojo, amarillo)` tras cargar los dos ROMs, `gb_link_run_frame(l)` en lugar de `gb_run_frame` en cada tick, pintar `gb_link_framebuffer(l, 0|1)`, leer el audio solo del juego activo, y `gb_link_detach` antes de `gb_destroy`. Todo en el hilo de emulación.
+
 **UI:** pantalla dividida (dos juegos, uno arriba y otro abajo, controles con selector de a qué juego se envían), o bien alternar con un botón. El audio se toma solo del juego activo.
 
 **Criterios de aceptación**
-- [ ] Test headless: dos instancias con un ROM de prueba serie (homebrew) intercambian bytes correctamente.
+- [x] Test headless: dos instancias con un ROM de prueba serie (homebrew) intercambian bytes correctamente. *Cumplido con ROMs sintéticos generados en el test (`unit_link.c`, `exchange`): 16 bytes en cada sentido, 32/32, en 11 combinaciones (DMG↔DMG con el maestro en cada lado, CGB con reloj rápido, doble velocidad frente a velocidad normal, rápido + doble velocidad, compatibilidad↔DMG y CGB↔compatibilidad); más los tests (a) deriva ≤ 44 tras 10⁶ bloques (medido 20), (b) causalidad y (c) 0xFF sin esclavo. Entre las ROMs de prueba libres no hay ninguna de serie entre dos instancias. Salida en [M9-evidencia](../auditorias/M9-evidencia.md).*
 - [ ] iPhone: intercambio completo de un Pokémon entre una partida Roja y una Amarilla; Kadabra evoluciona.
 - [ ] Las dos SRAM se guardan con la ruta normal de M6 tras el intercambio.

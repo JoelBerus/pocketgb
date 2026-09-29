@@ -103,6 +103,24 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 - `opts.serial_byte_cb(user, byte)`: notificación al completar un byte (lo usan las pruebas Blargg para leer la salida). No sustituye al callback por bit.
 - Para M9, las dos instancias avanzan con `gb_run_cycles` en bloques ≤ 456 T-ciclos. El callback por bit del maestro llama a `gb_serial_clock_external` del esclavo.
 
+### Cable link virtual (M9, `link.c`)
+Helper para que la app conecte dos instancias en el mismo hilo sin programar el lockstep ella misma:
+```c
+gb_link *l = gb_link_create();          // única reserva (contexto + 2 framebuffers de respaldo)
+gb_link_attach(l, rojo, amarillo);      // tras gb_load_rom; cualquiera puede ser NULL (cable suelto)
+gb_link_run_frame(l);                   // = gb_link_run_cycles(l, GB_CYCLES_PER_FRAME)
+gb_link_framebuffer(l, 0 | 1);          // último frame completo de cada lado, sin cortes
+gb_link_detach(l); gb_link_destroy(l);  // antes de gb_destroy de las instancias
+```
+- **Tiempo del cable** `T`: T-ciclos de tiempo real desde `gb_link_attach`. Cada instancia guarda un desplazamiento (`local_i = gb_cycle_count(g_i) + offset_i`), así que pueden llevar tiempos distintos al conectarse.
+- **Deadline absoluto:** `T += GB_LINK_BLOCK_CYCLES` (456, una línea); cada instancia con `local_i < T` ejecuta `gb_run_cycles(g_i, T - local_i)`. El exceso de la última instrucción no se acumula. Tras cada bloque, `T ≤ local_i` y `|local_a - local_b| ≤ 44` (medido: 20 con NOP frente a CALL tras 10⁶ bloques).
+- **Causalidad:** el `serial_bit_cb` que instala el cable, en cada pulso del maestro y **antes** de entregar el bit, adelanta al otro extremo hasta el instante del pulso y después llama a `gb_serial_clock_external(par, bit)`. Un `SC=0x80` que el esclavo escriba entre el inicio del bloque y el flanco ya cuenta, y uno escrito después no se adelanta. Para que el par esté detrás del maestro, en cada bloque corre primero el lado con reloj interno seleccionado (`SC` bit 0). Si el par estuviera más de 4 bloques por detrás (relojes desalineados), no se le adelanta dentro del callback.
+- **Reentrada:** mientras se adelanta al par dentro de un pulso, un pulso del par (los dos con reloj interno, indefinido en el hardware) recibe `1` sin tocar al maestro. Sin par o sin transferencia externa activa, el maestro recibe `0xFF`.
+- **Callbacks del llamador:** el cable sustituye `serial_bit_cb` y `serial_user` de cada instancia; el `serial_byte_cb` original se sigue llamando con su `user`, y `gb_link_detach` lo devuelve todo como estaba. Tras `gb_load_rom` o `gb_state_load` en una instancia conectada, el siguiente avance reinstala los callbacks y realinea su reloj con `T` (si queda fuera de `[T, T + 912]`), sin ráfagas largas.
+- **Framebuffers:** `gb_link_run_frame` avanza tiempo fijo y puede terminar a mitad de pantalla. El cable copia el framebuffer de cada lado al entrar en VBlank (la PPU no lo toca hasta la línea 0, 4560 T-ciclos después), y con el LCD apagado copia la pantalla actual al final del avance. La app muestra `gb_link_framebuffer`, no `gb_framebuffer`.
+- **Audio:** cada instancia llena su propio anillo; la app lee solo el del juego activo (el del otro se descarta al llenarse, contador `dropped`).
+- Sin estado global ni estático mutable; el avance no reserva memoria. `gb_link_run_cycles` no es reentrante (llamarlo desde un callback devuelve 0).
+
 ## MBC
 | MBC | Registros | Detalles que suelen fallar |
 |---|---|---|
