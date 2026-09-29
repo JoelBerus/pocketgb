@@ -29,6 +29,53 @@ static gb *load_cgb(uint8_t flag, gb_model model, const uint8_t *prog, size_t le
     return g;
 }
 
+static void oam_dma_bus_pair(struct ut *t, uint8_t flag, gb_model model, bool separate_buses)
+{
+    /* DMA WRAM→OAM: en CGB la CPU puede seguir ejecutando desde ROM. */
+    static const uint8_t rom_prog[] = {
+        0x3E, 0xC0,       /* LD A,C0 */
+        0xE0, 0x46,       /* LDH (46),A */
+        0x3E, 0x42,       /* LD A,42 */
+        0xE0, 0x80,       /* LDH (80),A */
+        0x18, 0xFE        /* JR -2 */
+    };
+    gb *g = load_cgb(flag, model, rom_prog, sizeof rom_prog);
+    CHECK(t, g != NULL);
+    if (g) {
+        g->mem.hram[0] = 0;
+        gb_run_cycles(g, 60);
+        CHECK(t, g->mem.hram[0] == (separate_buses ? 0x42 : 0x00));
+        gb_destroy(g);
+    }
+
+    /* DMA ROM→OAM: código en HRAM puede leer WRAM en CGB. */
+    static const uint8_t hram_prog[] = {
+        0x3E, 0x00,             /* LD A,00 */
+        0xE0, 0x46,             /* LDH (46),A */
+        0xFA, 0x00, 0xC0,       /* LD A,(C000) */
+        0xE0, 0x90,             /* LDH (90),A */
+        0x18, 0xFE              /* JR -2 */
+    };
+    g = load_cgb(flag, model, loop_prog, sizeof loop_prog);
+    CHECK(t, g != NULL);
+    if (g) {
+        memcpy(g->mem.hram, hram_prog, sizeof hram_prog);
+        g->mem.hram[0x10] = 0;
+        g->mem.wram[0] = 0x42;
+        g->cpu.pc = 0xFF80;
+        gb_run_cycles(g, 60);
+        CHECK(t, g->mem.hram[0x10] == (separate_buses ? 0x42 : 0xFF));
+        gb_destroy(g);
+    }
+}
+
+static void oam_dma_buses(struct ut *t)
+{
+    oam_dma_bus_pair(t, 0x80, GB_MODEL_CGB, true);    /* CGB nativo */
+    oam_dma_bus_pair(t, 0x00, GB_MODEL_CGB, true);    /* compatibilidad */
+    oam_dma_bus_pair(t, 0x00, GB_MODEL_DMG, false);   /* DMG conserva el bus compartido */
+}
+
 static void model_and_boot(struct ut *t)
 {
     gb_rom_info info;
@@ -361,6 +408,7 @@ static void audit_regressions(struct ut *t)
 
 void unit_cgb(struct ut *t)
 {
+    oam_dma_buses(t);
     audit_regressions(t);
     model_and_boot(t);
     banks_and_palettes(t);

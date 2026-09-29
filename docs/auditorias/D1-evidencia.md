@@ -32,14 +32,14 @@ Build Release (`log-tail.txt`): `** BUILD SUCCEEDED **` para `Release-iphonesimu
 | Assets light/dark con los nombres de SPEC | ✅ 12 color sets; `DesignTokensTests` comprueba que existen y que los adaptativos cambian en oscuro |
 | Sin `.blur`, `UIBlurEffect` ni materiales | ✅ sección 1 |
 | Sin GBA, L/R, cheats ni artwork online | ✅ sección 1 y capturas |
-| Las doce capturas existen y sin clipping | ✅ sección 4 |
+| Las once capturas existen y sin clipping (`launch` solo dark; Codex M8-D1 H2) | ✅ sección 4 |
 | `ScreenshotTests` falla con un ID desconocido | ✅ el router muestra `debug-unknown-screen` y el test lo comprueba |
 | Router DEBUG excluido de Release | ✅ build Release en el CI |
 
 ## 4. Revisión visual (cada PNG, 1206×2622, iPhone 17 Pro simulado)
 | Captura | Resultado |
 |---|---|
-| launch · light / dark | ✅ Glifo centrado sobre `GameplayBackground`, sin texto ni spinner. Las dos son oscuras, como pide SPEC |
+| launch · dark | ✅ Glifo centrado sobre `GameplayBackground`, sin texto ni spinner (la variante light se quitó: SPEC lo pide siempre oscuro) |
 | library-no-folder · light | ✅ Título grande, icono, explicación, CTA "Elegir carpeta" con vidrio prominente, tab bar nativa y botón `…`. Sin "Abrir ROM" |
 | library-no-folder · dark | ✅ Mismo contenido; el CTA usa el acento oscuro `#5A96FF` |
 | library-empty · light / dark | ✅ Nombra la carpeta, explica el estado y ofrece "Volver a escanear" y "Cambiar carpeta" |
