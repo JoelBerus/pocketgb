@@ -1,21 +1,21 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Rechaza ROMs, partidas y binarios con cabecera de cartucho Game Boy.
 # Activar una vez: git config core.hooksPath .githooks
+# Las rutas se procesan delimitadas por NUL (soporta espacios y saltos de línea).
 fail=0
-tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
-git diff --cached --name-only -z --diff-filter=ACMR | tr '\0' '\n' > "$tmp"
-while IFS= read -r f; do
-  case "$(printf %s "$f" | tr '[:upper:]' '[:lower:]')" in
+while IFS= read -r -d '' f; do
+  lower="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
     *.gb|*.gbc|*.sgb|*.sav|*.rtc|*.state|*.zip|*.7z)
-      echo "pre-commit: bloqueado '$f' (ROM/partida/archivo comprimido)"; fail=1; continue;;
+      printf 'pre-commit: bloqueado %q (ROM/partida/archivo comprimido)\n' "$f"; fail=1; continue;;
   esac
   # Logo de Nintendo en 0x104: firma de cualquier ROM de Game Boy, sin importar la extensión.
   sz=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
   if [ "$sz" -ge 336 ]; then
-    sig=$(git show ":$f" | dd bs=1 skip=260 count=4 2>/dev/null | xxd -p)
+    sig=$(git cat-file blob ":$f" | dd bs=1 skip=260 count=4 2>/dev/null | xxd -p)
     if [ "$sig" = "ceed6666" ]; then
-      echo "pre-commit: bloqueado '$f' (contiene cabecera de cartucho Game Boy)"; fail=1
+      printf 'pre-commit: bloqueado %q (contiene cabecera de cartucho Game Boy)\n' "$f"; fail=1
     fi
   fi
-done < "$tmp"
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
 exit $fail

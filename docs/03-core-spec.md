@@ -20,7 +20,7 @@ Estado post-boot (Pan Docs → *Power Up Sequence*):
 | H / L | `0x01` / `0x4D` | `0x00` / `0x0D` | `0x991A` si B ∈ {`0x43`, `0x58`}; si no, `0x007C` |
 | SP / PC | `0xFFFE` / `0x0100` | `0xFFFE` / `0x0100` | `0xFFFE` / `0x0100` |
 
-Verificación: Mooneye `acceptance/boot_regs-dmgABC.gb` (requerido en M1) y `misc/boot_regs-cgb.gb` (M8). Pokémon Rojo tiene licencia Nintendo (`0x33` + `"01"`), así que en compatibilidad **B depende del título**: hay que implementar la regla, no un valor fijo.
+Verificación: Mooneye `acceptance/boot_regs-dmgABC.gb` (requerido en M1) y `misc/boot_regs-cgb.gb` (M8; es un ROM DMG en CGB y espera `A=11 F=80 B=00 C=00 D=00 E=08 H=00 L=7C`). La nota "F según `INC B`" de Pan Docs aplica **solo** al AGB, no al CGB. Pokémon Rojo tiene licencia Nintendo (`0x33` + `"01"`), así que en compatibilidad **B depende del título**: hay que implementar la regla, no un valor fijo.
 
 Los registros de E/S se inicializan con la tabla *Hardware registers* de la misma página, por modelo (p. ej. `LCDC=0x91`, `STAT=0x85`, `BGP=0xFC`, `IF=0xE1`, `NR52=0xF1`, `DIV` interno según el modelo). Los juegos detectan GBC por `A == 0x11`; Amarillo lo usa para activar color.
 

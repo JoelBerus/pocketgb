@@ -12,3 +12,12 @@
 | M0-08 | corregido | OAM DMA: en DMG solo HRAM; en CGB, conflicto solo en el bus del origen. |
 | M0-09 | corregido | `GB_ERR_OUT_OF_MEMORY`; la instancia queda válida y sin ROM. Test con fallo de reserva inyectado. |
 | M0-10 | corregido | `cloud-setup.sh` revalida `clang make ar nm python3 git curl unzip xxd` tras instalar y sale con código ≠ 0 si falta alguna. Las ROMs de prueba solo generan aviso. |
+
+# Vuelta 2 (Codex: RECHAZAR)
+
+| ID | Decisión | Qué se hizo |
+|---|---|---|
+| M0-05 (reabierto) | corregido | Nueva secuencia con invariante "siempre existe un `.sav` completo": el actual se **copia** a `.1` (nunca se mueve) y el nuevo se instala con un único `rename(2)`, que reemplaza atómicamente y también cubre el primer guardado. Tests de fallo inyectado tras cada paso (04 §Saves, M6). |
+| M0-04 (reabierto) | **descartado**, con evidencia | La nota "F según `INC B`" de Pan Docs está en la columna **AGB (DMG mode)**. La columna CGB (DMG mode) dice `Z=1 N=0 H=0 C=0` = `0x80`. El propio test `misc/boot_regs-cgb.s` hace `assert_f $80` sobre un ROM DMG (`0x143=0x00`, B=0). Evidencia en M0-evidencia.md §6. Se aclara en 03 §Arranque. |
+| M0-11 | corregido | M9 usa deadline absoluto (`T += 456`; cada instancia corre `T - t_i` y acumula lo devuelto), así la deriva queda acotada a ≤ 44 T-ciclos. Test con instrucciones de 4 y 24 T-ciclos. |
+| M0-12 | corregido | Hook en bash con `read -r -d ''` sobre `git diff -z`. Probado con un nombre que contiene un salto de línea (M0-evidencia.md §5). |

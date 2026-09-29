@@ -31,3 +31,25 @@ tools/cloud-setup.sh: OK
 tools/fetch-test-roms.sh: OK
 .githooks/pre-commit: OK
 ```
+
+## 5. Vuelta 2: el hook con un nombre que contiene salto de línea (M0-12)
+```
+$ git add -- $'rom\nnueva.txt'   # 400 bytes con CE ED 66 66 en 0x104
+pre-commit: bloqueado $'rom\nnueva.txt' (contiene cabecera de cartucho Game Boy)
+exit=1
+```
+
+## 6. Vuelta 2: valores esperados por boot_regs-cgb (M0-04)
+```
+$ curl -sL https://raw.githubusercontent.com/Gekkio/mooneye-test-suite/main/misc/boot_regs-cgb.s | grep assert_
+  assert_a $11
+  assert_f $80
+  assert_b $00
+  assert_c $00
+  assert_d $00
+  assert_e $08
+  assert_h $00
+  assert_l $7C
+$ xxd -s 0x143 -l 1 core/tests/roms/mooneye-test-suite/misc/boot_regs-cgb.gb   # 0x00 = ROM DMG → compatibilidad
+00000143: 00                                       .
+```
