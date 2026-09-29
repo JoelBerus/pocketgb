@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. Siguiente: **D2** (biblioteca por carpeta y saves). **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
+**Actualizado:** 2026-09-29 · M4, M5, M8 y **D1 (☁️) cerrados**. **D2 (☁️) implementado** en la rama `claude/amazing-babbage-lgip5y` (auditoría Opus 2 rondas; falta la auditoría local con Codex, la prueba en el iPhone y el merge). **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -16,11 +16,22 @@
 
 - D1 (☁️): design system (12 colores claro/oscuro, espaciado, radios, motion), shell de tres tabs nativas (Biblioteca, Favoritos, Ajustes) con minimización, Ajustes en `Form` (Apariencia, Acerca de con licencias y privacidad sin red), router DEBUG (`-screen`, `-demo*`) excluido de Release (el CI compila Release) y 12 capturas de catálogo. Hasta D2, "Abrir un archivo…" (menú `…` de Biblioteca) abre un ROM suelto. Auditoría Opus: APROBAR CON CAMBIOS → H1–H6 corregidos. Evidencia: `docs/auditorias/D1-*`. Probado por Joel en su iPhone (2026-09-29): tabs con Liquid Glass, launch oscuro, barra de estado, abrir un archivo y apariencia, todo bien.
 
+- D2 (☁️, sin fusionar): biblioteca por carpeta (bookmark `.minimalBookmark`, escaneo coordinado fuera del hilo principal, `.gb`/`.gbc` a profundidad 1, > 8 MiB y cabeceras inválidas como error, estados de iCloud y descarga al tocar, reescaneo en foreground, aviso de juegos nuevos); saves con espejo `<rom>.sav` junto al ROM (la local manda; decisión pura `SaveResolution` aplicada por `SaveOpening`; espejo de iCloud sin descargar nunca se toca y, sin partida local, el juego no se abre; `.sav` de tamaño incorrecto nunca se sobrescribe; cuarentena fuera de la rotación); Ajustes › Partidas con backups y restauración que respalda antes. Se retira el "Abrir un archivo…" de D1. Auditoría Opus: RECHAZAR (H1: espejo sin descargar) → APROBAR CON CAMBIOS → N1–N5 corregidos. Evidencia: `docs/auditorias/D2-*`.
+
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
 - **En la nube (☁️), dos líneas independientes:**
-  1. **Diseño de la app, [D2](hitos/D-README.md) (siguiente; D1 cerrado):** Leer antes [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Cada lote: push → CI (~8 min) → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Un push por lote (minutos macOS limitados). No tocar `Emulator/`, `Audio/` ni `Saves/` salvo lo que pida el hito. Trampa conocida de Swift 6: un closure que se ejecuta en otro hilo (audio, callbacks de sistema) no puede crearse dentro de un método `@MainActor` (ver M5-ios-respuesta H0).
+  0. **Auditoría local de D2 con Codex (en el Mac), antes del merge:** la rama `claude/amazing-babbage-lgip5y` contiene `main` actual + D2 (solo `ios/` y docs). Comando:
+     ```bash
+     git fetch origin && git checkout claude/amazing-babbage-lgip5y && git pull
+     codex exec --sandbox read-only "$(cat docs/auditorias/PROMPT.md)
+     Hito: D2 en docs/hitos/D-README.md §4 (sustituye a M6: docs/hitos/M6-biblioteca-saves.md, docs/04-ios-spec.md §Biblioteca y §Saves).
+     Revisa el diff: git diff origin/main...HEAD. Prioridad: regla dura 6 (SaveOpening, SaveResolution, SaveMirror, SaveTarget, SaveStore, EmulatorSession.init).
+     Evidencia: docs/auditorias/D2-evidencia.md; auditoría previa: D2-opus.md y D2-respuesta.md." > docs/auditorias/D2-codex.md
+     ```
+     Después, en el iPhone, los puntos de `D2-evidencia.md` §5 (carpeta real de iCloud, cierre forzado tras guardar, reinstalar y recuperar desde el espejo, `.sav` visible junto al ROM, restaurar una copia).
+  1. **Diseño de la app, [D3](hitos/D-README.md) (tras fusionar D2):** Leer antes [diseno/SPEC.md](diseno/SPEC.md), [diseno/VERIFICACION.md](diseno/VERIFICACION.md) y [diseno/API-iOS26.md](diseno/API-iOS26.md) (firmas reales del SDK: no inventar APIs). Cada lote: push → CI (~8 min) → revisar `ci-shots/<rama>` (SUMMARY + cada PNG) → corregir. Un push por lote (minutos macOS limitados). No tocar `Emulator/`, `Audio/` ni `Saves/` salvo lo que pida el hito. Trampa conocida de Swift 6: un closure que se ejecuta en otro hilo (audio, callbacks de sistema) no puede crearse dentro de un método `@MainActor` (ver M5-ios-respuesta H0).
   2. ~~M9 (núcleo)~~ cerrado 2026-09-29: auditorías Opus y Codex corregidas, fuzz-link de 600 s en la nube sin crashes (3159 ejecuciones, `docs/auditorias/M9-evidencia.md`). Pendiente 🍎: UI del cable (pantalla dividida o alternar) e intercambio Rojo ↔ Amarillo en el iPhone. La app debe usar `gb_link_framebuffer` y llamar a `gb_link_detach` antes de `gb_destroy`.
   3. ~~Corrección de M8 (buses de OAM DMA en CGB)~~ hecha en `main` (Codex implementó, Opus: APROBAR).
   4. ~~M8~~ cerrado. Siguiente hito de núcleo: [M9](hitos/M9-link-virtual.md) (cable virtual), cuando Joel lo pida.
