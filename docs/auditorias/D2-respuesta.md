@@ -41,3 +41,20 @@
 | A1 | **corregido** | `SaveStore` mantiene junto a la copia local un registro JSON atómico (escrito con `AtomicFile`, máximo 8 huellas SHA-256) de contenidos propios del espejo. Usa una entrada write-ahead y la confirma al terminar la escritura, de modo que también cubre la muerte del proceso entre el reemplazo remoto y la confirmación local. `SaveOpening` reconoce esos contenidos: si difieren de la local, la local gana, no se crea un backup espurio y se reencola al espejo; un contenido no reconocido conserva la resolución por fecha y el backup del perdedor. `MirrorChannelRegistry` comparte una única cola/coalescer por huella de ROM, así dos sesiones del mismo juego no pueden escribir el espejo fuera de orden. Los tests `staleOwnedMirrorCannotReplaceNewerLocalWhenGameReopens` y `newerExternalMirrorWinsAndBacksUpLocal` cubren ambos caminos con E/S real. |
 | A2 | **corregido** | `AppState.enterBackground()` conserva la `UIApplication` background task después de `session.pause()`: `EmulatorSession.whenMirrorIdle` la termina cuando el canal del espejo deja de tener una escritura en vuelo, o UIKit la termina mediante el expiration handler. `end()` sigue siendo idempotente y ambos callbacks se fabrican en `nonisolated static` para no heredar `@MainActor` en Swift 6. |
 | A3 | **corregido** | El test `synchronousSessionFlushDoesNotWaitForBlockedRealMirror` crea una `EmulatorSession` real con un ROM sintético libre que escribe SRAM, un `SaveMirror` real y solo el escritor remoto inyectado/bloqueado. Verifica la barrera auténtica `flushSRAM(sync:)`/`localSaveQueue`: `pause()` termina y la copia local atómica contiene el byte escrito mientras el espejo continúa bloqueado. El test anterior de coalescing también usa ahora un espejo no nulo, como producción. |
+
+### Revisión de Claude del WIP de Codex (`d5eeeae`) y correcciones
+Codex dejó marcados A1–A3 como corregidos sin llegar a compilar el target de tests. Revisé el diff completo (`git diff cf62b31 d5eeeae`):
+- **Qué está bien, y se mantiene:**
+  - El registro write-ahead de huellas propias (`recordMirrorAttempt` → escritura → `recordSuccessfulMirror`, JSON con AtomicFile, máximo 8).
+  - La regla "espejo propio ≠ local ⇒ gana la local sin backup espurio", comprobada después de las validaciones de tamaño.
+  - El canal del espejo compartido por huella (`MirrorChannelRegistry`) y `whenMirrorIdle` para la background task.
+  - La barrera local de `flushSRAM(sync:)`, que no espera al espejo.
+
+| # | Problema encontrado | Corrección |
+|---|---|---|
+| W1 | El target de tests no compilaba: `try #require(store.load())` con `load()` que lanza. | `try #require(try store.load())`. |
+| W2 | `staleOwnedMirrorCannotReplaceNewerLocalWhenGameReopens` se habría colgado. Al reabrir, `retryMirrorIfNeeded(d2)` volvía a encolar el mismo contenido que ya se estaba escribiendo; el canal lo habría escrito dos veces y la segunda escritura se habría quedado esperando un semáforo que nadie señala. En producción era una escritura redundante del espejo. | `MirrorChannel` guarda el contenido en vuelo (`inFlight`) y no reencola el mismo contenido si no hay otro pendiente. Si esa escritura falla, `drain` la reencola igual que antes. |
+| W3 | El inicializador con escritor inyectado creaba el canal aunque `mirror` fuera `nil`. En tests, un espejo ignorado o sin descargar se habría escrito igualmente; en producción no afectaba (no se inyecta escritor). | Sin espejo no hay canal, igual que en el inicializador de producción. |
+| W4 | El expiration handler de la background task terminaba la tarea con un `Task` asíncrono. UIKit lo llama en el hilo principal y exige terminarla antes de volver; si no, iOS puede matar la app. | `makeExpirationHandler`: en el hilo principal, `MainActor.assumeIsolated { task.end() }`; si no, salta al actor principal. `whenMirrorIdle` sigue usando `makeEndHandler`, porque llega desde la cola del espejo. |
+
+La verificación (build, tests y capturas) corresponde al CI del runner propio sobre este lote: `ci-shots/d2-a1-wip`. Ver `D2-evidencia.md`.

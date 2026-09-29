@@ -302,6 +302,8 @@ private final class MirrorChannel: @unchecked Sendable {
     private let queue: DispatchQueue
     private let lock = NSLock()
     private var pendingRequest: Request?
+    /// Contenido que se está escribiendo ahora (fuera del lock).
+    private var inFlight: Data?
     private var workerRunning = false
     private var needsRetry = false
     private var idleCallbacks: [@Sendable () -> Void] = []
@@ -325,6 +327,12 @@ private final class MirrorChannel: @unchecked Sendable {
 
     func enqueue(_ request: Request) {
         lock.lock()
+        // El mismo contenido que ya se está escribiendo no se repite: si esa escritura
+        // falla, ella misma se reencola (ver `drain`).
+        if pendingRequest == nil, inFlight == request.data {
+            lock.unlock()
+            return
+        }
         pendingRequest = request
         needsRetry = true
         let shouldStart = !workerRunning
@@ -335,7 +343,7 @@ private final class MirrorChannel: @unchecked Sendable {
 
     func retryIfNeeded(_ request: Request) {
         lock.lock()
-        guard needsRetry else {
+        guard needsRetry, !(pendingRequest == nil && inFlight == request.data) else {
             lock.unlock()
             return
         }
@@ -370,6 +378,7 @@ private final class MirrorChannel: @unchecked Sendable {
                 return
             }
             pendingRequest = nil
+            inFlight = request.data
             lock.unlock()
 
             do {
@@ -378,8 +387,12 @@ private final class MirrorChannel: @unchecked Sendable {
                 try request.store.recordMirrorAttempt(request.data)
                 try request.writer(request.data)
                 try request.store.recordSuccessfulMirror(request.data)
+                lock.lock()
+                inFlight = nil
+                lock.unlock()
             } catch {
                 lock.lock()
+                inFlight = nil
                 let newerRequestExists = pendingRequest != nil
                 if !newerRequestExists { pendingRequest = request }
                 needsRetry = true
@@ -420,7 +433,9 @@ final class SaveTarget: @unchecked Sendable {
         self.local = local
         self.mirror = mirror
         self.mirrorWriter = mirrorWriter
-        mirrorChannel = MirrorChannelRegistry.shared.channel(for: local.fingerprint)
+        // Sin espejo no hay canal, igual que en producción: un escritor inyectado nunca
+        // escribe un espejo que la sesión decidió no tocar (ignorado o sin descargar).
+        mirrorChannel = mirror == nil ? nil : MirrorChannelRegistry.shared.channel(for: local.fingerprint)
         if mirrorPending { mirrorChannel?.markNeedsRetry() }
     }
 

@@ -286,7 +286,7 @@ struct SaveMirrorTests {
         session.pause()
         #expect(blocked.started.wait(timeout: .now() + 2) == .success)
         let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
-        let saved = try #require(store.load())
+        let saved = try #require(try store.load())
         #expect(saved.count == 8 * 1024)
         #expect(saved[0] == 0x42)
 

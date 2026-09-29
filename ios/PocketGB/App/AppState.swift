@@ -11,7 +11,7 @@ private final class LocalSaveBackgroundTask {
     func begin() {
         identifier = UIApplication.shared.beginBackgroundTask(
             withName: "Guardar partida",
-            expirationHandler: Self.makeEndHandler(self))
+            expirationHandler: Self.makeExpirationHandler(self))
     }
 
     func end() {
@@ -20,10 +20,25 @@ private final class LocalSaveBackgroundTask {
         identifier = .invalid
     }
 
+    /// Para el espejo en reposo: llega desde su cola serie, así que salta al actor principal.
     nonisolated static func makeEndHandler(
         _ task: LocalSaveBackgroundTask
     ) -> @Sendable () -> Void {
         { Task { @MainActor in task.end() } }
+    }
+
+    /// UIKit llama a la expiración en el hilo principal y exige terminar la tarea
+    /// antes de volver; si no, iOS puede matar la app. Se termina en el acto.
+    nonisolated static func makeExpirationHandler(
+        _ task: LocalSaveBackgroundTask
+    ) -> @Sendable () -> Void {
+        {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { task.end() }
+            } else {
+                Task { @MainActor in task.end() }
+            }
+        }
     }
 }
 
