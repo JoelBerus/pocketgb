@@ -20,6 +20,10 @@ final class ScreenshotTests: XCTestCase {
             guard parts.count >= 3 else { XCTFail("Línea inválida: \(line)"); continue }
             let (name, orientation, style) = (parts[0], parts[1], parts[2])
             let args = parts.dropFirst(3).map { $0.replacingOccurrences(of: "$FIXTURES", with: fixtures) }
+            // El nombre de la captura es el id de SPEC §9 que abre `-screen` (auditoría D1, H3).
+            if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
+                XCTAssertEqual(name, args[i + 1], "El nombre no coincide con -screen en: \(line)")
+            }
 
             let app = XCUIApplication()
             app.launchArguments = ["-uiStyle", style] + args
@@ -31,6 +35,9 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 3) // deja correr la emulación y las animaciones
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
+            // Un `-screen` que el router DEBUG no conoce es un error del catálogo.
+            XCTAssertFalse(app.descendants(matching: .any)["debug-unknown-screen"].exists,
+                           "Pantalla desconocida en screens.txt: \(name)")
 
             let shot = XCUIScreen.main.screenshot()
             let file = "\(name)-\(orientation)-\(style).png"

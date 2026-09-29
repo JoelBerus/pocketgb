@@ -171,7 +171,6 @@ ios/PocketGBUITests/screens.txt
 ### Capturas añadidas
 
 ```text
-launch              portrait light -screen launch -uiStyle light
 launch              portrait dark  -screen launch -uiStyle dark
 library-no-folder   portrait light -screen library-no-folder -demoFolderState none -uiStyle light
 library-no-folder   portrait dark  -screen library-no-folder -demoFolderState none -uiStyle dark
@@ -202,7 +201,7 @@ El launch se captura mediante preview DEBUG. El launch screen real sigue definid
 - Assets light/dark existen con los nombres de SPEC.
 - No hay `.blur`, `UIBlurEffect` ni materiales que imiten vidrio.
 - No aparecen GBA, L/R, cheats ni artwork online.
-- Las doce capturas existen y no presentan clipping.
+- Las once capturas existen y no presentan clipping (`launch` solo en oscuro; corregido tras la auditoría Codex M8-D1 H2).
 - `ScreenshotTests` falla si un ID es desconocido.
 - El router DEBUG queda excluido de Release.
 

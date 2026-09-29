@@ -27,7 +27,7 @@ jobs:
       - name: ROMs de prueba (libres, hash verificado)
         run: tools/fetch-test-roms.sh
       - name: Núcleo
-        run: make -C core test HITO=M5
+        run: make -C core test HITO=M8
       - name: App, tests y capturas
         id: shots
         run: tools/ios-screenshots.sh build/screenshots
