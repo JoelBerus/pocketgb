@@ -109,8 +109,10 @@ def main():
     blocking, rows = 0, []
     for case in cases:
         ok, detail, dt = run_case(a.bin, case, a.timeout, workdir)
-        hito, rom, modo, _, _, tipo, ref, _ = case
+        hito, rom, modo, modelo, _, tipo, ref, _ = case
         name = "unit tests" if modo == "unit" else os.path.relpath(rom, a.roms)
+        if modelo == "cgb":
+            name += " (cgb)"      # la misma ROM puede correr en DMG y en CGB
         if ref and os.path.basename(rom) != os.path.basename(ref).split("-dmg")[0] + ".gb":
             name += f" [{os.path.basename(ref)}]"   # misma ROM, varias referencias
         status = "PASS" if ok else "FAIL"

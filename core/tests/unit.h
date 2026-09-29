@@ -30,6 +30,7 @@ void ut_fix_header_checksum(uint8_t *rom);
 
 void unit_apu(struct ut *t);
 void unit_cart(struct ut *t);
+void unit_cgb(struct ut *t);
 void unit_cpu(struct ut *t);
 void unit_ppu(struct ut *t);
 void unit_sha256(struct ut *t);

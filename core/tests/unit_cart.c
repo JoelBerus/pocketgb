@@ -44,8 +44,12 @@ static void header_errors(struct ut *t, gb *g)
     }
     rom[0x147] = 0x00;
 
+    /* Solo-CGB: se rechaza si se pide DMG; con AUTO corre en CGB (unit_cgb.c). */
     rom[0x143] = 0xC0;
-    CHECK(t, load(g, rom, 0x8000) == GB_ERR_CGB_ONLY);
+    gb_options dmg;
+    gb_options_default(&dmg);
+    dmg.model = GB_MODEL_DMG;
+    CHECK(t, gb_load_rom(g, rom, 0x8000, &dmg) == GB_ERR_CGB_ONLY);
     CHECK(t, gb_rom_info_get(g, &info) == GB_ERR_NO_ROM);
     rom[0x143] = 0x00;
 

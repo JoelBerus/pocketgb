@@ -18,7 +18,7 @@ gbtest <rom> --mode blargg [--wav out.wav]   # salida por RAM (A000) de dmg_soun
 gbtest --fuzz-seeds DIR    # semillas para make fuzz
 gbtest --unit              # unit tests (core/tests/unit_*.c)
 ```
-Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. Desde M2 existen todos los modos; `--model cgb` llega en M8. Ejemplo: `tools/png2rgba.py ref.png ref.rgba && build/gbtest dmg-acid2.gb --mode acid --expect ref.rgba --dump out.rgba && tools/png2rgba.py --reverse out.rgba out.png`.
+Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. Desde M2 existen todos los modos; desde M8, `--model dmg|cgb|auto` (por defecto `dmg`; `cgb` con un ROM DMG = compatibilidad). Ejemplo: `tools/png2rgba.py ref.png ref.rgba && build/gbtest dmg-acid2.gb --mode acid --expect ref.rgba --dump out.rgba && tools/png2rgba.py --reverse out.rgba out.png`.
 | Suite | Condición de salida | Éxito |
 |---|---|---|
 | Blargg (`cpu_instrs`, `instr_timing`, `mem_timing`) | La salida serie contiene `Passed` o `Failed`, o se alcanza `--max-frames` | Contiene `Passed` |

@@ -73,7 +73,7 @@ static void state_tests(struct ut *t)
     s2[0] = 'X';
     CHECK(t, gb_state_load(h, s2, n) == GB_ERR_STATE_MAGIC);
     memcpy(s2, s, n);
-    put32(s2 + 4, 3);
+    put32(s2 + 4, 2);                                 /* v2 (antes de M8): se rechaza */
     CHECK(t, gb_state_load(h, s2, n) == GB_ERR_STATE_VERSION);
     memcpy(s2, s, n);
     s2[100] ^= 0x01;                                  /* CRC alterado */
@@ -117,7 +117,7 @@ static void state_tests(struct ut *t)
     CHECK(t, gb_state_load(h, s2, n) == GB_OK);
     CHECK(t, h->ppu.mode == 0 && h->ppu.next_event == 456);
     gb_run_frame(h);                                    /* con ASan: sin desborde */
-    h->ppu.dot = 450;                                   /* dot no múltiplo de 4 */
+    h->ppu.dot = 451;                                   /* dot impar (pasos de 4, o de 2 en doble velocidad) */
     CHECK(t, gb_state_save(h, s2, n) == GB_OK && gb_state_load(g, s2, n) == GB_ERR_STATE_CORRUPT);
     h->ppu.dot = 0;
     h->ppu.mode3_end = 100;                             /* modo 3 imposible */

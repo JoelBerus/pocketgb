@@ -57,7 +57,9 @@ uint8_t serial_read(const gb *g, uint16_t addr)
 {
     if (addr == 0xFF01)
         return g->serial.sb;
-    return (uint8_t)(0x7E | g->serial.sc); /* DMG: solo bits 7 y 0 */
+    if (cgb_native(g))
+        return (uint8_t)(0x7C | g->serial.sc); /* CGB: bits 7, 1 (reloj rápido) y 0 */
+    return (uint8_t)(0x7E | g->serial.sc);     /* DMG: solo bits 7 y 0 */
 }
 
 void serial_write(gb *g, uint16_t addr, uint8_t v)
@@ -66,7 +68,7 @@ void serial_write(gb *g, uint16_t addr, uint8_t v)
         g->serial.sb = v;
         return;
     }
-    g->serial.sc = v & 0x81;
+    g->serial.sc = v & (cgb_native(g) ? 0x83 : 0x81);
     if (v & 0x80)
         g->serial.bits = 0;
 }

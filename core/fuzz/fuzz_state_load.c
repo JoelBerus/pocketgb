@@ -1,7 +1,8 @@
 /*
  * fuzz_state_load.c — libFuzzer: gb_state_load con bytes arbitrarios sobre un
- * ROM sintético: MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only según el primer
- * byte de la entrada, para cubrir todas las variantes de la sección CART.
+ * ROM sintético: MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only, en DMG, CGB
+ * nativo o CGB en compatibilidad, según el primer byte de la entrada, para
+ * cubrir todas las variantes de las secciones CART y CGB.
  *
  * 1) Los bytes tal cual (magic, versión, CRC, huella…).
  * 2) Los mismos bytes con la cabecera y el CRC corregidos, para llegar al
@@ -36,8 +37,13 @@ static gb *fixed_instance(uint8_t selector)
     memcpy(rom + 0x150, prog, sizeof prog);
     rom[0x147] = types[selector % 4][0];   /* MBC3+RTC / MBC1 / MBC5 / ROM-only */
     rom[0x149] = types[selector % 4][1];
+    unsigned model = (selector / 4u) % 3u;  /* DMG / CGB nativo / compatibilidad */
+    rom[0x143] = model == 1 ? 0x80 : 0x00;
+    gb_options o;
+    gb_options_default(&o);
+    o.model = model == 0 ? GB_MODEL_DMG : GB_MODEL_CGB;
     gb *g = gb_create();
-    if (g && gb_load_rom(g, rom, SIZE, NULL) != GB_OK) {
+    if (g && gb_load_rom(g, rom, SIZE, &o) != GB_OK) {
         gb_destroy(g);
         g = NULL;
     }
@@ -126,9 +132,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         if (s) {
             memcpy(s, data, size);
             memcpy(s, "PGBS", 4);
-            put32(s + 4, 2);   /* versión actual del formato */
+            put32(s + 4, 3);   /* versión actual del formato */
             memcpy(s + 8, g->info.fingerprint, 32);
-            put32(s + 40, 1);
+            put32(s + 40, !g->cgb.on ? 1 : g->cgb.compat ? 3 : 2);   /* modelo de la instancia */
             put32(s + size - 4, crc32_update(0, s, size - 4));
             if (gb_state_load(g, s, size) == GB_OK)
                 run_frames(g);

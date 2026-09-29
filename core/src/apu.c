@@ -205,12 +205,12 @@ static void control_write(struct gb_apu *a, int ch, uint8_t v)
         trigger(a, ch);
 }
 
-static void power_off(struct gb_apu *a)
+static void power_off(struct gb_apu *a, bool cgb)
 {
     for (int i = 0; i < 4; i++) {
         uint16_t len = a->ch[i].length;   /* DMG: los contadores de longitud se conservan */
         memset(&a->ch[i], 0, sizeof a->ch[i]);
-        a->ch[i].length = len;
+        a->ch[i].length = cgb ? 0 : len;  /* CGB: también se borran */
     }
     memset(a->regs, 0, WAVE);             /* todo salvo la wave RAM */
     a->sweep_timer = 0;
@@ -246,7 +246,7 @@ void apu_write(gb *g, uint16_t addr, uint8_t v)
     }
     if (i == NR52) {
         if (a->power && !(v & 0x80)) {
-            power_off(a);
+            power_off(a, g->cgb.on);
         } else if (!a->power && (v & 0x80)) {
             a->power = true;
             a->fs_step = 0;
@@ -257,7 +257,9 @@ void apu_write(gb *g, uint16_t addr, uint8_t v)
         return;
     }
     if (!a->power) {
-        /* DMG: apagado solo se pueden escribir los contadores de longitud. */
+        /* DMG: apagado solo se pueden escribir los contadores de longitud (en CGB, nada). */
+        if (g->cgb.on)
+            return;
         if (i == NR11 || i == NR21 || i == NR41)
             a->ch[i == NR11 ? 0 : i == NR21 ? 1 : 3].length = (uint16_t)(64 - (v & 0x3F));
         else if (i == NR31)

@@ -5,7 +5,8 @@
  * 2) Si el archivo es corto para lo que declara, se rellena con ceros hasta el
  *    tamaño declarado (máx. 1 MiB) para que la CPU ejecute código arbitrario.
  * En ambos casos: 30 frames con botones derivados de los bytes, y los caminos
- * de SRAM y save state (guardar → cargar).
+ * de SRAM y save state (guardar → cargar). El modelo (auto / DMG / CGB) sale
+ * del byte 0x14C, así que un ROM DMG también corre en compatibilidad.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     gb_options o;
     gb_options_default(&o);
     o.unix_time = 1700000000;
+    if (size > 0x14C)
+        o.model = (gb_model)(data[0x14C] % 3);
+    if (size > 0x14E)
+        o.compat_palette = data[0x14E] % (GB_COMPAT_PALETTES + 2);
     gb_result r = gb_load_rom(g, data, size, &o);
     if (r == GB_OK) {
         exercise(g, data, size);

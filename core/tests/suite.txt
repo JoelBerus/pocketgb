@@ -89,3 +89,40 @@ M5|blargg/dmg_sound/rom_singles/11-regs after power.gb|blargg|dmg|600|requerido
 M5|blargg/dmg_sound/rom_singles/09-wave read while on.gb|blargg|dmg|600|known-fail
 M5|blargg/dmg_sound/rom_singles/10-wave trigger while on.gb|blargg|dmg|600|known-fail
 M5|blargg/dmg_sound/rom_singles/12-wave write while on.gb|blargg|dmg|600|known-fail
+
+# ---- M8: Game Boy Color (requeridos por docs/06-testing.md) ----
+# boot_regs-cgb es un ROM DMG en CGB: arranque en compatibilidad.
+M8|mooneye-test-suite/misc/boot_regs-cgb.gb|mooneye|cgb|1200|requerido
+M8|cgb-acid2/cgb-acid2.gbc|acid|cgb|600|requerido|cgb-acid2/cgb-acid2.png
+M8|dmg-acid2/dmg-acid2.gb|acid|cgb|600|requerido|dmg-acid2/dmg-acid2-cgb.png
+# ---- M8: extras que ya pasan (CGB nativo y compatibilidad) ----
+M8|mooneye-test-suite/misc/boot_div-cgbABCDE.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/misc/bits/unused_hwio-C.gb|mooneye|cgb|1200|requerido
+M8|blargg/cpu_instrs/cpu_instrs.gb|serial|cgb|4000|requerido
+M8|blargg/instr_timing/instr_timing.gb|serial|cgb|600|requerido
+M8|blargg/mem_timing/mem_timing.gb|serial|cgb|600|requerido
+M8|blargg/mem_timing-2/mem_timing.gb|blargg|cgb|600|requerido
+# interrupt_time es solo-CGB y mide interrupciones en doble velocidad.
+M8|blargg/interrupt_time/interrupt_time.gb|frames|cgb|200|requerido|blargg/interrupt_time/interrupt_time-cgb.png
+M8|blargg/halt_bug.gb|frames|cgb|200|requerido|blargg/halt_bug-dmg-cgb.png
+M8|blargg/cgb_sound/rom_singles/0[1-8]*.gb|blargg|cgb|2000|requerido
+M8|blargg/cgb_sound/rom_singles/1[01]*.gb|blargg|cgb|2000|requerido
+M8|mooneye-test-suite/acceptance/timer/*.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/ei_sequence.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/ei_timing.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/rapid_di_ei.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/halt_ime0_ei.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/reti_timing.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/reti_intr_timing.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/if_ie_registers.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/intr_timing.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/div_timing.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/acceptance/oam_dma/*.gb|mooneye|cgb|1200|requerido
+M8|mooneye-test-suite/emulator-only/mbc5/*.gb|mooneye|cgb|1200|requerido
+# Conocidos: valores de E/S tras el arranque, tiempo fino de STAT, wave RAM con el
+# canal 3 sonando (como en DMG) y efectos a mitad de línea (PPU por scanline).
+M8|mooneye-test-suite/misc/boot_hwio-C.gb|mooneye|cgb|1200|known-fail
+M8|mooneye-test-suite/misc/ppu/vblank_stat_intr-C.gb|mooneye|cgb|1200|known-fail
+M8|blargg/cgb_sound/rom_singles/09*.gb|blargg|cgb|2000|known-fail
+M8|blargg/cgb_sound/rom_singles/12*.gb|blargg|cgb|2000|known-fail
+M8|cgb-acid-hell/cgb-acid-hell.gbc|acid|cgb|600|known-fail|cgb-acid-hell/cgb-acid-hell.png
