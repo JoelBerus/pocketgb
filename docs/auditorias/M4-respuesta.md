@@ -24,3 +24,11 @@
 | H3 (bloqueante) | **Corregido.** Joel registró su iPhone; el comando literal del criterio 1 da BUILD SUCCEEDED con firma (evidencia §1). |
 | H7 (alta) | **Corregido.** `AppState.memoryWarning()` escucha `didReceiveMemoryWarningNotification` y pide `requestFlush()`: el hilo de emulación hace un flush síncrono en el siguiente frame y sigue jugando. Verificado: evidencia §6. |
 | H2 (bloqueante) | **Parcial.** dmg-acid2 correcto en el iPhone (Joel, evidencia §7). Pokémon Rojo pendiente hasta que Joel vuelque su cartucho; se propone a Joel cerrar M4 con Rojo diferido a cuando tenga el volcado. |
+
+# Vuelta 4 (RECHAZAR solo por H2; H3 y H7 confirmados como corregidos; "aparte de Rojo, listo para cerrarse")
+
+| ID | Respuesta |
+|---|---|
+| H2 (bloqueante) | **Cumplido.** Joel probó Pokémon Rojo en su iPhone: llega al menú, los botones responden y el horizontal va bien. Volcado verificado (checksums OK) y la intro corre en el simulador (evidencia §7). |
+
+**Cierre:** los 7 hallazgos de las 4 vueltas están corregidos (H1–H7) y los 3 criterios se cumplen. Joel aprobó cerrar M4 el 2026-09-29.

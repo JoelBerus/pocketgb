@@ -87,7 +87,15 @@ c6b9fa4b9d9d26919b33ebe78a6ef19a.sav
 ```
 El `.sav` aparece por el aviso (no por la red de 60 s ni por background) y el juego sigue corriendo.
 
-## 7. iPhone (criterio 3), confirmado por Joel el 2026-09-29
+## 7. iPhone (criterio 3), confirmado por Joel el 2026-09-29: CUMPLIDO
 - App instalada y abierta en su iPhone con firma del Personal Team.
 - dmg-acid2 correcto en el iPhone ("funcionó bien las pruebas").
-- **Pokémon Rojo: pendiente.** Joel todavía no tiene el volcado de su cartucho (necesita un lector GBxCart RW o GB Operator, ver [08](../08-roms-legal.md)). No se descarga de internet.
+- **Pokémon Rojo en el iPhone: llega al menú y responde a los botones; el horizontal escala bien** (Joel, 2026-09-29, respuesta directa en la sesión).
+- Verificación del volcado en el Mac (el ROM vive en el iCloud Drive privado de Joel; **nunca** entra al repo):
+  ```
+  titulo=POKEMON RED cgb=0x00 tipo=0x13 rom=0x05 ram=0x03
+  header_checksum OK global_checksum OK
+  huella 5ca7ba01642a3b27b0cc0b5349b52792
+  gbtest <rom> --bench 3000 → 3000 frames, 50.197 s emulados en 0.912 s reales -> 55.1x tiempo real
+  ```
+- Simulador (copia temporal fuera del repo, borrada tras la prueba): a los 14 s se ve la intro (Gengar contra Nidorino) con los controles en vertical. La captura no se versiona (arte con copyright).
