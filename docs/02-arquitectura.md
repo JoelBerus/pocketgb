@@ -28,6 +28,7 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 | `gb_set_buttons(gb, mask)` | emulación | Máscara `GB_BTN_*`. El frontend publica la máscara de forma atómica y el hilo de emulación la lee antes de cada frame. |
 | `gb_run_frame(gb)` | emulación | Ejecuta hasta el próximo VBlank (≈70 224 T-ciclos). |
 | `gb_run_cycles(gb, n)` | emulación | Avance acotado (≥ n T-ciclos, termina en frontera de instrucción; devuelve los ejecutados). Para el lockstep del cable virtual (M9). |
+| `gb_cycle_count(gb)` | emulación | T-ciclos acumulados; ordena los eventos entre dos instancias (M9). |
 | `gb_serial_clock_external(gb, bit)` | emulación | Pulso de reloj externo para una instancia esclava (M9). |
 | `gb_framebuffer(gb)` | emulación | `uint32_t[160*144]` RGBA8888 (byte R primero en memoria). Válido hasta el siguiente `gb_run_frame`; el frontend lo copia. |
 | `gb_audio_read(gb, out, max_frames)` | emulación | Estéreo intercalado `int16`, a la frecuencia pedida en `opts.sample_rate`. |

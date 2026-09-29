@@ -32,11 +32,16 @@ tools/fetch-test-roms.sh: OK
 .githooks/pre-commit: OK
 ```
 
-## 5. Vuelta 2: el hook con un nombre que contiene salto de línea (M0-12)
+## 5. Vuelta 3: el hook con un nombre que contiene salto de línea (M0-12/M0-15)
 ```
-$ git add -- $'rom\nnueva.txt'   # 400 bytes con CE ED 66 66 en 0x104
+$ cp t.bin $'rom\nnueva.txt'   # 400 bytes con CE ED 66 66 en 0x104
+$ git add -- $'rom\nnueva.txt'
+$ git commit -m t
 pre-commit: bloqueado $'rom\nnueva.txt' (contiene cabecera de cartucho Game Boy)
 exit=1
+$ git log --oneline -1   # no se creó commit
+2ba0911 M0: correcciones de la auditoría Codex (vuelta 2)
+$ git rm --cached -- $'rom\nnueva.txt' && rm -- $'rom\nnueva.txt'   # limpieza
 ```
 
 ## 6. Vuelta 2: valores esperados por boot_regs-cgb (M0-04)

@@ -110,6 +110,8 @@ void gb_run_frame(gb *g);
 /* Avance acotado: ejecuta al menos `cycles` T-ciclos (termina en frontera de
  * instrucción) y devuelve los ejecutados. Para el lockstep del cable virtual. */
 uint32_t gb_run_cycles(gb *g, uint32_t cycles);
+/* T-ciclos emulados desde gb_load_rom (monótono). Para ordenar eventos entre instancias. */
+uint64_t gb_cycle_count(const gb *g);
 bool gb_cpu_locked(const gb *g);           /* opcode ilegal ejecutado */
 const uint32_t *gb_framebuffer(const gb *g); /* GB_SCREEN_W*GB_SCREEN_H RGBA8888 */
 

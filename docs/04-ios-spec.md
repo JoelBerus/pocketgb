@@ -83,14 +83,19 @@ Android equivalente: [05](05-android-spec.md) §Biblioteca.
 3. **Salir del juego al menú:** flush síncrono.
 4. **Red de seguridad:** cada 60 s, si hay datos sucios.
 
-**Cómo se guarda (`AtomicFile`).** Invariante: en **todo** instante existe un `<huella>.sav` completo (el viejo o el nuevo). El actual nunca se mueve ni se borra antes de instalar el nuevo.
+**Cómo se guarda (`AtomicFile`).** Invariante **de reemplazo**: si ya existía un `<huella>.sav`, en todo instante sigue existiendo uno completo (el viejo o el nuevo). El actual nunca se mueve ni se borra antes de instalar el nuevo. En el **primer guardado** no hay viejo: hasta el paso 5 el destino no existe y el `.tmp` completo es recuperable.
 1. Si el contenido nuevo es igual al actual (SHA-256), no se hace nada.
 2. Escribir `<huella>.sav.tmp` y hacer `fsync` (`FileHandle.synchronize()`).
 3. Rotar **solo backups**: `.4`→`.5`, …, `.1`→`.2` (cada paso es un `rename(2)`; si falla a medias, solo se pierde el backup más viejo).
 4. Si existe el actual: **copiarlo** (no moverlo) a `.1.tmp`, `fsync` y `rename(2)` a `.1`. El actual sigue intacto.
 5. Instalar: `rename(2)` de `.sav.tmp` sobre `<huella>.sav`. POSIX garantiza el reemplazo atómico si el destino existe y la creación si no existe: **una sola ruta** para el primer guardado y para los siguientes. Después, `fsync` del directorio.
-6. Al arrancar se borran los `*.tmp` huérfanos.
-- Tests obligatorios (M6): primer guardado; reemplazo; fallo inyectado después de cada paso 2–5, comprobando que `<huella>.sav` existe, es completo y es el viejo (fallos en 2–4) o el nuevo (después de 5); contenido igual no rota.
+6. Al arrancar, los `*.sav.tmp` huérfanos: si no existe `<huella>.sav` y el `.tmp` tiene el tamaño esperado, **se instala** (recupera un primer guardado interrumpido). Si no, se borra. Los `.1.tmp` se borran.
+- Tests obligatorios (M6), por separado:
+  - primer guardado exitoso;
+  - primer guardado con fallo antes del paso 5 → destino ausente y el `.tmp` se recupera al arrancar;
+  - reemplazo con fallo tras cada paso 2–4 → `.sav` viejo intacto;
+  - reemplazo completo → `.sav` nuevo y el viejo en `.1`;
+  - contenido igual → no rota.
 4. Espejo en iCloud: con `NSFileCoordinator(writingItemAt: rom.deletingPathExtension().appendingPathExtension("sav"), options: .forReplacing)`. Si falla (sin acceso a la carpeta), se registra y se reintenta en el próximo guardado. **La copia local es la autoritativa.**
 
 **Carga al abrir un ROM:**

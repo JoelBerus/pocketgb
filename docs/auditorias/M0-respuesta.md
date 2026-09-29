@@ -21,3 +21,13 @@
 | M0-04 (reabierto) | **descartado**, con evidencia | La nota "F según `INC B`" de Pan Docs está en la columna **AGB (DMG mode)**. La columna CGB (DMG mode) dice `Z=1 N=0 H=0 C=0` = `0x80`. El propio test `misc/boot_regs-cgb.s` hace `assert_f $80` sobre un ROM DMG (`0x143=0x00`, B=0). Evidencia en M0-evidencia.md §6. Se aclara en 03 §Arranque. |
 | M0-11 | corregido | M9 usa deadline absoluto (`T += 456`; cada instancia corre `T - t_i` y acumula lo devuelto), así la deriva queda acotada a ≤ 44 T-ciclos. Test con instrucciones de 4 y 24 T-ciclos. |
 | M0-12 | corregido | Hook en bash con `read -r -d ''` sobre `git diff -z`. Probado con un nombre que contiene un salto de línea (M0-evidencia.md §5). |
+
+# Vuelta 3 (Codex: APROBAR CON CAMBIOS, sin bloqueantes; acepta el descarte de M0-04)
+
+| ID | Decisión | Qué se hizo |
+|---|---|---|
+| M0-13 | corregido | M9: antes de entregar cada bit, el callback del maestro avanza al par hasta su `gb_cycle_count` (API nueva). Guarda contra reentrada. Tests de deriva, causalidad (`SC` activado dentro del bloque) y cable desconectado. |
+| M0-14 | corregido | Invariante limitado a reemplazos. El primer guardado interrumpido deja un `.tmp` que se recupera al arrancar. 5 tests separados en M6. |
+| M0-15 | corregido | Evidencia §5 regenerada con el `git commit` real, su salida, `exit=1`, la prueba de que no se creó commit y la limpieza. |
+
+**Cierre de M0:** sin bloqueantes abiertos (criterio 4 de M0 en PASS según la vuelta 3). Los hallazgos M0-13…15 están corregidos en el commit de cierre. No se pide una vuelta 4, conforme al flujo (los cambios pedidos por un "APROBAR CON CAMBIOS" los aplica el desarrollador).

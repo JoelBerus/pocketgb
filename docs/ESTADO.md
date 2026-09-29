@@ -2,10 +2,10 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-28 · **Hito actual:** M0 en auditoría (vuelta 1 de Codex: RECHAZAR; 10 hallazgos corregidos, pendiente la vuelta 2) → luego **M1** (☁️ se puede hacer en la nube).
+**Actualizado:** 2026-09-28 · **Hito actual:** M0 **cerrado** (Codex: RECHAZAR → RECHAZAR → APROBAR CON CAMBIOS; 15 hallazgos: 14 corregidos, 1 descartado con evidencia) → **siguiente: M1** (☁️ se puede hacer en la nube).
 
 ## Hecho
-- M0 (pendiente cierre por auditoría): paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs).
+- M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
 
 ## Siguiente paso exacto
 1. `git checkout -b m1-cpu`
