@@ -28,6 +28,7 @@ uint8_t *ut_make_rom(size_t size, uint8_t type, uint8_t rom_code, uint8_t ram_co
                      const uint8_t *prog, size_t prog_len);
 void ut_fix_header_checksum(uint8_t *rom);
 
+void unit_apu(struct ut *t);
 void unit_cart(struct ut *t);
 void unit_cpu(struct ut *t);
 void unit_ppu(struct ut *t);

@@ -9,23 +9,6 @@
 
 #include "internal.h"
 
-/* Bits que leen 1 en FF10–FF3F (Pan Docs, Sound registers). La wave RAM lee tal cual. */
-static const uint8_t apu_read_mask[0x30] = {
-    0x80, 0x3F, 0x00, 0xFF, 0xBF,                           /* NR10–NR14 */
-    0xFF, 0x3F, 0x00, 0xFF, 0xBF,                           /* FF15, NR21–NR24 */
-    0x7F, 0xFF, 0x9F, 0xFF, 0xBF,                           /* NR30–NR34 */
-    0xFF, 0xFF, 0x00, 0x00, 0xBF,                           /* FF1F, NR41–NR44 */
-    0x00, 0x00, 0x70,                                       /* NR50–NR52 */
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,   /* FF27–FF2F */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0          /* FF30–FF3F */
-};
-
-/* Valores post-boot de FF10–FF26 en DMG (Pan Docs, Power Up Sequence). */
-static const uint8_t apu_boot[0x17] = {
-    0x80, 0xBF, 0xF3, 0xFF, 0xBF, 0xFF, 0x3F, 0x00, 0xFF, 0xBF, 0x7F, 0xFF,
-    0x9F, 0xFF, 0xBF, 0xFF, 0xFF, 0x00, 0x00, 0xBF, 0x77, 0xF3, 0xF1
-};
-
 void mmu_reset(gb *g)
 {
     struct gb_mem *m = &g->mem;
@@ -33,8 +16,6 @@ void mmu_reset(gb *g)
     memset(m->wram, 0, sizeof m->wram);
     memset(m->oam, 0, sizeof m->oam);
     memset(m->hram, 0, sizeof m->hram);
-    memset(m->apu_regs, 0, sizeof m->apu_regs);
-    memcpy(m->apu_regs, apu_boot, sizeof apu_boot);
     m->ie = 0x00;
     m->if_ = 0x01;   /* IF = 0xE1 */
 }
@@ -50,7 +31,7 @@ static uint8_t io_read(gb *g, uint16_t addr)
     if (addr == 0xFF0F)
         return (uint8_t)(0xE0 | g->mem.if_);
     if (addr >= 0xFF10 && addr <= 0xFF3F)
-        return (uint8_t)(g->mem.apu_regs[addr - 0xFF10] | apu_read_mask[addr - 0xFF10]);
+        return apu_read(g, addr);
     if (addr >= 0xFF40 && addr <= 0xFF4B)
         return ppu_read(g, addr);
     return 0xFF;
@@ -67,7 +48,7 @@ static void io_write(gb *g, uint16_t addr, uint8_t v)
     } else if (addr == 0xFF0F) {
         g->mem.if_ = v & 0x1F;
     } else if (addr >= 0xFF10 && addr <= 0xFF3F) {
-        g->mem.apu_regs[addr - 0xFF10] = v;
+        apu_write(g, addr, v);
     } else if (addr == 0xFF46) {
         g->ppu.dma = v;
         dma_start(g, v);

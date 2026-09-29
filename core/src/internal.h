@@ -37,7 +37,6 @@ struct gb_mem {
     uint8_t wram[0x2000];
     uint8_t oam[0xA0];
     uint8_t hram[0x7F];
-    uint8_t apu_regs[0x30]; /* FF10–FF3F sin emular hasta M5: solo se almacenan */
     uint8_t ie;
     uint8_t if_;
 };
@@ -76,6 +75,48 @@ struct gb_dma {
     uint8_t start_delay;  /* M-ciclos hasta que arranca la copia pedida */
     uint8_t index;        /* 0..159 */
     uint16_t src, next_src;
+};
+
+/* APU (docs/03-core-spec.md §APU). */
+enum { APU_BUF_FRAMES = 8192 };        /* anillo de salida: frames estéreo int16 */
+
+struct gb_apu_env {
+    uint8_t vol, init, period, timer;
+    bool up;
+};
+
+struct gb_apu_ch {
+    bool enabled, dac, len_en;
+    uint16_t length;       /* 0..64 (0..256 en el canal 3) */
+    uint16_t freq;         /* 11 bits (canales 1–3) */
+    int32_t timer;         /* T-ciclos hasta el siguiente paso del generador */
+    uint8_t duty, pos;     /* cuadrado: duty y paso 0..7 · onda: muestra 0..31 */
+    struct gb_apu_env env; /* canales 1, 2 y 4 */
+};
+
+struct gb_apu {
+    bool power;
+    uint32_t pending;      /* T-ciclos aún no procesados (catch-up, ver apu_sync) */
+    uint8_t regs[0x30];    /* FF10–FF3F tal como se escribieron (FF30–FF3F = wave RAM) */
+    uint8_t fs_step;       /* próximo paso del frame sequencer (0..7) */
+    struct gb_apu_ch ch[4];
+    /* canal 1: sweep */
+    uint8_t sweep_timer;
+    uint16_t sweep_shadow;
+    bool sweep_enabled, sweep_neg_used;
+    /* canal 3: última muestra leída (4 bits) */
+    uint8_t wave_sample;
+    /* canal 4: LFSR de 15 bits */
+    uint16_t lfsr;
+    /* Salida (no se guarda en los save states): caja integradora + pasa-altos */
+    int32_t mix_l, mix_r;  /* mezcla actual; se recalcula solo si mix_dirty */
+    bool mix_dirty;
+    int32_t acc_l, acc_r;
+    uint32_t acc_n, phase;
+    double cap_l, cap_r, charge;
+    int16_t buf[APU_BUF_FRAMES * 2];
+    uint32_t head, count;  /* anillo: primer frame y frames disponibles */
+    uint32_t dropped;      /* frames descartados por anillo lleno */
 };
 
 struct gb_serial {
@@ -146,6 +187,7 @@ struct gb {
     struct gb_timer timer;
     struct gb_ppu ppu;
     struct gb_dma dma;
+    struct gb_apu apu;
     struct gb_serial serial;
     struct gb_joypad joy;
     struct gb_cart cart;
@@ -190,6 +232,13 @@ static inline bool ppu_oam_blocked(const gb *g)
 {
     return (g->ppu.lcdc & 0x80) && (g->ppu.mode == 2 || g->ppu.mode == 3);
 }
+
+/* apu.c */
+void apu_reset(gb *g);
+void apu_sync(gb *g);                   /* procesa los T-ciclos pendientes */
+void apu_frame_step(gb *g);             /* flanco de bajada del bit 12 del contador DIV */
+uint8_t apu_read(gb *g, uint16_t addr);
+void apu_write(gb *g, uint16_t addr, uint8_t v);
 
 /* dma.c */
 void dma_reset(gb *g);

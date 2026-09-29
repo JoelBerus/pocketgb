@@ -32,7 +32,7 @@ $(BUILD)/libpocketgb.a: $(OBJS)
 
 $(BUILD)/gbtest: $(SRCS) $(TEST_SRCS) include/pocketgb.h $(wildcard src/*.h src/*.inc tests/*.h)
 	@mkdir -p $(BUILD)
-	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) -DGB_TEST_HOOKS $(INC) $(SRCS) $(TEST_SRCS) -o $@
+	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) -DGB_TEST_HOOKS $(INC) $(SRCS) $(TEST_SRCS) -o $@ -lm
 
 check-roms:
 	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba: ejecuta tools/fetch-test-roms.sh"; exit 1; }

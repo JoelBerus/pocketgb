@@ -73,7 +73,7 @@ static void state_tests(struct ut *t)
     s2[0] = 'X';
     CHECK(t, gb_state_load(h, s2, n) == GB_ERR_STATE_MAGIC);
     memcpy(s2, s, n);
-    put32(s2 + 4, 2);
+    put32(s2 + 4, 3);
     CHECK(t, gb_state_load(h, s2, n) == GB_ERR_STATE_VERSION);
     memcpy(s2, s, n);
     s2[100] ^= 0x01;                                  /* CRC alterado */

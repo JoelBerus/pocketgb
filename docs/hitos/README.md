@@ -9,7 +9,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | [M2 · PPU DMG](M2-ppu-dmg.md) | ☁️ nube o Mac | ✅ cerrado 2026-09-29 (auditoría Opus: APROBAR CON CAMBIOS) |
 | [M3 · MBC + SRAM + fuzzing](M3-mbc-fuzz.md) | ☁️ nube o Mac | ✅ cerrado 2026-09-29 (auditoría Opus: RECHAZAR → APROBAR CON CAMBIOS) |
 | [M4 · App iOS mínima](M4-ios-minima.md) | 🍎 solo Mac (Xcode) | |
-| [M5 · APU + audio](M5-apu-audio.md) | ☁️ núcleo · 🍎 integración iOS | |
+| [M5 · APU + audio](M5-apu-audio.md) | ☁️ núcleo · 🍎 integración iOS | 🟡 núcleo cerrado 2026-09-29 (auditoría Opus: APROBAR CON CAMBIOS); iOS pendiente |
 | [M6 · Biblioteca + saves](M6-biblioteca-saves.md) | 🍎 solo Mac | |
 | [M7 · Controles + extras](M7-controles.md) | 🍎 solo Mac | |
 | [M8 · CGB](M8-cgb.md) | ☁️ núcleo · 🍎 prueba en iPhone | |

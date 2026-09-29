@@ -1,8 +1,8 @@
 /*
  * runner.c — ejecutor headless de pruebas (docs/06-testing.md §Runner headless).
  *
- *   gbtest <rom> --mode {serial|mooneye|acid|frames} [--model dmg] [--max-frames N]
- *          [--expect PATH.rgba] [--dump PATH.rgba] [--input GUION]
+ *   gbtest <rom> --mode {serial|mooneye|acid|frames|blargg} [--model dmg] [--max-frames N]
+ *          [--expect PATH.rgba] [--dump PATH.rgba] [--input GUION] [--wav PATH.wav]
  *   gbtest <rom> --bench N        velocidad frente a tiempo real (N frames)
  *   gbtest --unit                 unit tests (core/tests/unit_*.c)
  *   gbtest --fuzz-seeds DIR       escribe semillas para los fuzzers (make fuzz)
@@ -13,11 +13,16 @@
  * salida, como MBC3-Tester o rtc3test). --dump escribe el último framebuffer.
  * --input: "frame:botones,..." con botones A B S(elect) T(start) R L U D o "-"
  * (ninguno); p. ej. "30:A,40:-" pulsa A en el frame 30 y suelta en el 40.
+ * blargg: protocolo de salida por RAM de las pruebas Blargg más nuevas
+ * (dmg_sound…): firma DE B0 61 en A001–A003, A000 = 0x80 mientras corre y
+ * después el código de resultado (0 = PASS); el texto empieza en A004.
+ * --wav: guarda el audio (48 kHz, estéreo, 16 bits) e informa del pico.
  * Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 
 #include "pocketgb.h"
@@ -108,6 +113,42 @@ static int parse_input(const char *s, struct input_event *ev)
     return n;
 }
 
+/* ---- WAV (PCM 16 bits estéreo) ---- */
+struct wav {
+    FILE *f;
+    uint32_t frames;
+    int32_t peak;
+    uint32_t clipped;       /* muestras en ±32767/−32768 */
+};
+
+static void le16(FILE *f, uint16_t v) { fputc(v & 0xFF, f); fputc(v >> 8, f); }
+static void le32(FILE *f, uint32_t v) { le16(f, (uint16_t)v); le16(f, (uint16_t)(v >> 16)); }
+
+static void wav_header(FILE *f, uint32_t rate, uint32_t frames)
+{
+    fwrite("RIFF", 1, 4, f); le32(f, 36 + frames * 4); fwrite("WAVEfmt ", 1, 8, f);
+    le32(f, 16); le16(f, 1); le16(f, 2); le32(f, rate); le32(f, rate * 4); le16(f, 4); le16(f, 16);
+    fwrite("data", 1, 4, f); le32(f, frames * 4);
+}
+
+static void wav_drain(gb *g, struct wav *w)
+{
+    int16_t buf[2 * 1024];
+    size_t n;
+    while ((n = gb_audio_read(g, buf, 1024)) > 0) {
+        for (size_t i = 0; i < 2 * n; i++) {
+            int32_t s = buf[i] < 0 ? -(int32_t)buf[i] : buf[i];
+            if (s > w->peak)
+                w->peak = s;
+            if (buf[i] >= 32767 || buf[i] <= -32768)
+                w->clipped++;
+            if (w->f)
+                le16(w->f, (uint16_t)buf[i]);
+        }
+        w->frames += (uint32_t)n;
+    }
+}
+
 static double now_seconds(void)
 {
     struct timespec ts;
@@ -125,6 +166,7 @@ static int run_unit(void)
         { "cpu", unit_cpu },
         { "ppu", unit_ppu },
         { "state", unit_state },
+        { "apu", unit_apu },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -198,7 +240,7 @@ int main(int argc, char **argv)
         return usage();
 
     const char *rom_path = argv[1], *mode = NULL, *expect_path = NULL, *dump_path = NULL;
-    const char *input_script = NULL;
+    const char *input_script = NULL, *wav_path = NULL;
     long max_frames = 3600, bench = 0;
     gb_options opts;
     gb_options_default(&opts);
@@ -221,6 +263,8 @@ int main(int argc, char **argv)
             expect_path = v;
         } else if (strcmp(a, "--dump") == 0) {
             dump_path = v;
+        } else if (strcmp(a, "--wav") == 0) {
+            wav_path = v;
         } else if (strcmp(a, "--input") == 0) {
             input_script = v;
         } else if (strcmp(a, "--bench") == 0) {
@@ -230,7 +274,8 @@ int main(int argc, char **argv)
         }
     }
     if (!bench && (!mode || (strcmp(mode, "serial") != 0 && strcmp(mode, "mooneye") != 0 &&
-                             strcmp(mode, "acid") != 0 && strcmp(mode, "frames") != 0)))
+                             strcmp(mode, "acid") != 0 && strcmp(mode, "frames") != 0 &&
+                             strcmp(mode, "blargg") != 0)))
         return usage();
     bool acid = mode && strcmp(mode, "acid") == 0;
     bool frames_mode = mode && strcmp(mode, "frames") == 0;
@@ -291,6 +336,16 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    struct wav wav = { NULL, 0, 0, 0 };
+    if (wav_path) {
+        wav.f = fopen(wav_path, "wb");
+        if (!wav.f) {
+            fprintf(stderr, "no se pudo abrir %s\n", wav_path);
+            return 2;
+        }
+        wav_header(wav.f, opts.sample_rate, 0);   /* se reescribe al final */
+    }
+
     int result = 1;
     const char *reason = "se alcanzó --max-frames";
     long frame_no = 0;
@@ -299,7 +354,21 @@ int main(int argc, char **argv)
             if (inputs[i].frame == frame_no)
                 gb_set_buttons(g, inputs[i].mask);
         gb_run_frame(g);
-        if (strcmp(mode, "serial") == 0) {
+        wav_drain(g, &wav);
+        if (strcmp(mode, "blargg") == 0) {
+            const uint8_t *ram = g->cart.ram;
+            if (ram && g->cart.ram_size >= 5 && ram[1] == 0xDE && ram[2] == 0xB0 &&
+                ram[3] == 0x61 && ram[0] != 0x80) {
+                static char bmsg[64];
+                snprintf(bmsg, sizeof bmsg, "blargg: código %u", ram[0]);
+                result = ram[0] == 0 ? 0 : 1;
+                reason = bmsg;
+                size_t k = 4;
+                while (k < g->cart.ram_size && ram[k] && log->len + 1 < sizeof log->text)
+                    on_serial_byte(log, ram[k++]);   /* el texto se muestra como la serie */
+                break;
+            }
+        } else if (strcmp(mode, "serial") == 0) {
             if (strstr(log->text, "Passed")) { result = 0; reason = "serie: Passed"; break; }
             if (strstr(log->text, "Failed")) { reason = "serie: Failed"; break; }
         } else if (acid && g->dbg.ld_b_b) {
@@ -327,6 +396,18 @@ int main(int argc, char **argv)
         if (gb_cpu_locked(g)) { reason = "CPU bloqueada (opcode ilegal)"; break; }
     }
 
+    if (wav.f) {
+        bool ok = fseek(wav.f, 0, SEEK_SET) == 0;
+        if (ok)
+            wav_header(wav.f, opts.sample_rate, wav.frames);
+        if (fclose(wav.f) != 0 || !ok) {
+            fprintf(stderr, "no se pudo escribir %s\n", wav_path);
+            result = 2;
+        }
+        printf("  wav: %u frames a %u Hz, pico %d (%.1f dBFS), %u muestras saturadas\n",
+               wav.frames, opts.sample_rate, wav.peak,
+               wav.peak ? 20.0 * log10(wav.peak / 32768.0) : -999.0, wav.clipped);
+    }
     if (frames_mode) {
         framebuffer_bytes(g, frame);
         size_t diff = 0;

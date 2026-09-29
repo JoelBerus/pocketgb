@@ -14,13 +14,15 @@ Un único binario `build/gbtest`:
 gbtest <rom> --mode {serial|mooneye|acid} [--model dmg|cgb] [--max-frames N] [--expect PATH.rgba] [--dump PATH.rgba]
 gbtest <rom> --mode frames --max-frames N --expect REF.rgba [--input GUION]   # captura tras N frames
 gbtest <rom> --bench N     # N frames sin límite de velocidad; imprime el múltiplo de tiempo real
+gbtest <rom> --mode blargg [--wav out.wav]   # salida por RAM (A000) de dmg_sound…; --wav guarda el audio e informa del pico
 gbtest --fuzz-seeds DIR    # semillas para make fuzz
 gbtest --unit              # unit tests (core/tests/unit_*.c)
 ```
 Salida: 0 = PASS, 1 = FAIL, 2 = error de uso o de carga. Desde M2 existen todos los modos; `--model cgb` llega en M8. Ejemplo: `tools/png2rgba.py ref.png ref.rgba && build/gbtest dmg-acid2.gb --mode acid --expect ref.rgba --dump out.rgba && tools/png2rgba.py --reverse out.rgba out.png`.
 | Suite | Condición de salida | Éxito |
 |---|---|---|
-| Blargg (`cpu_instrs`, `instr_timing`, `mem_timing`, `dmg_sound`) | La salida serie contiene `Passed` o `Failed`, o se alcanza `--max-frames` | Contiene `Passed` |
+| Blargg (`cpu_instrs`, `instr_timing`, `mem_timing`) | La salida serie contiene `Passed` o `Failed`, o se alcanza `--max-frames` | Contiene `Passed` |
+| Blargg por RAM (`dmg_sound`, modo `blargg`) | Firma `DE B0 61` en `A001–A003` y `A000` ≠ `0x80` | `A000` = 0 (el texto empieza en `A004`) |
 | Mooneye | La CPU ejecuta `LD B,B` (0x40) | `B,C,D,E,H,L = 3,5,8,13,21,34`. Fallo: todos `0x42` |
 | dmg-acid2 / cgb-acid2 | La CPU ejecuta `LD B,B` (0x40) | Framebuffer idéntico a la referencia |
 

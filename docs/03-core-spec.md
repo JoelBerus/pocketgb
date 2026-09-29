@@ -102,13 +102,6 @@ Longitud mínima aceptada: `0x150` bytes. Máxima: 8 MiB.
 
 "RAM dirty": cualquier escritura en la RAM externa pone `dirty = true`. Un **flanco de deshabilitar RAM** (escritura ≠ `0x0A`) mientras está sucia activa `gb_sram_dirty()`, que el frontend usa como señal de "el juego acaba de guardar".
 
-## APU
-- Canales: 1 (pulso + sweep), 2 (pulso), 3 (onda, `FF30–FF3F`), 4 (ruido, LFSR 15/7 bits). Registros `NR10–NR52` (`FF10–FF26`) con las máscaras de lectura de Pan Docs.
-- **Frame sequencer** a 512 Hz, disparado por el flanco de bajada del bit 12 del contador DIV (bit 13 en doble velocidad). Longitud a 256 Hz, sweep a 128 Hz, envolvente a 64 Hz.
-- **Avance sincronizado:** el APU corre dentro de `gb_tick` y genera muestras en cada escritura, no solo al final del frame (A9).
-- **Mezcla y salida:** DACs → `NR51` (paneo) → `NR50` (volumen). Pasa-altos de "capacitor" (como el hardware) para quitar DC. Remuestreo a `opts.sample_rate` con un filtro de caja integrador (media de todos los ciclos del periodo de salida). Es suficiente para v1; un band-limited (BLEP) queda como mejora.
-- Apagar con `NR52` bit 7 pone a 0 todos los registros excepto la wave RAM (y en DMG, los contadores de longitud).
-
 Los offsets de banco se precalculan (y se acotan con `%`) en cada escritura a un registro del MBC, no en cada lectura.
 
 ### RTC (MBC3, `rtc.c`)
@@ -120,12 +113,22 @@ Los offsets de banco se precalculan (y se acotan con `%`) en cada escritura a un
 - `.sav`: RAM + bloque de 48 bytes (5×u32 vivos S M H DL DH, 5×u32 latched, u64 hora Unix; little-endian, compatible con VBA/BGB). `gb_sram_load` también acepta el bloque antiguo de 44 bytes (hora u32) y el `.sav` sin bloque RTC, para no rechazar partidas de otros emuladores. Al cargarlo, el reloj avanza lo transcurrido desde la hora guardada.
 - Verificación: rtc3test (los 3 subtests) y MBC3-Tester idénticos a sus capturas.
 
+
+## APU
+- Canales: 1 (pulso + sweep), 2 (pulso), 3 (onda, `FF30–FF3F`), 4 (ruido, LFSR 15/7 bits; con shift 14–15 en `NR43` el LFSR no recibe relojes). Registros `NR10–NR52` (`FF10–FF26`) con las máscaras de lectura de Pan Docs.
+- **Frame sequencer** a 512 Hz, disparado por el flanco de bajada del bit 12 del contador DIV (bit 13 en doble velocidad). Longitud a 256 Hz (pasos 0, 2, 4, 6), sweep a 128 Hz (pasos 2, 6), envolvente a 64 Hz (paso 7). Al encender (`NR52` bit 7), el siguiente paso es el 0.
+- **Avance sincronizado por "catch-up" (A9):** `gb_tick` solo acumula T-ciclos pendientes y `apu_sync` los procesa de evento en evento (paso de un generador o muestra de salida) antes de **cada lectura o escritura** de un registro de sonido, de cada paso del frame sequencer, de `gb_audio_read` y al final de `gb_run_frame`/`gb_run_cycles`. Cada escritura se oye en su ciclo exacto sin pagar el APU en cada M-ciclo. Coste: +7 % de instrucciones con un ROM sin sonido (frente a +31 % procesando M-ciclo a M-ciclo); el coste crece con la frecuencia de los canales, y el peor caso que puede montar un ROM (4 canales a la frecuencia máxima) baja a ~19–21× tiempo real en Linux. Hay que medirlo en el iPhone (parte 🍎 de M5). Un canal activo tiene siempre el temporizador > 0 (los save states lo validan).
+- **Detalles verificados con Blargg `dmg_sound` 01–08 y 11:** habilitar la longitud en la primera mitad del periodo (el siguiente paso no cuenta longitud) la cuenta una vez extra, y si llega a 0 sin disparo apaga el canal; un disparo con longitud 0 recarga el máximo (64/256), o el máximo − 1 en esa primera mitad; DAC apagado (`NRx2 & 0xF8 == 0`, `NR30` bit 7) apaga el canal; sweep: sombra, periodo 0 = 8, comprobación de desborde al disparar si shift ≠ 0, y quitar el modo negativo tras usarlo apaga el canal 1. `09/10/12` (acceso a la wave RAM con el canal 3 sonando) quedan como `known-fail`.
+- **Mezcla y salida:** DAC por canal (digital 0..15 → −15..15; DAC apagado → 0) → `NR51` (paneo) → `NR50` (volumen × 1..8). Remuestreo a `opts.sample_rate` (acotado a [8 000, 192 000] Hz; 0 = sin audio) con un filtro de caja integrador (media de todos los ciclos del periodo de salida). Pasa-altos tipo condensador (carga 0.999958 por T-ciclo, como el hardware) para quitar la continua. Escala ×32: un salto de extremo a extremo tras el pasa-altos (±960) da ±30 720, sin saturar. Un band-limited (BLEP) queda como mejora.
+- **Anillo de salida:** 8 192 frames estéreo `int16` dentro de la instancia (sin `malloc`). Si el frontend no lee, las muestras nuevas se descartan (contador `dropped`). No se guarda en los save states.
+- Apagar con `NR52` bit 7 pone a 0 todos los registros excepto la wave RAM (y en DMG, los contadores de longitud, que además se pueden escribir apagado).
+
 ## Save states
 Formato binario little-endian:
 ```
 "PGBS" | u32 version | u8 rom_sha256[32] | u32 model | secciones {u32 tag, u32 len, bytes} ... | u32 crc32
 ```
-- Versión actual: 1. Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `MISC` (contador de ciclos y framebuffer). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
+- Versión actual: 2 (M5 añadió `APU `). Secciones en orden fijo: `CPU `, `MEM `, `TIMR`, `PPU `, `DMA `, `APU `, `SER `, `JOY `, `CART` (registros del MBC, RAM externa y RTC), `MISC` (contador de ciclos y framebuffer). CRC-32 IEEE (polinomio reflejado `0xEDB88320`) sobre todo lo anterior al CRC, con tabla constante.
 - `gb_state_load` rechaza, en este orden: magic incorrecto (`STATE_MAGIC`), versión distinta de la soportada (`STATE_VERSION`), CRC inválido o archivo truncado (`STATE_CORRUPT`), huella de ROM distinta (`STATE_ROM_MISMATCH`), modelo distinto, tag o longitud de sección incoherente, o cualquier campo fuera de rango (`STATE_CORRUPT`). **Nunca** confía en las longitudes del archivo.
 - La carga hace una pasada que solo valida y, si todo es correcto, otra que escribe: un estado rechazado deja la instancia intacta. No reserva memoria.
 - Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` múltiplo de 4 y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
