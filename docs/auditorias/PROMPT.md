@@ -7,7 +7,7 @@ Evalúa con nivel crítico 8/10. Revisa, en este orden:
 2. Seguridad con el ROM como entrada no confiable: índices derivados del ROM o de registros sin acotar, desbordamientos enteros en tamaños, lecturas fuera de rango en gb_state_load.
 3. Corrección contra Pan Docs y docs/03-core-spec.md: señala casos concretos (opcode, registro, ciclo) con la línea del código.
 4. Pérdida de partidas: cualquier camino donde la SRAM no se escriba de forma atómica o se sobrescriba sin backup.
-5. Criterios de aceptación: ¿cada casilla marcada tiene evidencia (salida del comando)? Ejecuta tú mismo los comandos de verificación que no modifiquen el repo y reporta la discrepancia.
+5. Criterios de aceptación: contrasta docs/auditorias/MN-evidencia.md con el código. ¿La evidencia es plausible y corresponde al commit auditado? Reejecuta lo que tu sandbox permita y reporta las discrepancias. Que el sandbox no pueda compilar NO es un hallazgo del proyecto.
 6. Calidad: complejidad innecesaria, código muerto, tests que no prueban lo que dicen.
 
 Formato de salida (Markdown):

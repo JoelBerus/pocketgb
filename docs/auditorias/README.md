@@ -1,7 +1,7 @@
 # Auditorías: Claude desarrolla, Codex audita
 
 ## Flujo por hito
-1. **Desarrollo (Claude/Opus).** Rama `mN-<nombre>`. Se implementa hasta que todos los criterios del hito pasan, **ejecutando** sus comandos.
+1. **Desarrollo (Claude/Opus).** Rama `mN-<nombre>`. Se implementa hasta que todos los criterios del hito pasan, **ejecutando** sus comandos. La salida real se guarda en `docs/auditorias/MN-evidencia.md`: el sandbox de solo lectura de Codex no puede compilar, así que el auditor contrasta esa evidencia con el código y reejecuta lo que su sandbox permita.
 2. **Auditoría (Codex, solo lectura).** Desde la raíz del repo, en el Mac:
    ```bash
    N=M1; codex exec --sandbox read-only "$(cat docs/auditorias/PROMPT.md)

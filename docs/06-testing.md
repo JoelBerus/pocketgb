@@ -30,15 +30,17 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 ## Casos requeridos por hito
 | Hito | Casos |
 |---|---|
-| M1 | `blargg/cpu_instrs/cpu_instrs.gb`, `blargg/instr_timing/instr_timing.gb`, `blargg/mem_timing/mem_timing.gb`, `mooneye-test-suite/acceptance/timer/*`, `.../acceptance/{ei_sequence,ei_timing,rapid_di_ei,halt_ime0_ei,reti_timing,reti_intr_timing}.gb` |
+| M1 | `mooneye-test-suite/acceptance/boot_regs-dmgABC.gb`, `blargg/cpu_instrs/cpu_instrs.gb`, `blargg/instr_timing/instr_timing.gb`, `blargg/mem_timing/mem_timing.gb`, `mooneye-test-suite/acceptance/timer/*`, `.../acceptance/{ei_sequence,ei_timing,rapid_di_ei,halt_ime0_ei,reti_timing,reti_intr_timing}.gb` |
 | M2 | `dmg-acid2/dmg-acid2.gb` (DMG), `.../acceptance/oam_dma/{basic,reg_read}.gb`, `.../acceptance/oam_dma_start.gb` |
 | M3 | `mooneye-test-suite/emulator-only/mbc1/*` (excepto `multicart_*`), `.../mbc5/*`, MBC3-Tester, rtc3test (subtests básicos) |
 | M5 | `blargg/dmg_sound/rom_singles/01..06` (el resto, `known-fail` permitido) |
-| M8 | `cgb-acid2/cgb-acid2.gbc`, `dmg-acid2/dmg-acid2.gb` en CGB (compatibilidad) |
+| M8 | `mooneye-test-suite/misc/boot_regs-cgb.gb`, `cgb-acid2/cgb-acid2.gbc`, `dmg-acid2/dmg-acid2.gb` en CGB (compatibilidad) |
 
 ## Unit tests
 `core/tests/unit_*.c` es un mini framework propio de ~50 líneas (`CHECK(expr)`), sin dependencias. Cubre:
-- validación de cabecera (tamaños absurdos, archivo truncado, MBC no soportado)
+- validación de cabecera (tamaños absurdos, códigos `0x52–0x54` rechazados, archivo truncado, MBC no soportado, título de 16/15/11 bytes)
+- SHA-256 contra los vectores de FIPS 180-4 (`""`, `"abc"`, 1 MB de `'a'`)
+- `gb_load_rom` con fallo de memoria inyectado (`-DGB_TEST_FAIL_ALLOC=n`) → `GB_ERR_OUT_OF_MEMORY` sin fugas y con la instancia usable
 - mapeo de bancos con ROMs sintéticos generados en el test (cada banco lleno con su número)
 - flancos del timer
 - round-trip de save states (guardar → cargar → mismo framebuffer tras N frames)

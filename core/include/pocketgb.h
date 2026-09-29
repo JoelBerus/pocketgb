@@ -27,6 +27,7 @@ typedef struct gb gb;
 typedef enum gb_result {
     GB_OK = 0,
     GB_ERR_NULL_ARG,
+    GB_ERR_OUT_OF_MEMORY,      /* la instancia queda válida y sin ROM */
     GB_ERR_ROM_TOO_SMALL,      /* < 0x150 bytes */
     GB_ERR_ROM_TOO_LARGE,      /* > GB_ROM_MAX_BYTES */
     GB_ERR_ROM_TRUNCATED,      /* cabecera declara más bytes que el archivo */
@@ -61,14 +62,19 @@ enum {
     GB_BTN_DOWN   = 1u << 7
 };
 
-/* Llamado por cada byte completado en el puerto serie (Blargg, cable virtual). */
-typedef void (*gb_serial_cb)(void *user, uint8_t byte_out);
+/* Serie (docs/03-core-spec.md §Serial).
+ * bit_cb: con reloj interno, por cada bit desplazado; recibe el bit saliente y
+ *         devuelve el entrante (sin callback entra 1 = cable desconectado).
+ * byte_cb: notificación al completar 8 bits (salida de las pruebas Blargg). */
+typedef uint8_t (*gb_serial_bit_cb)(void *user, uint8_t bit_out);
+typedef void (*gb_serial_byte_cb)(void *user, uint8_t byte_out);
 
 typedef struct gb_options {
     gb_model model;
     uint32_t sample_rate;       /* p. ej. 48000; 0 = sin audio */
     uint32_t dmg_palette[4];    /* RGBA8888 (R en el byte bajo); todo 0 = gris por defecto */
-    gb_serial_cb serial_cb;     /* opcional */
+    gb_serial_bit_cb serial_bit_cb;   /* opcional */
+    gb_serial_byte_cb serial_byte_cb; /* opcional */
     void *serial_user;
     int64_t unix_time;          /* hora inicial para el RTC de MBC3 */
 } gb_options;
@@ -84,7 +90,7 @@ typedef struct gb_rom_info {
     bool header_checksum_ok;
     bool global_checksum_ok;
     bool cgb_mode;              /* modo en el que se está ejecutando */
-    uint64_t fingerprint;       /* huella estable del ROM (saves y estados) */
+    uint8_t fingerprint[32];    /* SHA-256 del ROM completo (saves y estados) */
 } gb_rom_info;
 
 /* Ciclo de vida */
@@ -92,7 +98,8 @@ gb *gb_create(void);
 void gb_destroy(gb *g);
 void gb_options_default(gb_options *opts);
 
-/* Copia el ROM; valida; aplica estado post-boot. Todo malloc ocurre aquí. */
+/* Copia el ROM; valida; aplica estado post-boot. Todo malloc ocurre aquí.
+ * Si ya había un ROM, se libera antes. Ante cualquier error la instancia queda sin ROM. */
 gb_result gb_load_rom(gb *g, const uint8_t *data, size_t len, const gb_options *opts);
 gb_result gb_rom_info_get(const gb *g, gb_rom_info *out);
 void gb_reset(gb *g);
@@ -100,6 +107,11 @@ void gb_reset(gb *g);
 /* Ejecución */
 void gb_set_buttons(gb *g, uint8_t mask);
 void gb_run_frame(gb *g);
+/* Avance acotado: ejecuta al menos `cycles` T-ciclos (termina en frontera de
+ * instrucción) y devuelve los ejecutados. Para el lockstep del cable virtual. */
+uint32_t gb_run_cycles(gb *g, uint32_t cycles);
+/* T-ciclos emulados desde gb_load_rom (monótono). Para ordenar eventos entre instancias. */
+uint64_t gb_cycle_count(const gb *g);
 bool gb_cpu_locked(const gb *g);           /* opcode ilegal ejecutado */
 const uint32_t *gb_framebuffer(const gb *g); /* GB_SCREEN_W*GB_SCREEN_H RGBA8888 */
 
@@ -120,8 +132,10 @@ size_t gb_state_size(const gb *g);
 gb_result gb_state_save(const gb *g, uint8_t *out, size_t cap);
 gb_result gb_state_load(gb *g, const uint8_t *data, size_t len); /* nunca confía en len internas */
 
-/* Serie (cable virtual M9): entrega el byte recibido del otro extremo */
-void gb_serial_receive(gb *g, uint8_t byte_in);
+/* Serie, lado esclavo (reloj externo): un pulso de reloj desde el otro extremo.
+ * Desplaza bit_in hacia SB y devuelve el bit saliente. Sin transferencia activa
+ * con reloj externo, no cambia nada y devuelve 1. */
+uint8_t gb_serial_clock_external(gb *g, uint8_t bit_in);
 
 const char *gb_result_str(gb_result r);
 
