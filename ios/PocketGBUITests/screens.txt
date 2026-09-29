@@ -1,9 +1,23 @@
 # Catálogo de capturas para CI y revisión de diseño (docs/diseno/VERIFICACION.md).
 # Formato: <id> <portrait|landscape> <light|dark> [argumentos de arranque...]
 # $FIXTURES = carpeta con ROMs de prueba libres (tools/ios-screenshots.sh la prepara).
-# Cada hito de diseño añade aquí sus pantallas y estados.
-start               portrait  light
-start               portrait  dark
+# Cada hito de diseño añade aquí sus pantallas y estados (IDs de docs/diseno/SPEC.md §9).
+
+# ---- D1 · Fundamentos ----
+launch              portrait  light  -screen launch
+launch              portrait  dark   -screen launch
+library-no-folder   portrait  light  -screen library-no-folder -demoFolderState none
+library-no-folder   portrait  dark   -screen library-no-folder -demoFolderState none
+library-empty       portrait  light  -screen library-empty -demoLibrary empty
+library-empty       portrait  dark   -screen library-empty -demoLibrary empty
+settings-main       portrait  light  -screen settings-main
+settings-main       portrait  dark   -screen settings-main
+settings-appearance portrait  light  -screen settings-appearance
+settings-appearance portrait  dark   -screen settings-appearance
+settings-about      portrait  light  -screen settings-about
+settings-about      portrait  dark   -screen settings-about
+
+# ---- Gameplay actual (M4/M5; D4 y D5 lo rediseñan) ----
 game-acid           portrait  dark   -rom $FIXTURES/dmg-acid2.gb
 game-acid           landscape dark   -rom $FIXTURES/dmg-acid2.gb
 game-paused         portrait  dark   -rom $FIXTURES/dmg-acid2.gb -paused

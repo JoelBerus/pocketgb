@@ -2,15 +2,54 @@ import Foundation
 import Observation
 import UIKit
 
-/// Estado global de la app en M4: un ROM abierto con el selector de documentos.
+/// Tabs de la shell (SPEC §4).
+enum AppTab: Hashable {
+    case library, favorites, settings
+}
+
+/// Pantallas empujadas en la pila de Ajustes.
+enum SettingsRoute: Hashable {
+    case appearance, about, licenses
+}
+
+/// Fase de la biblioteca. En D1 solo existen estos dos estados (demo); la carpeta
+/// real con bookmark, el escaneo e iCloud llegan en D2.
+enum LibraryPhase: Equatable {
+    case noFolder
+    case empty(folderName: String)
+}
+
+/// Estado global de la app: shell de tabs (D1) y el juego abierto.
 @MainActor @Observable
 final class AppState {
+    var selectedTab: AppTab = .library
+    var settingsPath: [SettingsRoute] = []
+    var library: LibraryPhase = .noFolder
+    /// Selector de un ROM suelto (provisional hasta la biblioteca por carpeta de D2).
+    var pickingROM = false
+    /// Aviso de que la carpeta llega en D2, con la alternativa de abrir un archivo.
+    var folderNoticeShown = false
+    /// Solo lo rellena el router DEBUG (`-screen`); en Release siempre vale nil/false.
+    var debugUnknownScreen: String?
+    var debugShowsLaunch = false
+
     private(set) var session: EmulatorSession?
     /// Pausa por ciclo de vida: se sale solo con "Continuar" (docs/04 §Ciclo de vida).
     private(set) var paused = false
     var alertMessage: String?
 
     private static let maxROMBytes = 8 * 1024 * 1024
+
+    init() {
+        #if DEBUG
+        DebugScreenRouter.apply(to: self)
+        #endif
+    }
+
+    /// "Elegir carpeta": hasta D2 explica el estado y ofrece abrir un archivo.
+    func chooseFolder() {
+        folderNoticeShown = true
+    }
 
     /// `url` es una copia temporal del selector (asCopy); se borra tras leerla.
     func open(url: URL, deleteAfterReading: Bool = true) {

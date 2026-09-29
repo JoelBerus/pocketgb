@@ -31,6 +31,9 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 3) // deja correr la emulación y las animaciones
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
+            // Un `-screen` que el router DEBUG no conoce es un error del catálogo.
+            XCTAssertFalse(app.descendants(matching: .any)["debug-unknown-screen"].exists,
+                           "Pantalla desconocida en screens.txt: \(name)")
 
             let shot = XCUIScreen.main.screenshot()
             let file = "\(name)-\(orientation)-\(style).png"
