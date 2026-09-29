@@ -3,7 +3,7 @@ import os
 /// Triple buffer de frames RGBA8888 entre el hilo de emulación (escritor) y el
 /// render (lector). El escritor solo toca `back`, el lector solo `front`; el
 /// intercambio con `middle` va bajo un unfair lock de pocas instrucciones.
-/// (`Synchronization.Atomic` exige iOS 18 y el deployment target es 17.0.)
+/// El lock protege tres índices relacionados; no participa en el callback de audio.
 final class FrameBuffers: Sendable {
     static let width = 160
     static let height = 144
