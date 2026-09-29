@@ -30,15 +30,20 @@ final class AudioWakeSignal: Sendable {
 
 /// Salida de audio de 48 kHz. El bloque de render solo toca memoria
 /// preasignada, atómicos del ring y el semáforo de pacing.
-@MainActor
-final class AudioOutput {
+///
+/// Todo el estado (sesión y motor) vive en `queue`, una cola serie propia:
+/// `AVAudioSession.setActive` puede bloquear y no debe llamarse en el hilo
+/// principal (aviso de iOS visto en el iPhone de Joel). Al ser serie, un `stop`
+/// pedido después de un `start` siempre se ejecuta después.
+final class AudioOutput: @unchecked Sendable {
     private let ring: AudioRingBuffer
     private let consumed: AudioWakeSignal
     private let onPause: @MainActor @Sendable () -> Void
+    private let queue = DispatchQueue(label: "PocketGB.audio", qos: .userInitiated)
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "audio")
 
-    private var engine: AVAudioEngine?
-    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+    private var engine: AVAudioEngine?     // solo en `queue`
+    private var observers: [NSObjectProtocol] = []
 
     init(ring: AudioRingBuffer, consumed: AudioWakeSignal,
          onPause: @escaping @MainActor @Sendable () -> Void) {
@@ -50,7 +55,9 @@ final class AudioOutput {
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification,
                                              object: nil, queue: nil) { [weak self] notification in
             let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            Task { @MainActor in self?.handleInterruption(raw) }
+            guard let raw, AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+            // Al terminar la interrupción no se reanuda: el juego queda en pausa hasta "Continuar".
+            self?.stopAndPause(onlyIf: nil)
         })
         // Cambio de salida (auriculares, Bluetooth, AirPlay, otra frecuencia): el motor
         // se detiene solo. Se pausa el juego como en una interrupción; "Continuar"
@@ -58,29 +65,17 @@ final class AudioOutput {
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange,
                                              object: nil, queue: nil) { [weak self] notification in
             let changed = (notification.object as AnyObject?).map(ObjectIdentifier.init)
-            Task { @MainActor in
-                guard let self, let engine = self.engine, changed == ObjectIdentifier(engine) else { return }
-                self.stop()
-                self.onPause()
-            }
+            self?.stopAndPause(onlyIf: changed)
         })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification,
                                              object: nil, queue: nil) { [weak self] notification in
             let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
-            Task { @MainActor in
-                guard let self, self.engine != nil,
-                      raw == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
-                self.stop()
-                self.onPause()
-            }
+            guard raw == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+            self?.stopAndPause(onlyIf: nil)
         })
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
                                              object: nil, queue: nil) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.stop()
-                self.onPause()
-            }
+            self?.stopAndPause(onlyIf: nil)
         })
     }
 
@@ -88,9 +83,23 @@ final class AudioOutput {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
-    /// Devuelve `false` si iOS no ofrece una salida; la sesión usará reloj monotónico.
-    func start() -> Bool {
-        stop()
+    /// Arranca en la cola de audio y avisa con `true`, o `false` si iOS no ofrece
+    /// salida (la sesión usará el reloj monotónico). `completion` corre en esa cola.
+    func start(_ completion: @escaping @Sendable (Bool) -> Void) {
+        queue.async { [self] in completion(startOnQueue()) }
+    }
+
+    /// Para el motor, vacía el ring (con el callback ya parado, único momento seguro
+    /// para tocar el índice de lectura desde fuera) y desactiva la sesión.
+    func stop() {
+        queue.async { [self] in
+            stopEngineOnQueue()
+            ring.clear() // sin callback activo, también si el motor nunca arrancó
+        }
+    }
+
+    private func startOnQueue() -> Bool {
+        stopEngineOnQueue() // sin vaciar: el ring ya trae el audio cebado
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.ambient, mode: .default)
@@ -115,14 +124,30 @@ final class AudioOutput {
             return true
         } catch {
             log.error("No se pudo iniciar el audio; se usará pacing por reloj: \(error.localizedDescription, privacy: .public)")
-            engine?.stop()
-            engine = nil
-            try? session.setActive(false)
+            stopEngineOnQueue()
             return false
         }
     }
 
-    /// El bloque de render se crea fuera del `@MainActor`: un closure creado dentro de
+    private func stopEngineOnQueue() {
+        guard let engine else { return }
+        engine.stop() // síncrono: al volver ya no hay callbacks
+        self.engine = nil
+        try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    /// `onlyIf`: solo si el aviso es del motor actual (cambio de configuración).
+    private func stopAndPause(onlyIf changed: ObjectIdentifier?) {
+        queue.async { [self] in
+            guard let engine else { return }
+            if let changed, changed != ObjectIdentifier(engine) { return }
+            stopEngineOnQueue()
+            let onPause = onPause
+            Task { @MainActor in onPause() }
+        }
+    }
+
+    /// El bloque de render se crea fuera de cualquier actor: un closure creado dentro de
     /// un método aislado hereda ese aislamiento y Swift 6 aborta al ejecutarlo en el
     /// hilo de audio en tiempo real (`dispatch_assert_queue`).
     nonisolated private static func makeSourceNode(format: AVAudioFormat, ring: AudioRingBuffer,
@@ -138,22 +163,6 @@ final class AudioOutput {
             consumed.signal()
             return noErr
         }
-    }
-
-    func stop() {
-        engine?.stop()
-        engine = nil
-        try? AVAudioSession.sharedInstance().setActive(false)
-    }
-
-    private func handleInterruption(_ raw: UInt?) {
-        guard let raw,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-        if type == .began {
-            stop()
-            onPause()
-        }
-        // Al terminar no se reanuda: el juego queda en pausa hasta "Continuar".
     }
 }
 

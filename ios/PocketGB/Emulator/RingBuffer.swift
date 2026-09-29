@@ -80,7 +80,8 @@ final class AudioRingBuffer: Sendable {
         lastRight = r
     }
 
-    /// Se usa al reanudar, siempre con el callback detenido y el productor aparcado.
+    /// Solo con el callback detenido (lo llama `AudioOutput` justo tras parar el motor).
+    /// El productor puede estar escribiendo: adelantar el índice de lectura solo libera hueco.
     func clear() {
         let written = writeIndex.load(ordering: .acquiring)
         readIndex.store(written, ordering: .releasing)

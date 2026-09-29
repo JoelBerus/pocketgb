@@ -19,6 +19,8 @@ final class EmulatorSession: @unchecked Sendable {
     private let audioMode = Atomic<Int>(0)
     private let averageFrameMicros = Atomic<Int>(0)
     private let audioFallbackCount = Atomic<Int>(0)
+    /// Invalida el resultado de un arranque de audio que llegue tras pausar o parar.
+    private let audioGeneration = Atomic<Int>(0)
     nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
     private let saves: SaveStore?
     private let saveQueue = DispatchQueue(label: "PocketGB.saves", qos: .utility)
@@ -103,15 +105,14 @@ final class EmulatorSession: @unchecked Sendable {
         thread.start()
         while !audioPrimed && !finished { control.wait() }
         control.unlock()
-        let running = audioOutput.start()
-        audioMode.store(running ? Self.audioLive : Self.audioClock, ordering: .releasing)
-        audioConsumed.signal()
+        startAudio()
     }
 
     /// Pausa y espera a que el hilo guarde la SRAM pendiente y quede parado.
     @MainActor
     func pause() {
-        audioOutput.stop()
+        audioGeneration.wrappingAdd(1, ordering: .relaxed)
+        audioOutput.stop() // vacía el ring al parar el motor
         audioMode.store(Self.audioClock, ordering: .releasing)
         audioConsumed.signal()
         control.lock()
@@ -123,7 +124,6 @@ final class EmulatorSession: @unchecked Sendable {
 
     @MainActor
     func resume() {
-        audioRing.clear()
         audioConsumed.reset()
         control.lock()
         audioPrimed = false
@@ -132,9 +132,18 @@ final class EmulatorSession: @unchecked Sendable {
         control.broadcast()
         while !audioPrimed && !finished { control.wait() }
         control.unlock()
-        let running = audioOutput.start()
-        audioMode.store(running ? Self.audioLive : Self.audioClock, ordering: .releasing)
-        audioConsumed.signal()
+        startAudio()
+    }
+
+    /// Arranca el audio en su cola sin bloquear el hilo principal. Mientras tanto el
+    /// hilo de emulación espera en modo cebado (ring lleno, sin contar timeouts).
+    private func startAudio() {
+        let generation = audioGeneration.wrappingAdd(1, ordering: .relaxed).newValue
+        audioOutput.start { [weak self] running in
+            guard let self, self.audioGeneration.load(ordering: .relaxed) == generation else { return }
+            self.audioMode.store(running ? Self.audioLive : Self.audioClock, ordering: .releasing)
+            self.audioConsumed.signal()
+        }
     }
 
     /// Pide guardar la SRAM en el próximo frame sin pausar (aviso de memoria baja).
@@ -147,6 +156,7 @@ final class EmulatorSession: @unchecked Sendable {
     /// Detiene el hilo; al volver, la SRAM ya está escrita en disco.
     @MainActor
     func stop() {
+        audioGeneration.wrappingAdd(1, ordering: .relaxed)
         audioOutput.stop()
         audioMode.store(Self.audioClock, ordering: .releasing)
         audioConsumed.signal()
@@ -237,11 +247,7 @@ final class EmulatorSession: @unchecked Sendable {
                             audioMode.store(Self.audioClock, ordering: .releasing)
                             audioFallbackCount.wrappingAdd(1, ordering: .relaxed)
                             deadline = Double(mach_absolute_time())
-                            Task { @MainActor [weak self] in
-                                guard let self,
-                                      self.audioMode.load(ordering: .acquiring) == Self.audioClock else { return }
-                                self.audioOutput.stop()
-                            }
+                            audioOutput.stop() // en su cola: antes que cualquier arranque posterior
                         }
                     }
                 } else {

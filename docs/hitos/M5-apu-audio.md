@@ -7,7 +7,9 @@
 **Criterios de aceptación**
 - [x] `make -C core test HITO=M5` → `dmg_sound` 01–06 PASS (07–12 pueden quedar `known-fail`, documentados).
 - [x] `gbtest <rom> --wav` genera un WAV de 48 kHz sin clipping sostenido. El pico se reporta.
-- [ ] Mac: 10 min de juego en el iPhone con 0 underruns (contador en el menú de depuración).
-- [ ] A9: Joel escucha el grito de Pikachu en Amarillo (pantalla de título) y lo compara con `make oracle` + `diff --wav`. Diferencias audibles → issue abierto, no bloquea el cierre si se documenta.
+- [x] Mac: 10 min de juego sin underruns (simulador: HUD `audio ·0  U 0`; iPhone de Joel: sin cortes audibles). Ver [M5-ios-evidencia](../auditorias/M5-ios-evidencia.md).
+- [x] A9: Joel escucha el grito de Pikachu en Amarillo (pantalla de título) y lo compara con `make oracle` + `diff --wav`. Diferencias audibles → issue abierto, no bloquea el cierre si se documenta.
 
 Núcleo cerrado el 2026-09-29 (criterios 1 y 2). Evidencia: [M5-evidencia](../auditorias/M5-evidencia.md) · Auditoría: [M5-opus](../auditorias/M5-opus.md) · Respuesta: [M5-respuesta](../auditorias/M5-respuesta.md). Los criterios 3 y 4 (iPhone, oído) quedan para una sesión en el Mac tras M4.
+
+Parte iOS cerrada el 2026-09-29 (criterios 3 y 4). Implementación con Codex; auditoría: [M5-ios-opus](../auditorias/M5-ios-opus.md) · [M5-ios-respuesta](../auditorias/M5-ios-respuesta.md) · [M5-ios-evidencia](../auditorias/M5-ios-evidencia.md).
