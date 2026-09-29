@@ -39,7 +39,7 @@ enum { FB_PIXELS = GB_SCREEN_W * GB_SCREEN_H };
  * se ejecuta una ráfaga larga dentro del callback. */
 #define LINK_MAX_CATCHUP (4 * GB_LINK_BLOCK_CYCLES)
 /* Ventana en la que se considera que el reloj de una instancia sigue alineado
- * con T; fuera de ella (gb_load_rom, gb_state_load) se vuelve a alinear. */
+ * con T. gb_state_load se detecta además mediante un epoch explícito. */
 #define LINK_RESYNC_WINDOW (2 * GB_LINK_BLOCK_CYCLES)
 
 struct gb_link_port {
@@ -47,6 +47,7 @@ struct gb_link_port {
     unsigned side;
     gb *g;
     int64_t offset;                 /* local = cycles + offset */
+    uint64_t state_load_epoch;      /* epoch observado al alinear este puerto */
     /* Callbacks del llamador, restaurados al desconectar */
     gb_serial_bit_cb saved_bit_cb;
     gb_serial_byte_cb saved_byte_cb;
@@ -139,8 +140,10 @@ static void port_ensure(gb_link *l, struct gb_link_port *p)
     if (fresh)
         port_install(p);
     int64_t lt = local_time(p);
-    if (fresh || lt < l->t || lt > l->t + LINK_RESYNC_WINDOW) {
+    bool state_loaded = p->state_load_epoch != p->g->state_load_epoch;
+    if (fresh || state_loaded || lt < l->t || lt > l->t + LINK_RESYNC_WINDOW) {
         p->offset = l->t - (int64_t)p->g->cycles;
+        p->state_load_epoch = p->g->state_load_epoch;
         port_copy_fb(l, p->side);
     }
 }
@@ -216,6 +219,7 @@ bool gb_link_attach(gb_link *l, gb *a, gb *b)
             continue;
         port_install(p);
         p->offset = -(int64_t)p->g->cycles;
+        p->state_load_epoch = p->g->state_load_epoch;
         port_copy_fb(l, s);
     }
     return ok;

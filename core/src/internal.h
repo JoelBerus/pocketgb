@@ -224,6 +224,7 @@ struct gb {
     gb_rom_info info;
     bool rom_loaded;
     uint64_t cycles;       /* T-ciclos desde gb_load_rom */
+    uint64_t state_load_epoch; /* cambia tras cada gb_state_load exitoso; no se serializa */
     uint32_t framebuffer[GB_SCREEN_W * GB_SCREEN_H];
 };
 

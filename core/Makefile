@@ -15,7 +15,7 @@ TEST_SRCS := $(wildcard tests/*.c)
 ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 
-.PHONY: all lib test asan fuzz oracle check-header check-globals clean
+.PHONY: all lib test asan fuzz fuzz-link oracle check-header check-globals clean
 
 all: lib
 
@@ -57,6 +57,18 @@ fuzz: $(BUILD)/gbtest
 	  [ $$n = fuzz_link ] && opts="-max_len=16384 -len_control=0"; \
 	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) $$opts fuzz/corpus/$$n || exit 1; \
 	done
+
+# Campaña dedicada de M9: evita gastar FUZZ_SECONDS también en los otros dos
+# fuzzers cuando solo se valida el cable virtual.
+fuzz-link: $(BUILD)/gbtest
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link
+	@printf 'int LLVMFuzzerTestOneInput(const unsigned char*d,unsigned long n){(void)d;(void)n;return 0;}' > $(BUILD)/probe.c
+	@$(CC) -fsanitize=fuzzer $(BUILD)/probe.c -o $(BUILD)/probe 2>/dev/null || { \
+	  echo "Este clang no trae libFuzzer (el de Apple no lo incluye)."; \
+	  echo "macOS: brew install llvm && make fuzz-link CC=\$$(brew --prefix llvm)/bin/clang"; exit 1; }
+	$(BUILD)/gbtest --fuzz-seeds fuzz/corpus
+	$(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) fuzz/fuzz_link.c $(SRCS) -o $(BUILD)/fuzz_link
+	$(BUILD)/fuzz_link -max_total_time=$(FUZZ_SECONDS) -max_len=16384 -len_control=0 fuzz/corpus/fuzz_link
 
 # Oráculo opcional (dev-only, nunca se enlaza en la app). Requiere git, make y rgbds.
 SAMEBOY_TAG ?= v1.0.3

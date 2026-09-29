@@ -51,14 +51,23 @@ static gb *make(const uint8_t *prog, size_t len, uint8_t sb, uint8_t sc, unsigne
     return g;
 }
 
-static void step(gb_link *l, gb *a, gb *b, bool check)
+struct sync_clock {
+    uint64_t a0, b0;
+};
+
+static void sync_reset(struct sync_clock *clock, const gb *a, const gb *b)
+{
+    clock->a0 = gb_cycle_count(a);
+    clock->b0 = gb_cycle_count(b);
+}
+
+static void step(gb_link *l, gb *a, gb *b, const struct sync_clock *clock)
 {
     gb_link_run_frame(l);
-    if (check) {
-        uint64_t ta = gb_cycle_count(a), tb = gb_cycle_count(b);
-        if ((ta > tb ? ta - tb : tb - ta) > 44)
-            abort();
-    }
+    uint64_t ta = gb_cycle_count(a) - clock->a0;
+    uint64_t tb = gb_cycle_count(b) - clock->b0;
+    if ((ta > tb ? ta - tb : tb - ta) > 44)
+        abort();
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
@@ -79,18 +88,21 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (!a || !b || !l)
         goto out;
     gb_link_attach(l, a, b);
+    struct sync_clock clock;
+    sync_reset(&clock, a, b);
     for (int f = 0; f < 4; f++) {
         gb_set_buttons(a, n ? code[(size_t)f * 7u % n] : 0);
         gb_set_buttons(b, n ? code[(size_t)f * 13u % n] : 0);
-        step(l, a, b, true);
+        step(l, a, b, &clock);
     }
     if (flags & 0x10) {
         size_t st = gb_state_size(b);
         uint8_t *buf = malloc(st);
         if (buf && gb_state_save(b, buf, st) == GB_OK) {
-            step(l, a, b, false);
+            step(l, a, b, &clock);
             if (gb_state_load(b, buf, st) != GB_OK)
                 abort();   /* un estado recién guardado siempre carga */
+            sync_reset(&clock, a, b); /* nueva época: el siguiente bloque debe realinear */
         }
         free(buf);
     }
@@ -101,17 +113,18 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         if (!a)
             goto out;
         gb_link_attach(l, a, b);
+        sync_reset(&clock, a, b);
     }
     if (flags & 0x40) {
         gb_link_attach(l, NULL, b);
-        step(l, a, b, false);
+        gb_link_run_frame(l);       /* un lado desconectado no está en lockstep */
         gb_link_attach(l, a, b);
+        sync_reset(&clock, a, b);
     }
-    /* Tras un save state, una recarga o una reconexión los contadores de las
-     * dos instancias ya no parten del mismo instante: solo se comprueba el
-     * lockstep si no hubo ninguna de esas operaciones. */
+    /* El origen se renueva tras cada cambio de época; desde el primer bloque
+     * posterior vuelve a regir la invariante de lockstep. */
     for (int f = 0; f < 4; f++)
-        step(l, a, b, !(flags & 0x70));
+        step(l, a, b, &clock);
     if (!gb_link_framebuffer(l, 0) || !gb_link_framebuffer(l, 1))
         abort();
 out:

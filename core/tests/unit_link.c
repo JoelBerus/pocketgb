@@ -488,6 +488,67 @@ out:
     gb_destroy(b);
 }
 
+/* Un save state cambia la época del contador aunque el valor nuevo caiga
+ * dentro de la antigua ventana heurística de realineado (auditoría Codex H2). */
+static void state_realign_case(struct ut *t, uint64_t ahead)
+{
+    gb *a = load(&idle_prog, K_DMG, NULL), *b = load(&idle_prog, K_DMG, NULL);
+    gb_link *l = gb_link_create();
+    CHECK(t, a && b && l);
+    if (!a || !b || !l)
+        goto out;
+    CHECK(t, gb_link_attach(l, a, b));
+    gb_link_run_cycles(l, GB_LINK_BLOCK_CYCLES);
+    uint64_t base = gb_cycle_count(b);
+    b->cycles = base + ahead;
+    size_t n = gb_state_size(b);
+    uint8_t *st = malloc(n);
+    CHECK(t, st && gb_state_save(b, st, n) == GB_OK);
+    b->cycles = base;
+    CHECK(t, st && gb_state_load(b, st, n) == GB_OK);
+    uint64_t before_a = gb_cycle_count(a), before_b = gb_cycle_count(b);
+    gb_link_run_cycles(l, GB_LINK_BLOCK_CYCLES);
+    uint64_t ran_a = gb_cycle_count(a) - before_a;
+    uint64_t ran_b = gb_cycle_count(b) - before_b;
+    uint64_t drift = ran_a > ran_b ? ran_a - ran_b : ran_b - ran_a;
+    CHECK(t, ran_a >= GB_LINK_BLOCK_CYCLES && ran_b >= GB_LINK_BLOCK_CYCLES);
+    CHECK(t, drift <= 44);
+    free(st);
+out:
+    gb_link_destroy(l);
+    gb_destroy(a);
+    gb_destroy(b);
+}
+
+/* El reloj firmado del cable no puede representar un contador con el bit 63
+ * activo. La carga debe rechazarlo y el cable debe seguir siendo utilizable. */
+static void state_cycle_limit(struct ut *t)
+{
+    gb *a = load(&idle_prog, K_DMG, NULL), *b = load(&idle_prog, K_DMG, NULL);
+    gb_link *l = gb_link_create();
+    CHECK(t, a && b && l);
+    if (!a || !b || !l)
+        goto out;
+    size_t n = gb_state_size(b);
+    uint8_t *st = malloc(n);
+    b->cycles = (uint64_t)INT64_MAX + 1u;
+    b->dbg.unchecked_save = true;
+    CHECK(t, st && gb_state_save(b, st, n) == GB_OK);
+    b->cycles = 0;
+    b->dbg.unchecked_save = false;
+    gb_result loaded = st ? gb_state_load(b, st, n) : GB_ERR_NULL_ARG;
+    CHECK(t, loaded == GB_ERR_STATE_CORRUPT && gb_cycle_count(b) == 0);
+    if (loaded != GB_ERR_STATE_CORRUPT)
+        b->cycles = 0;                 /* el RED no provoca UB fuera de UBSan */
+    CHECK(t, gb_link_attach(l, a, b));
+    CHECK(t, gb_link_run_cycles(l, GB_LINK_BLOCK_CYCLES) == GB_LINK_BLOCK_CYCLES);
+    free(st);
+out:
+    gb_link_destroy(l);
+    gb_destroy(a);
+    gb_destroy(b);
+}
+
 /* Una instancia pertenece a un solo cable (auditoría M9, H4). */
 static void ownership(struct ut *t)
 {
@@ -543,4 +604,8 @@ void unit_link(struct ut *t)
     exchange(t);                                    /* (d) */
     framebuffers(t);
     robustness(t);
+    state_realign_case(t, 45);
+    state_realign_case(t, 500);
+    state_realign_case(t, 912);
+    state_cycle_limit(t);
 }
