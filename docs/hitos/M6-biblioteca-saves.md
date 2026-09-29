@@ -5,6 +5,7 @@
 **Archivos:** `ios/PocketGB/Library/*`, `Saves/{SaveStore,AtomicFile}.swift`, `Settings/` (sección Partidas con los backups).
 
 **Criterios de aceptación** (Joel en el iPhone + tests unitarios Swift en un target `PocketGBTests`)
+- [ ] Test de `AtomicFile` del **primer guardado** (el destino no existe) y del reemplazo (el destino existe).
 - [ ] Tests de `AtomicFile`: escribir → matar a mitad (simulado lanzando error tras el tmp) → el archivo original sigue intacto.
 - [ ] Tests de rotación: 7 guardados distintos → existen `.1`–`.5`; guardados idénticos no rotan.
 - [ ] Elegir la carpeta → cerrar la app → reabrir: la biblioteca aparece sin volver a elegir la carpeta.

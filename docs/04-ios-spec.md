@@ -86,7 +86,10 @@ Android equivalente: [05](05-android-spec.md) §Biblioteca.
 **Cómo se guarda (`AtomicFile`):**
 1. Escribir `<huella>.sav.tmp` y hacer `fsync` (`FileHandle.synchronize()`).
 2. Rotar backups: `.4`→`.5`, …, `.1`→`.2`, y el actual→`.1`. **Solo** si el contenido nuevo difiere del actual (compara SHA-256), para que 5 backups no sean 5 copias iguales.
-3. `rename(tmp, <huella>.sav)` con `FileManager.replaceItemAt`, que es atómico.
+3. Instalar el temporal (mismo directorio, así que mismo volumen):
+   - **El destino no existe (primer guardado):** `rename(2)` del `.tmp` al nombre final, que es atómico en APFS dentro del mismo volumen. Luego `fsync` del directorio.
+   - **El destino existe:** `FileManager.replaceItemAt(dest, withItemAt: tmp)`, que también es atómico.
+   - Tests obligatorios (M6): primer guardado, reemplazo, y fallo simulado entre el paso 1 y el 3 (el `.sav` previo queda intacto y el `.tmp` huérfano se borra al siguiente arranque).
 4. Espejo en iCloud: con `NSFileCoordinator(writingItemAt: rom.deletingPathExtension().appendingPathExtension("sav"), options: .forReplacing)`. Si falla (sin acceso a la carpeta), se registra y se reintenta en el próximo guardado. **La copia local es la autoritativa.**
 
 **Carga al abrir un ROM:**

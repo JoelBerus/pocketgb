@@ -2,7 +2,7 @@
 
 ☁️ Núcleo · 🍎 UI. Resuelve A10.
 
-**Diseño:** dos instancias `gb` en el mismo hilo, ejecutadas en *lockstep* por bloques de ≤ 1 scanline (456 T-ciclos). La transferencia serie de reloj interno de una instancia desplaza un bit hacia la otra (`opts.serial_cb` + `gb_serial_receive`). Hay que manejar el caso de reloj externo (la otra instancia es el esclavo).
+**Diseño:** dos instancias `gb` en el mismo hilo, en *lockstep* con `gb_run_cycles(g, 456)` alternado. La instancia con reloj interno llama por cada bit a su `serial_bit_cb`, que invoca `gb_serial_clock_external(peer, bit_out)` y devuelve el bit del esclavo. Si ninguna tiene reloj interno, no se transfiere nada (igual que el hardware). Ver [03](../03-core-spec.md) §Serial.
 
 **UI:** pantalla dividida (dos juegos, uno arriba y otro abajo, controles con selector de a qué juego se envían), o bien alternar con un botón. El audio se toma solo del juego activo.
 
