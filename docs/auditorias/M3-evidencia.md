@@ -1,6 +1,6 @@
 # M3 · Evidencia de los criterios de aceptación (vuelta 2, tras la auditoría)
 
-Generada en Claude Code en la nube (Linux, Ubuntu clang version 18.1.3 (1ubuntu1), 4 vCPU) el 2026-09-29. Código: commit `21e9271` (correcciones H1–H5 de [M3-opus](M3-opus.md)). Este archivo va en el commit siguiente, que solo añade documentación.
+Generada en Claude Code en la nube (Linux, Ubuntu clang version 18.1.3 (1ubuntu1), 4 vCPU) el 2026-09-29. Código: commits `21e9271` (correcciones H1–H5 de [M3-opus](M3-opus.md)) y `5f0b692` (N1/N2 de [M3-opus-v2](M3-opus-v2.md); solo fuzzer y docs). Este archivo va en el commit siguiente, que solo añade documentación.
 
 ## 1. `make -C core test HITO=M3` (incluye M1 y M2: sin regresiones)
 ```
@@ -126,27 +126,27 @@ OK: todos los casos requeridos en PASS
 exit=0
 ```
 
-## 3. `make -C core fuzz FUZZ_SECONDS=600` (libFuzzer + ASan + UBSan, `-fno-sanitize-recover=all`)
+## 3. `make -C core fuzz FUZZ_SECONDS=600` (libFuzzer + ASan + UBSan, `-fno-sanitize-recover=all`), con el fuzzer final (N2 de la vuelta 2)
 ```
 build/gbtest --fuzz-seeds fuzz/corpus
-INFO: Seed: 2106051111
-INFO:      584 files found in fuzz/corpus/fuzz_load_rom
-#4514	DONE   cov: 960 ft: 3422 corp: 661/686Kb lim: 32768 exec/s: 7 rss: 360Mb
-Done 4514 runs in 601 second(s)
-INFO: Seed: 430828091
-INFO:      172 files found in fuzz/corpus/fuzz_state_load
-#11257	DONE   cov: 688 ft: 1505 corp: 189/1322Kb lim: 141887 exec/s: 18 rss: 368Mb
-Done 11257 runs in 601 second(s)
+INFO: Seed: 1063318253
+INFO:      875 files found in fuzz/corpus/fuzz_load_rom
+#4607	DONE   cov: 980 ft: 3749 corp: 732/744Kb lim: 32768 exec/s: 7 rss: 363Mb
+Done 4607 runs in 601 second(s)
+INFO: Seed: 3912134021
+INFO:      369 files found in fuzz/corpus/fuzz_state_load
+#11013	DONE   cov: 790 ft: 1776 corp: 246/936Kb lim: 141887 exec/s: 18 rss: 371Mb
+Done 11013 runs in 601 second(s)
 exit=0
 ```
 | Fuzzer | Ejecuciones | exec/s | Cobertura (cov / ft) | Crashes |
 |---|---|---|---|---|
-| `fuzz_load_rom` | 4 514 | 7 | 960 / 3 422 | 0 |
-| `fuzz_state_load` (con mutación estructurada y .sav hostil) | 11 257 | 18 | 688 / 1 505 | 0 |
+| `fuzz_load_rom` | 4 607 | 7 | 980 / 3 749 | 0 |
+| `fuzz_state_load` (mutación estructurada, 4 tipos de cartucho, .sav hostil) | 11 013 | 18 | 790 / 1 776 | 0 |
 
-Vuelta 1 (antes de H3): `fuzz_state_load` hacía 129 348 ejecuciones a 215 exec/s pero se estancaba en cov 442. Ahora cada entrada emula frames tras tres cargas aceptadas, así que va más lento pero llega más lejos (688).
+Evolución de `fuzz_state_load`: cov 442 en la vuelta 1, 688 tras H3 y 790 tras N2. Hubo dos hallazgos del fuzzing durante el hito: el `dma.index = 160` (núcleo, corregido con un test) y un desbordamiento en el propio fuzzer al introducir N2 (corregido).
 
-**Límite conocido:** incluso con H1 sin corregir (probado en una copia), el fuzzer estructurado no lo encontró en 300 s, porque hacen falta tres valores exactos a la vez (LY=143, dot=452, modo 3). H1 lo cubren el test de regresión de `unit_state.c` (el PoC del auditor), el recálculo del modo al cargar y la defensa `ly >= 144` en `render_line`.
+**Límite conocido:** incluso con H1 sin corregir (probado en una copia), el fuzzer estructurado no lo encontró en 300 s, porque hacen falta tres valores exactos a la vez (LY=143, dot=452, modo 3). H1 lo cubren el test de regresión de `unit_state.c`, el recálculo del modo al cargar, la defensa `ly >= 144` en `render_line` y la prueba exhaustiva del auditor (124 032 estados PPU).
 
 ## 4. Unit tests pedidos por el hito (`gbtest --unit`)
 - Bancos con ROM sintético de 2 MiB: MBC1, MBC3 y MBC5 (`unit_cart.c`).
