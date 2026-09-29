@@ -58,3 +58,16 @@ Observaciones que no bloquean:
 - Contraste con brillo alto y bajo.
 - Que la barra de estado se vea en biblioteca y ajustes y se oculte en el juego.
 - Que "Abrir un archivo…" (menú `…`) siga abriendo ROMs sueltos.
+
+## 6. Tras la auditoría (commits `119f1e7` y `3ed4f76`)
+- Run https://github.com/JoelBerus/pocketgb/actions/runs/36613054415 sobre `3ed4f76`: **success**, sin errores ni warnings del proyecto.
+```
+✔ Test run with 14 tests in 3 suites passed
+Test Case '-[PocketGBUITests.ScreenshotTests testScreenCatalog]' passed (253.224 seconds).
+Test Case '-[PocketGBUITests.ShellOpenFileTests testFolderNoticeOpensFilePicker]' passed (24.638 seconds).
+Test Case '-[PocketGBUITests.ShellOpenFileTests testMenuOpensFilePicker]' passed (14.219 seconds).
+Test Case '-[PocketGBUITests.ShellTests testTabsAndSettingsNavigation]' passed (23.614 seconds).
+** TEST SUCCEEDED **   ·   Release: ** BUILD SUCCEEDED **
+```
+- En el run intermedio `119f1e7`, los dos tests del selector fallaron al lanzar la app ("background assertion" agotado). Eran los primeros UI tests tras los unitarios, que usan la app como host. Pasan desde que corren después del catálogo (`ShellOpenFileTests`).
+- Capturas revisadas otra vez: `library-no-folder`/`library-empty` en dark con el acento `#3F7FEF` ✅; `game-acid portrait light` sigue oscuro ✅; `launch` solo en dark ✅.
