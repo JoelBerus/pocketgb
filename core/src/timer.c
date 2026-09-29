@@ -4,7 +4,8 @@
  * El contador interno de 16 bits avanza 4 por M-ciclo. TIMA sube en el flanco
  * de bajada de (bit observado AND habilitado), lo que incluye los glitches al
  * escribir DIV o TAC. El mismo contador da el reloj interno de la serie
- * (flanco de bajada del bit 8 → 8192 Hz).
+ * (flanco de bajada del bit 8 → 8192 Hz) y el frame sequencer del APU
+ * (flanco de bajada del bit 12 → 512 Hz).
  */
 #include "internal.h"
 
@@ -38,6 +39,8 @@ static void counter_set(gb *g, uint16_t next)
         tima_increment(g);
     if ((prev & 0x100) && !(next & 0x100))
         serial_clock_internal(g);
+    if ((prev & 0x1000) && !(next & 0x1000))
+        apu_frame_step(g);   /* frame sequencer a 512 Hz */
 }
 
 void timer_reset(gb *g)

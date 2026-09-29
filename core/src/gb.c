@@ -2,7 +2,7 @@
  * gb.c — ciclo de vida de la instancia, carga del ROM y bucle de ejecución.
  * API pública: include/pocketgb.h. Spec: docs/03-core-spec.md.
  *
- * Pendiente por hito: audio real (M5),
+ * Pendiente por hito:
  * modo CGB (M8; hasta entonces un ROM solo-CGB devuelve GB_ERR_CGB_ONLY y uno
  * compatible corre como DMG).
  */
@@ -47,6 +47,7 @@ void gb_tick(gb *g, unsigned tcycles)
         if (!g->cpu.stopped)
             timer_tick(g);      /* STOP pone DIV a 0 y lo congela hasta salir */
         dma_tick(g);
+        g->apu.pending += 4;   /* el APU se pone al día al tocar sus registros (apu_sync) */
         ppu_tick(g, 4);
         if (g->cart.has_rtc)
             rtc_tick(g, 4);
@@ -61,6 +62,7 @@ void gb_reset(gb *g)
     mmu_reset(g);
     cart_reset(g);
     timer_reset(g);
+    apu_reset(g);
     dma_reset(g);
     serial_reset(g);
     joypad_reset(g);
@@ -92,6 +94,11 @@ gb_result gb_load_rom(gb *g, const uint8_t *data, size_t len, const gb_options *
         palette_set |= o.dmg_palette[i] != 0;
     if (!palette_set)
         memcpy(o.dmg_palette, default_palette, sizeof default_palette);
+    /* Frecuencia de salida razonable (0 = sin audio). */
+    if (o.sample_rate && o.sample_rate < 8000)
+        o.sample_rate = 8000;
+    if (o.sample_rate > 192000)
+        o.sample_rate = 192000;
 
     gb_result r = cart_load(g, data, len);
     if (r != GB_OK) {
@@ -139,6 +146,7 @@ void gb_run_frame(gb *g)
     g->ppu.frame_done = false;
     while (!g->ppu.frame_done && g->cycles - start < GB_CYCLES_PER_FRAME)
         cpu_step(g);
+    apu_sync(g);
 }
 
 uint32_t gb_run_cycles(gb *g, uint32_t cycles)
@@ -148,6 +156,7 @@ uint32_t gb_run_cycles(gb *g, uint32_t cycles)
     uint64_t start = g->cycles;
     while (g->cycles - start < cycles)
         cpu_step(g);
+    apu_sync(g);
     return (uint32_t)(g->cycles - start);
 }
 
@@ -164,21 +173,6 @@ bool gb_cpu_locked(const gb *g)
 const uint32_t *gb_framebuffer(const gb *g)
 {
     return g ? g->framebuffer : NULL;
-}
-
-/* Sin APU hasta M5: no hay muestras. */
-size_t gb_audio_read(gb *g, int16_t *out, size_t max_frames)
-{
-    (void)g;
-    (void)out;
-    (void)max_frames;
-    return 0;
-}
-
-size_t gb_audio_available(const gb *g)
-{
-    (void)g;
-    return 0;
 }
 
 const char *gb_result_str(gb_result r)

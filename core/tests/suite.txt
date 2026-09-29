@@ -2,7 +2,7 @@
 # Formato: hito|ruta|modo|modelo|max_frames|tipo[|referencia[|botones]]
 #   hito:   M1..M9. `make test HITO=Mn` ejecuta los casos de los hitos <= Mn.
 #   ruta:   relativa a core/tests/roms/ (admite comodines *), o `unit` para los unit tests.
-#   modo:   serial | mooneye | acid | frames | unit.
+#   modo:   serial | mooneye | acid | frames | blargg (salida por RAM en A000) | unit.
 #   referencia: en acid y frames; PNG relativo a core/tests/roms/ (run_suite lo convierte a RGBA).
 #   botones: guion para --input, "frame:botones,..." (A B S T R L U D, "-" = soltar).
 #   tipo:   requerido (bloquea) | known-fail (se reporta, no bloquea) | info (extra, no bloquea).
@@ -73,3 +73,19 @@ M3|rtc3test/rtc3test.gb|frames|dmg|900|requerido|rtc3test/rtc3test-range-tests-d
 M3|rtc3test/rtc3test.gb|frames|dmg|2100|requerido|rtc3test/rtc3test-sub-second-writes-dmg.png|30:D,40:-,50:D,60:-,70:A,80:-
 # Fuera de alcance de v1: MBC1M (multicart).
 M3|mooneye-test-suite/emulator-only/mbc1/multicart_rom_8Mb.gb|mooneye|dmg|1200|known-fail
+
+# ---- M5: APU (requeridos por docs/06-testing.md: dmg_sound 01–06) ----
+M5|blargg/dmg_sound/rom_singles/01-registers.gb|blargg|dmg|600|requerido
+M5|blargg/dmg_sound/rom_singles/02-len ctr.gb|blargg|dmg|1200|requerido
+M5|blargg/dmg_sound/rom_singles/03-trigger.gb|blargg|dmg|1800|requerido
+M5|blargg/dmg_sound/rom_singles/04-sweep.gb|blargg|dmg|600|requerido
+M5|blargg/dmg_sound/rom_singles/05-sweep details.gb|blargg|dmg|600|requerido
+M5|blargg/dmg_sound/rom_singles/06-overflow on trigger.gb|blargg|dmg|600|requerido
+# Extras que también pasan.
+M5|blargg/dmg_sound/rom_singles/07-len sweep period sync.gb|blargg|dmg|600|requerido
+M5|blargg/dmg_sound/rom_singles/08-len ctr during power.gb|blargg|dmg|600|requerido
+M5|blargg/dmg_sound/rom_singles/11-regs after power.gb|blargg|dmg|600|requerido
+# Conocidos: acceso a la wave RAM con el canal 3 sonando (quirk de tiempo del DMG).
+M5|blargg/dmg_sound/rom_singles/09-wave read while on.gb|blargg|dmg|600|known-fail
+M5|blargg/dmg_sound/rom_singles/10-wave trigger while on.gb|blargg|dmg|600|known-fail
+M5|blargg/dmg_sound/rom_singles/12-wave write while on.gb|blargg|dmg|600|known-fail

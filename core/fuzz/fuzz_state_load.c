@@ -126,7 +126,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         if (s) {
             memcpy(s, data, size);
             memcpy(s, "PGBS", 4);
-            put32(s + 4, 1);
+            put32(s + 4, 2);   /* versión actual del formato */
             memcpy(s + 8, g->info.fingerprint, 32);
             put32(s + 40, 1);
             put32(s + size - 4, crc32_update(0, s, size - 4));

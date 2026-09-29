@@ -1,7 +1,7 @@
 /*
  * state.c — save states (docs/03-core-spec.md §Save states).
  *
- *   "PGBS" | u32 versión | u8 sha256_rom[32] | u32 modelo |
+ *   "PGBS" | u32 versión (2) | u8 sha256_rom[32] | u32 modelo |
  *   secciones {u32 tag, u32 len, bytes}... | u32 crc32
  *
  * Little-endian. Cada campo se serializa por separado (sin memcpy de structs).
@@ -16,7 +16,7 @@
 
 #include "internal.h"
 
-enum { STATE_VERSION = 1, STATE_MODEL_DMG = 1 };
+enum { STATE_VERSION = 2, STATE_MODEL_DMG = 1 };   /* v2: sección APU (M5) */
 enum { HEADER_BYTES = 4 + 4 + 32 + 4, CRC_BYTES = 4 };
 
 static const uint32_t crc_table[256] = {
@@ -248,7 +248,6 @@ static void visit(struct io *io, gb *g)
     bytes(io, m->wram, sizeof m->wram);
     bytes(io, m->oam, sizeof m->oam);
     bytes(io, m->hram, sizeof m->hram);
-    bytes(io, m->apu_regs, sizeof m->apu_regs);
     u8(io, &m->ie, 0xFF); u8m(io, &m->if_, 0x1F);
     section_end(io, s);
 
@@ -301,6 +300,33 @@ static void visit(struct io *io, gb *g)
         io->ok = false;
     if (io->mode == IO_APPLY)
         g->dma = d;
+
+    /* APU: el anillo de salida y el filtro no se guardan (se vacían al cargar). */
+    struct gb_apu *ap = &g->apu;
+    s = section_begin(io, TAG('A', 'P', 'U', ' '));
+    flag(io, &ap->power);
+    u32(io, &ap->pending, 1u << 20);
+    bytes(io, ap->regs, sizeof ap->regs);
+    u8(io, &ap->fs_step, 7);
+    for (int i = 0; i < 4; i++) {
+        struct gb_apu_ch *c = &ap->ch[i];
+        flag(io, &c->enabled); flag(io, &c->dac); flag(io, &c->len_en);
+        u16(io, &c->length, i == 2 ? 256 : 64);
+        u16(io, &c->freq, 2047);
+        uint32_t timer = (uint32_t)c->timer;
+        u32(io, &timer, 1u << 23);         /* ≥ 0 y ≤ el mayor periodo posible */
+        if (io->mode == IO_APPLY)
+            c->timer = (int32_t)timer;
+        u8(io, &c->duty, 3);
+        u8(io, &c->pos, i == 2 ? 31 : 7);
+        u8(io, &c->env.vol, 15); u8(io, &c->env.init, 15);
+        u8(io, &c->env.period, 7); u8(io, &c->env.timer, 8);
+        flag(io, &c->env.up);
+    }
+    u8(io, &ap->sweep_timer, 8); u16(io, &ap->sweep_shadow, 2047);
+    flag(io, &ap->sweep_enabled); flag(io, &ap->sweep_neg_used);
+    u8(io, &ap->wave_sample, 15); u16(io, &ap->lfsr, 0x7FFF);
+    section_end(io, s);
 
     struct gb_serial *se = &g->serial;
     s = section_begin(io, TAG('S', 'E', 'R', ' '));
@@ -421,6 +447,10 @@ gb_result gb_state_load(gb *g, const uint8_t *data, size_t len)
     visit(&io, g);
     cart_update_banks(g);
     ppu_resync(g);
+    g->apu.head = g->apu.count = 0;   /* audio del estado anterior: descartado */
+    g->apu.mix_dirty = true;
+    g->apu.acc_l = g->apu.acc_r = 0;
+    g->apu.acc_n = 0;
     memset(&g->dbg, 0, sizeof g->dbg);
     return GB_OK;
 }
