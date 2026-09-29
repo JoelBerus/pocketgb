@@ -11,7 +11,7 @@ private final class LocalSaveBackgroundTask {
     func begin() {
         identifier = UIApplication.shared.beginBackgroundTask(
             withName: "Guardar partida",
-            expirationHandler: Self.makeExpirationHandler(self))
+            expirationHandler: Self.makeEndHandler(self))
     }
 
     func end() {
@@ -20,7 +20,7 @@ private final class LocalSaveBackgroundTask {
         identifier = .invalid
     }
 
-    nonisolated private static func makeExpirationHandler(
+    nonisolated static func makeEndHandler(
         _ task: LocalSaveBackgroundTask
     ) -> @Sendable () -> Void {
         { Task { @MainActor in task.end() } }
@@ -216,7 +216,7 @@ final class AppState {
         let backgroundTask = LocalSaveBackgroundTask()
         backgroundTask.begin()
         session.pause()
-        backgroundTask.end()
+        session.whenMirrorIdle(LocalSaveBackgroundTask.makeEndHandler(backgroundTask))
         paused = true
     }
 

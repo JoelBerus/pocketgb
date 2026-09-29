@@ -115,7 +115,8 @@ enum SaveResolution: Equatable {
     ///   - local: `Saves/<huella>.sav`.
     ///   - mirror: `<rom>.sav` junto al ROM (nil si no hay o no hay carpeta).
     ///   - isValidSize: tamaños que acepta `gb_sram_load`.
-    static func resolve(local: Candidate?, mirror: Candidate?, isValidSize: (Int) -> Bool) -> SaveResolution {
+    static func resolve(local: Candidate?, mirror: Candidate?, mirrorIsOwned: Bool = false,
+                        isValidSize: (Int) -> Bool) -> SaveResolution {
         let localOK = local.map { isValidSize($0.data.count) } ?? false
         let mirrorOK = mirror.map { isValidSize($0.data.count) } ?? false
         switch (local, mirror) {
@@ -144,6 +145,13 @@ enum SaveResolution: Equatable {
             if local.data == mirror.data {
                 return .load(data: local.data, backupOther: nil, installLocal: false,
                              updateMirror: false, mirrorIgnored: false, quarantineLocal: false)
+            }
+            if mirrorIsOwned {
+                // Una huella registrada prueba que este contenido lo escribió PocketGB:
+                // una fecha posterior solo significa que una escritura asíncrona vieja
+                // terminó tarde. La local gana sin respaldar el espejo obsoleto.
+                return .load(data: local.data, backupOther: nil, installLocal: false,
+                             updateMirror: true, mirrorIgnored: false, quarantineLocal: false)
             }
             // Difieren: gana la más reciente; ante la duda (sin fecha o empate), la local.
             let mirrorNewer = (mirror.date ?? .distantPast) > (local.date ?? .distantPast)
@@ -221,7 +229,15 @@ enum SaveOpening {
     }
 
     static func prepare(store: SaveStore, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot,
-                        validSizes: Set<Int>) throws -> Outcome {
+                        validSizes: Set<Int>,
+                        mirrorWriter: (@Sendable (Data) throws -> Void)? = nil) throws -> Outcome {
+        func makeTarget(_ mirror: SaveMirror?, pending: Bool = false) -> SaveTarget {
+            if let mirrorWriter {
+                return SaveTarget(local: store, mirror: mirror, mirrorPending: pending,
+                                  mirrorWriter: mirrorWriter)
+            }
+            return SaveTarget(local: store, mirror: mirror, mirrorPending: pending)
+        }
         let local = try store.load().map { SaveResolution.Candidate(data: $0, date: store.modificationDate) }
         var usableMirror = mirror
         var mirrorCandidate: SaveResolution.Candidate?
@@ -238,16 +254,16 @@ enum SaveOpening {
                 unavailable = true
             }
         }
-        switch SaveResolution.resolve(local: local, mirror: mirrorCandidate,
+        let mirrorIsOwned = mirrorCandidate.map { store.recognizesOwnedMirror($0.data) } ?? false
+        switch SaveResolution.resolve(local: local, mirror: mirrorCandidate, mirrorIsOwned: mirrorIsOwned,
                                       isValidSize: { validSizes.contains($0) }) {
         case .none:
-            return Outcome(data: nil, target: SaveTarget(local: store, mirror: usableMirror), warning: nil)
+            return Outcome(data: nil, target: makeTarget(usableMirror), warning: nil)
         case let .load(data, backupOther, installLocal, updateMirror, mirrorIgnored, quarantineLocal):
             if let backupOther { try store.addBackup(backupOther) }
             if quarantineLocal { try store.quarantineCurrent() }
             if installLocal { try store.save(data) }
-            let target = SaveTarget(local: store, mirror: mirrorIgnored ? nil : usableMirror,
-                                    mirrorPending: updateMirror)
+            let target = makeTarget(mirrorIgnored ? nil : usableMirror, pending: updateMirror)
             let warning: SaveLoadWarning? = mirrorIgnored ? .mirrorIgnored
                 : quarantineLocal ? .localQuarantined
                 : unavailable ? .mirrorUnavailable : nil
@@ -261,16 +277,129 @@ enum SaveOpening {
 /// Destino de los guardados de una sesión: la copia local (obligatoria) y el espejo
 /// (opcional). La local se escribe desde la cola de guardado de `EmulatorSession`;
 /// el espejo tiene su propia cola serie y nunca bloquea un flush local.
+private final class MirrorChannelRegistry: @unchecked Sendable {
+    static let shared = MirrorChannelRegistry()
+    private let lock = NSLock()
+    private var channels: [String: MirrorChannel] = [:]
+
+    func channel(for fingerprint: String) -> MirrorChannel {
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = channels[fingerprint] { return existing }
+        let channel = MirrorChannel(fingerprint: fingerprint)
+        channels[fingerprint] = channel
+        return channel
+    }
+}
+
+private final class MirrorChannel: @unchecked Sendable {
+    struct Request: Sendable {
+        let data: Data
+        let store: SaveStore
+        let writer: @Sendable (Data) throws -> Void
+    }
+
+    private let queue: DispatchQueue
+    private let lock = NSLock()
+    private var pendingRequest: Request?
+    private var workerRunning = false
+    private var needsRetry = false
+    private var idleCallbacks: [@Sendable () -> Void] = []
+    private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "saves")
+
+    init(fingerprint: String) {
+        queue = DispatchQueue(label: "PocketGB.save-mirror.\(fingerprint)", qos: .utility)
+    }
+
+    var pending: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return needsRetry || workerRunning || pendingRequest != nil
+    }
+
+    func markNeedsRetry() {
+        lock.lock()
+        needsRetry = true
+        lock.unlock()
+    }
+
+    func enqueue(_ request: Request) {
+        lock.lock()
+        pendingRequest = request
+        needsRetry = true
+        let shouldStart = !workerRunning
+        if shouldStart { workerRunning = true }
+        lock.unlock()
+        if shouldStart { queue.async { [self] in drain() } }
+    }
+
+    func retryIfNeeded(_ request: Request) {
+        lock.lock()
+        guard needsRetry else {
+            lock.unlock()
+            return
+        }
+        pendingRequest = request
+        let shouldStart = !workerRunning
+        if shouldStart { workerRunning = true }
+        lock.unlock()
+        if shouldStart { queue.async { [self] in drain() } }
+    }
+
+    func whenIdle(_ callback: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if workerRunning {
+            idleCallbacks.append(callback)
+            lock.unlock()
+        } else {
+            lock.unlock()
+            callback()
+        }
+    }
+
+    private func drain() {
+        while true {
+            lock.lock()
+            guard let request = pendingRequest else {
+                needsRetry = false
+                workerRunning = false
+                let callbacks = idleCallbacks
+                idleCallbacks.removeAll()
+                lock.unlock()
+                callbacks.forEach { $0() }
+                return
+            }
+            pendingRequest = nil
+            lock.unlock()
+
+            do {
+                // Write-ahead local: si el proceso muere después del replace remoto y
+                // antes de confirmarlo, la próxima apertura aún reconoce el contenido.
+                try request.store.recordMirrorAttempt(request.data)
+                try request.writer(request.data)
+                try request.store.recordSuccessfulMirror(request.data)
+            } catch {
+                lock.lock()
+                let newerRequestExists = pendingRequest != nil
+                if !newerRequestExists { pendingRequest = request }
+                needsRetry = true
+                if !newerRequestExists { workerRunning = false }
+                let callbacks = newerRequestExists ? [] : idleCallbacks
+                if !newerRequestExists { idleCallbacks.removeAll() }
+                lock.unlock()
+                log.error("Espejo de la partida sin escribir (se reintentará): \(error.localizedDescription, privacy: .public)")
+                callbacks.forEach { $0() }
+                if !newerRequestExists { return }
+            }
+        }
+    }
+}
+
 final class SaveTarget: @unchecked Sendable {
     let local: SaveStore
     let mirror: SaveMirror?
     private let mirrorWriter: (@Sendable (Data) throws -> Void)?
-    private let mirrorQueue = DispatchQueue(label: "PocketGB.save-mirror", qos: .utility)
-    private let mirrorLock = NSLock()
-    private var pendingMirrorData: Data?
-    private var mirrorWorkerRunning = false
-    private var mirrorNeedsRetry = false
-    private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "saves")
+    private let mirrorChannel: MirrorChannel?
 
     init(local: SaveStore, mirror: SaveMirror?, mirrorPending: Bool = false) {
         self.local = local
@@ -280,7 +409,8 @@ final class SaveTarget: @unchecked Sendable {
         } else {
             mirrorWriter = nil
         }
-        mirrorNeedsRetry = mirrorPending && mirror != nil
+        mirrorChannel = mirror == nil ? nil : MirrorChannelRegistry.shared.channel(for: local.fingerprint)
+        if mirrorPending { mirrorChannel?.markNeedsRetry() }
     }
 
     /// Inyección para probar un proveedor de archivos lento o bloqueado sin sustituir
@@ -290,14 +420,13 @@ final class SaveTarget: @unchecked Sendable {
         self.local = local
         self.mirror = mirror
         self.mirrorWriter = mirrorWriter
-        mirrorNeedsRetry = mirrorPending
+        mirrorChannel = MirrorChannelRegistry.shared.channel(for: local.fingerprint)
+        if mirrorPending { mirrorChannel?.markNeedsRetry() }
     }
 
     /// Verdadero mientras hay una copia en curso, pendiente o fallida.
     var mirrorPending: Bool {
-        mirrorLock.lock()
-        defer { mirrorLock.unlock() }
-        return mirrorNeedsRetry || mirrorWorkerRunning || pendingMirrorData != nil
+        mirrorChannel?.pending ?? false
     }
 
     /// Guarda primero la copia local atómica. El espejo solo se encola y queda fuera
@@ -310,63 +439,24 @@ final class SaveTarget: @unchecked Sendable {
     /// Reintenta en la cola del espejo, también al abrir un juego. Si ya hay una
     /// escritura remota en curso, esa escritura drenará el último valor pendiente.
     func retryMirrorIfNeeded(_ data: Data) {
-        guard mirrorWriter != nil else { return }
-        mirrorLock.lock()
-        guard mirrorNeedsRetry else {
-            mirrorLock.unlock()
+        guard let mirrorWriter, let mirrorChannel else { return }
+        mirrorChannel.retryIfNeeded(.init(data: data, store: local, writer: mirrorWriter))
+    }
+
+    /// Se invoca cuando no queda una escritura de espejo en vuelo. Un fallo deja el
+    /// contenido marcado para reintento, pero también libera la tarea de fondo.
+    func whenMirrorIdle(_ callback: @escaping @Sendable () -> Void) {
+        guard let mirrorChannel else {
+            callback()
             return
         }
-        pendingMirrorData = data
-        if mirrorWorkerRunning {
-            mirrorLock.unlock()
-            return
-        }
-        mirrorWorkerRunning = true
-        mirrorLock.unlock()
-        mirrorQueue.async { [self] in drainMirror() }
+        mirrorChannel.whenIdle(callback)
     }
 
     /// Coalescer: una escritura que ya empezó no se puede cancelar, pero mientras está
     /// bloqueada solo se conserva el contenido más reciente recibido.
     private func enqueueMirror(_ data: Data) {
-        guard mirrorWriter != nil else { return }
-        mirrorLock.lock()
-        pendingMirrorData = data
-        mirrorNeedsRetry = true
-        if mirrorWorkerRunning {
-            mirrorLock.unlock()
-            return
-        }
-        mirrorWorkerRunning = true
-        mirrorLock.unlock()
-        mirrorQueue.async { [self] in drainMirror() }
-    }
-
-    private func drainMirror() {
-        guard let mirrorWriter else { return }
-        while true {
-            mirrorLock.lock()
-            guard let data = pendingMirrorData else {
-                mirrorNeedsRetry = false
-                mirrorWorkerRunning = false
-                mirrorLock.unlock()
-                return
-            }
-            pendingMirrorData = nil
-            mirrorLock.unlock()
-
-            do {
-                try mirrorWriter(data)
-            } catch {
-                mirrorLock.lock()
-                let retryWasQueuedWhileWriting = pendingMirrorData != nil
-                if !retryWasQueuedWhileWriting { pendingMirrorData = data }
-                mirrorNeedsRetry = true
-                if !retryWasQueuedWhileWriting { mirrorWorkerRunning = false }
-                mirrorLock.unlock()
-                log.error("Espejo de la partida sin escribir (se reintentará): \(error.localizedDescription, privacy: .public)")
-                if !retryWasQueuedWhileWriting { return }
-            }
-        }
+        guard let mirrorWriter, let mirrorChannel else { return }
+        mirrorChannel.enqueue(.init(data: data, store: local, writer: mirrorWriter))
     }
 }

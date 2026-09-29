@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Partida local de un ROM: `Saves/<huella>.sav` y `Saves/backups/<huella>.<n>.sav`.
 /// La copia local es la autoritativa (docs/04 §Saves); el espejo junto al ROM es `SaveMirror`.
@@ -9,6 +10,7 @@ struct SaveStore: Sendable {
     let fingerprint: String
 
     var saveURL: URL { directory.appendingPathComponent("\(fingerprint).sav") }
+    var mirrorHistoryURL: URL { directory.appendingPathComponent("\(fingerprint).mirror-history.json") }
     var backupsDirectory: URL { directory.appendingPathComponent("backups", isDirectory: true) }
     func backupURL(_ n: Int) -> URL { backupsDirectory.appendingPathComponent("\(fingerprint).\(n).sav") }
 
@@ -28,6 +30,61 @@ struct SaveStore: Sendable {
 
     func save(_ data: Data) throws {
         try AtomicFile.write(data, to: saveURL, keep: Self.keepBackups, backup: backupURL)
+    }
+
+    private struct MirrorHistory: Codable {
+        var successful: [String] = []
+        var pending: [String] = []
+    }
+
+    /// Reconoce tanto escrituras confirmadas como la entrada write-ahead de una
+    /// escritura que pudo terminar justo antes de que iOS matara el proceso.
+    func recognizesOwnedMirror(_ data: Data) -> Bool {
+        let hash = Self.contentHash(data)
+        let history = mirrorHistory()
+        return history.successful.contains(hash) || history.pending.contains(hash)
+    }
+
+    func recordMirrorAttempt(_ data: Data) throws {
+        let hash = Self.contentHash(data)
+        var history = mirrorHistory()
+        history.pending.removeAll { $0 == hash }
+        history.pending.insert(hash, at: 0)
+        history.pending = Array(history.pending.prefix(8))
+        try writeMirrorHistory(history)
+    }
+
+    func recordSuccessfulMirror(_ data: Data) throws {
+        let hash = Self.contentHash(data)
+        var history = mirrorHistory()
+        history.pending.removeAll { $0 == hash }
+        history.successful.removeAll { $0 == hash }
+        history.successful.insert(hash, at: 0)
+        history.successful = Array(history.successful.prefix(8))
+        try writeMirrorHistory(history)
+    }
+
+    private func writeMirrorHistory(_ history: MirrorHistory) throws {
+        let encoded = try JSONEncoder().encode(history)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tmp = mirrorHistoryURL.appendingPathExtension("tmp")
+        try AtomicFile.writeSynced(encoded, to: tmp)
+        try AtomicFile.rename(tmp, mirrorHistoryURL)
+        try AtomicFile.syncDirectory(directory)
+    }
+
+    private func mirrorHistory() -> MirrorHistory {
+        guard let data = try? Data(contentsOf: mirrorHistoryURL) else { return MirrorHistory() }
+        if let history = try? JSONDecoder().decode(MirrorHistory.self, from: data) { return history }
+        // Compatibilidad defensiva con la primera forma del registro (array plano).
+        if let hashes = try? JSONDecoder().decode([String].self, from: data) {
+            return MirrorHistory(successful: Array(hashes.prefix(8)))
+        }
+        return MirrorHistory()
+    }
+
+    private static func contentHash(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     var modificationDate: Date? { Self.modificationDate(saveURL) }

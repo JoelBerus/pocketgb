@@ -19,6 +19,24 @@ private final class MirrorWriteRecorder: @unchecked Sendable {
     }
 }
 
+private final class BlockingMirrorWriter: @unchecked Sendable {
+    let started = DispatchSemaphore(value: 0)
+    let unblock = DispatchSemaphore(value: 0)
+    let finished = DispatchSemaphore(value: 0)
+    private let mirror: SaveMirror
+
+    init(mirror: SaveMirror) {
+        self.mirror = mirror
+    }
+
+    func write(_ data: Data) throws {
+        started.signal()
+        unblock.wait()
+        try mirror.write(data)
+        finished.signal()
+    }
+}
+
 private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
@@ -138,6 +156,7 @@ struct SaveMirrorTests {
 
     @Test func blockedMirrorDoesNotBlockLocalFlushAndCoalescesLatest() throws {
         let store = SaveStore(directory: dir, fingerprint: "blocked")
+        let mirror = try mirrorFile(nil)
         let mirrorStarted = DispatchSemaphore(value: 0)
         let unblockMirror = DispatchSemaphore(value: 0)
         let mirrorFinished = DispatchSemaphore(value: 0)
@@ -145,7 +164,7 @@ struct SaveMirrorTests {
         let secondLocalFlushFinished = DispatchSemaphore(value: 0)
         let thirdLocalFlushFinished = DispatchSemaphore(value: 0)
         let recorder = MirrorWriteRecorder()
-        let target = SaveTarget(local: store, mirror: nil) { data in
+        let target = SaveTarget(local: store, mirror: mirror) { data in
             mirrorStarted.signal()
             unblockMirror.wait()
             recorder.append(data)
@@ -176,6 +195,104 @@ struct SaveMirrorTests {
         unblockMirror.signal()
         #expect(mirrorFinished.wait(timeout: .now() + 2) == .success)
         #expect(recorder.snapshot == [Data([1]), Data([3])])
+    }
+
+    @Test func staleOwnedMirrorCannotReplaceNewerLocalWhenGameReopens() throws {
+        let store = SaveStore(directory: dir, fingerprint: "owned-\(UUID().uuidString)")
+        let mirror = try mirrorFile(nil)
+        let blocked = BlockingMirrorWriter(mirror: mirror)
+        let firstSession = SaveTarget(local: store, mirror: mirror, mirrorWriter: blocked.write)
+        let d1 = Data([1, 1, 1, 1])
+        let d2 = Data([2, 2, 2, 2])
+
+        try firstSession.persistLocal(d1)
+        #expect(blocked.started.wait(timeout: .now() + 2) == .success)
+        try firstSession.persistLocal(d2)
+        blocked.unblock.signal()
+        #expect(blocked.finished.wait(timeout: .now() + 2) == .success)
+        #expect(blocked.started.wait(timeout: .now() + 2) == .success)
+        #expect(try mirror.read() == d1)
+        #expect(try store.load() == d2)
+
+        let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
+                                               validSizes: [4])
+        #expect(reopened.data == d2)
+        #expect(store.backups().isEmpty)
+        reopened.target?.retryMirrorIfNeeded(d2)
+
+        blocked.unblock.signal()
+        #expect(blocked.finished.wait(timeout: .now() + 2) == .success)
+        let idle = DispatchSemaphore(value: 0)
+        reopened.target?.whenMirrorIdle { idle.signal() }
+        #expect(idle.wait(timeout: .now() + 2) == .success)
+        #expect(try mirror.read() == d2)
+    }
+
+    @Test func newerExternalMirrorWinsAndBacksUpLocal() throws {
+        let store = SaveStore(directory: dir, fingerprint: "external-\(UUID().uuidString)")
+        let mirror = try mirrorFile(nil)
+        let own = Data([1, 1, 1, 1])
+        let local = Data([2, 2, 2, 2])
+        let external = Data([3, 3, 3, 3])
+        let firstWrite = DispatchSemaphore(value: 0)
+        let target = SaveTarget(local: store, mirror: mirror) { data in
+            try mirror.write(data)
+            firstWrite.signal()
+        }
+        try target.persistLocal(own)
+        #expect(firstWrite.wait(timeout: .now() + 2) == .success)
+        #expect(waitUntil { !target.mirrorPending })
+
+        try store.save(local)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: store.saveURL.path)
+        try mirror.write(external)
+        try FileManager.default.setAttributes([.modificationDate: new], ofItemAtPath: mirror.url.path)
+
+        let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
+                                               validSizes: [4])
+        #expect(reopened.data == external)
+        #expect(try store.load() == external)
+        #expect(try Data(contentsOf: store.backupURL(1)) == local)
+    }
+
+    @Test @MainActor func synchronousSessionFlushDoesNotWaitForBlockedRealMirror() throws {
+        let mirror = try mirrorFile(nil)
+        let blocked = BlockingMirrorWriter(mirror: mirror)
+        var rom = LibraryScannerTests.rom(title: "BARRIER")
+        rom[0x100] = 0xC3; rom[0x101] = 0x50; rom[0x102] = 0x01 // JP $0150
+        rom[0x147] = 0x03 // MBC1 + RAM + batería
+        rom[0x149] = 0x02 // 8 KiB SRAM
+        let program: [UInt8] = [
+            0x3E, 0x0A,             // LD A,$0A (habilitar RAM)
+            0xEA, 0x00, 0x00,       // LD ($0000),A
+            0x3E, 0x42,             // LD A,$42
+            0xEA, 0x00, 0xA0,       // LD ($A000),A
+            0x18, 0xFE              // JR -2
+        ]
+        rom.replaceSubrange(0x150..<(0x150 + program.count), with: program)
+        var checksum: UInt8 = 0
+        for i in 0x134...0x14C { checksum = checksum &- rom[i] &- 1 }
+        rom[0x14D] = checksum
+
+        let session = try EmulatorSession(
+            romData: rom,
+            savesDirectory: dir,
+            mirror: mirror,
+            mirrorSnapshot: .absent,
+            mirrorWriter: blocked.write,
+            onAudioInterrupted: {}
+        )
+        session.start()
+        session.pause()
+        #expect(blocked.started.wait(timeout: .now() + 2) == .success)
+        let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
+        let saved = try #require(store.load())
+        #expect(saved.count == 8 * 1024)
+        #expect(saved[0] == 0x42)
+
+        blocked.unblock.signal()
+        #expect(blocked.finished.wait(timeout: .now() + 2) == .success)
+        session.stop()
     }
 
     // MARK: Backups y restauración (docs/04 §Restaurar)

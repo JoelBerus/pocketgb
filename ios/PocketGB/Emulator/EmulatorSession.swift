@@ -67,6 +67,7 @@ final class EmulatorSession: @unchecked Sendable {
     @MainActor
     init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
          mirrorSnapshot: SaveMirror.Snapshot = .absent,
+         mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
          onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
@@ -83,7 +84,8 @@ final class EmulatorSession: @unchecked Sendable {
             do {
                 try store.recoverOrphans(expectedSize: core.sramSaveSize)
                 let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirrorSnapshot,
-                                                      validSizes: Self.validSaveSizes(info))
+                                                      validSizes: Self.validSaveSizes(info),
+                                                      mirrorWriter: mirrorWriter)
                 if let data = outcome.data { try core.sramLoad(data) }
                 saves = outcome.target
                 warning = outcome.warning
@@ -168,6 +170,16 @@ final class EmulatorSession: @unchecked Sendable {
         control.lock()
         flushRequested = true
         control.unlock()
+    }
+
+    /// Llama a `callback` al terminar la escritura de espejo en vuelo. La copia local
+    /// ya está cubierta por la barrera síncrona de `pause()`/`stop()`.
+    func whenMirrorIdle(_ callback: @escaping @Sendable () -> Void) {
+        guard let saves else {
+            callback()
+            return
+        }
+        saves.whenMirrorIdle(callback)
     }
 
     /// Detiene el hilo; al volver, la SRAM ya está escrita en disco.
