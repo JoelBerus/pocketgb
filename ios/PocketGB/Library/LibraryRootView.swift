@@ -19,5 +19,6 @@ struct LibraryRootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .modifier(HideGameAlert())
     }
 }

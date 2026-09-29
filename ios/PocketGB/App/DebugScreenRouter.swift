@@ -19,6 +19,18 @@ enum DebugScreen: String, CaseIterable {
     case libraryScanSummary = "library-scan-summary"
     case libraryRomError = "library-rom-error"
     case saveDataError = "save-data-error"
+    // D3
+    case libraryGrid = "library-grid"
+    case libraryList = "library-list"
+    case libraryContinue = "library-continue"
+    case favorites
+    case searchActive = "search-active"
+    case searchResults = "search-results"
+    case searchNoResults = "search-no-results"
+    case gameDetails = "game-details"
+    case gameContextMenu = "game-context-menu"
+    case removeGameConfirm = "remove-game-confirm"
+    case settingsLibrary = "settings-library"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -32,6 +44,7 @@ enum DebugScreenRouter {
 
     static func apply(to state: AppState) {
         applyDemoLibrary(to: state.library)
+        applyDemoPreferences(to: state)
         guard let raw = DebugArguments.screen else { return }
         guard let screen = DebugScreen(rawValue: raw) else {
             state.debugUnknownScreen = raw
@@ -55,9 +68,55 @@ enum DebugScreenRouter {
                 state.alertTitle = SaveLoadWarning.mirrorIgnored.title
                 state.alertMessage = SaveLoadWarning.mirrorIgnored.message
             }
+        case .favorites:
+            state.selectedTab = .favorites
+        case .searchActive:
+            state.librarySearchPresented = true
+        case .searchResults:
+            state.librarySearchPresented = true
+            state.librarySearch = "acid"
+        case .searchNoResults:
+            // En GB no hay "CGB…": la pantalla ofrece "Buscar en todos".
+            state.librarySearchPresented = true
+            state.libraryFilter = .gb
+            state.librarySearch = "CGB"
+        case .gameDetails:
+            state.libraryPath = [.details(id: demoWithArtwork, source: demoWithArtwork)]
+        case .removeGameConfirm:
+            state.libraryPath = [.details(id: demoHideable, source: demoHideable)]
+            state.hideCandidate = standard.first { $0.id == demoHideable }
+        case .settingsLibrary:
+            state.selectedTab = .settings
+            state.settingsPath = [.library]
         default:
             state.selectedTab = .library
         }
+    }
+
+    nonisolated private static let demoWithArtwork = "dmg-acid2.gb"
+    nonisolated private static let demoFavorite = "cgb-acid2.gbc"
+    nonisolated private static let demoHideable = "Pruebas/rtc3test.gb"
+
+    /// Favorito, recientes con fechas fijas, una captura (arte abstracto generado) y la
+    /// vista de cada pantalla. Solo en memoria (AppState no persiste en modo demo).
+    private static func applyDemoPreferences(to state: AppState) {
+        guard DebugArguments.demoLibrary != nil else { return }
+        let screen = DebugArguments.screen.flatMap(DebugScreen.init(rawValue:))
+        var prefs = LibraryPreferencesData()
+        prefs.favorites = [demoFavorite]
+        prefs.fingerprints = [demoWithArtwork: "demo-dmg-acid2", demoFavorite: "demo-cgb-acid2"]
+        prefs.lastPlayed = [demoWithArtwork: Date(timeIntervalSince1970: 1_790_500_000),
+                            demoFavorite: Date(timeIntervalSince1970: 1_790_300_000)]
+        switch screen {
+        case .libraryList, .libraryScanProgress, .libraryScanSummary, .libraryRomError, .saveDataError:
+            prefs.layout = .list
+        case .settingsLibrary:
+            prefs.hiddenPaths = [demoHideable]
+        default:
+            prefs.layout = .grid
+        }
+        state.libraryPrefs.applyDemo(prefs)
+        state.artwork.applyDemo(fingerprint: "demo-dmg-acid2")
     }
 
     nonisolated private static let folder = "Juegos Game Boy"

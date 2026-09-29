@@ -49,7 +49,7 @@ enum AppTab: Hashable {
 
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
-    case appearance, about, licenses, saves
+    case appearance, about, licenses, saves, library
     case backups(fingerprint: String)
 }
 
@@ -59,6 +59,17 @@ final class AppState {
     var selectedTab: AppTab = .library
     var settingsPath: [SettingsRoute] = []
     let library = LibraryStore()
+    /// Favoritos, recientes, ocultos, vista y orden (D3).
+    let libraryPrefs: LibraryPreferences
+    /// Portadas locales: el último frame de cada juego (SPEC §11).
+    let artwork: GameArtworkStore
+    var libraryPath: [LibraryRoute] = []
+    var favoritesPath: [LibraryRoute] = []
+    var libraryFilter: LibraryFilter = .all
+    var librarySearch = ""
+    var librarySearchPresented = false
+    /// Juego pendiente de confirmar "Ocultar de PocketGB".
+    var hideCandidate: RomEntry?
     /// Selector de carpeta de la biblioteca.
     var pickingFolder = false
     /// Solo lo rellena el router DEBUG (`-screen`); en Release siempre vale nil/false.
@@ -76,6 +87,14 @@ final class AppState {
     private static let maxROMBytes = LibraryScanner.maxROMBytes
 
     init() {
+        #if DEBUG
+        // Capturas y tests de UI: preferencias y portadas solo en memoria.
+        let inMemory = DebugScreenRouter.overridesLibrary
+        #else
+        let inMemory = false
+        #endif
+        libraryPrefs = LibraryPreferences(fileURL: inMemory ? nil : LibraryPreferences.defaultFileURL())
+        artwork = GameArtworkStore(directory: inMemory ? nil : GameArtworkStore.defaultDirectory())
         #if DEBUG
         DebugScreenRouter.apply(to: self)
         if debugUnknownScreen == nil && !DebugScreenRouter.overridesLibrary {
@@ -101,6 +120,40 @@ final class AppState {
         } else {
             library.refresh()
         }
+    }
+
+    /// Toque en una card o fila: detalle si se puede jugar; si no, descarga o explicación.
+    func select(_ entry: RomEntry, in tab: AppTab, source: String? = nil) {
+        if entry.problem != nil {
+            explainProblem(entry)
+        } else if entry.cloud == .notDownloaded {
+            library.download(entry)
+        } else if entry.cloud == .current {
+            showDetails(entry, in: tab, source: source)
+        }
+    }
+
+    func showDetails(_ entry: RomEntry, in tab: AppTab, source: String? = nil) {
+        let route = LibraryRoute.details(id: entry.id, source: source ?? entry.id)
+        if tab == .favorites {
+            favoritesPath.append(route)
+        } else {
+            libraryPath.append(route)
+        }
+    }
+
+    /// Oculta el juego (solo preferencias: ROM, partida y copias intactos) y cierra su detalle.
+    func hide(_ entry: RomEntry) {
+        libraryPrefs.hide(entry)
+        hideCandidate = nil
+        libraryPath.removeAll { $0.entryID == entry.id }
+        favoritesPath.removeAll { $0.entryID == entry.id }
+    }
+
+    func explainProblem(_ entry: RomEntry) {
+        let place = entry.subfolder.isEmpty ? "en la carpeta de juegos" : "en la subcarpeta “\(entry.subfolder)”"
+        showAlert("No se puede abrir “\(entry.fileName)”",
+                  "\(entry.problem?.message ?? "") Está \(place). PocketGB no lo abrirá ni lo modificará.")
     }
 
     /// Abre un juego de la biblioteca: lectura coordinada fuera del hilo principal,
@@ -141,7 +194,7 @@ final class AppState {
         switch result {
         case .success(let data):
             start(romData: data, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
-                  extraWarning: shared ? .mirrorShared : nil)
+                  entryID: entry.id, extraWarning: shared ? .mirrorShared : nil)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
             showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
         case .failure(let error):
@@ -156,7 +209,7 @@ final class AppState {
 
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
     private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
-                       fileName: String, extraWarning: SaveLoadWarning? = nil) {
+                       fileName: String, entryID: String? = nil, extraWarning: SaveLoadWarning? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
@@ -166,6 +219,9 @@ final class AppState {
             }
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
                                                         title: session.info.title, fileName: fileName)
+            if let entryID {
+                libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
+            }
             session.start()
             self.session = session
             paused = false
@@ -220,9 +276,21 @@ final class AppState {
 
     /// Guarda de forma síncrona y vuelve a la pantalla inicial.
     func closeGame() {
-        session?.stop()
+        if let session {
+            session.stop()
+            saveArtwork(session)
+        }
         session = nil
         paused = false
+    }
+
+    /// El último frame de la sesión como portada (SPEC §11). El hilo de emulación ya está
+    /// parado y el render corre en el hilo principal, así que el frame no cambia al copiarlo;
+    /// la codificación PNG va en la cola del almacén de portadas.
+    private func saveArtwork(_ session: EmulatorSession) {
+        let frame = session.frames.latest()
+        let pixels = Array(UnsafeBufferPointer(start: frame, count: FrameBuffers.pixelCount))
+        artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 
     /// `.inactive`/`.background`: pausar y hacer flush síncrono de la SRAM.

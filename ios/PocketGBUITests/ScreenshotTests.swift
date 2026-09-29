@@ -33,6 +33,13 @@ final class ScreenshotTests: XCTestCase {
             let target: UIDeviceOrientation = orientation == "landscape" ? .landscapeLeft : .portrait
             if XCUIDevice.shared.orientation != target { XCUIDevice.shared.orientation = target }
             Thread.sleep(forTimeInterval: 3) // deja correr la emulación y las animaciones
+            // `-uiLongPress <id>`: menú contextual (la app ignora el argumento).
+            if let i = args.firstIndex(of: "-uiLongPress"), i + 1 < args.count {
+                let target = app.descendants(matching: .any).matching(identifier: args[i + 1]).firstMatch
+                XCTAssertTrue(target.waitForExistence(timeout: 5), "No existe \(args[i + 1]) en \(name)")
+                target.press(forDuration: 1.2)
+                Thread.sleep(forTimeInterval: 1.5)
+            }
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
             // Un `-screen` que el router DEBUG no conoce es un error del catálogo.
