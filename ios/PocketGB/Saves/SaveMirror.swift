@@ -35,12 +35,16 @@ struct SaveMirror: Sendable {
         case unavailable
     }
 
-    func snapshot() -> Snapshot {
+    func snapshot(polls: Int = downloadPolls) -> Snapshot {
         let fm = FileManager.default
         let inCloudOnly = fm.fileExists(atPath: placeholderURL.path)
         if !exists && !inCloudOnly { return .absent }
         if inCloudOnly || Self.isDataless(url) {
             try? fm.startDownloadingUbiquitousItem(at: url)
+            // Se espera un poco a que llegue (auditoría D2, N2); fuera del hilo principal.
+            for _ in 0..<polls where !exists || Self.isDataless(url) {
+                Thread.sleep(forTimeInterval: 0.5)
+            }
         }
         do {
             guard let data = try read() else { return .unavailable }
@@ -49,6 +53,9 @@ struct SaveMirror: Sendable {
             return .unavailable
         }
     }
+
+    /// Espera máxima a la descarga del `.sav` al abrir: 20 × 0,5 s.
+    static let downloadPolls = 20
 
     /// En iCloud y sin datos locales (`.notDownloaded`). `.downloaded` sí tiene datos.
     static func isDataless(_ url: URL) -> Bool {

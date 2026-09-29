@@ -77,7 +77,9 @@ struct SaveStore: Sendable {
     }
 
     func quarantineURL(_ date: Date) -> URL {
-        backupsDirectory.appendingPathComponent("\(fingerprint).wrong-size-\(Int(date.timeIntervalSince1970)).sav")
+        // Con un sufijo único: dos cuarentenas en el mismo segundo no se pisan (auditoría D2, N3).
+        backupsDirectory.appendingPathComponent(
+            "\(fingerprint).wrong-size-\(Int(date.timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).sav")
     }
 
     /// Restaura el backup `n`: la partida actual pasa antes a ser el backup `.1`

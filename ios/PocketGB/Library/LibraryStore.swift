@@ -58,6 +58,8 @@ final class LibraryStore {
     /// Al arrancar: resuelve el bookmark guardado y escanea.
     func restore() {
         guard let data = storage.load() else {
+            // Sin bookmark: "no disponible" se queda como está (reintentar no lo borra; auditoría D2, N1).
+            if case .unavailable = phase { return }
             phase = .noFolder
             return
         }

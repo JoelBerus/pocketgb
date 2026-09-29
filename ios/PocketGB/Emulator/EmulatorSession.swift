@@ -88,6 +88,8 @@ final class EmulatorSession: @unchecked Sendable {
                 saves = outcome.target
                 warning = outcome.warning
             } catch let refusal as SaveOpening.Refusal {
+                // `saves` y `loadWarning` aún no están inicializados, así que `deinit` no se
+                // ejecutará: el búfer se libera aquí. Si se inicializan antes, quitar esto.
                 audioScratch.deallocate()
                 throw refusal
             } catch let e as CoreError where e == .sramSize {

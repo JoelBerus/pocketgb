@@ -152,7 +152,7 @@ struct SaveMirrorTests {
     @Test func iCloudOnlyMirrorIsUnavailableAndNeverWritten() throws {
         let mirror = try mirrorFile(nil)
         try Data("plist".utf8).write(to: mirror.placeholderURL)          // ".juego.sav.icloud"
-        #expect(mirror.snapshot() == .unavailable)
+        #expect(mirror.snapshot(polls: 0) == .unavailable)
         // Sin partida local: no se abre (se empezaría de cero y se pisaría la de iCloud).
         let store = SaveStore(directory: dir, fingerprint: "a1")
         #expect(throws: SaveOpening.Refusal.mirrorNotDownloaded) {

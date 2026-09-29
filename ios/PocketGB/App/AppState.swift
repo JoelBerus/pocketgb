@@ -53,6 +53,9 @@ final class AppState {
     /// Volver a primer plano: reescanear la carpeta (docs/04 §Ciclo de vida).
     func enterForeground() {
         guard session == nil else { return }
+        #if DEBUG
+        if DebugScreenRouter.overridesLibrary { return }   // biblioteca de demostración fija
+        #endif
         if case .unavailable = library.phase {
             library.restore()   // quizá vuelve el acceso (iCloud con conexión; auditoría D2, H6)
         } else {
@@ -77,7 +80,11 @@ final class AppState {
         // Dos ROMs con el mismo nombre base (Juego.gb y Juego.gbc) compartirían el .sav
         // junto al ROM: en ese caso no se usa el espejo (auditoría D2, H5).
         let mirror = SaveMirror(romURL: url)
-        let shared = library.entries.contains { $0.id != entry.id && SaveMirror(romURL: $0.url).url == mirror.url }
+        // Sin distinguir mayúsculas: iCloud Drive y APFS no las distinguen (auditoría D2, N5).
+        let key = mirror.url.path.lowercased()
+        let shared = library.entries.contains {
+            $0.id != entry.id && SaveMirror(romURL: $0.url).url.path.lowercased() == key
+        }
         Task.detached(priority: .userInitiated) { [weak self] in
             // ROM y espejo se leen aquí, fuera del hilo principal: la lectura coordinada
             // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
