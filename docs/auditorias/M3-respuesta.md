@@ -12,3 +12,11 @@ Veredicto de la vuelta 1: **RECHAZAR** por H1. Todo se corrigió en `21e9271`. E
 | Nota: `.sav` con RTC de 44 bytes | corregido | `gb_sram_load` también acepta el bloque antiguo de 44 bytes (hora u32): rechazar una partida válida es peor. Tiene test. |
 | Nota: tabla CRC literal | aceptado | La spec dice "tabla constante"; está verificada contra el polinomio y el vector `123456789`. |
 | Nota: MBC5 y nibble bajo | aceptado | Pan Docs (MBC5, *RAM Enable*): "Actual MBCs actually enable RAM when writing any value whose bottom 4 bits equal $A". |
+
+## Vuelta 2 ([M3-opus-v2](M3-opus-v2.md)): APROBAR CON CAMBIOS
+
+| ID | Decisión | Qué se hizo |
+|---|---|---|
+| N1 | corregido | `docs/06-testing.md` describe la mutación tal como está en el código (tuplas de 4 bytes que asignan valores; en secciones grandes, solo los primeros o últimos 32 bytes). |
+| N2 | corregido | `fuzz_state_load` alterna el cartucho según el primer byte: MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only. Al hacerlo, el fuzzer encontró en unos segundos un desbordamiento **en el propio fuzzer**: copiaba el bloque RTC de 48 bytes en un `.sav` más pequeño. Corregido, no afecta al núcleo. La corrida oficial de 2×600 s se repitió con esta versión (ver la evidencia). |
+| Nota M6 | anotado | En `docs/ESTADO.md` (pendiente de M6): tras cargar un estado, el frontend debe guardar la SRAM, con backup. |

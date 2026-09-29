@@ -1,6 +1,7 @@
 /*
  * fuzz_state_load.c — libFuzzer: gb_state_load con bytes arbitrarios sobre un
- * ROM sintético fijo (MBC3+RTC+RAM, para cubrir todas las secciones).
+ * ROM sintético: MBC3+RTC+RAM, MBC1+RAM, MBC5+RAM o ROM-only según el primer
+ * byte de la entrada, para cubrir todas las variantes de la sección CART.
  *
  * 1) Los bytes tal cual (magic, versión, CRC, huella…).
  * 2) Los mismos bytes con la cabecera y el CRC corregidos, para llegar al
@@ -20,8 +21,11 @@
 
 #include "internal.h"
 
-static gb *fixed_instance(void)
+static gb *fixed_instance(uint8_t selector)
 {
+    static const uint8_t types[4][2] = {   /* {tipo 0x147, RAM 0x149} */
+        { 0x10, 0x03 }, { 0x03, 0x03 }, { 0x1B, 0x03 }, { 0x00, 0x00 }
+    };
     enum { SIZE = 0x8000 };
     uint8_t *rom = calloc(1, SIZE);
     if (!rom)
@@ -30,8 +34,8 @@ static gb *fixed_instance(void)
     static const uint8_t prog[] = { 0x3C, 0xEA, 0x00, 0xC0, 0x18, 0xFA };
     memcpy(rom + 0x100, entry, sizeof entry);
     memcpy(rom + 0x150, prog, sizeof prog);
-    rom[0x147] = 0x10;   /* MBC3+TIMER+RAM+BATTERY */
-    rom[0x149] = 0x03;   /* 32 KiB */
+    rom[0x147] = types[selector % 4][0];   /* MBC3+RTC / MBC1 / MBC5 / ROM-only */
+    rom[0x149] = types[selector % 4][1];
     gb *g = gb_create();
     if (g && gb_load_rom(g, rom, SIZE, NULL) != GB_OK) {
         gb_destroy(g);
@@ -57,7 +61,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    gb *g = fixed_instance();
+    gb *g = fixed_instance(size ? data[0] : 0);
     if (!g)
         return 0;
     /* Estado base válido (tras unos frames), antes de cualquier mutación. */
@@ -101,12 +105,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* 4) .sav hostil: tamaño forzado a RAM + 48 */
     size_t sav_n = gb_sram_save_size(g);
-    uint8_t *sav = calloc(1, sav_n);
+    uint8_t *sav = calloc(1, sav_n ? sav_n : 1);
     if (sav) {
         if (size)
             for (size_t i = 0; i < sav_n; i++)
                 sav[i] = data[(i * 7919u) % size];
-        if (size >= 48)
+        if (size >= 48 && sav_n >= 48)   /* bloque RTC al final (solo si cabe) */
             memcpy(sav + sav_n - 48, data + size - 48, 48);
         if (gb_sram_load(g, sav, sav_n) == GB_OK) {
             gb_rtc_set_time(g, size >= 8 ? (int64_t)((uint64_t)data[0] << 56 | (uint64_t)data[1] << 40 |
