@@ -135,9 +135,11 @@ struct LibraryView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { library.refresh() }
+        // Campo siempre visible bajo el título: la búsqueda es la acción principal de la
+        // biblioteca. (Con `.searchToolbarBehavior(.minimize)` quedaba en un botón que no se
+        // podía expandir desde las capturas del catálogo.)
         .searchable(text: $state.librarySearch, isPresented: $state.librarySearchPresented,
-                    prompt: "Juegos")
-        .searchToolbarBehavior(.minimize)
+                    placement: .navigationBarDrawer(displayMode: .always), prompt: "Juegos")
     }
 
     /// Juegos jugados con captura local: "Continuar" nunca muestra una portada inventada.
