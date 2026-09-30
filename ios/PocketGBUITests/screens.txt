@@ -84,3 +84,7 @@ gameplay-pause        portrait  dark   -screen gameplay-pause -rom $FIXTURES/dmg
 save-states           portrait  dark   -screen save-states -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
 load-state-confirm    portrait  dark   -screen load-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
 replace-state-confirm portrait  dark   -screen replace-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+
+# ---- Cruceta con flechas separadas (estilo PlayStation) ----
+gameplay-portrait-arrows  portrait  dark  -screen gameplay-portrait-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+gameplay-landscape-arrows landscape dark  -screen gameplay-landscape-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated

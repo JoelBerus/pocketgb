@@ -110,6 +110,7 @@ final class ControlsOverlayView: UIView {
             visual.bounds = CGRect(origin: .zero, size: frame.size)
             visual.center = CGPoint(x: frame.midX, y: frame.midY)
             visual.scale = metrics.scale
+            visual.separatedArrows = settings.dpadStyle == .separated
         }
         guides.frame = bounds
         guides.path = UIBezierPath(roundedRect: area, cornerRadius: 12).cgPath
@@ -298,9 +299,15 @@ final class ControlVisualView: UIView {
 
     let id: ControlID
     var scale: CGFloat = 1 { didSet { if scale != oldValue { setNeedsLayout() } } }
+    /// Cruceta estilo PlayStation: cuatro flechas separadas en lugar de la cruz.
+    var separatedArrows = false {
+        didSet { if separatedArrows != oldValue { currentStyle = nil; setNeedsLayout() } }
+    }
 
     private let scrim = CAShapeLayer()
     private let effectView = UIVisualEffectView(effect: nil)
+    /// Vidrio de cada flecha en el estilo separado (arriba, derecha, abajo, izquierda).
+    private let arrowViews = (0..<4).map { _ in UIVisualEffectView(effect: nil) }
     private let solid = CAShapeLayer()
     private let ring = CAShapeLayer()
     private let glyph = CAShapeLayer()
@@ -317,6 +324,12 @@ final class ControlVisualView: UIView {
         layer.addSublayer(scrim)
         addSubview(effectView)
         effectView.isUserInteractionEnabled = false
+        for v in arrowViews {
+            v.isUserInteractionEnabled = false
+            v.clipsToBounds = true
+            v.isHidden = true
+            addSubview(v)
+        }
         layer.addSublayer(solid)
         layer.addSublayer(ring)
         layer.addSublayer(glyph)
@@ -353,8 +366,42 @@ final class ControlVisualView: UIView {
 
     private var isCapsule: Bool { id == .start || id == .select }
 
+    private var arrowsMode: Bool { id == .dpad && separatedArrows }
+
     private func shapePath(_ rect: CGRect) -> UIBezierPath {
-        isCapsule ? UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2) : UIBezierPath(ovalIn: rect)
+        if arrowsMode {
+            let path = UIBezierPath()
+            for r in Self.arrowRects(in: rect) { path.append(UIBezierPath(ovalIn: r)) }
+            return path
+        }
+        return isCapsule ? UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2) : UIBezierPath(ovalIn: rect)
+    }
+
+    /// Cuatro círculos separados (arriba, derecha, abajo, izquierda) dentro de `rect`.
+    private static func arrowRects(in rect: CGRect) -> [CGRect] {
+        let d = rect.width * 0.36
+        let offset = (rect.width - d) / 2
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        return [CGPoint(x: 0, y: -offset), CGPoint(x: offset, y: 0), CGPoint(x: 0, y: offset), CGPoint(x: -offset, y: 0)]
+            .map { CGRect(x: c.x + $0.x - d / 2, y: c.y + $0.y - d / 2, width: d, height: d) }
+    }
+
+    /// Triángulos de las flechas, apuntando hacia fuera.
+    private static func arrowGlyphs(in rect: CGRect) -> UIBezierPath {
+        let path = UIBezierPath()
+        for (i, r) in arrowRects(in: rect).enumerated() {
+            let s = r.width * 0.2
+            let c = CGPoint(x: r.midX, y: r.midY)
+            let angle = CGFloat(i) * .pi / 2 - .pi / 2   // arriba, derecha, abajo, izquierda
+            func point(_ a: CGFloat, _ len: CGFloat) -> CGPoint {
+                CGPoint(x: c.x + cos(angle + a) * len, y: c.y + sin(angle + a) * len)
+            }
+            path.move(to: point(0, s))
+            path.addLine(to: point(2.3, s))
+            path.addLine(to: point(-2.3, s))
+            path.close()
+        }
+        return path
     }
 
     override func layoutSubviews() {
@@ -366,14 +413,21 @@ final class ControlVisualView: UIView {
         effectView.layer.cornerRadius = min(rect.width, rect.height) / 2
         effectView.layer.cornerCurve = .continuous
         effectView.clipsToBounds = true
+        effectView.isHidden = arrowsMode
+        for (v, r) in zip(arrowViews, Self.arrowRects(in: rect)) {
+            v.frame = r
+            v.layer.cornerRadius = r.width / 2
+            v.isHidden = !arrowsMode
+        }
         solid.frame = rect
         solid.path = shapePath(rect.insetBy(dx: 0.75, dy: 0.75)).cgPath
         ring.frame = rect
         ring.path = shapePath(rect.insetBy(dx: 2, dy: 2)).cgPath
         glyph.frame = rect
         if id == .dpad {
-            glyph.path = Self.cross(in: rect).cgPath
+            glyph.path = (arrowsMode ? Self.arrowGlyphs(in: rect) : Self.cross(in: rect)).cgPath
             glyph.lineWidth = max(2, rect.width * 0.02)
+            glyph.fillColor = arrowsMode ? UIColor.white.cgColor : UIColor.clear.cgColor
         }
         let size: CGFloat = switch id {
         case .a, .b: 24
@@ -409,10 +463,8 @@ final class ControlVisualView: UIView {
         if style != currentStyle || reduceTransparency != currentReduce {
             currentStyle = style
             currentReduce = reduceTransparency
-            if reduceTransparency {
-                effectView.effect = nil
-            } else {
-                effectView.effect = UIGlassEffect(style: style == .clearGlass ? .clear : .regular)
+            for v in [effectView] + arrowViews {
+                v.effect = reduceTransparency ? nil : UIGlassEffect(style: style == .clearGlass ? .clear : .regular)
             }
         }
         CATransaction.begin()
@@ -448,7 +500,7 @@ final class ControlVisualView: UIView {
             solid.lineWidth = 1
         }
         scrim.fillColor = UIColor.black.withAlphaComponent(scrimAlpha).cgColor
-        effectView.alpha = reduceTransparency ? 0 : surface
+        for v in [effectView] + arrowViews { v.alpha = reduceTransparency ? 0 : surface }
         // A y B: anillo cálido/frío además de la letra y la posición (SPEC §13).
         if id == .a || id == .b {
             let color = UIColor(named: id == .a ? "ControlAWarm" : "ControlBCool") ?? .white

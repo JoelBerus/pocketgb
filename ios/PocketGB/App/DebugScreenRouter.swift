@@ -47,6 +47,8 @@ enum DebugScreen: String, CaseIterable {
     case saveStates = "save-states"
     case loadStateConfirm = "load-state-confirm"
     case replaceStateConfirm = "replace-state-confirm"
+    case gameplayPortraitArrows = "gameplay-portrait-arrows"
+    case gameplayLandscapeArrows = "gameplay-landscape-arrows"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -110,6 +112,8 @@ enum DebugScreenRouter {
         case .settingsDisplay:
             state.selectedTab = .settings
             state.settingsPath = [.display]
+        case .gameplayPortraitArrows, .gameplayLandscapeArrows:
+            break
         case .gameplayPortraitHUD, .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
         case .customizeControlsPortrait, .customizeControlsLandscape:

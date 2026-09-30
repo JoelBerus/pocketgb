@@ -124,6 +124,7 @@ final class AppState {
         // Con argumentos de controles o `-screen`, ajustes solo en memoria (no persistentes).
         let fixedControls = inMemory || DebugArguments.value("-controlOpacity") != nil
             || DebugArguments.value("-controlsVisibility") != nil
+            || DebugArguments.value("-dpadStyle") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
         gameplay.applyDebugArguments()
         #else

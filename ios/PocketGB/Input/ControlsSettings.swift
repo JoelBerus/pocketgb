@@ -20,6 +20,14 @@ enum ControlsVisibility: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Dibujo de la cruceta: la cruz del Game Boy o cuatro flechas separadas (estilo mando de
+/// PlayStation). Solo cambia el aspecto: la lógica de 8 direcciones es la misma.
+enum DpadStyle: String, Codable, CaseIterable, Sendable {
+    case cross, separated
+
+    var title: String { self == .cross ? "Game Boy" : "Flechas separadas" }
+}
+
 /// Ajustes de controles y pantalla del gameplay (D4).
 struct GameplaySettingsData: Codable, Equatable, Sendable {
     /// Opacidad visual en horizontal: 30, 50, 70 o 100 %. No cambia el área táctil.
@@ -32,6 +40,7 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
     var landscapeLayout = ControlsLayout.defaults(.landscape)
     /// Horizontal: solo múltiplos enteros de 160×144 (píxeles idénticos).
     var integerScaleLandscape = true
+    var dpadStyle: DpadStyle = .cross
 
     static let opacities = [30, 50, 70, 100]
     static let sizeScales: [(title: String, value: Double)] = [("Pequeño", 0.85), ("Normal", 1), ("Grande", 1.15)]
@@ -51,6 +60,7 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
         landscapeLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .landscapeLayout)) ?? defaults.landscapeLayout
         integerScaleLandscape = (try? c.decodeIfPresent(Bool.self, forKey: .integerScaleLandscape))
             ?? defaults.integerScaleLandscape
+        dpadStyle = (try? c.decodeIfPresent(DpadStyle.self, forKey: .dpadStyle)) ?? defaults.dpadStyle
     }
 
     func layout(_ orientation: ControlsOrientation) -> ControlsLayout {
@@ -118,6 +128,9 @@ final class GameplaySettings {
         }
         if let raw = DebugArguments.value("-controlsVisibility"), let value = ControlsVisibility(rawValue: raw) {
             copy.visibility = value
+        }
+        if let raw = DebugArguments.value("-dpadStyle"), let value = DpadStyle(rawValue: raw) {
+            copy.dpadStyle = value
         }
         data = copy
     }

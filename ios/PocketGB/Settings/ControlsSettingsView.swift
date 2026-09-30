@@ -19,6 +19,16 @@ struct ControlsSettingsView: View {
             } footer: {
                 Text("Cambia solo el aspecto sobre el juego: cada control conserva su área táctil y su sombra para leerse sobre escenas claras.")
             }
+            Section {
+                Picker("Cruceta", selection: binding(\.dpadStyle)) {
+                    ForEach(DpadStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Cruceta")
+            } footer: {
+                Text("Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de PlayStation. Ambas admiten diagonales.")
+            }
             Section("Controles") {
                 Picker("Tamaño", selection: binding(\.sizeScale)) {
                     ForEach(GameplaySettingsData.sizeScales, id: \.value) { Text($0.title).tag($0.value) }

@@ -172,6 +172,14 @@ struct ControlsLayoutTests {
         #expect(decoded.sizeScale == 1.15)
     }
 
+    @Test func dpadStyleDefaultsToGameBoyAndPersists() throws {
+        #expect(GameplaySettingsData().dpadStyle == .cross)
+        var data = GameplaySettingsData()
+        data.dpadStyle = .separated
+        let decoded = try JSONDecoder().decode(GameplaySettingsData.self, from: JSONEncoder().encode(data))
+        #expect(decoded.dpadStyle == .separated)
+    }
+
     @Test func noShoulderButtons() {
         #expect(ControlID.allCases.map(\.rawValue).sorted() == ["a", "b", "dpad", "menu", "select", "start"])
     }
