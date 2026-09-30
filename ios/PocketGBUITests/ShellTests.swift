@@ -6,7 +6,8 @@ final class ShellTests: XCTestCase {
     @MainActor
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<4 where !(element.exists && element.isHittable) {
-            app.swipeUp()
+            let list = app.collectionViews.firstMatch
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
             _ = element.waitForExistence(timeout: 1)
         }
     }
@@ -27,14 +28,18 @@ final class ShellTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["GBA"].exists)
         XCTAssertFalse(app.buttons["Abrir ROM"].exists)
 
-        tabs.buttons["Ajustes"].tap()
+        // La tab puede ignorar el primer toque mientras termina el arranque: se reintenta.
+        for _ in 0..<3 where !app.navigationBars["Ajustes"].waitForExistence(timeout: 3) {
+            tabs.buttons["Ajustes"].tap()
+        }
+        XCTAssertTrue(app.navigationBars["Ajustes"].exists, "No se abrió la tab Ajustes")
         // Ajustes tiene más filas desde D4: Apariencia puede quedar bajo el pliegue.
-        let appearance = app.buttons["Apariencia"]
+        let appearance = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Apariencia")).firstMatch
         scrollTo(appearance, in: app)
         appearance.tap()
         XCTAssertTrue(app.navigationBars["Apariencia"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        let about = app.buttons["Acerca de"]
+        let about = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Acerca de")).firstMatch
         scrollTo(about, in: app)
         about.tap()
         XCTAssertTrue(app.navigationBars["Acerca de"].waitForExistence(timeout: 5))
