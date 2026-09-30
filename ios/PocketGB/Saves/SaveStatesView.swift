@@ -69,15 +69,15 @@ struct SaveStatesView: View {
         return GlassEffectContainer(spacing: PocketSpacing.xs) {
             HStack(spacing: PocketSpacing.xs) {
                 Button("Cargar", systemImage: "arrow.down.doc") { state.pendingStateLoad = selected }
-                    .buttonStyle(.glassProminent)
+                    .pocketGlassButton(prominent: true)
                     .disabled(!occupied || corrupt)
                 Button("Guardar aquí", systemImage: "square.and.arrow.down") {
                     if occupied && !corrupt { state.pendingStateReplace = selected } else { state.saveState(to: selected) }
                 }
-                .buttonStyle(.glass)
+                .pocketGlassButton()
                 .disabled(selected == .auto)
                 Button("Borrar", systemImage: "trash", role: .destructive) { state.deleteState(selected) }
-                    .buttonStyle(.glass)
+                    .pocketGlassButton()
                     .disabled(!occupied)
                     .labelStyle(.iconOnly)
             }

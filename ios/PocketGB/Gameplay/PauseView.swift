@@ -18,7 +18,7 @@ struct PauseView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                     }
-                    .buttonStyle(.glassProminent)
+                    .pocketGlassButton(prominent: true)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                     .accessibilityIdentifier("pause-resume")

@@ -10,7 +10,7 @@ struct ToastView: View {
             .font(.subheadline.weight(.semibold))
             .padding(.horizontal, PocketSpacing.md)
             .padding(.vertical, PocketSpacing.sm)
-            .glassEffect(.regular, in: Capsule())
+            .pocketGlass(in: Capsule())
             .accessibilityElement(children: .combine)
     }
 }

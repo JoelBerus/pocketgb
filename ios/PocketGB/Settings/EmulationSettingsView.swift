@@ -104,11 +104,15 @@ struct SettingRowLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-            Label(customized ? "Personalizado" : "Global",
-                  systemImage: customized ? "circle.fill" : "globe")
-                .labelStyle(.titleAndIcon)
-                .font(.caption)
-                .foregroundStyle(customized ? PocketColor.accent : .secondary)
+            HStack(spacing: PocketSpacing.xxs) {
+                Image(systemName: customized ? "slider.horizontal.3" : "globe")
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+                Text(customized ? "Personalizado" : "Global")
+            }
+            .font(.caption)
+            .foregroundStyle(customized ? PocketColor.accent : .secondary)
+            .fixedSize()
         }
         .accessibilityElement(children: .combine)
     }

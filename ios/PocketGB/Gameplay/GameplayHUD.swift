@@ -19,7 +19,7 @@ struct GameplayHUD: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
-                .glassEffect(.regular.interactive(), in: Circle())
+                .pocketGlass(in: Circle(), interactive: true)
                 .accessibilityLabel("Pausa y opciones")
                 .accessibilityIdentifier("hud-menu")
 
@@ -38,7 +38,7 @@ struct GameplayHUD: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(state.gameSpeed > 1 ? PocketColor.controlAWarm : .white)
-                .glassEffect(.regular.interactive(), in: Capsule())
+                .pocketGlass(in: Capsule(), interactive: true)
                 .accessibilityLabel("Avance rápido")
                 .accessibilityValue(state.gameSpeed > 1 ? "×\(state.gameSpeed)" : "Desactivado")
                 .accessibilityIdentifier("hud-speed")

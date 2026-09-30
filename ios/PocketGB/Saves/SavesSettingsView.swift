@@ -70,7 +70,7 @@ struct SaveBackupsView: View {
                         }
                         Spacer()
                         Button("Restaurar") { pending = backup.index }
-                            .buttonStyle(.glass)
+                            .pocketGlassButton()
                     }
                 }
             } header: {

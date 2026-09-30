@@ -34,3 +34,9 @@ El runner es el Mac de Joel: no lo satures. Agrupar cambios y hacer **un push po
 
 ## Lo que el CI no ve (se valida en el iPhone de Joel, en una sesión en el Mac)
 Tacto real (multitoque, deslizar entre botones), háptica, audio, rendimiento a 60 fps, iCloud Drive real, mandos físicos y la sensación del vidrio en movimiento. Cada hito lista estos puntos como "pendiente del iPhone".
+
+## Accesibilidad en el catálogo (D7)
+- `-reduceTransparency`: la política `PocketGlassPolicy` (y los controles UIKit) cambia el vidrio propio por superficies sólidas y botones `.bordered`. La navegación del sistema solo adopta el fallback con el ajuste real del iPhone.
+- `-contentSizeCategory accessibility5`: Dynamic Type AX5 fijo (`library-ax5`); la cuadrícula pasa a una columna y la línea de metadatos a columna.
+- `-reduceMotion`: sin zoom portada → detalle.
+- `ShellAccessibilityTests`: todos los IDs de SPEC §9 están en `screens.txt` sin contradicciones, etiquetas de las cards, áreas ≥ 44 pt y reflow con AX5.

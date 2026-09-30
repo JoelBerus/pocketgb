@@ -47,6 +47,8 @@ enum DebugScreen: String, CaseIterable {
     case loadStateConfirm = "load-state-confirm"
     case replaceStateConfirm = "replace-state-confirm"
     case customizeControlsSize = "customize-controls-size"
+    case libraryReduceTransparency = "library-reduce-transparency"
+    case libraryAX5 = "library-ax5"
     case settingsAudio = "settings-audio"
     case settingsEmulation = "settings-emulation"
     case settingsStorage = "settings-storage"

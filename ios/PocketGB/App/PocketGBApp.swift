@@ -65,6 +65,9 @@ struct RootView: View {
                 #endif
             }
         }
+        #if DEBUG
+        .modifier(DebugDynamicType())
+        #endif
         .statusBarHidden(state.session != nil || state.debugShowsLaunch)
         .preferredColorScheme(colorScheme)
         .tint(PocketColor.accent)
@@ -76,7 +79,7 @@ struct RootView: View {
             if state.opening {
                 ProgressView("Abriendo…")
                     .padding(PocketSpacing.lg)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: PocketRadius.group))
+                    .pocketGlass(in: RoundedRectangle(cornerRadius: PocketRadius.group))
             }
         }
         .alert(state.alertTitle ?? "PocketGB",
@@ -99,6 +102,19 @@ private struct UnknownScreenView: View {
                                systemImage: "exclamationmark.triangle",
                                description: Text(id))
             .accessibilityIdentifier("debug-unknown-screen")
+    }
+}
+#endif
+
+#if DEBUG
+/// `-contentSizeCategory accessibility5`: Dynamic Type fijo para la captura `library-ax5`.
+private struct DebugDynamicType: ViewModifier {
+    func body(content: Content) -> some View {
+        if DebugArguments.value("-contentSizeCategory") == "accessibility5" {
+            content.dynamicTypeSize(.accessibility5)
+        } else {
+            content
+        }
     }
 }
 #endif

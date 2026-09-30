@@ -104,3 +104,7 @@ settings-saves         portrait  light -screen settings-saves -demoSaveState slo
 settings-saves         portrait  dark  -screen settings-saves -demoSaveState slots
 game-settings          portrait  light -screen game-settings -demoLibrary standard
 game-settings          portrait  dark  -screen game-settings -demoLibrary standard
+
+# ---- D7 · Accesibilidad ----
+library-reduce-transparency portrait dark  -screen library-reduce-transparency -demoLibrary standard -reduceTransparency
+library-ax5                 portrait light -screen library-ax5 -demoLibrary standard -contentSizeCategory accessibility5

@@ -457,7 +457,7 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 19 | `game-context-menu` | Long press | portrait | ambos | Preview, Play, Favorito, Estados, Ajustes, Ocultar | Opción para borrar el ROM original |
 | 20 | `remove-game-confirm` | Ocultar juego | portrait | ambos | Explica ROM intacto y destino de saves | Texto ambiguo “Eliminar juego” |
 | 21 | `gameplay-portrait` | Juego vertical | portrait | dark | Viewport 10:9 arriba y controles sólidos/claros debajo | Controles sobre Dynamic Island o viewport estirado |
-| 22 | `gameplay-portrait-hud` | HUD abierto vertical | portrait | dark | Acciones válidas: pausa, save/load, avance, captura, ajustes | Cheats, L/R o tab bar |
+| 22 | ~~`gameplay-portrait-hud`~~ | Sustituida (decisión de Joel, 2026-09-30) | portrait | dark | El botón de pausa abre directamente la sheet de opciones: ver `gameplay-pause`. El avance rápido está junto a él (`gameplay-fast-forward`) | — |
 | 23 | `gameplay-landscape` | Juego horizontal | landscape | dark | Viewport a máxima altura, controles dentro del safe area | Controles bajo Island o Home Indicator |
 | 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias a scrim | Controles blancos desaparecidos |
 | 25 | `gameplay-landscape-hidden` | Show On Touch oculto | landscape | dark | Solo juego y pista temporal | Áreas invisibles bloqueando HUD o gestos |

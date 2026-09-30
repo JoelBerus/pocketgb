@@ -351,7 +351,7 @@ struct ContinuePlayingRow: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(minHeight: 32)
                 }
-                .buttonStyle(.glassProminent)
+                .pocketGlassButton(prominent: true)
                 .padding(PocketSpacing.xs)
                 .accessibilityLabel("Continuar \(entry.title)")
             }

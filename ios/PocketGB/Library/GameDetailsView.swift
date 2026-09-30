@@ -44,7 +44,7 @@ struct GameDetailsView: View {
                     Label("Ocultar de PocketGB", systemImage: "eye.slash")
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
-                .buttonStyle(.glass)
+                .pocketGlassButton()
                 Text("Ocultar no borra el ROM ni la partida.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -114,7 +114,7 @@ struct GameDetailsView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
-                .buttonStyle(.glassProminent)
+                .pocketGlassButton(prominent: true)
                 .accessibilityIdentifier("game-details-play")
             case .notDownloaded:
                 Button {
@@ -123,7 +123,7 @@ struct GameDetailsView: View {
                     Label("Descargar de iCloud", systemImage: "icloud.and.arrow.down")
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
-                .buttonStyle(.glassProminent)
+                .pocketGlassButton(prominent: true)
             case .downloading:
                 HStack(spacing: PocketSpacing.sm) {
                     ProgressView()
@@ -163,7 +163,7 @@ struct GameDetailsView: View {
             }
             .labelStyle(.titleAndIcon)
             .font(.subheadline)
-            .buttonStyle(.glass)
+            .pocketGlassButton()
         }
     }
 }

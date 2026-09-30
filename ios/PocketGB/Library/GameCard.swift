@@ -4,6 +4,7 @@ import SwiftUI
 /// Contenido L1: sin vidrio ni contenedor detrás de la portada.
 struct GameCard: View {
     @Environment(AppState.self) private var state
+    @Environment(\.dynamicTypeSize) private var typeSize
     let entry: RomEntry
     let zoom: Namespace.ID
 
@@ -16,7 +17,7 @@ struct GameCard: View {
             Text(entry.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(entry.problem == nil ? .primary : .secondary)
-                .lineLimit(2)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             // Chip, favorito y "Nuevo" en su propia línea: un título largo no los solapa.
@@ -52,8 +53,14 @@ struct GameMetaLine: View {
     @Environment(AppState.self) private var state
     let entry: RomEntry
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        HStack(spacing: PocketSpacing.xs) {
+        // Con tamaños de accesibilidad, en columna: nada se trunca (SPEC §13).
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: PocketSpacing.xxs))
+            : AnyLayout(HStackLayout(spacing: PocketSpacing.xs))
+        layout {
             ConsoleChip(isColor: entry.isColor)
             if state.libraryPrefs.isFavorite(entry) {
                 Image(systemName: "star.fill")
@@ -69,7 +76,7 @@ struct GameMetaLine: View {
             Text(GameStatus.detail(entry, lastPlayed: state.libraryPrefs.lastPlayed(entry)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
         }
     }
 }
