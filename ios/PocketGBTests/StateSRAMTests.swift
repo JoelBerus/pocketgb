@@ -42,6 +42,19 @@ struct StateSRAMTests {
         return rom
     }
 
+    /// Reanuda y pausa hasta que la partida en disco cambie (en el simulador del CI el
+    /// audio puede tardar en arrancar y los primeros frames llegar tarde). Máximo ≈ 3 s.
+    static func playUntilSaveChanges(_ session: EmulatorSession, store: SaveStore, from old: Data) throws -> Data {
+        for _ in 0..<10 {
+            session.resume()
+            Thread.sleep(forTimeInterval: 0.3)
+            session.pause()
+            if let now = try store.load(), now != old { return now }
+        }
+        Issue.record("La partida no cambió tras 3 s de juego")
+        return old
+    }
+
     @Test func coreRejectsCorruptAndForeignStatesWithoutTouchingSRAM() throws {
         let core = try CoreBridge()
         _ = try core.loadROM(Self.rom(title: "ESTADOS", value: 0x11), unixTime: 0)
@@ -81,11 +94,7 @@ struct StateSRAMTests {
         #expect(store.backups().isEmpty)
 
         // Seguir jugando: el contador avanza y la pausa guarda Y.
-        session.resume()
-        Thread.sleep(forTimeInterval: 0.3)
-        session.pause()
-        let y = try #require(try store.load())
-        #expect(y != x)
+        let y = try Self.playUntilSaveChanges(session, store: store, from: x)
 
         // Cargar el estado: su SRAM (X) se guarda en el acto y Y queda como backup.
         let backupsBefore = store.backups().count
@@ -104,11 +113,9 @@ struct StateSRAMTests {
         session.start()
         session.pause()
         let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
+        let x = try #require(try store.load())
         let saved = try session.saveState()                     // SRAM X
-        session.resume()
-        Thread.sleep(forTimeInterval: 0.3)
-        session.pause()
-        let y = try #require(try store.load())                  // SRAM Y en disco
+        let y = try Self.playUntilSaveChanges(session, store: store, from: x)   // SRAM Y en disco
 
         // Carpeta de partidas de solo lectura: la escritura atómica no puede crear su temporal.
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
