@@ -67,7 +67,8 @@ struct ControlsLayoutTests {
     @Test func abZoneBetweenAAndBPressesBoth() throws {
         let g = Self.geometry()
         var engine = ControlsInputEngine(geometry: g)
-        #expect(!engine.began(1, at: CGPoint(x: g.abFrame.midX, y: g.abFrame.midY)))
+        let opensMenu = engine.began(1, at: CGPoint(x: g.abFrame.midX, y: g.abFrame.midY))
+        #expect(!opensMenu)
         #expect(engine.mask == Self.a | Self.b)
         #expect(engine.pressed == [.a, .b])
     }
@@ -103,7 +104,8 @@ struct ControlsLayoutTests {
         let g = Self.geometry()
         let m = try #require(g.frames[.menu])
         var engine = ControlsInputEngine(geometry: g)
-        #expect(engine.began(1, at: CGPoint(x: m.midX, y: m.midY)))
+        let opensMenu = engine.began(1, at: CGPoint(x: m.midX, y: m.midY))
+        #expect(opensMenu)
         #expect(engine.mask == 0)
     }
 
