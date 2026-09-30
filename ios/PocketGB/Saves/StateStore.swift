@@ -74,6 +74,14 @@ struct StateStore: Sendable {
         return result
     }
 
+    /// Estado automático utilizable para “Continuar”. Una SRAM guardada después del
+    /// estado lo invalida: restaurar un backup nunca debe quedar revertido al reanudar.
+    func automaticEntry(newerThan saveDate: Date?) -> Entry? {
+        guard let entry = entries()[.auto], !entry.corrupt else { return nil }
+        if let saveDate, entry.date < saveDate { return nil }
+        return entry
+    }
+
     /// Escribe el estado (atómico) y después su captura. Si la captura falla, el estado vale igual.
     func save(_ state: Data, thumbnail: Data?, to slot: StateSlot) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-30 · M4, M5, M8 y **D1 (☁️) cerrados**. **D2–D5 (☁️) implementados** en `d2-a1-wip`, con CI verde en `6e0188c`. La auditoría Codex D2–D5 hasta `15c3b49` dio **RECHAZAR** (H1 bloqueante en resolución del espejo; H2 alta al persistir SRAM tras cargar un estado; H3 evidencia incompleta); Joel corregirá los hallazgos antes de repetir la auditoría y probar en el iPhone. **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
+**Actualizado:** 2026-09-30 · D2–D8 ya están fusionados en `main` (`76492f4`). **D8.1 está en implementación**: corrige continuación exacta, alias, identidad, carril y crucetas. Como Codex implementa este lote, el cierre requiere auditoría read-only de un Opus independiente. **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
 
 ## Hecho
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -21,7 +21,7 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-- **D8 (☁️) evidencia consolidada (2026-09-30)**: catálogo completo verde en `7f0fd0f` (84 capturas revisadas), núcleo sin regresiones, 93 tests + UI ([auditorias/D8-evidencia.md](auditorias/D8-evidencia.md)). **Siguiente paso exacto (en el Mac):** auditoría Codex final de `d2-a1-wip` (D6–D8 y las correcciones de D2–D5) → corregir → merge a `main` con aprobación de Joel.
+- **D8 fusionado en `main` (`76492f4`)**. **Siguiente paso exacto:** terminar la evidencia de [D8.1](auditorias/D8.1-implementacion.md), ejecutar la auditoría Opus independiente, responder hallazgos y pedir a Joel la prueba final en iPhone antes del merge.
 - **D7 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `7f0fd0f`)**: Reduce Transparency con alternativa sólida, AX5 con reflow, cobertura del catálogo y tests de accesibilidad ([auditorias/D7-evidencia.md](auditorias/D7-evidencia.md)). Siguiente: **D8** (regresión, documentación y auditoría final).
 - **iPhone (2026-09-30):** Joel probó las funciones de D2–D6 en `d2-a1-wip` y pasaron la prueba.
 - **Auditoría Codex D2–D5 (`15c3b49`): RECHAZAR → H1–H3 corregidos** ([auditorias/D2-D5-respuesta.md](auditorias/D2-D5-respuesta.md)); verde en `30f7170`.

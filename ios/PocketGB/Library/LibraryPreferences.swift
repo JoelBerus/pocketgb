@@ -44,6 +44,10 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
     var hiddenFingerprints: Set<String> = []
     /// Juegos ocultos que nunca se abrieron (sin huella todavía), por id.
     var hiddenPaths: Set<String> = []
+    /// Nombre visible estable cuando ya se conoce el contenido del ROM.
+    var aliasesByFingerprint: [String: String] = [:]
+    /// Nombre visible provisional antes de la primera apertura del ROM.
+    var aliasesByPath: [String: String] = [:]
     var layout: LibraryLayout = .grid
     var sort: LibrarySort = .title
 
@@ -57,6 +61,8 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
         fingerprints = try c.decodeIfPresent([String: String].self, forKey: .fingerprints) ?? [:]
         hiddenFingerprints = try c.decodeIfPresent(Set<String>.self, forKey: .hiddenFingerprints) ?? []
         hiddenPaths = try c.decodeIfPresent(Set<String>.self, forKey: .hiddenPaths) ?? []
+        aliasesByFingerprint = try c.decodeIfPresent([String: String].self, forKey: .aliasesByFingerprint) ?? [:]
+        aliasesByPath = try c.decodeIfPresent([String: String].self, forKey: .aliasesByPath) ?? [:]
         layout = (try? c.decodeIfPresent(LibraryLayout.self, forKey: .layout)) ?? .grid
         sort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .sort)) ?? .title
     }
@@ -68,6 +74,13 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
         if hiddenPaths.contains(entry.id) { return true }
         guard let fp = fingerprints[entry.id] else { return false }
         return hiddenFingerprints.contains(fp)
+    }
+
+    func displayTitle(_ entry: RomEntry) -> String {
+        if let fingerprint = fingerprints[entry.id], let alias = aliasesByFingerprint[fingerprint] {
+            return alias
+        }
+        return aliasesByPath[entry.id] ?? entry.title
     }
 }
 
@@ -101,6 +114,7 @@ final class LibraryPreferences {
     func isFavorite(_ entry: RomEntry) -> Bool { data.isFavorite(entry) }
     func lastPlayed(_ entry: RomEntry) -> Date? { data.lastPlayedDate(entry) }
     func isHidden(_ entry: RomEntry) -> Bool { data.isHidden(entry) }
+    func displayTitle(_ entry: RomEntry) -> String { data.displayTitle(entry) }
 
     func toggleFavorite(_ entry: RomEntry) {
         if data.favorites.contains(entry.id) {
@@ -115,6 +129,25 @@ final class LibraryPreferences {
     func recordPlayed(id: String, fingerprint: String, at date: Date) {
         data.lastPlayed[id] = date
         data.fingerprints[id] = fingerprint
+        if let alias = data.aliasesByPath.removeValue(forKey: id) {
+            data.aliasesByFingerprint[fingerprint] = alias
+        }
+        persist()
+    }
+
+    /// El alias solo cambia la presentación; nunca renombra el ROM ni sus partidas.
+    func setAlias(_ value: String, for entry: RomEntry) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let alias = String(trimmed.prefix(80))
+        if let fingerprint = data.fingerprints[entry.id] {
+            if alias.isEmpty { data.aliasesByFingerprint.removeValue(forKey: fingerprint) }
+            else { data.aliasesByFingerprint[fingerprint] = alias }
+            data.aliasesByPath.removeValue(forKey: entry.id)
+        } else if alias.isEmpty {
+            data.aliasesByPath.removeValue(forKey: entry.id)
+        } else {
+            data.aliasesByPath[entry.id] = alias
+        }
         persist()
     }
 
@@ -182,11 +215,11 @@ enum LibraryQuery {
         }
     }
 
-    static func matches(_ entry: RomEntry, query: String) -> Bool {
+    static func matches(_ entry: RomEntry, displayTitle: String, query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return true }
         let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-        return entry.title.range(of: q, options: options) != nil
+        return displayTitle.range(of: q, options: options) != nil
             || entry.fileName.range(of: q, options: options) != nil
     }
 
@@ -194,17 +227,19 @@ enum LibraryQuery {
                         query: String) -> [RomEntry] {
         let shown = entries.filter {
             !prefs.isHidden($0) && matches($0, filter: filter, isFavorite: prefs.isFavorite($0))
-                && matches($0, query: query)
+                && matches($0, displayTitle: prefs.displayTitle($0), query: query)
         }
         switch prefs.sort {
         case .title:
-            return shown.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            return shown.sorted {
+                prefs.displayTitle($0).localizedStandardCompare(prefs.displayTitle($1)) == .orderedAscending
+            }
         case .recent:
             return shown.sorted { a, b in
                 let da = prefs.lastPlayedDate(a) ?? .distantPast
                 let db = prefs.lastPlayedDate(b) ?? .distantPast
                 if da != db { return da > db }
-                return a.title.localizedStandardCompare(b.title) == .orderedAscending
+                return prefs.displayTitle(a).localizedStandardCompare(prefs.displayTitle(b)) == .orderedAscending
             }
         }
     }

@@ -23,6 +23,7 @@ enum DebugScreen: String, CaseIterable {
     case libraryGrid = "library-grid"
     case libraryList = "library-list"
     case libraryContinue = "library-continue"
+    case libraryContinueReduceMotion = "library-continue-reduce-motion"
     case favorites
     case searchActive = "search-active"
     case searchResults = "search-results"

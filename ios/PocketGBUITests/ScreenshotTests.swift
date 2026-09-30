@@ -40,6 +40,10 @@ final class ScreenshotTests: XCTestCase {
                 target.press(forDuration: 1.2)
                 Thread.sleep(forTimeInterval: 1.5)
             }
+            if args.contains("-uiSwipeUp") {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 0.5)
+            }
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
             // Un `-screen` que el router DEBUG no conoce es un error del catálogo.

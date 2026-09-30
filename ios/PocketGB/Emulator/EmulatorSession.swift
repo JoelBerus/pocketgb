@@ -121,6 +121,28 @@ final class EmulatorSession: @unchecked Sendable {
 
     @MainActor
     func start() {
+        startThreadAndAudio()
+    }
+
+    /// Restaura el estado antes de crear el hilo y arrancar el audio. La SRAM incluida
+    /// se persiste con la misma ruta atómica y backups que una carga manual.
+    @MainActor
+    func start(restoring state: Data?) throws {
+        if let state {
+            let previous = try core.stateSave()
+            try core.stateLoad(state)
+            guard flushSRAM(sync: true) else {
+                try? core.stateLoad(previous)
+                frames.publish { core.copyFramebuffer(to: $0) }
+                throw StateError.saveFailed
+            }
+            frames.publish { core.copyFramebuffer(to: $0) }
+        }
+        startThreadAndAudio()
+    }
+
+    @MainActor
+    private func startThreadAndAudio() {
         audioConsumed.reset()
         control.lock()
         audioPrimed = false

@@ -99,14 +99,15 @@ struct GameArtworkView: View {
 
     var body: some View {
         let fingerprint = state.libraryPrefs.fingerprint(of: entry)
+        let title = state.libraryPrefs.displayTitle(entry)
         Group {
             if let image = state.artwork.image(for: fingerprint) {
                 Image(uiImage: image)
                     .resizable()
                     .interpolation(.none)
-                    .accessibilityLabel("Captura de \(entry.title)")
+                    .accessibilityLabel("Captura de \(title)")
             } else {
-                GamePlaceholderView(seed: fingerprint ?? entry.id, title: entry.title,
+                GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
                                     isColor: entry.isColor, compact: compact)
             }
         }

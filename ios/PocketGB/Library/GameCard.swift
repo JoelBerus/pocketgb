@@ -14,7 +14,7 @@ struct GameCard: View {
                 .opacity(entry.problem == nil ? 1 : 0.45)
                 .overlay(alignment: .topTrailing) { statusBadge }
                 .matchedTransitionSource(id: entry.id, in: zoom)
-            Text(entry.title)
+            Text(state.libraryPrefs.displayTitle(entry))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(entry.problem == nil ? .primary : .secondary)
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
@@ -133,7 +133,7 @@ enum GameStatus {
 enum GameAccessibility {
     @MainActor
     static func label(_ entry: RomEntry, prefs: LibraryPreferences) -> String {
-        var parts = [entry.title, entry.isColor ? "Game Boy Color" : "Game Boy"]
+        var parts = [prefs.displayTitle(entry), entry.isColor ? "Game Boy Color" : "Game Boy"]
         if prefs.isFavorite(entry) { parts.append("Favorito") }
         if entry.isNew { parts.append("Nuevo") }
         if let problem = entry.problem {

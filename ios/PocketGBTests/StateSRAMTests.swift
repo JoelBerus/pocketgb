@@ -139,4 +139,73 @@ struct StateSRAMTests {
         #expect(throws: EmulatorSession.StateError.notPaused) { _ = try session.saveState() }
         session.stop()
     }
+
+    @Test func automaticStateMustExistBeValidAndNotPredateTheSave() throws {
+        let states = StateStore(directory: dir.appendingPathComponent("states", isDirectory: true))
+        #expect(states.automaticEntry(newerThan: nil) == nil)
+
+        try states.save(Data("PGBS-valid".utf8), thumbnail: nil, to: .auto)
+        let entry = try #require(states.automaticEntry(newerThan: nil))
+        #expect(!entry.corrupt)
+        #expect(states.automaticEntry(newerThan: entry.date.addingTimeInterval(-1)) != nil)
+        #expect(states.automaticEntry(newerThan: entry.date.addingTimeInterval(1)) == nil)
+
+        try states.save(Data("ROTO".utf8), thumbnail: nil, to: .auto)
+        #expect(states.automaticEntry(newerThan: nil) == nil)
+    }
+
+    @Test func startRestoringLoadsStateAndPersistsItsSRAMBeforeStarting() throws {
+        let rom = Self.rom(title: "REANUDAR", value: 0, counting: true)
+        let original = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        original.start()
+        original.pause()
+        let store = SaveStore(directory: dir, fingerprint: original.info.fingerprint)
+        let x = try #require(try store.load())
+        let automatic = try original.saveState()
+        let y = try Self.playUntilSaveChanges(original, store: store, from: x)
+        original.stop()
+
+        let resumed = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        try resumed.start(restoring: automatic.state)
+        #expect(try store.load() == x)
+        #expect(try Data(contentsOf: store.backupURL(1)) == y)
+        resumed.stop()
+    }
+
+    @Test func startRestoringRejectsCorruptAndForeignStateWithoutChangingSave() throws {
+        let rom = Self.rom(title: "REANUDAR", value: 0x11)
+        let storeSession = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        storeSession.start(); storeSession.pause(); storeSession.stop()
+        let store = SaveStore(directory: dir, fingerprint: storeSession.info.fingerprint)
+        let before = try #require(try store.load())
+
+        let corrupt = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: CoreError.self) { try corrupt.start(restoring: Data("ROTO".utf8)) }
+        #expect(try store.load() == before)
+
+        let otherCore = try CoreBridge()
+        _ = try otherCore.loadROM(Self.rom(title: "OTRO", value: 0x22), unixTime: 0)
+        let foreign = try otherCore.stateSave()
+        let foreignSession = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: CoreError.stateROMMismatch) { try foreignSession.start(restoring: foreign) }
+        #expect(try store.load() == before)
+    }
+
+    @Test func startRestoringRollsBackWhenPersistenceFails() throws {
+        let rom = Self.rom(title: "FALLO", value: 0, counting: true)
+        let source = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        source.start(); source.pause()
+        let store = SaveStore(directory: dir, fingerprint: source.info.fingerprint)
+        let first = try #require(try store.load())
+        let automatic = try source.saveState()
+        _ = try Self.playUntilSaveChanges(source, store: store, from: first)
+        source.stop()
+        let before = try #require(try store.load())
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        let resumed = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.saveFailed) { try resumed.start(restoring: automatic.state) }
+        #expect(try store.load() == before)
+    }
 }

@@ -14,7 +14,11 @@ struct PauseView: View {
                     Button {
                         state.resume()
                     } label: {
-                        Label("Continuar", systemImage: "play.fill")
+                        HStack(spacing: PocketSpacing.xs) {
+                            Image(systemName: "play.fill")
+                            Text("Continuar")
+                        }
+                            .foregroundStyle(.white)
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                     }

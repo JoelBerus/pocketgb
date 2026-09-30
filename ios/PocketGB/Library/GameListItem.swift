@@ -11,7 +11,7 @@ struct GameListItem: View {
         HStack(spacing: PocketSpacing.sm) {
             thumbnail
             VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
-                Text(entry.title)
+                Text(state.libraryPrefs.displayTitle(entry))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(entry.problem == nil ? .primary : .secondary)
                     .lineLimit(2)

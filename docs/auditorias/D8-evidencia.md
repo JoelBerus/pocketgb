@@ -13,7 +13,7 @@ D8 no añade funcionalidad. Rama `d2-a1-wip` (D2–D7 + decisiones de Joel), fre
 | Sin ROMs, `.sav`, `.state` ni capturas comerciales en el repo | `git log --all --stat` sin `.sav`/`.state`/`.gb`/`.gbc` fuera de `core/tests` (fixtures libres descargados, no versionados); las capturas de demostración son arte generado |
 | Sin red, GBA, cheats ni vidrio simulado | `rg 'URLSession\|NWConnection\|NSAppTransportSecurity\|\.blur\(\|UIBlurEffect\|Material\.\|\.gba\|cheat' ios/PocketGB`: sin coincidencias |
 | M6/M7 sustituidos por D2–D6 | `docs/hitos/README.md` |
-| Auditoría independiente | Codex D2–D5 (`15c3b49`): RECHAZAR → H1–H3 corregidos ([D2-D5-respuesta.md](D2-D5-respuesta.md)). **Pendiente:** auditoría Codex final de D6–D8 y de las correcciones, en el Mac |
+| Auditoría independiente | D2–D5: RECHAZAR → H1–H3 corregidos; D6–D8 se integraron en `main` (`76492f4`). La revisión posterior abrió [D8.1](D8.1-implementacion.md), cuya auditoría Opus independiente sigue pendiente. |
 | `ESTADO.md` refleja el resultado real | Actualizado con este cierre |
 
 ## Evidencia por hito
@@ -23,7 +23,7 @@ D8 no añade funcionalidad. Rama `d2-a1-wip` (D2–D7 + decisiones de Joel), fre
 - Auditoría Codex al final y pruebas del iPhone al terminar los cambios visuales.
 - El botón de menú pausa y abre las opciones (sin HUD desplegable).
 - Cruceta Game Boy o flechas separadas; tamaño por control en el editor.
-- "Continuar" exacto (estado automático al abrir): en otra rama de Joel.
+- "Continuar" exacto se trasladó al lote correctivo D8.1 tras verificarse que el merge arrancaba el ROM desde cero.
 
 ## Validación de Joel
 - 2026-09-30: funciones de D2–D6 probadas en el iPhone, correctas.

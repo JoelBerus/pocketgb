@@ -31,7 +31,7 @@ struct GameDetailsView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    Text(entry.title)
+                    Text(state.libraryPrefs.displayTitle(entry))
                         .font(.title2.bold())
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -55,16 +55,19 @@ struct GameDetailsView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
-        .navigationTitle(entry.title)
+        .navigationTitle(state.libraryPrefs.displayTitle(entry))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 let favorite = state.libraryPrefs.isFavorite(entry)
-                Button {
-                    state.libraryPrefs.toggleFavorite(entry)
+                Menu {
+                    Button(favorite ? "Quitar de favoritos" : "Añadir a favoritos",
+                           systemImage: favorite ? "star.slash" : "star") {
+                        state.libraryPrefs.toggleFavorite(entry)
+                    }
+                    Button("Renombrar", systemImage: "pencil") { state.renamingEntry = entry }
                 } label: {
-                    Label(favorite ? "Quitar de favoritos" : "Añadir a favoritos",
-                          systemImage: favorite ? "star.fill" : "star")
+                    Label("Más opciones", systemImage: "ellipsis")
                 }
             }
         }
@@ -106,11 +109,11 @@ struct GameDetailsView: View {
         } else {
             switch entry.cloud {
             case .current:
-                let played = state.libraryPrefs.lastPlayed(entry) != nil || entry.mirrorSaveDate != nil
+                let resumable = state.canResume(entry)
                 Button {
-                    state.open(entry: entry)
+                    state.open(entry: entry, mode: resumable ? .resumeAutomatic : .fresh)
                 } label: {
-                    Label(played ? "Continuar" : "Jugar", systemImage: "play.fill")
+                    Label(resumable ? "Continuar" : "Jugar", systemImage: "play.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
@@ -176,7 +179,10 @@ struct GameContextMenu: View {
 
     var body: some View {
         if entry.isPlayable {
-            Button("Jugar", systemImage: "play.fill") { state.open(entry: entry) }
+            let resumable = state.canResume(entry)
+            Button(resumable ? "Continuar" : "Jugar", systemImage: "play.fill") {
+                state.open(entry: entry, mode: resumable ? .resumeAutomatic : .fresh)
+            }
         }
         Button("Ver detalle", systemImage: "info.circle") { state.showDetails(entry, in: tab) }
         let favorite = state.libraryPrefs.isFavorite(entry)
@@ -184,6 +190,7 @@ struct GameContextMenu: View {
                systemImage: favorite ? "star.slash" : "star") {
             state.libraryPrefs.toggleFavorite(entry)
         }
+        Button("Renombrar", systemImage: "pencil") { state.renamingEntry = entry }
         Button("Estados (próximamente)", systemImage: "square.stack") {}
             .disabled(true)
         Button("Ajustes del juego", systemImage: "slider.horizontal.3") { state.gameSettingsEntry = entry }
@@ -200,7 +207,7 @@ struct HideGameAlert: ViewModifier {
 
     func body(content: Content) -> some View {
         let candidate = state.hideCandidate
-        content.alert(candidate.map { "¿Ocultar “\($0.title)”?" } ?? "",
+        content.alert(candidate.map { "¿Ocultar “\(state.libraryPrefs.displayTitle($0))”?" } ?? "",
                       isPresented: Binding(get: { state.hideCandidate != nil },
                                            set: { if !$0 { state.hideCandidate = nil } })) {
             Button("Ocultar", role: .destructive) {
@@ -210,5 +217,45 @@ struct HideGameAlert: ViewModifier {
         } message: {
             Text("El ROM sigue en tu carpeta y no se modifica. La partida y sus copias se conservan en este iPhone y junto al ROM. Puedes volver a mostrarlo en Ajustes › Biblioteca.")
         }
+    }
+}
+
+/// Alias visual local. Vacío vuelve al título del cartucho; no cambia archivos ni saves.
+struct RenameGameView: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    let entry: RomEntry
+    @State private var name = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Nombre", text: $name)
+                        .textInputAutocapitalization(.words)
+                        .onChange(of: name) { _, value in
+                            if value.count > 80 { name = String(value.prefix(80)) }
+                        }
+                } footer: {
+                    Text("Vacía el campo para volver a “\(entry.title)”. El archivo y las partidas no cambian.")
+                }
+            }
+            .navigationTitle("Renombrar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Guardar") {
+                        state.libraryPrefs.setAlias(name, for: entry)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .task {
+            let current = state.libraryPrefs.displayTitle(entry)
+            name = current == entry.title ? "" : current
+        }
+        .presentationDetents([.medium])
     }
 }
