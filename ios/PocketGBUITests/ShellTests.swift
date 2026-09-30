@@ -19,10 +19,15 @@ final class ShellTests: XCTestCase {
         XCTAssertFalse(app.buttons["Abrir ROM"].exists)
 
         tabs.buttons["Ajustes"].tap()
-        app.buttons["Apariencia"].tap()
+        // Ajustes tiene más filas desde D4: Apariencia puede quedar bajo el pliegue.
+        let appearance = app.buttons["Apariencia"]
+        if !appearance.waitForExistence(timeout: 2) || !appearance.isHittable { app.swipeUp() }
+        appearance.tap()
         XCTAssertTrue(app.navigationBars["Apariencia"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["Acerca de"].tap()
+        let about = app.buttons["Acerca de"]
+        if !about.waitForExistence(timeout: 2) || !about.isHittable { app.swipeUp() }
+        about.tap()
         XCTAssertTrue(app.navigationBars["Acerca de"].waitForExistence(timeout: 5))
     }
 }
