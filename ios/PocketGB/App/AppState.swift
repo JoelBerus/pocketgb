@@ -47,6 +47,11 @@ enum AppTab: Hashable {
     case library, favorites, settings
 }
 
+/// Pantallas de la sheet de pausa.
+enum PauseRoute: Hashable {
+    case states
+}
+
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
     case appearance, about, licenses, saves, library, controls, display
@@ -79,6 +84,18 @@ final class AppState {
         }
     }
     var showingGameMenu = false
+    /// HUD de gameplay desplegado (se pliega solo a los 3 s).
+    var hudExpanded = false
+    /// Pila de la sheet de pausa (Estados).
+    var pausePath: [PauseRoute] = []
+    /// Save states del juego abierto.
+    private(set) var stateEntries: [StateSlot: StateStore.Entry] = [:]
+    private(set) var stateStore: StateStore?
+    /// Confirmaciones de la pantalla de estados.
+    var pendingStateLoad: StateSlot?
+    var pendingStateReplace: StateSlot?
+    /// Aviso breve sobre el juego ("Estado guardado").
+    private(set) var gameToast: String?
     /// Juego pendiente de confirmar "Ocultar de PocketGB".
     var hideCandidate: RomEntry?
     /// Selector de carpeta de la biblioteca.
@@ -243,6 +260,11 @@ final class AppState {
             }
             session.start()
             self.session = session
+            stateStore = (try? StateStore.defaultRoot()).map { StateStore(root: $0, fingerprint: session.info.fingerprint) }
+            #if DEBUG
+            if let demo = DebugScreenRouter.demoStateStore() { stateStore = demo }
+            #endif
+            reloadStates()
             paused = false
             if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
                 showAlert(warning.title, warning.message)
@@ -277,6 +299,7 @@ final class AppState {
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
         open(url: URL(fileURLWithPath: args[i + 1]))
         if debugOpensControlsEditor { editingControls = true }
+        DebugScreenRouter.afterGameOpened(self)
         // `-paused`: abre el juego ya en pausa (captura del estado de pausa).
         if args.contains("-paused") {
             Task { @MainActor in
@@ -297,9 +320,19 @@ final class AppState {
     /// Guarda de forma síncrona y vuelve a la pantalla inicial.
     func closeGame() {
         if let session {
+            // Estado automático al salir (SPEC §12). La pausa hace antes el flush síncrono
+            // de la SRAM; un fallo del estado nunca impide salir ni guardar la partida.
+            if !paused && !editingControls { session.pause() }
+            if let stateStore, let saved = try? session.saveState() {
+                try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)
+            }
             session.stop()
             saveArtwork(session)
         }
+        stateStore = nil
+        stateEntries = [:]
+        pausePath = []
+        hudExpanded = false
         session = nil
         paused = false
         editingControls = false
@@ -333,5 +366,82 @@ final class AppState {
     func resume() {
         session?.resume()
         paused = false
+        pausePath = []
+    }
+
+    /// Cierra la sheet de pausa para abrir el editor: la emulación sigue parada (el
+    /// editor la reanuda al terminar).
+    func resumeKeepingEditorPaused() {
+        paused = false
+        pausePath = []
+    }
+
+    /// Pausa desde el HUD: la sheet de pausa aparece con la emulación ya parada.
+    func pauseGame() {
+        guard let session, !paused else { return }
+        hudExpanded = false
+        if !editingControls { session.pause() }
+        paused = true
+    }
+
+    // MARK: - Save states (D5)
+
+    func reloadStates() {
+        stateEntries = stateStore?.entries() ?? [:]
+    }
+
+    /// Guarda en una ranura (con la sesión en pausa). Reemplazar ya se confirmó antes.
+    func saveState(to slot: StateSlot) {
+        guard let session, let stateStore else { return }
+        do {
+            let saved = try session.saveState()
+            try stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: slot)
+            showGameToast("Estado guardado en \(slot.title.lowercased())")
+        } catch {
+            showAlert("No se pudo guardar el estado", Self.describe(error))
+        }
+        reloadStates()
+    }
+
+    /// Carga una ranura. Con `saveCurrentFirst`, antes guarda la partida actual en la
+    /// ranura automática para poder volver a ella.
+    func loadState(from slot: StateSlot, saveCurrentFirst: Bool) {
+        guard let session, let stateStore else { return }
+        do {
+            if saveCurrentFirst && slot != .auto {
+                let current = try session.saveState()
+                try stateStore.save(current.state, thumbnail: Self.thumbnail(current.pixels), to: .auto)
+            }
+            let data = try stateStore.load(slot)
+            try session.loadState(data)
+            showGameToast("Estado cargado: \(slot.title.lowercased())")
+        } catch {
+            showAlert("No se pudo cargar el estado",
+                      Self.describe(error) + " La partida actual no ha cambiado.")
+        }
+        reloadStates()
+    }
+
+    func deleteState(_ slot: StateSlot) {
+        try? stateStore?.delete(slot)
+        reloadStates()
+    }
+
+    private func showGameToast(_ text: String) {
+        gameToast = text
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: PocketMotion.toastVisible)
+            if self?.gameToast == text { self?.gameToast = nil }
+        }
+    }
+
+    nonisolated static func thumbnail(_ pixels: [UInt32]) -> Data? {
+        GameArtworkStore.makeImage(pixels).flatMap(GameArtworkStore.pngData)
+    }
+
+    private static func describe(_ error: Error) -> String {
+        if let core = error as? CoreError { return core.description }
+        if error as? EmulatorSession.StateError == .notPaused { return "Pausa el juego antes." }
+        return error.localizedDescription
     }
 }

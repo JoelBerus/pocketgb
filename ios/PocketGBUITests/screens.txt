@@ -77,3 +77,10 @@ settings-controls            portrait  dark   -screen settings-controls
 # Sin -rom: la vista previa es arte generado y el juego taparía Ajustes.
 settings-display             portrait  light  -screen settings-display
 settings-display             portrait  dark   -screen settings-display
+
+# ---- D5 · HUD, pausa y save states ----
+gameplay-portrait-hud portrait  dark   -screen gameplay-portrait-hud -rom $FIXTURES/dmg-acid2.gb
+gameplay-pause        portrait  dark   -screen gameplay-pause -rom $FIXTURES/dmg-acid2.gb -paused
+save-states           portrait  dark   -screen save-states -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+load-state-confirm    portrait  dark   -screen load-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+replace-state-confirm portrait  dark   -screen replace-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots

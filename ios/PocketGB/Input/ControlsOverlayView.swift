@@ -127,7 +127,8 @@ final class ControlsOverlayView: UIView {
         let style: ControlVisualView.Style = orientation == .portrait ? .solidGlass : .clearGlass
         let pressed = engine.pressed
         for (id, visual) in visuals {
-            let hidden = !editing && settings.visibility == .hidden && id != .menu
+            // El menú lo dibuja el HUD de SwiftUI (GameplayHUD) en el mismo sitio.
+            let hidden = id == .menu || (!editing && settings.visibility == .hidden)
             visual.configure(style: style, opacity: CGFloat(settings.opacity) / 100,
                              reduceTransparency: reduceTransparency, pressed: pressed.contains(id),
                              editing: editing, animated: animated)
@@ -138,8 +139,8 @@ final class ControlsOverlayView: UIView {
     private func updateAccessibility(_ geometry: ControlsGeometry) {
         var elements: [UIAccessibilityElement] = []
         for id in ControlID.allCases {
-            guard let frame = geometry.frames[id],
-                  settings.visibility != .hidden || id == .menu else { continue }
+            guard let frame = geometry.frames[id], id != .menu,
+                  settings.visibility != .hidden else { continue }
             let element = UIAccessibilityElement(accessibilityContainer: self)
             element.accessibilityFrameInContainerSpace = frame
             element.accessibilityTraits = .button
@@ -264,7 +265,7 @@ final class ControlsOverlayView: UIView {
     private func beginDrag(_ t: UITouch) {
         let p = t.location(in: self)
         // El visual más pequeño bajo el dedo (el D-pad es grande y no debe tapar a los demás).
-        let candidates = visuals.filter { $0.value.frame.insetBy(dx: -8, dy: -8).contains(p) }
+        let candidates = visuals.filter { !$0.value.isHidden && $0.value.frame.insetBy(dx: -8, dy: -8).contains(p) }
         guard let (id, visual) = candidates.min(by: { $0.value.bounds.width < $1.value.bounds.width }),
               !drags.values.contains(where: { $0.id == id }) else { return }
         drags[key(t)] = (id, CGPoint(x: visual.center.x - p.x, y: visual.center.y - p.y))

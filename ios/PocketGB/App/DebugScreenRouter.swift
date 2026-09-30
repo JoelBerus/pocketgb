@@ -41,6 +41,12 @@ enum DebugScreen: String, CaseIterable {
     case customizeControlsLandscape = "customize-controls-landscape"
     case settingsControls = "settings-controls"
     case settingsDisplay = "settings-display"
+    // D5 (abren además `-rom`)
+    case gameplayPortraitHUD = "gameplay-portrait-hud"
+    case gameplayPause = "gameplay-pause"
+    case saveStates = "save-states"
+    case loadStateConfirm = "load-state-confirm"
+    case replaceStateConfirm = "replace-state-confirm"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -104,6 +110,8 @@ enum DebugScreenRouter {
         case .settingsDisplay:
             state.selectedTab = .settings
             state.settingsPath = [.display]
+        case .gameplayPortraitHUD, .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
+            break   // se aplican al abrir el juego (`afterGameOpened`)
         case .customizeControlsPortrait, .customizeControlsLandscape:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
@@ -118,6 +126,56 @@ enum DebugScreenRouter {
             try? await Task.sleep(for: .seconds(1))
             state.librarySearchPresented = true
         }
+    }
+
+    /// D5: estado de la pantalla una vez abierto el juego con `-rom`.
+    static func afterGameOpened(_ state: AppState) {
+        guard let screen = DebugArguments.screen.flatMap(DebugScreen.init(rawValue:)) else { return }
+        switch screen {
+        case .gameplayPortraitHUD:
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                state.hudExpanded = true
+            }
+        case .saveStates, .loadStateConfirm, .replaceStateConfirm:
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                state.pauseGame()
+                state.pausePath = [.states]
+                try? await Task.sleep(for: .seconds(1))
+                if screen == .loadStateConfirm { state.pendingStateLoad = .manual1 }
+                if screen == .replaceStateConfirm { state.pendingStateReplace = .manual2 }
+            }
+        default:
+            break
+        }
+    }
+
+    /// `-demoSaveState slots`: estados de demostración en un directorio temporal (automático
+    /// y tres manuales con fechas fijas; la ranura 4 vacía). Arte generado, no del juego.
+    static func demoStateStore() -> StateStore? {
+        guard DebugArguments.value("-demoSaveState") == "slots" else { return nil }
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("demo-states-\(UUID().uuidString)", isDirectory: true)
+        let store = StateStore(directory: dir)
+        let base = GameArtworkStore.demoPixels()
+        let slots: [(StateSlot, TimeInterval, Int)] = [
+            (.auto, 1_790_700_000, 0), (.manual1, 1_790_600_000, 40), (.manual2, 1_790_400_000, 80),
+            (.manual3, 1_790_100_000, 120),
+        ]
+        for (slot, time, shift) in slots {
+            // La captura de cada ranura desplaza el dibujo para distinguirlas.
+            var pixels = base
+            for y in 0..<FrameBuffers.height {
+                for x in 0..<FrameBuffers.width {
+                    pixels[y * FrameBuffers.width + x] = base[y * FrameBuffers.width + (x + shift) % FrameBuffers.width]
+                }
+            }
+            try? store.save(Data("PGBS-demo".utf8), thumbnail: AppState.thumbnail(pixels), to: slot)
+            try? FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: time)],
+                                                   ofItemAtPath: store.stateURL(slot).path)
+        }
+        return store
     }
 
     nonisolated private static let demoWithArtwork = "dmg-acid2.gb"

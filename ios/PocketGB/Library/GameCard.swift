@@ -98,6 +98,18 @@ enum GameStatus {
         }
     }
 
+    /// Fecha y hora de un save state ("30 sept, 14:05"; fija en las capturas).
+    static func stateDate(_ date: Date) -> String {
+        var style = Date.FormatStyle.dateTime.day().month(.abbreviated).hour().minute()
+        #if DEBUG
+        if DebugArguments.screen != nil {
+            style = style.locale(Locale(identifier: "es_ES"))
+            style.timeZone = TimeZone(identifier: "UTC") ?? .current
+        }
+        #endif
+        return date.formatted(style)
+    }
+
     static func relative(_ date: Date) -> String {
         #if DEBUG
         // Capturas deterministas: fecha absoluta en lugar de "hace 2 h".

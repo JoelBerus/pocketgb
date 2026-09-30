@@ -43,8 +43,10 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .sramSize: return "La partida guardada tiene un tamaño distinto al esperado."
         case .outOfMemory: return "Sin memoria para cargar el ROM."
         case .unknown(let code): return "Error desconocido del núcleo (\(code))."
-        case .nullArgument, .noROM, .stateMagic, .stateVersion, .stateROMMismatch,
-             .stateCorrupt, .bufferTooSmall:
+        case .stateMagic, .stateCorrupt: return "El estado está dañado."
+        case .stateVersion: return "El estado es de una versión anterior de PocketGB."
+        case .stateROMMismatch: return "El estado es de otro juego."
+        case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
         }
     }
@@ -137,4 +139,25 @@ final class CoreBridge {
     }
 
     func setRTCTime(_ unixTime: Int64) { gb_rtc_set_time(g, unixTime) }
+
+    // MARK: Save states
+
+    func stateSave() throws(CoreError) -> Data {
+        var out = Data(count: gb_state_size(g))
+        let count = out.count
+        let r = out.withUnsafeMutableBytes { raw in
+            gb_state_save(g, raw.bindMemory(to: UInt8.self).baseAddress, count)
+        }
+        if let e = CoreError(r) { throw e }
+        return out
+    }
+
+    /// Carga en dos pasadas: si falla (firma, versión, otro ROM, corrupto), el núcleo
+    /// queda como estaba, SRAM incluida.
+    func stateLoad(_ data: Data) throws(CoreError) {
+        let r = data.withUnsafeBytes { raw in
+            gb_state_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+        }
+        if let e = CoreError(r) { throw e }
+    }
 }

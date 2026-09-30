@@ -30,6 +30,7 @@ struct GameScreen: View {
                         controls(.landscape)
                     }
                     .ignoresSafeArea()
+                    .overlay(alignment: .top) { hud.padding(.top, 2) }
                 } else {
                     // Vertical: imagen bajo la Dynamic Island (no dentro), controles hasta el borde.
                     VStack(spacing: 0) {
@@ -37,13 +38,18 @@ struct GameScreen: View {
                             .aspectRatio(10.0 / 9.0, contentMode: .fit)
                         controls(.portrait)
                             .ignoresSafeArea(edges: .bottom)
+                            .overlay(alignment: .top) { hud.padding(.top, 6) }
                     }
                 }
                 if state.paused {
-                    Color.black.opacity(0.5).ignoresSafeArea()
-                    Button("Continuar") { state.resume() }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
+                    // Frame atenuado detrás de la sheet de pausa.
+                    Color.black.opacity(0.45).ignoresSafeArea().allowsHitTesting(false)
+                }
+                if let toast = state.gameToast {
+                    ToastView(text: toast)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .padding(.top, PocketSpacing.xl)
+                        .transition(.opacity)
                 }
                 if state.editingControls {
                     ControlsEditorBar(orientation: orientation)
@@ -60,13 +66,17 @@ struct GameScreen: View {
         }
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)
-        .confirmationDialog("Juego", isPresented: Binding(get: { state.showingGameMenu },
-                                                          set: { state.showingGameMenu = $0 })) {
-            Button("Personalizar controles") { state.editingControls = true }
-            Button("Salir del juego", role: .destructive) { state.closeGame() }
-            Button("Seguir jugando", role: .cancel) {}
-        } message: {
-            Text("La partida se guarda al salir.")
+        // La sheet aparece con la emulación ya parada; cerrarla (gesto o "Continuar") reanuda.
+        .sheet(isPresented: Binding(get: { state.paused && !state.editingControls },
+                                    set: { if !$0 && state.paused { state.resume() } })) {
+            PauseView()
+                .environment(state)
+        }
+    }
+
+    @ViewBuilder private var hud: some View {
+        if !state.editingControls {
+            GameplayHUD()
         }
     }
 
@@ -84,7 +94,7 @@ struct GameScreen: View {
     private func controls(_ orientation: ControlsOrientation) -> some View {
         ControlsOverlay(buttons: session.buttons, orientation: orientation, settings: state.gameplay.data,
                         editing: state.editingControls, reduceTransparency: reduceTransparency,
-                        onMenu: { state.showingGameMenu = true },
+                        onMenu: { withAnimation(PocketMotion.hudMorph) { state.hudExpanded.toggle() } },
                         onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation) })
     }
 }

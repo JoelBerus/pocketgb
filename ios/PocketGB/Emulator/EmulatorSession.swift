@@ -196,6 +196,50 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
+    // MARK: - Save states (D5)
+
+    enum StateError: Error, Equatable {
+        /// Los estados solo se guardan o cargan con el hilo de emulación aparcado.
+        case notPaused
+    }
+
+    /// Guarda un estado con la sesión en pausa. Devuelve el estado y el frame actual
+    /// (RGBA, 160×144) para la captura de la ranura.
+    @MainActor
+    func saveState() throws -> (state: Data, pixels: [UInt32]) {
+        try withParkedCore { core in
+            let state = try core.stateSave()
+            var pixels = [UInt32](repeating: 0, count: FrameBuffers.pixelCount)
+            pixels.withUnsafeMutableBufferPointer { core.copyFramebuffer(to: $0.baseAddress!) }
+            return (state: state, pixels: pixels)
+        }
+    }
+
+    /// Carga un estado con la sesión en pausa. Si el núcleo lo rechaza (dañado, de otro
+    /// juego o de otra versión) no cambia nada, SRAM incluida. Si lo acepta, la SRAM del
+    /// estado se guarda en el acto por la ruta normal: `AtomicFile` deja la partida
+    /// anterior como backup `.1` antes de sustituirla (SPEC §12).
+    @MainActor
+    func loadState(_ data: Data) throws {
+        try withParkedCore { core in
+            try core.stateLoad(data)
+            frames.publish { core.copyFramebuffer(to: $0) }
+            flushSRAM(sync: true)
+        }
+    }
+
+    /// Ejecuta `body` en el hilo principal con el núcleo mientras el hilo de emulación está
+    /// aparcado en `control.wait()`: nadie más lo toca hasta que el propio hilo principal
+    /// llame a `resume()` o `stop()`. El lock da la visibilidad de memoria entre hilos.
+    @MainActor
+    private func withParkedCore<T>(_ body: (CoreBridge) throws -> T) throws -> T {
+        control.lock()
+        let isParked = parked && !finished
+        control.unlock()
+        guard isParked else { throw StateError.notPaused }
+        return try body(core)
+    }
+
     /// Para el HUD de depuración: "audio", "cebado" o "reloj" (sin sonido).
     var pacingDescription: String {
         switch audioMode.load(ordering: .relaxed) {
