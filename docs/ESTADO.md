@@ -21,6 +21,7 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
+- **D7 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `7f0fd0f`)**: Reduce Transparency con alternativa sólida, AX5 con reflow, cobertura del catálogo y tests de accesibilidad ([auditorias/D7-evidencia.md](auditorias/D7-evidencia.md)). Siguiente: **D8** (regresión, documentación y auditoría final).
 - **iPhone (2026-09-30):** Joel probó las funciones de D2–D6 en `d2-a1-wip` y pasaron la prueba.
 - **Auditoría Codex D2–D5 (`15c3b49`): RECHAZAR → H1–H3 corregidos** ([auditorias/D2-D5-respuesta.md](auditorias/D2-D5-respuesta.md)); verde en `30f7170`.
 - **D6 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `63b8a19`)**: mando físico, avance rápido ×2/×4, Audio, Emulación (color en juegos de Game Boy + paleta, global y por juego), Almacenamiento ([auditorias/D6-evidencia.md](auditorias/D6-evidencia.md)). Siguiente: **D7** (accesibilidad) y **D8** (cierre); después auditoría Codex final, pruebas del iPhone y merge.
