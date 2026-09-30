@@ -73,6 +73,19 @@ final class GameArtworkStore {
         return true
     }
 
+    /// Borra todas las portadas (Ajustes › Almacenamiento). Se regeneran al jugar.
+    func removeAll() {
+        images.removeAll()
+        missing.removeAll()
+        guard let directory else { return }
+        queue.async {
+            let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.pathExtension == "png" { try? FileManager.default.removeItem(at: file) }
+        }
+    }
+
+    var directoryURL: URL? { directory }
+
     /// Espera a que terminen las escrituras y lecturas pendientes (tests).
     func waitForPendingWork() {
         queue.sync {}

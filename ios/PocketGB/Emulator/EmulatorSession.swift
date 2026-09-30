@@ -72,10 +72,13 @@ final class EmulatorSession: @unchecked Sendable {
     init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
          mirrorSnapshot: SaveMirror.Snapshot = .absent,
          mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
+         emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
          onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
-        info = try core.loadROM(romData, unixTime: now, sampleRate: 48_000)
+        info = try core.loadROM(romData, unixTime: now, sampleRate: 48_000,
+                                colorForGameBoy: emulation.colorForGameBoy,
+                                compatPalette: emulation.compatPalette)
         self.core = core
         audioScratch = .allocate(capacity: Self.audioScratchFrames * 2)
         audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
@@ -207,6 +210,12 @@ final class EmulatorSession: @unchecked Sendable {
         control.broadcast()
         while !finished { control.wait() }
         control.unlock()
+    }
+
+    /// Volumen y modo silencio (Ajustes › Audio). El volumen se aplica en el acto; la
+    /// categoría de la sesión, al próximo arranque del motor.
+    func applyAudioPreferences(_ preferences: AudioPreferences) {
+        audioOutput.apply(preferences)
     }
 
     // MARK: - Avance rápido (D6)

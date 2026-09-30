@@ -94,3 +94,13 @@ gameplay-landscape-arrows landscape dark  -screen gameplay-landscape-arrows -rom
 # ---- D6 · Mando y avance rápido ----
 gameplay-controller    landscape dark  -screen gameplay-controller -rom $FIXTURES/dmg-acid2.gb -demoController connected
 gameplay-fast-forward  portrait  dark  -screen gameplay-fast-forward -rom $FIXTURES/dmg-acid2.gb
+settings-audio         portrait  light -screen settings-audio
+settings-audio         portrait  dark  -screen settings-audio
+settings-emulation     portrait  light -screen settings-emulation
+settings-emulation     portrait  dark  -screen settings-emulation
+settings-storage       portrait  light -screen settings-storage -demoSaveState slots
+settings-storage       portrait  dark  -screen settings-storage -demoSaveState slots
+settings-saves         portrait  light -screen settings-saves -demoSaveState slots
+settings-saves         portrait  dark  -screen settings-saves -demoSaveState slots
+game-settings          portrait  light -screen game-settings -demoLibrary standard
+game-settings          portrait  dark  -screen game-settings -demoLibrary standard

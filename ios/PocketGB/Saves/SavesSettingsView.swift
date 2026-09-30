@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Ajustes › Partidas: juegos con partida local (docs/04 §Restaurar).
 struct SavesSettingsView: View {
+    @Environment(AppState.self) private var state
     @State private var games: [(fingerprint: String, record: SavesIndex.Record?)] = []
     @State private var loaded = false
 
@@ -32,7 +33,7 @@ struct SavesSettingsView: View {
         .navigationTitle("Partidas")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if let dir = try? SaveStore.defaultDirectory() {
+            if let dir = state.storageDirectories.saves {
                 games = SavesIndex(directory: dir).savedGames()
             }
             loaded = true

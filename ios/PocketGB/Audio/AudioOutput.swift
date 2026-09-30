@@ -28,6 +28,14 @@ final class AudioWakeSignal: Sendable {
     }
 }
 
+/// Preferencias de audio (Ajustes › Audio). `.ambient` respeta el interruptor de
+/// silencio y se mezcla con otras apps; `.playback` suena también en silencio. Nunca hay
+/// audio en segundo plano (sin `UIBackgroundModes`).
+struct AudioPreferences: Equatable, Sendable {
+    var volume: Float = 1
+    var playsInSilentMode = false
+}
+
 /// Salida de audio de 48 kHz. El bloque de render solo toca memoria
 /// preasignada, atómicos del ring y el semáforo de pacing.
 ///
@@ -43,6 +51,7 @@ final class AudioOutput: @unchecked Sendable {
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "audio")
 
     private var engine: AVAudioEngine?     // solo en `queue`
+    private var preferences = AudioPreferences()   // solo en `queue`
     private var observers: [NSObjectProtocol] = []
 
     init(ring: AudioRingBuffer, consumed: AudioWakeSignal,
@@ -98,11 +107,19 @@ final class AudioOutput: @unchecked Sendable {
         }
     }
 
+    func apply(_ preferences: AudioPreferences) {
+        queue.async { [self] in
+            self.preferences = preferences
+            engine?.mainMixerNode.outputVolume = preferences.volume
+        }
+    }
+
     private func startOnQueue() -> Bool {
         stopEngineOnQueue() // sin vaciar: el ring ya trae el audio cebado
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.ambient, mode: .default)
+            try session.setCategory(preferences.playsInSilentMode ? .playback : .ambient,
+                                    mode: .default, options: preferences.playsInSilentMode ? [.mixWithOthers] : [])
             try session.setPreferredSampleRate(48_000)
             try session.setPreferredIOBufferDuration(0.010)
             try session.setActive(true)
@@ -118,6 +135,7 @@ final class AudioOutput: @unchecked Sendable {
             let engine = AVAudioEngine()
             engine.attach(source)
             engine.connect(source, to: engine.mainMixerNode, format: format)
+            engine.mainMixerNode.outputVolume = preferences.volume
             engine.prepare()
             try engine.start()
             self.engine = engine

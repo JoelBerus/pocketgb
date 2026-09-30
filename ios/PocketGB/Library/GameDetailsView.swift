@@ -153,12 +153,13 @@ struct GameDetailsView: View {
                 }
                 .disabled(true)
                 .accessibilityHint("Próximamente")
-                Button {} label: {
+                Button {
+                    state.gameSettingsEntry = entry
+                } label: {
                     Label("Ajustes", systemImage: "slider.horizontal.3")
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
-                .disabled(true)
-                .accessibilityHint("Próximamente")
+                .accessibilityLabel("Ajustes del juego")
             }
             .labelStyle(.titleAndIcon)
             .font(.subheadline)
@@ -185,8 +186,7 @@ struct GameContextMenu: View {
         }
         Button("Estados (próximamente)", systemImage: "square.stack") {}
             .disabled(true)
-        Button("Ajustes del juego (próximamente)", systemImage: "slider.horizontal.3") {}
-            .disabled(true)
+        Button("Ajustes del juego", systemImage: "slider.horizontal.3") { state.gameSettingsEntry = entry }
         Divider()
         Button("Ocultar de PocketGB", systemImage: "eye.slash", role: .destructive) {
             state.hideCandidate = entry

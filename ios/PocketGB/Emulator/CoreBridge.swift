@@ -45,7 +45,7 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .unknown(let code): return "Error desconocido del núcleo (\(code))."
         case .stateMagic, .stateCorrupt: return "El estado está dañado."
         case .stateVersion: return "El estado es de una versión anterior de PocketGB."
-        case .stateROMMismatch: return "El estado es de otro juego."
+        case .stateROMMismatch: return "El estado es de otro juego, o de otro modo (Game Boy o Game Boy Color)."
         case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
         }
@@ -77,11 +77,18 @@ final class CoreBridge {
     deinit { gb_destroy(g) }
 
     /// Copia el ROM dentro del núcleo (`gb_load_rom` no retiene `data`).
-    func loadROM(_ data: Data, unixTime: Int64, sampleRate: UInt32 = 0) throws(CoreError) -> RomInfo {
+    /// - Parameters:
+    ///   - colorForGameBoy: un juego de Game Boy se ejecuta en una Game Boy Color con paleta
+    ///     de color (`GB_MODEL_CGB`); si no, cada juego en su consola (`GB_MODEL_AUTO`).
+    ///   - compatPalette: 0 = automática; 1…12 = combinaciones del arranque de la CGB.
+    func loadROM(_ data: Data, unixTime: Int64, sampleRate: UInt32 = 0, colorForGameBoy: Bool = false,
+                 compatPalette: UInt8 = 0) throws(CoreError) -> RomInfo {
         var opts = gb_options()
         gb_options_default(&opts)
         opts.sample_rate = sampleRate
         opts.unix_time = unixTime
+        opts.model = colorForGameBoy ? GB_MODEL_CGB : GB_MODEL_AUTO
+        opts.compat_palette = compatPalette
         let r = data.withUnsafeBytes { raw in
             gb_load_rom(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &opts)
         }

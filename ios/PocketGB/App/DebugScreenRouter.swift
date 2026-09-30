@@ -47,6 +47,11 @@ enum DebugScreen: String, CaseIterable {
     case loadStateConfirm = "load-state-confirm"
     case replaceStateConfirm = "replace-state-confirm"
     case customizeControlsSize = "customize-controls-size"
+    case settingsAudio = "settings-audio"
+    case settingsEmulation = "settings-emulation"
+    case settingsStorage = "settings-storage"
+    case settingsSaves = "settings-saves"
+    case gameSettings = "game-settings"
     case gameplayController = "gameplay-controller"
     case gameplayFastForward = "gameplay-fast-forward"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
@@ -108,6 +113,26 @@ enum DebugScreenRouter {
         case .settingsLibrary:
             state.selectedTab = .settings
             state.settingsPath = [.library]
+        case .settingsAudio:
+            state.selectedTab = .settings
+            state.settingsPath = [.audio]
+        case .settingsEmulation:
+            state.selectedTab = .settings
+            state.settingsPath = [.emulation]
+        case .settingsStorage:
+            state.selectedTab = .settings
+            state.settingsPath = [.storage]
+        case .settingsSaves:
+            state.selectedTab = .settings
+            state.settingsPath = [.saves]
+        case .gameSettings:
+            state.libraryPath = [.details(id: demoFavorite, source: demoFavorite)]
+            // Un juego de Game Boy con paleta personalizada (Global/Personalizado visibles).
+            if let dmg = standard.first(where: { $0.id == demoWithArtwork }) {
+                state.gameplay.setOverrides(GameOverrides(colorForGameBoy: true, compatPalette: 5), for: dmg.id)
+                state.libraryPath = [.details(id: dmg.id, source: dmg.id)]
+                state.gameSettingsEntry = dmg
+            }
         case .settingsControls:
             state.selectedTab = .settings
             state.settingsPath = [.controls]
@@ -159,6 +184,27 @@ enum DebugScreenRouter {
             break
         }
     }
+
+    /// `-demoSaveState slots` en Ajustes: carpetas temporales con partidas, copias, estados y
+    /// portadas de tamaño fijo, para Almacenamiento y Partidas. Se crean una vez por arranque.
+    static let demoStorage: (saves: URL?, states: URL?, artwork: URL?)? = {
+        guard DebugArguments.value("-demoSaveState") == "slots" else { return nil }
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("demo-storage-\(UUID().uuidString)", isDirectory: true)
+        let saves = root.appendingPathComponent("Saves", isDirectory: true)
+        let states = root.appendingPathComponent("States", isDirectory: true)
+        let artwork = root.appendingPathComponent("Artwork", isDirectory: true)
+        for dir in [saves, states, artwork] { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let games = [("demo-dmg-acid2", "DMG-ACID2", "dmg-acid2.gb"), ("demo-cgb-acid2", "CGB-ACID2", "cgb-acid2.gbc")]
+        for (fp, title, file) in games {
+            let store = SaveStore(directory: saves, fingerprint: fp)
+            for byte in [UInt8(1), 2, 3] { try? store.save(Data(repeating: byte, count: 8_192)) }
+            SavesIndex(directory: saves).record(fingerprint: fp, title: title, fileName: file)
+            try? StateStore(root: states, fingerprint: fp).save(Data(repeating: 7, count: 40_000), thumbnail: nil, to: .auto)
+        }
+        try? Data(repeating: 0, count: 23_000).write(to: artwork.appendingPathComponent("demo.png"))
+        return (saves, states, artwork)
+    }()
 
     /// `-demoSaveState slots`: estados de demostración en un directorio temporal (automático
     /// y tres manuales con fechas fijas; la ranura 4 vacía). Arte generado, no del juego.

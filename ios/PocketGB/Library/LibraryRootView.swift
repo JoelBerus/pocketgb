@@ -20,5 +20,9 @@ struct LibraryRootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .modifier(HideGameAlert())
+        .sheet(item: Binding(get: { state.gameSettingsEntry }, set: { state.gameSettingsEntry = $0 })) { entry in
+            GameSettingsView(entry: entry)
+                .environment(state)
+        }
     }
 }

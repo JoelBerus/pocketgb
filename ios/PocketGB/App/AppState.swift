@@ -54,7 +54,7 @@ enum PauseRoute: Hashable {
 
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
-    case appearance, about, licenses, saves, library, controls, display
+    case appearance, about, licenses, saves, library, controls, display, emulation, audio, storage
     case backups(fingerprint: String)
 }
 
@@ -86,7 +86,7 @@ final class AppState {
     }
     var showingGameMenu = false
     /// Mando físico (GameController).
-    let gamepad = GamepadInput()
+    let gamepad: GamepadInput
     /// Avance rápido del juego abierto: 1, 2 o 4.
     private(set) var gameSpeed = 1
     /// Control elegido en el editor para cambiar su tamaño.
@@ -101,6 +101,8 @@ final class AppState {
     var pendingStateReplace: StateSlot?
     /// Aviso breve sobre el juego ("Estado guardado").
     private(set) var gameToast: String?
+    /// Juego cuyos ajustes se están editando (sheet).
+    var gameSettingsEntry: RomEntry?
     /// Juego pendiente de confirmar "Ocultar de PocketGB".
     var hideCandidate: RomEntry?
     /// Selector de carpeta de la biblioteca.
@@ -132,11 +134,14 @@ final class AppState {
             || DebugArguments.value("-dpadStyle") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
         gameplay.applyDebugArguments()
+        let catalogRun = DebugArguments.screen != nil || DebugArguments.arguments.contains("-rom")
+        gamepad = GamepadInput(observesHardware: !catalogRun)
         if DebugArguments.value("-demoController") == "connected" { gamepad.applyDemo() }
         #else
         libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
         gameplay = GameplaySettings(defaults: .standard)
+        gamepad = GamepadInput()
         #endif
         #if DEBUG
         DebugScreenRouter.apply(to: self)
@@ -257,7 +262,8 @@ final class AppState {
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
-                                              mirror: mirror, mirrorSnapshot: snapshot) { [weak self] in
+                                              mirror: mirror, mirrorSnapshot: snapshot,
+                                              emulation: gameplay.data.emulation(for: entryID)) { [weak self] in
                 self?.enterBackground()
             }
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
@@ -265,6 +271,7 @@ final class AppState {
             if let entryID {
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
+            session.applyAudioPreferences(audioPreferences)
             session.start()
             self.session = session
             gamepad.target = session.padButtons
@@ -384,6 +391,18 @@ final class AppState {
     func resumeKeepingEditorPaused() {
         paused = false
         pausePath = []
+    }
+
+    /// Carpetas que mide Ajustes › Almacenamiento (en DEBUG con demo, temporales).
+    var storageDirectories: (saves: URL?, states: URL?, artwork: URL?) {
+        #if DEBUG
+        if let demo = DebugScreenRouter.demoStorage { return demo }
+        #endif
+        return (try? SaveStore.defaultDirectory(), try? StateStore.defaultRoot(), artwork.directoryURL)
+    }
+
+    var audioPreferences: AudioPreferences {
+        AudioPreferences(volume: Float(gameplay.data.volume), playsInSilentMode: gameplay.data.playsInSilentMode)
     }
 
     /// Avance rápido: ×1 → ×2 → ×4 → ×1 (SPEC §7.6: háptica rígida al cambiar).

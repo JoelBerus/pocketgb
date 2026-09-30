@@ -41,6 +41,13 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
     /// Horizontal: solo múltiplos enteros de 160×144 (píxeles idénticos).
     var integerScaleLandscape = true
     var dpadStyle: DpadStyle = .cross
+    // Audio (D6): volumen del juego y si suena con el interruptor de silencio.
+    var volume: Double = 1
+    var playsInSilentMode = false
+    // Emulación (D6): juegos de Game Boy en color y su paleta; ajustes por juego.
+    var colorForGameBoy = false
+    var compatPalette: UInt8 = 0
+    var perGame: [String: GameOverrides] = [:]
 
     static let opacities = [30, 50, 70, 100]
     static let sizeScales: [(title: String, value: Double)] = [("Pequeño", 0.85), ("Normal", 1), ("Grande", 1.15)]
@@ -61,6 +68,12 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
         integerScaleLandscape = (try? c.decodeIfPresent(Bool.self, forKey: .integerScaleLandscape))
             ?? defaults.integerScaleLandscape
         dpadStyle = (try? c.decodeIfPresent(DpadStyle.self, forKey: .dpadStyle)) ?? defaults.dpadStyle
+        volume = min(max((try? c.decodeIfPresent(Double.self, forKey: .volume)) ?? defaults.volume, 0), 1)
+        playsInSilentMode = (try? c.decodeIfPresent(Bool.self, forKey: .playsInSilentMode)) ?? defaults.playsInSilentMode
+        colorForGameBoy = (try? c.decodeIfPresent(Bool.self, forKey: .colorForGameBoy)) ?? defaults.colorForGameBoy
+        let palette = (try? c.decodeIfPresent(UInt8.self, forKey: .compatPalette)) ?? defaults.compatPalette
+        compatPalette = Int(palette) <= CompatPalette.count ? palette : 0
+        perGame = (try? c.decodeIfPresent([String: GameOverrides].self, forKey: .perGame)) ?? [:]
     }
 
     func layout(_ orientation: ControlsOrientation) -> ControlsLayout {
@@ -115,6 +128,13 @@ final class GameplaySettings {
             let value = ((layout.scale(id) + delta) * 10).rounded() / 10
             layout.scales[id] = min(max(value, ControlsLayout.scaleRange.lowerBound), ControlsLayout.scaleRange.upperBound)
             if orientation == .portrait { data.portraitLayout = layout } else { data.landscapeLayout = layout }
+        }
+    }
+
+    /// Ajustes de un juego; al quedar todo en "Global" se borra la entrada.
+    func setOverrides(_ overrides: GameOverrides, for gameID: String) {
+        update { data in
+            data.perGame[gameID] = overrides.isEmpty ? nil : overrides
         }
     }
 

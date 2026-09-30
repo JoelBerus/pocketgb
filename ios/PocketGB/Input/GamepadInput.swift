@@ -53,7 +53,10 @@ final class GamepadInput {
     @ObservationIgnored private var currentMask: UInt8 = 0
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
-    init() {
+    /// - Parameter observesHardware: false en el catálogo de capturas DEBUG, para que un mando
+    ///   emparejado con el Mac del CI no oculte los controles de las capturas.
+    init(observesHardware: Bool = true) {
+        guard observesHardware else { return }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
