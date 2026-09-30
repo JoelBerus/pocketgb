@@ -49,7 +49,7 @@ enum AppTab: Hashable {
 
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
-    case appearance, about, licenses, saves, library
+    case appearance, about, licenses, saves, library, controls, display
     case backups(fingerprint: String)
 }
 
@@ -68,6 +68,17 @@ final class AppState {
     var libraryFilter: LibraryFilter = .all
     var librarySearch = ""
     var librarySearchPresented = false
+    /// Controles y pantalla del gameplay (D4).
+    let gameplay: GameplaySettings
+    /// Editor de la disposición de los controles, sobre el juego en pausa.
+    var editingControls = false {
+        didSet {
+            guard editingControls != oldValue, let session else { return }
+            // Editar no juega: la emulación se detiene mientras se mueven los controles.
+            if editingControls { session.pause() } else if !paused { session.resume() }
+        }
+    }
+    var showingGameMenu = false
     /// Juego pendiente de confirmar "Ocultar de PocketGB".
     var hideCandidate: RomEntry?
     /// Selector de carpeta de la biblioteca.
@@ -75,6 +86,7 @@ final class AppState {
     /// Solo lo rellena el router DEBUG (`-screen`); en Release siempre vale nil/false.
     var debugUnknownScreen: String?
     var debugShowsLaunch = false
+    var debugOpensControlsEditor = false
 
     private(set) var session: EmulatorSession?
     /// Pausa por ciclo de vida: se sale solo con "Continuar" (docs/04 §Ciclo de vida).
@@ -92,9 +104,15 @@ final class AppState {
         let inMemory = DebugScreenRouter.overridesLibrary
         libraryPrefs = LibraryPreferences(fileURL: inMemory ? nil : LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: inMemory ? nil : GameArtworkStore.defaultDirectory())
+        // Con argumentos de controles o `-screen`, ajustes solo en memoria (no persistentes).
+        let fixedControls = inMemory || DebugArguments.value("-controlOpacity") != nil
+            || DebugArguments.value("-controlsVisibility") != nil
+        gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
+        gameplay.applyDebugArguments()
         #else
         libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
+        gameplay = GameplaySettings(defaults: .standard)
         #endif
         #if DEBUG
         DebugScreenRouter.apply(to: self)
@@ -258,6 +276,7 @@ final class AppState {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
         open(url: URL(fileURLWithPath: args[i + 1]))
+        if debugOpensControlsEditor { editingControls = true }
         // `-paused`: abre el juego ya en pausa (captura del estado de pausa).
         if args.contains("-paused") {
             Task { @MainActor in
@@ -283,6 +302,8 @@ final class AppState {
         }
         session = nil
         paused = false
+        editingControls = false
+        showingGameMenu = false
     }
 
     /// El último frame de la sesión como portada (SPEC §11). El hilo de emulación ya está

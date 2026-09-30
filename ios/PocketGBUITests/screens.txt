@@ -63,3 +63,17 @@ remove-game-confirm portrait  light  -screen remove-game-confirm -demoLibrary st
 remove-game-confirm portrait  dark   -screen remove-game-confirm -demoLibrary standard
 settings-library    portrait  light  -screen settings-library -demoLibrary standard
 settings-library    portrait  dark   -screen settings-library -demoLibrary standard
+
+# ---- D4 · Gameplay y controles Liquid Glass ----
+gameplay-portrait            portrait  dark   -screen gameplay-portrait -rom $FIXTURES/dmg-acid2.gb
+gameplay-landscape           landscape dark   -screen gameplay-landscape -rom $FIXTURES/dmg-acid2.gb
+gameplay-landscape-clear     landscape dark   -screen gameplay-landscape-clear -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30
+gameplay-landscape-hidden    landscape dark   -screen gameplay-landscape-hidden -rom $FIXTURES/dmg-acid2.gb -controlsVisibility hidden
+gameplay-reduce-transparency landscape dark   -screen gameplay-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30 -reduceTransparency
+customize-controls-portrait  portrait  dark   -screen customize-controls-portrait -rom $FIXTURES/dmg-acid2.gb
+customize-controls-landscape landscape dark   -screen customize-controls-landscape -rom $FIXTURES/dmg-acid2.gb
+settings-controls            portrait  light  -screen settings-controls
+settings-controls            portrait  dark   -screen settings-controls
+# Sin -rom: la vista previa es arte generado y el juego taparía Ajustes.
+settings-display             portrait  light  -screen settings-display
+settings-display             portrait  dark   -screen settings-display

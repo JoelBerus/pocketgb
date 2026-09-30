@@ -31,6 +31,16 @@ enum DebugScreen: String, CaseIterable {
     case gameContextMenu = "game-context-menu"
     case removeGameConfirm = "remove-game-confirm"
     case settingsLibrary = "settings-library"
+    // D4 (las de gameplay abren además `-rom`)
+    case gameplayPortrait = "gameplay-portrait"
+    case gameplayLandscape = "gameplay-landscape"
+    case gameplayLandscapeClear = "gameplay-landscape-clear"
+    case gameplayLandscapeHidden = "gameplay-landscape-hidden"
+    case gameplayReduceTransparency = "gameplay-reduce-transparency"
+    case customizeControlsPortrait = "customize-controls-portrait"
+    case customizeControlsLandscape = "customize-controls-landscape"
+    case settingsControls = "settings-controls"
+    case settingsDisplay = "settings-display"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -88,6 +98,15 @@ enum DebugScreenRouter {
         case .settingsLibrary:
             state.selectedTab = .settings
             state.settingsPath = [.library]
+        case .settingsControls:
+            state.selectedTab = .settings
+            state.settingsPath = [.controls]
+        case .settingsDisplay:
+            state.selectedTab = .settings
+            state.settingsPath = [.display]
+        case .customizeControlsPortrait, .customizeControlsLandscape:
+            // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
+            state.debugOpensControlsEditor = true
         default:
             state.selectedTab = .library
         }

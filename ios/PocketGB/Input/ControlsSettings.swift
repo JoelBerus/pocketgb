@@ -1,0 +1,125 @@
+import CoreGraphics
+import Foundation
+import Observation
+
+/// Visibilidad de los controles táctiles (SPEC §9, `gameplay-landscape-hidden`).
+enum ControlsVisibility: String, Codable, CaseIterable, Sendable {
+    /// Siempre visibles.
+    case always
+    /// Se desvanecen tras 3 s sin tocar y vuelven con cualquier toque.
+    case touch
+    /// Ocultos (para jugar con mando): solo queda el botón de menú.
+    case hidden
+
+    var title: String {
+        switch self {
+        case .always: "Siempre"
+        case .touch: "Al tocar"
+        case .hidden: "Ocultos"
+        }
+    }
+}
+
+/// Ajustes de controles y pantalla del gameplay (D4).
+struct GameplaySettingsData: Codable, Equatable, Sendable {
+    /// Opacidad visual en horizontal: 30, 50, 70 o 100 %. No cambia el área táctil.
+    var opacity: Int = 70
+    var visibility: ControlsVisibility = .always
+    var haptics = true
+    /// Escala de tamaño de los controles: 0,85 / 1 / 1,15.
+    var sizeScale: Double = 1
+    var portraitLayout = ControlsLayout.defaults(.portrait)
+    var landscapeLayout = ControlsLayout.defaults(.landscape)
+    /// Horizontal: solo múltiplos enteros de 160×144 (píxeles idénticos).
+    var integerScaleLandscape = true
+
+    static let opacities = [30, 50, 70, 100]
+    static let sizeScales: [(title: String, value: Double)] = [("Pequeño", 0.85), ("Normal", 1), ("Grande", 1.15)]
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = GameplaySettingsData()
+        let rawOpacity = (try? c.decodeIfPresent(Int.self, forKey: .opacity)) ?? defaults.opacity
+        opacity = Self.opacities.contains(rawOpacity) ? rawOpacity : defaults.opacity
+        visibility = (try? c.decodeIfPresent(ControlsVisibility.self, forKey: .visibility)) ?? defaults.visibility
+        haptics = (try? c.decodeIfPresent(Bool.self, forKey: .haptics)) ?? defaults.haptics
+        let rawScale = (try? c.decodeIfPresent(Double.self, forKey: .sizeScale)) ?? defaults.sizeScale
+        sizeScale = min(max(rawScale, 0.85), 1.15)
+        portraitLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .portraitLayout)) ?? defaults.portraitLayout
+        landscapeLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .landscapeLayout)) ?? defaults.landscapeLayout
+        integerScaleLandscape = (try? c.decodeIfPresent(Bool.self, forKey: .integerScaleLandscape))
+            ?? defaults.integerScaleLandscape
+    }
+
+    func layout(_ orientation: ControlsOrientation) -> ControlsLayout {
+        orientation == .portrait ? portraitLayout : landscapeLayout
+    }
+}
+
+/// Almacén observable de los ajustes de gameplay. Se guarda en `UserDefaults` (clave
+/// `gameplaySettings`); con `defaults == nil` (capturas DEBUG) vive solo en memoria.
+@MainActor @Observable
+final class GameplaySettings {
+    private(set) var data: GameplaySettingsData
+    @ObservationIgnored private let defaults: UserDefaults?
+    static let key = "gameplaySettings"
+
+    init(defaults: UserDefaults?) {
+        self.defaults = defaults
+        if let raw = defaults?.data(forKey: Self.key),
+           let decoded = try? JSONDecoder().decode(GameplaySettingsData.self, from: raw) {
+            data = decoded
+        } else {
+            data = GameplaySettingsData()
+        }
+    }
+
+    func update(_ change: (inout GameplaySettingsData) -> Void) {
+        var copy = data
+        change(&copy)
+        guard copy != data else { return }
+        data = copy
+        if let defaults, let encoded = try? JSONEncoder().encode(copy) {
+            defaults.set(encoded, forKey: Self.key)
+        }
+    }
+
+    /// Guarda un control movido en el editor, solo para esa orientación.
+    func move(_ id: ControlID, to relative: CGPoint, orientation: ControlsOrientation) {
+        let clamped = CGPoint(x: min(max(relative.x, 0), 1), y: min(max(relative.y, 0), 1))
+        update { data in
+            if orientation == .portrait {
+                data.portraitLayout.centers[id] = clamped
+            } else {
+                data.landscapeLayout.centers[id] = clamped
+            }
+        }
+    }
+
+    func resetLayout(_ orientation: ControlsOrientation) {
+        update { data in
+            if orientation == .portrait {
+                data.portraitLayout = .defaults(.portrait)
+            } else {
+                data.landscapeLayout = .defaults(.landscape)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// `-controlOpacity`, `-controlsVisibility`: estado fijo para capturas, sin persistir.
+    func applyDebugArguments() {
+        var copy = data
+        if let raw = DebugArguments.value("-controlOpacity"), let value = Int(raw),
+           GameplaySettingsData.opacities.contains(value) {
+            copy.opacity = value
+        }
+        if let raw = DebugArguments.value("-controlsVisibility"), let value = ControlsVisibility(rawValue: raw) {
+            copy.visibility = value
+        }
+        data = copy
+    }
+    #endif
+}

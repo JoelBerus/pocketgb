@@ -11,9 +11,13 @@ struct SettingsView: View {
             Form {
                 Section("Juego") {
                     PendingRow(title: "Emulación", systemImage: "cpu")
-                    PendingRow(title: "Controles", systemImage: "gamecontroller")
+                    NavigationLink(value: SettingsRoute.controls) {
+                        Label("Controles", systemImage: "gamecontroller")
+                    }
                     PendingRow(title: "Audio", systemImage: "speaker.wave.2")
-                    PendingRow(title: "Pantalla", systemImage: "rectangle.on.rectangle")
+                    NavigationLink(value: SettingsRoute.display) {
+                        Label("Pantalla", systemImage: "rectangle.on.rectangle")
+                    }
                 }
                 Section("Biblioteca y partidas") {
                     NavigationLink(value: SettingsRoute.library) {
@@ -43,6 +47,8 @@ struct SettingsView: View {
                 case .licenses: LicensesView()
                 case .saves: SavesSettingsView()
                 case .library: LibrarySettingsView()
+                case .controls: ControlsSettingsView()
+                case .display: DisplaySettingsView()
                 case .backups(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
                 }
             }

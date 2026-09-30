@@ -32,5 +32,7 @@ enum DebugArguments {
     static var demoLibrary: String? { value("-demoLibrary") }
     /// `-reduceMotion`: fuerza la política interna de motion (sin zoom).
     static var reduceMotion: Bool { arguments.contains("-reduceMotion") }
+    /// `-reduceTransparency`: controles con superficie sólida (captura de accesibilidad).
+    static var reduceTransparency: Bool { arguments.contains("-reduceTransparency") }
 }
 #endif
