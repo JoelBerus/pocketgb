@@ -2,6 +2,15 @@ import XCTest
 
 /// D1: la shell tiene las tres tabs y Ajustes navega a Apariencia y Acerca de.
 final class ShellTests: XCTestCase {
+    /// Desplaza la lista hasta que el elemento exista y se pueda tocar (hasta 4 veces).
+    @MainActor
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<4 where !(element.exists && element.isHittable) {
+            app.swipeUp()
+            _ = element.waitForExistence(timeout: 1)
+        }
+    }
+
     @MainActor
     func testTabsAndSettingsNavigation() throws {
         let app = XCUIApplication()
@@ -21,12 +30,12 @@ final class ShellTests: XCTestCase {
         tabs.buttons["Ajustes"].tap()
         // Ajustes tiene más filas desde D4: Apariencia puede quedar bajo el pliegue.
         let appearance = app.buttons["Apariencia"]
-        if !appearance.waitForExistence(timeout: 2) || !appearance.isHittable { app.swipeUp() }
+        scrollTo(appearance, in: app)
         appearance.tap()
         XCTAssertTrue(app.navigationBars["Apariencia"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let about = app.buttons["Acerca de"]
-        if !about.waitForExistence(timeout: 2) || !about.isHittable { app.swipeUp() }
+        scrollTo(about, in: app)
         about.tap()
         XCTAssertTrue(app.navigationBars["Acerca de"].waitForExistence(timeout: 5))
     }

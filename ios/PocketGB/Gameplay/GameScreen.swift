@@ -120,7 +120,7 @@ struct ControlsEditorBar: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, PocketSpacing.sm)
                         .frame(minHeight: PocketSpacing.minTouch)
-                        .glassEffect(.regular, in: Capsule())
+                        .glassEffect(.regular.tint(PocketColor.controlScrim.opacity(0.6)), in: Capsule())
                     Button("Listo") { state.editingControls = false }
                         .buttonStyle(.glassProminent)
                 }
@@ -164,7 +164,7 @@ private struct SizeStepper: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, PocketSpacing.sm)
                     .frame(minHeight: PocketSpacing.minTouch)
-                    .glassEffect(.regular, in: Capsule())
+                    .glassEffect(.regular.tint(PocketColor.controlScrim.opacity(0.6)), in: Capsule())
                     .accessibilityLabel("Tamaño de \(id.editorTitle): \(Int((scale * 100).rounded())) por ciento")
                 Button("Más grande", systemImage: "plus") {
                     state.gameplay.resize(id, by: 0.1, orientation: orientation)
