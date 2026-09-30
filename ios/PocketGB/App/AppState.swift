@@ -78,14 +78,15 @@ final class AppState {
     /// Editor de la disposición de los controles, sobre el juego en pausa.
     var editingControls = false {
         didSet {
+            editorSelection = nil
             guard editingControls != oldValue, let session else { return }
             // Editar no juega: la emulación se detiene mientras se mueven los controles.
             if editingControls { session.pause() } else if !paused { session.resume() }
         }
     }
     var showingGameMenu = false
-    /// HUD de gameplay desplegado (se pliega solo a los 3 s).
-    var hudExpanded = false
+    /// Control elegido en el editor para cambiar su tamaño.
+    var editorSelection: ControlID?
     /// Pila de la sheet de pausa (Estados).
     var pausePath: [PauseRoute] = []
     /// Save states del juego abierto.
@@ -333,7 +334,6 @@ final class AppState {
         stateStore = nil
         stateEntries = [:]
         pausePath = []
-        hudExpanded = false
         session = nil
         paused = false
         editingControls = false
@@ -380,7 +380,6 @@ final class AppState {
     /// Pausa desde el HUD: la sheet de pausa aparece con la emulación ya parada.
     func pauseGame() {
         guard let session, !paused else { return }
-        hudExpanded = false
         if !editingControls { session.pause() }
         paused = true
     }

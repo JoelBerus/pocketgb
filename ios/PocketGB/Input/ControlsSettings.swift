@@ -108,6 +108,16 @@ final class GameplaySettings {
         }
     }
 
+    /// Cambia el tamaño de un control (en pasos del 10 %), solo para esa orientación.
+    func resize(_ id: ControlID, by delta: CGFloat, orientation: ControlsOrientation) {
+        update { data in
+            var layout = orientation == .portrait ? data.portraitLayout : data.landscapeLayout
+            let value = ((layout.scale(id) + delta) * 10).rounded() / 10
+            layout.scales[id] = min(max(value, ControlsLayout.scaleRange.lowerBound), ControlsLayout.scaleRange.upperBound)
+            if orientation == .portrait { data.portraitLayout = layout } else { data.landscapeLayout = layout }
+        }
+    }
+
     func resetLayout(_ orientation: ControlsOrientation) {
         update { data in
             if orientation == .portrait {

@@ -19,6 +19,11 @@ final class ControlsOverlayView: UIView {
     var onMenu: (() -> Void)?
     /// El editor guarda aquí la nueva posición relativa de un control.
     var onMove: ((ControlID, CGPoint) -> Void)?
+    /// Editor: control seleccionado (para cambiar su tamaño).
+    var onSelect: ((ControlID) -> Void)?
+    var selectedControl: ControlID? {
+        didSet { if selectedControl != oldValue { updateAppearance(animated: false) } }
+    }
 
     var orientation: ControlsOrientation = .landscape {
         didSet { if orientation != oldValue { releaseAll(); setNeedsLayout() } }
@@ -133,6 +138,7 @@ final class ControlsOverlayView: UIView {
             visual.configure(style: style, opacity: CGFloat(settings.opacity) / 100,
                              reduceTransparency: reduceTransparency, pressed: pressed.contains(id),
                              editing: editing, animated: animated)
+            visual.setSelected(editing && selectedControl == id)
             visual.isHidden = hidden
         }
     }
@@ -271,6 +277,7 @@ final class ControlsOverlayView: UIView {
               !drags.values.contains(where: { $0.id == id }) else { return }
         drags[key(t)] = (id, CGPoint(x: visual.center.x - p.x, y: visual.center.y - p.y))
         visual.setDragging(true)
+        onSelect?(id)
     }
 
     private func moveDrag(_ t: UITouch) {
@@ -525,6 +532,14 @@ final class ControlVisualView: UIView {
         setDragging(false)
     }
 
+    private var isSelectedInEditor = false
+
+    /// Editor: el control elegido para cambiar de tamaño lleva el contorno continuo.
+    func setSelected(_ selected: Bool) {
+        isSelectedInEditor = selected
+        setDragging(false)
+    }
+
     /// Editor: contorno discontinuo; más marcado mientras se arrastra.
     func setDragging(_ dragging: Bool) {
         guard editing else {
@@ -543,7 +558,8 @@ final class ControlVisualView: UIView {
         handle.path = UIBezierPath(roundedRect: bounds.insetBy(dx: -6, dy: -6), cornerRadius: 10).cgPath
         handle.strokeColor = (UIColor(named: "AccentPrimary") ?? .systemBlue)
             .withAlphaComponent(dragging ? 1 : 0.8).cgColor
-        handle.lineWidth = dragging ? 2.5 : 1.5
+        handle.lineWidth = dragging || isSelectedInEditor ? 2.5 : 1.5
+        handle.lineDashPattern = isSelectedInEditor ? nil : [5, 3]
     }
 }
 
@@ -555,6 +571,8 @@ struct ControlsOverlay: UIViewRepresentable {
     var reduceTransparency = false
     let onMenu: () -> Void
     var onMove: (ControlID, CGPoint) -> Void = { _, _ in }
+    var selected: ControlID?
+    var onSelect: (ControlID) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ControlsOverlayView {
         let view = ControlsOverlayView(frame: .zero)
@@ -574,5 +592,7 @@ struct ControlsOverlay: UIViewRepresentable {
         view.forceReduceTransparency = reduceTransparency
         view.onMenu = onMenu
         view.onMove = onMove
+        view.onSelect = onSelect
+        view.selectedControl = selected
     }
 }

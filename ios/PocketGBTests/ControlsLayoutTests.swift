@@ -172,6 +172,27 @@ struct ControlsLayoutTests {
         #expect(decoded.sizeScale == 1.15)
     }
 
+    @MainActor
+    @Test func perControlSizeIsClampedAndPerOrientation() throws {
+        let settings = GameplaySettings(defaults: nil)
+        for _ in 0..<10 { settings.resize(.a, by: 0.1, orientation: .portrait) }
+        #expect(settings.data.portraitLayout.scale(.a) == 1.6)
+        #expect(settings.data.landscapeLayout.scale(.a) == 1)
+        for _ in 0..<20 { settings.resize(.dpad, by: -0.1, orientation: .landscape) }
+        #expect(settings.data.landscapeLayout.scale(.dpad) == 0.6)
+
+        // La geometría usa el tamaño elegido y sigue dentro del área segura.
+        let g = Self.geometry(settings.data.landscapeLayout)
+        let d = try #require(g.frames[.dpad])
+        #expect(abs(d.width - 140 * 0.6) < 0.01)
+        #expect(Self.area.contains(d))
+
+        // Un layout guardado sin tamaños se sigue leyendo.
+        let old = try #require(#"{"centers":["a",[0.5,0.5]]}"#.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(ControlsLayout.self, from: old)
+        #expect(decoded.scale(.a) == 1)
+    }
+
     @Test func dpadStyleDefaultsToGameBoyAndPersists() throws {
         #expect(GameplaySettingsData().dpadStyle == .cross)
         var data = GameplaySettingsData()

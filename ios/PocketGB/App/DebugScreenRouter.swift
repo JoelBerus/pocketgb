@@ -42,11 +42,11 @@ enum DebugScreen: String, CaseIterable {
     case settingsControls = "settings-controls"
     case settingsDisplay = "settings-display"
     // D5 (abren además `-rom`)
-    case gameplayPortraitHUD = "gameplay-portrait-hud"
     case gameplayPause = "gameplay-pause"
     case saveStates = "save-states"
     case loadStateConfirm = "load-state-confirm"
     case replaceStateConfirm = "replace-state-confirm"
+    case customizeControlsSize = "customize-controls-size"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
     case gameplayLandscapeArrows = "gameplay-landscape-arrows"
 }
@@ -114,9 +114,9 @@ enum DebugScreenRouter {
             state.settingsPath = [.display]
         case .gameplayPortraitArrows, .gameplayLandscapeArrows:
             break
-        case .gameplayPortraitHUD, .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
+        case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
-        case .customizeControlsPortrait, .customizeControlsLandscape:
+        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:
@@ -136,11 +136,8 @@ enum DebugScreenRouter {
     static func afterGameOpened(_ state: AppState) {
         guard let screen = DebugArguments.screen.flatMap(DebugScreen.init(rawValue:)) else { return }
         switch screen {
-        case .gameplayPortraitHUD:
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1))
-                state.hudExpanded = true
-            }
+        case .customizeControlsSize:
+            state.editorSelection = .a
         case .saveStates, .loadStateConfirm, .replaceStateConfirm:
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))

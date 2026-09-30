@@ -94,8 +94,10 @@ struct GameScreen: View {
     private func controls(_ orientation: ControlsOrientation) -> some View {
         ControlsOverlay(buttons: session.buttons, orientation: orientation, settings: state.gameplay.data,
                         editing: state.editingControls, reduceTransparency: reduceTransparency,
-                        onMenu: { withAnimation(PocketMotion.hudMorph) { state.hudExpanded.toggle() } },
-                        onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation) })
+                        onMenu: { state.pauseGame() },
+                        onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation) },
+                        selected: state.editorSelection,
+                        onSelect: { state.editorSelection = $0 })
     }
 }
 
@@ -123,7 +125,10 @@ struct ControlsEditorBar: View {
                         .buttonStyle(.glassProminent)
                 }
             }
-            Text("Arrastra cada control. Se guarda solo para la orientación \(orientation.title.lowercased()).")
+            if let id = state.editorSelection {
+                SizeStepper(id: id, orientation: orientation)
+            }
+            Text("Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo en \(orientation.title.lowercased()).")
                 .font(.footnote)
                 .foregroundStyle(.white)
                 .padding(.horizontal, PocketSpacing.sm)
@@ -134,5 +139,54 @@ struct ControlsEditorBar: View {
         // sobre la imagen, lejos de los controles.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: orientation == .landscape ? .center : .top)
         .padding(PocketSpacing.md)
+    }
+}
+
+/// Tamaño del control elegido en el editor: − / + en pasos del 10 %.
+private struct SizeStepper: View {
+    @Environment(AppState.self) private var state
+    let id: ControlID
+    let orientation: ControlsOrientation
+
+    private var scale: CGFloat { state.gameplay.data.layout(orientation).scale(id) }
+
+    var body: some View {
+        GlassEffectContainer(spacing: PocketSpacing.xs) {
+            HStack(spacing: PocketSpacing.xs) {
+                Button("Más pequeño", systemImage: "minus") {
+                    state.gameplay.resize(id, by: -0.1, orientation: orientation)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .disabled(scale <= ControlsLayout.scaleRange.lowerBound)
+                Text("\(id.editorTitle) · \(Int((scale * 100).rounded())) %")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, PocketSpacing.sm)
+                    .frame(minHeight: PocketSpacing.minTouch)
+                    .glassEffect(.regular, in: Capsule())
+                    .accessibilityLabel("Tamaño de \(id.editorTitle): \(Int((scale * 100).rounded())) por ciento")
+                Button("Más grande", systemImage: "plus") {
+                    state.gameplay.resize(id, by: 0.1, orientation: orientation)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .disabled(scale >= ControlsLayout.scaleRange.upperBound)
+            }
+            .controlSize(.large)
+        }
+    }
+}
+
+extension ControlID {
+    var editorTitle: String {
+        switch self {
+        case .dpad: "Cruceta"
+        case .a: "A"
+        case .b: "B"
+        case .start: "Start"
+        case .select: "Select"
+        case .menu: "Menú"
+        }
     }
 }

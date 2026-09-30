@@ -17,6 +17,26 @@ enum ControlsOrientation: String, Codable, CaseIterable, Sendable {
 /// Posiciones relativas (0…1) del centro de cada control dentro del área segura.
 struct ControlsLayout: Codable, Equatable, Sendable {
     var centers: [ControlID: CGPoint]
+    /// Tamaño de cada control respecto al normal (1 = 100 %), ajustado en el editor.
+    var scales: [ControlID: CGFloat] = [:]
+
+    static let scaleRange: ClosedRange<CGFloat> = 0.6...1.6
+
+    init(centers: [ControlID: CGPoint], scales: [ControlID: CGFloat] = [:]) {
+        self.centers = centers
+        self.scales = scales
+    }
+
+    // `scales` es opcional: un layout guardado antes se sigue leyendo.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        centers = try c.decode([ControlID: CGPoint].self, forKey: .centers)
+        scales = (try? c.decodeIfPresent([ControlID: CGFloat].self, forKey: .scales)) ?? [:]
+    }
+
+    func scale(_ id: ControlID) -> CGFloat {
+        min(max(scales[id] ?? 1, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
+    }
 
     static func defaults(_ orientation: ControlsOrientation) -> ControlsLayout {
         switch orientation {
@@ -77,7 +97,9 @@ struct ControlsGeometry: Equatable, Sendable {
     init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics) {
         var frames: [ControlID: CGRect] = [:]
         for id in ControlID.allCases {
-            let size = metrics.size(id)
+            let base = metrics.size(id)
+            let k = layout.scale(id)
+            let size = CGSize(width: base.width * k, height: base.height * k)
             let rel = layout.center(id, orientation: orientation)
             let center = Self.clamp(CGPoint(x: area.minX + area.width * rel.x, y: area.minY + area.height * rel.y),
                                     size: size, in: area)
@@ -86,7 +108,7 @@ struct ControlsGeometry: Equatable, Sendable {
         }
         self.frames = frames
         let a = frames[.a] ?? .zero, b = frames[.b] ?? .zero
-        let d = metrics.abDiameter
+        let d = metrics.abDiameter * (layout.scale(.a) + layout.scale(.b)) / 2
         abFrame = CGRect(x: (a.midX + b.midX - d) / 2, y: (a.midY + b.midY - d) / 2, width: d, height: d)
     }
 
