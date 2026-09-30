@@ -38,8 +38,10 @@ final class ShellAccessibilityTests: XCTestCase {
         XCTAssertTrue(card.label.contains("Game Boy"), card.label)
         let favorite = app.buttons["game-card-cgb-acid2.gbc"]
         XCTAssertTrue(favorite.label.contains("Favorito"), favorite.label)
-        for element in [card, favorite, app.tabBars.buttons["Biblioteca"], app.tabBars.buttons["Ajustes"],
-                        app.buttons["Más opciones"]] where element.exists {
+        // Solo controles propios: los botones de barra del sistema se dibujan a 36 pt y
+        // iOS gestiona su área táctil.
+        for element in [card, favorite, app.tabBars.buttons["Biblioteca"], app.tabBars.buttons["Ajustes"]]
+            where element.exists {
             XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.debugDescription)
             XCTAssertGreaterThanOrEqual(element.frame.height, 44, element.debugDescription)
         }

@@ -318,6 +318,7 @@ struct ZoomNavigation: ViewModifier {
 /// el botón de vidrio flotando sobre la captura (L1 + L2).
 struct ContinuePlayingRow: View {
     @Environment(AppState.self) private var state
+    @Environment(\.dynamicTypeSize) private var typeSize
     let entries: [RomEntry]
     let zoom: Namespace.ID
 
@@ -325,20 +326,27 @@ struct ContinuePlayingRow: View {
         VStack(alignment: .leading, spacing: PocketSpacing.sm) {
             Text("Continuar jugando")
                 .font(.headline)
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: PocketSpacing.sm) {
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        item(entry, width: index == 0 ? 240 : 170)
+            if typeSize.isAccessibilitySize {
+                // Tamaños de accesibilidad: en columna y a todo el ancho (SPEC §13).
+                VStack(alignment: .leading, spacing: PocketSpacing.md) {
+                    ForEach(entries) { item($0, width: nil) }
+                }
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: PocketSpacing.sm) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                            item(entry, width: index == 0 ? 240 : 170)
+                        }
                     }
                 }
+                .scrollIndicators(.hidden)
+                .scrollClipDisabled()
             }
-            .scrollIndicators(.hidden)
-            .scrollClipDisabled()
         }
         .accessibilityIdentifier("library-continue")
     }
 
-    private func item(_ entry: RomEntry, width: CGFloat) -> some View {
+    private func item(_ entry: RomEntry, width: CGFloat?) -> some View {
         VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
             Button { state.showDetails(entry, in: .library, source: "continue-\(entry.id)") } label: {
                 GameArtworkView(entry: entry)
@@ -349,6 +357,8 @@ struct ContinuePlayingRow: View {
                 Button { state.open(entry: entry) } label: {
                     Label("Continuar", systemImage: "play.fill")
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                         .frame(minHeight: 32)
                 }
                 .pocketGlassButton(prominent: true)
@@ -357,12 +367,13 @@ struct ContinuePlayingRow: View {
             }
             Text(entry.title)
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             Text(state.libraryPrefs.lastPlayed(entry).map { "Jugado \(GameStatus.relative($0))" } ?? "")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(width: width)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
     }
 }
 
