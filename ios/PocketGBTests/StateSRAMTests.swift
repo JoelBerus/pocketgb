@@ -96,6 +96,35 @@ struct StateSRAMTests {
         session.stop()
     }
 
+    /// Auditoría D2-D5 Codex, H2: si la partida del estado no se puede guardar, la carga
+    /// falla de forma visible y el juego vuelve a como estaba (disco y núcleo).
+    @Test func loadStateFailsVisiblyAndRollsBackWhenSavingFails() throws {
+        let session = try EmulatorSession(romData: Self.rom(title: "CONTADOR", value: 0, counting: true),
+                                          savesDirectory: dir, onAudioInterrupted: {})
+        session.start()
+        session.pause()
+        let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
+        let saved = try session.saveState()                     // SRAM X
+        session.resume()
+        Thread.sleep(forTimeInterval: 0.3)
+        session.pause()
+        let y = try #require(try store.load())                  // SRAM Y en disco
+
+        // Carpeta de partidas de solo lectura: la escritura atómica no puede crear su temporal.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        #expect(throws: EmulatorSession.StateError.saveFailed) { try session.loadState(saved.state) }
+        #expect(try store.load() == y)
+
+        // El núcleo volvió a Y: con la carpeta ya escribible, la pausa no cambia el disco.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        let current = try session.saveState()
+        #expect(current.state != saved.state)
+        session.resume()
+        session.pause()
+        session.stop()
+    }
+
     @Test func statesNeedAPausedSession() throws {
         let session = try EmulatorSession(romData: Self.rom(title: "ESTADOS", value: 1), savesDirectory: dir,
                                           onAudioInterrupted: {})

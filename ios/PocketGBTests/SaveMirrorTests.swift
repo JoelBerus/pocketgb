@@ -231,6 +231,39 @@ struct SaveMirrorTests {
         #expect(try mirror.read() == d2)
     }
 
+    /// Auditoría D2-D5 Codex, H1: un contenido que PocketGB escribió antes, restaurado a mano
+    /// junto al ROM (fecha nueva), no es una escritura propia tardía: gana por fecha y la
+    /// copia local queda como backup.
+    @Test func restoredHistoricalMirrorWithNewDateWinsAndBacksUpLocal() throws {
+        let store = SaveStore(directory: dir, fingerprint: "restored-\(UUID().uuidString)")
+        let mirror = try mirrorFile(nil)
+        let target = SaveTarget(local: store, mirror: mirror)
+        let d1 = Data([1, 1, 1, 1])
+        let d2 = Data([2, 2, 2, 2])
+        for data in [d1, d2] {
+            try target.persistLocal(data)
+            let idle = DispatchSemaphore(value: 0)
+            target.whenMirrorIdle { idle.signal() }
+            #expect(idle.wait(timeout: .now() + 2) == .success)
+        }
+        #expect(try mirror.read() == d2)
+
+        // Joel restaura d1 (contenido ya visto por PocketGB) junto al ROM.
+        try d1.write(to: mirror.url)
+        let now = Date()
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-60)],
+                                              ofItemAtPath: store.saveURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(60)],
+                                              ofItemAtPath: mirror.url.path)
+
+        let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
+                                               validSizes: [4])
+        #expect(reopened.data == d1)
+        #expect(try store.load() == d1)
+        #expect(try Data(contentsOf: store.backupURL(1)) == d2)   // la local no se pierde
+        #expect(try mirror.read() == d1)                           // el espejo no se toca
+    }
+
     @Test func newerExternalMirrorWinsAndBacksUpLocal() throws {
         let store = SaveStore(directory: dir, fingerprint: "external-\(UUID().uuidString)")
         let mirror = try mirrorFile(nil)

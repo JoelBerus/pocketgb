@@ -246,6 +246,8 @@ final class EmulatorSession: @unchecked Sendable {
     enum StateError: Error, Equatable {
         /// Los estados solo se guardan o cargan con el hilo de emulación aparcado.
         case notPaused
+        /// La partida del estado no se pudo guardar: se volvió al estado anterior.
+        case saveFailed
     }
 
     /// Guarda un estado con la sesión en pausa. Devuelve el estado y el frame actual
@@ -267,9 +269,17 @@ final class EmulatorSession: @unchecked Sendable {
     @MainActor
     func loadState(_ data: Data) throws {
         try withParkedCore { core in
+            // Si la partida del estado no se puede guardar en el acto, el núcleo vuelve a
+            // como estaba: nunca queda en marcha una partida que no está en disco
+            // (auditoría D2-D5 Codex, H2).
+            let previous = try core.stateSave()
             try core.stateLoad(data)
+            guard flushSRAM(sync: true) else {
+                try? core.stateLoad(previous)
+                frames.publish { core.copyFramebuffer(to: $0) }
+                throw StateError.saveFailed
+            }
             frames.publish { core.copyFramebuffer(to: $0) }
-            flushSRAM(sync: true)
         }
     }
 
@@ -460,8 +470,10 @@ final class EmulatorSession: @unchecked Sendable {
     /// - Síncrono (pausa, background, salida): primero se vacía la cola y se compara
     ///   con lo último **confirmado en disco**, así una escritura asíncrona que falló
     ///   justo antes se reintenta aquí y no se pierde (auditoría M4, H6).
-    private func flushSRAM(sync: Bool) {
-        guard let saves else { return }
+    /// - Returns: con `sync`, si la copia local quedó en disco (o ya lo estaba).
+    @discardableResult
+    private func flushSRAM(sync: Bool) -> Bool {
+        guard let saves else { return true }
         if core.sramDirty { core.clearSRAMDirty() }
         dirtyLast = nil
         lastCheck = mach_absolute_time()
@@ -470,7 +482,7 @@ final class EmulatorSession: @unchecked Sendable {
             data = try core.sramSave()
         } catch {
             log.error("gb_sram_save falló: \(String(describing: error), privacy: .public)")
-            return
+            return false
         }
         if sync {
             localSaveQueue.sync {}
@@ -479,10 +491,10 @@ final class EmulatorSession: @unchecked Sendable {
             control.unlock()
             guard data != onDisk else {
                 saves.retryMirrorIfNeeded(data)
-                return
+                return true
             }
         } else {
-            guard data != lastQueued else { return }
+            guard data != lastQueued else { return true }
         }
         lastQueued = data
         #if DEBUG
@@ -504,6 +516,14 @@ final class EmulatorSession: @unchecked Sendable {
                 control.unlock()
             }
         }
-        if sync { localSaveQueue.sync(execute: write) } else { localSaveQueue.async(execute: write) }
+        guard sync else {
+            localSaveQueue.async(execute: write)
+            return true
+        }
+        localSaveQueue.sync(execute: write)
+        control.lock()
+        let ok = confirmed == data
+        control.unlock()
+        return ok
     }
 }

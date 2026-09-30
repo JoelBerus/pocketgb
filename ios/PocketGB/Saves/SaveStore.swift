@@ -32,17 +32,48 @@ struct SaveStore: Sendable {
         try AtomicFile.write(data, to: saveURL, keep: Self.keepBackups, backup: backupURL)
     }
 
+    /// Registro de lo que PocketGB escribió en el espejo (auditoría D2-D5 Codex, H1):
+    /// - `successful`: contenido y fecha de modificación del espejo observada justo después
+    ///   de escribirlo. Solo esa pareja identifica una escritura propia terminada tarde.
+    /// - `pending`: write-ahead de la escritura en curso (el proceso pudo morir entre el
+    ///   reemplazo remoto y la confirmación).
     private struct MirrorHistory: Codable {
-        var successful: [String] = []
+        struct Written: Codable, Equatable {
+            let hash: String
+            let date: Date?
+        }
+        var successful: [Written] = []
         var pending: [String] = []
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // Formato anterior (solo huellas, sin fecha): nunca prueba una escritura propia.
+            if let entries = try? c.decode([Written].self, forKey: .successful) {
+                successful = entries
+            } else {
+                successful = ((try? c.decode([String].self, forKey: .successful)) ?? []).map { Written(hash: $0, date: nil) }
+            }
+            pending = (try? c.decode([String].self, forKey: .pending)) ?? []
+        }
     }
 
-    /// Reconoce tanto escrituras confirmadas como la entrada write-ahead de una
-    /// escritura que pudo terminar justo antes de que iOS matara el proceso.
-    func recognizesOwnedMirror(_ data: Data) -> Bool {
+    /// ¿Es este espejo (contenido + fecha) una escritura de PocketGB?
+    /// - Sí, si coincide con una escritura confirmada **y** su fecha es la que se observó
+    ///   al escribirla: nadie lo ha tocado después, así que una fecha más nueva que la
+    ///   copia local solo significa que una escritura asíncrona vieja terminó tarde.
+    /// - Sí, si es la última escritura sin confirmar (el proceso murió a mitad).
+    /// - No en cualquier otro caso: un contenido antiguo restaurado a mano, o copiado desde
+    ///   otro dispositivo, tiene fecha nueva y se resuelve por fecha, con backup del perdedor.
+    func recognizesOwnedMirror(_ data: Data, date: Date?) -> Bool {
         let hash = Self.contentHash(data)
         let history = mirrorHistory()
-        return history.successful.contains(hash) || history.pending.contains(hash)
+        if history.pending.first == hash { return true }
+        guard let date else { return false }
+        return history.successful.contains { entry in
+            entry.hash == hash && entry.date.map { abs($0.timeIntervalSince(date)) < 0.001 } == true
+        }
     }
 
     func recordMirrorAttempt(_ data: Data) throws {
@@ -54,12 +85,13 @@ struct SaveStore: Sendable {
         try writeMirrorHistory(history)
     }
 
-    func recordSuccessfulMirror(_ data: Data) throws {
+    /// - Parameter observedDate: fecha de modificación del espejo leída justo después de escribirlo.
+    func recordSuccessfulMirror(_ data: Data, observedDate: Date?) throws {
         let hash = Self.contentHash(data)
         var history = mirrorHistory()
         history.pending.removeAll { $0 == hash }
-        history.successful.removeAll { $0 == hash }
-        history.successful.insert(hash, at: 0)
+        history.successful.removeAll { $0.hash == hash }
+        history.successful.insert(.init(hash: hash, date: observedDate), at: 0)
         history.successful = Array(history.successful.prefix(8))
         try writeMirrorHistory(history)
     }
@@ -76,10 +108,6 @@ struct SaveStore: Sendable {
     private func mirrorHistory() -> MirrorHistory {
         guard let data = try? Data(contentsOf: mirrorHistoryURL) else { return MirrorHistory() }
         if let history = try? JSONDecoder().decode(MirrorHistory.self, from: data) { return history }
-        // Compatibilidad defensiva con la primera forma del registro (array plano).
-        if let hashes = try? JSONDecoder().decode([String].self, from: data) {
-            return MirrorHistory(successful: Array(hashes.prefix(8)))
-        }
         return MirrorHistory()
     }
 

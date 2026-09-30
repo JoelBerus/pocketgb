@@ -147,9 +147,10 @@ enum SaveResolution: Equatable {
                              updateMirror: false, mirrorIgnored: false, quarantineLocal: false)
             }
             if mirrorIsOwned {
-                // Una huella registrada prueba que este contenido lo escribió PocketGB:
-                // una fecha posterior solo significa que una escritura asíncrona vieja
-                // terminó tarde. La local gana sin respaldar el espejo obsoleto.
+                // Contenido y fecha coinciden con una escritura de PocketGB que nadie tocó
+                // después (`SaveStore.recognizesOwnedMirror`): una fecha posterior solo
+                // significa que una escritura asíncrona vieja terminó tarde. La local gana
+                // sin respaldar el espejo obsoleto.
                 return .load(data: local.data, backupOther: nil, installLocal: false,
                              updateMirror: true, mirrorIgnored: false, quarantineLocal: false)
             }
@@ -254,7 +255,7 @@ enum SaveOpening {
                 unavailable = true
             }
         }
-        let mirrorIsOwned = mirrorCandidate.map { store.recognizesOwnedMirror($0.data) } ?? false
+        let mirrorIsOwned = mirrorCandidate.map { store.recognizesOwnedMirror($0.data, date: $0.date) } ?? false
         switch SaveResolution.resolve(local: local, mirror: mirrorCandidate, mirrorIsOwned: mirrorIsOwned,
                                       isValidSize: { validSizes.contains($0) }) {
         case .none:
@@ -297,6 +298,8 @@ private final class MirrorChannel: @unchecked Sendable {
         let data: Data
         let store: SaveStore
         let writer: @Sendable (Data) throws -> Void
+        /// Espejo en disco, para anotar su fecha tras escribirlo.
+        let mirrorURL: URL?
     }
 
     private let queue: DispatchQueue
@@ -386,7 +389,8 @@ private final class MirrorChannel: @unchecked Sendable {
                 // antes de confirmarlo, la próxima apertura aún reconoce el contenido.
                 try request.store.recordMirrorAttempt(request.data)
                 try request.writer(request.data)
-                try request.store.recordSuccessfulMirror(request.data)
+                try request.store.recordSuccessfulMirror(
+                    request.data, observedDate: request.mirrorURL.flatMap(SaveStore.modificationDate))
                 lock.lock()
                 inFlight = nil
                 lock.unlock()
@@ -455,7 +459,7 @@ final class SaveTarget: @unchecked Sendable {
     /// escritura remota en curso, esa escritura drenará el último valor pendiente.
     func retryMirrorIfNeeded(_ data: Data) {
         guard let mirrorWriter, let mirrorChannel else { return }
-        mirrorChannel.retryIfNeeded(.init(data: data, store: local, writer: mirrorWriter))
+        mirrorChannel.retryIfNeeded(.init(data: data, store: local, writer: mirrorWriter, mirrorURL: mirror?.url))
     }
 
     /// Se invoca cuando no queda una escritura de espejo en vuelo. Un fallo deja el
@@ -472,6 +476,6 @@ final class SaveTarget: @unchecked Sendable {
     /// bloqueada solo se conserva el contenido más reciente recibido.
     private func enqueueMirror(_ data: Data) {
         guard let mirrorWriter, let mirrorChannel else { return }
-        mirrorChannel.enqueue(.init(data: data, store: local, writer: mirrorWriter))
+        mirrorChannel.enqueue(.init(data: data, store: local, writer: mirrorWriter, mirrorURL: mirror?.url))
     }
 }

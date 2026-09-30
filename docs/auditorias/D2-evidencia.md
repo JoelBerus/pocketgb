@@ -42,6 +42,7 @@ El build Release también compila (paso del script del CI).
 | AtomicFile: siete guardados mantienen solo `.1`–`.5` | `sevenSavesKeepBackupsOneToFive` |
 | Un `.sav` incorrecto no se sobrescribe | `SaveResolution`: `wrongSizeMirrorIsNeverTouched` y `wrongSizeLocalIsNotLoaded`. La sesión no guarda (sin `SaveTarget`) o no toca el espejo (`mirrorIgnored`) |
 | Conflicto local/espejo: gana el más reciente y el otro se respalda | `newerMirrorWins…` (la instalación con AtomicFile deja la local en `.1`), `newerLocalWinsAndMirrorIsBackedUp` y `missingDatesPreferLocal` |
+| Excepción: escritura propia tardía (auditoría D2-D5 Codex, H1) | Solo si el espejo coincide en contenido **y** en la fecha anotada tras escribirlo (o es la última escritura sin confirmar): `staleOwnedMirrorCannotReplaceNewerLocalWhenGameReopens`. Un contenido antiguo restaurado a mano tiene fecha nueva y gana por fecha con backup de la local: `restoredHistoricalMirrorWithNewDateWinsAndBacksUpLocal` |
 | Un fallo del espejo conserva la local y programa un reintento | `mirrorFailureKeepsLocalAndRetries`. `EmulatorSession` reintenta en cada flush y al abrir |
 | Restaurar un backup respalda antes la partida actual | `restoreBacksUpCurrentFirst` |
 | Capturas con acciones recuperables y no destructivas | Sección 4 |

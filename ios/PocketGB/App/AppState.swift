@@ -460,6 +460,9 @@ final class AppState {
     private static func describe(_ error: Error) -> String {
         if let core = error as? CoreError { return core.description }
         if error as? EmulatorSession.StateError == .notPaused { return "Pausa el juego antes." }
+        if error as? EmulatorSession.StateError == .saveFailed {
+            return "No se pudo guardar la partida del estado en este iPhone, así que no se ha cargado."
+        }
         return error.localizedDescription
     }
 }
