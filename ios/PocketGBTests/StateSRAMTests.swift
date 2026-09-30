@@ -23,11 +23,17 @@ struct StateSRAMTests {
         let program: [UInt8] = [0x3E, 0x0A, 0xEA, 0x00, 0x00,   // habilitar RAM
                                 0x3E, value, 0xEA, 0x00, 0xA0,  // ($A000) = value
                                 0x18, 0xFE]                     // JR -2
+        // Recorre toda la SRAM incrementando cada byte (una pasada ≈ 5 frames): dos
+        // instantáneas en momentos distintos nunca coinciden por casualidad.
         let counter: [UInt8] = [0x3E, 0x0A, 0xEA, 0x00, 0x00,   // habilitar RAM
-                                0xFA, 0x00, 0xA0,               // $0155: LD A,($A000)
+                                0x21, 0x00, 0xA0,               // $0155: LD HL,$A000
+                                0x7E,                           // $0158: LD A,(HL)
                                 0x3C,                           // INC A
-                                0xEA, 0x00, 0xA0,               // LD ($A000),A
-                                0x18, 0xF7]                     // JR $0155
+                                0x22,                           // LD (HL+),A
+                                0x7C,                           // LD A,H
+                                0xFE, 0xC0,                     // CP $C0
+                                0x20, 0xF8,                     // JR NZ,$0158
+                                0x18, 0xF3]                     // JR $0155
         let code = counting ? counter : program
         rom.replaceSubrange(0x150..<(0x150 + code.count), with: code)
         var checksum: UInt8 = 0
@@ -76,7 +82,7 @@ struct StateSRAMTests {
 
         // Seguir jugando: el contador avanza y la pausa guarda Y.
         session.resume()
-        Thread.sleep(forTimeInterval: 0.2)
+        Thread.sleep(forTimeInterval: 0.3)
         session.pause()
         let y = try #require(try store.load())
         #expect(y != x)
