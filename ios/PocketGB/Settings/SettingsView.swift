@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Tab Ajustes: lista nativa agrupada (SPEC §4, `settings-main`). Las secciones que
-/// llegan en hitos posteriores (D4–D6) se muestran como "Próximamente", sin navegar.
+/// Tab Ajustes: lista nativa agrupada (SPEC §4, `settings-main`).
 struct SettingsView: View {
     @Environment(AppState.self) private var state
 
@@ -10,15 +9,29 @@ struct SettingsView: View {
         NavigationStack(path: $state.settingsPath) {
             Form {
                 Section("Juego") {
-                    PendingRow(title: "Emulación", systemImage: "cpu")
-                    PendingRow(title: "Controles", systemImage: "gamecontroller")
-                    PendingRow(title: "Audio", systemImage: "speaker.wave.2")
-                    PendingRow(title: "Pantalla", systemImage: "rectangle.on.rectangle")
+                    NavigationLink(value: SettingsRoute.emulation) {
+                        Label("Emulación", systemImage: "cpu")
+                    }
+                    NavigationLink(value: SettingsRoute.controls) {
+                        Label("Controles", systemImage: "gamecontroller")
+                    }
+                    NavigationLink(value: SettingsRoute.audio) {
+                        Label("Audio", systemImage: "speaker.wave.2")
+                    }
+                    NavigationLink(value: SettingsRoute.display) {
+                        Label("Pantalla", systemImage: "rectangle.on.rectangle")
+                    }
                 }
                 Section("Biblioteca y partidas") {
-                    PendingRow(title: "Biblioteca", systemImage: "folder")
-                    PendingRow(title: "Partidas", systemImage: "externaldrive")
-                    PendingRow(title: "Almacenamiento", systemImage: "internaldrive")
+                    NavigationLink(value: SettingsRoute.library) {
+                        Label("Biblioteca", systemImage: "folder")
+                    }
+                    NavigationLink(value: SettingsRoute.saves) {
+                        Label("Partidas", systemImage: "externaldrive")
+                    }
+                    NavigationLink(value: SettingsRoute.storage) {
+                        Label("Almacenamiento", systemImage: "internaldrive")
+                    }
                 }
                 Section {
                     NavigationLink(value: SettingsRoute.appearance) {
@@ -37,24 +50,16 @@ struct SettingsView: View {
                 case .appearance: AppearanceSettingsView()
                 case .about: AboutView()
                 case .licenses: LicensesView()
+                case .saves: SavesSettingsView()
+                case .library: LibrarySettingsView()
+                case .controls: ControlsSettingsView()
+                case .display: DisplaySettingsView()
+                case .emulation: EmulationSettingsView()
+                case .audio: AudioSettingsView()
+                case .storage: StorageSettingsView()
+                case .backups(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
                 }
             }
         }
-    }
-}
-
-/// Fila de una sección que aún no existe: se ve y se lee, pero no navega.
-private struct PendingRow: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        LabeledContent {
-            Text("Próximamente")
-        } label: {
-            Label(title, systemImage: systemImage)
-        }
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
     }
 }

@@ -10,10 +10,17 @@ enum AtomicFile {
         var description: String { "\(operation) \(path): \(String(cString: strerror(code)))" }
     }
 
+    /// Fallo simulado para los tests (docs/04 §Saves: "reemplazo con fallo tras cada paso 2–4").
+    struct InjectedFailure: Error, Equatable {
+        let step: Int
+    }
+
     /// - Parameters:
     ///   - url: destino (`<huella>.sav`).
     ///   - backup: URL del backup `n` (1…`keep`), p. ej. `backups/<huella>.<n>.sav`.
-    static func write(_ data: Data, to url: URL, keep: Int = 5, backup: (Int) -> URL) throws {
+    ///   - failAfterStep: solo tests; lanza `InjectedFailure` tras completar el paso 2, 3 o 4.
+    static func write(_ data: Data, to url: URL, keep: Int = 5, backup: (Int) -> URL,
+                      failAfterStep: Int? = nil) throws {
         let fm = FileManager.default
         let exists = fm.fileExists(atPath: url.path)
 
@@ -23,6 +30,9 @@ enum AtomicFile {
         // 2. Escribir el temporal completo y fsync.
         let tmp = url.appendingPathExtension("tmp")
         try writeSynced(data, to: tmp)
+        #if DEBUG
+        if failAfterStep == 2 { throw InjectedFailure(step: 2) }
+        #endif
 
         if exists {
             // 3. Rotar solo backups: n-1 → n, …, 1 → 2.
@@ -30,12 +40,18 @@ enum AtomicFile {
             for n in stride(from: keep - 1, through: 1, by: -1) where fm.fileExists(atPath: backup(n).path) {
                 try rename(backup(n), backup(n + 1))
             }
+            #if DEBUG
+            if failAfterStep == 3 { throw InjectedFailure(step: 3) }
+            #endif
             // 4. Copiar (no mover) el actual a .1 vía .1.tmp.
             let current = try Data(contentsOf: url)
             let backupTmp = backup(1).deletingPathExtension().appendingPathExtension("tmp")
             try writeSynced(current, to: backupTmp)
             try rename(backupTmp, backup(1))
             try syncDirectory(backup(1).deletingLastPathComponent())
+            #if DEBUG
+            if failAfterStep == 4 { throw InjectedFailure(step: 4) }
+            #endif
         }
 
         // 5. Instalar: rename(2) reemplaza de forma atómica o crea.

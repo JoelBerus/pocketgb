@@ -57,4 +57,13 @@ enum PocketMotion {
     static let reducedMotionFade = Animation.easeInOut(duration: 0.2)
     static let newArtwork = Animation.easeOut(duration: 0.18)
     static let controlsAutohide: Duration = .seconds(3)
+
+    /// Política central de Reduce Motion (SPEC §13): el ajuste del sistema o, en DEBUG,
+    /// `-reduceMotion` para las capturas.
+    static func reducesMotion(system: Bool) -> Bool {
+        #if DEBUG
+        if DebugArguments.reduceMotion { return true }
+        #endif
+        return system
+    }
 }

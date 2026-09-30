@@ -20,7 +20,11 @@ struct PocketGBApp: App {
                 #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { state.enterBackground() }
+            if phase == .active {
+                state.enterForeground()
+            } else {
+                state.enterBackground()
+            }
         }
     }
 }
@@ -61,21 +65,26 @@ struct RootView: View {
                 #endif
             }
         }
+        #if DEBUG
+        .modifier(DebugDynamicType())
+        #endif
         .statusBarHidden(state.session != nil || state.debugShowsLaunch)
         .preferredColorScheme(colorScheme)
         .tint(PocketColor.accent)
-        .sheet(isPresented: $state.pickingROM) {
-            RomPicker { url in state.open(url: url) }
+        .sheet(isPresented: $state.pickingFolder) {
+            FolderPicker { url in state.library.choose(folder: url) }
                 .ignoresSafeArea()
         }
-        .alert("La carpeta de juegos llega pronto", isPresented: $state.folderNoticeShown) {
-            Button("Abrir un archivo") { state.pickAfterNotice = true }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("La biblioteca por carpeta con iCloud Drive llega en la próxima fase (D2). Mientras tanto puedes abrir un ROM suelto.")
+        .overlay {
+            if state.opening {
+                ProgressView("Abriendo…")
+                    .padding(PocketSpacing.lg)
+                    .pocketGlass(in: RoundedRectangle(cornerRadius: PocketRadius.group))
+            }
         }
-        .alert("PocketGB", isPresented: Binding(get: { state.alertMessage != nil },
-                                                set: { if !$0 { state.alertMessage = nil } })) {
+        .alert(state.alertTitle ?? "PocketGB",
+               isPresented: Binding(get: { state.alertMessage != nil },
+                                    set: { if !$0 { state.alertMessage = nil; state.alertTitle = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(state.alertMessage ?? "")
@@ -97,90 +106,15 @@ private struct UnknownScreenView: View {
 }
 #endif
 
-struct GameScreen: View {
-    @Environment(AppState.self) private var state
-    let session: EmulatorSession
-    #if DEBUG
-    @State private var showDebugHUD = DebugArguments.debugHUD
-    #endif
-
-    var body: some View {
-        GeometryReader { geo in
-            let landscape = geo.size.width > geo.size.height
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if landscape {
-                    // Horizontal: pantalla completa; los controles usan el safe area por dentro.
-                    ZStack {
-                        GameMetalView(frames: session.frames, integerScale: true)
-                            #if DEBUG
-                            .overlay {
-                                ThreeFingerTapInstaller { showDebugHUD.toggle() }
-                                    .allowsHitTesting(false)
-                            }
-                            #endif
-                        ControlsOverlay(buttons: session.buttons, portrait: false) { state.closeGame() }
-                    }
-                    .ignoresSafeArea()
-                } else {
-                    // Vertical: imagen bajo la Dynamic Island, controles hasta el borde inferior.
-                    VStack(spacing: 0) {
-                        GameMetalView(frames: session.frames, integerScale: false)
-                            .aspectRatio(10.0 / 9.0, contentMode: .fit)
-                            #if DEBUG
-                            .overlay {
-                                ThreeFingerTapInstaller { showDebugHUD.toggle() }
-                                    .allowsHitTesting(false)
-                            }
-                            #endif
-                        ControlsOverlay(buttons: session.buttons, portrait: true) { state.closeGame() }
-                            .ignoresSafeArea(edges: .bottom)
-                    }
-                }
-                if state.paused {
-                    Color.black.opacity(0.5).ignoresSafeArea()
-                    Button("Continuar") { state.resume() }
-                        .buttonStyle(.borderedProminent)
-                        .font(.title2)
-                }
-                #if DEBUG
-                if showDebugHUD {
-                    DebugHUD(session: session)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity,
-                               alignment: .topLeading)
-                        .padding(6)
-                        .allowsHitTesting(false)
-                }
-                #endif
-            }
-        }
-        .persistentSystemOverlays(.hidden)
-        .defersSystemGestures(on: .all)
-    }
-}
-
-/// `UIDocumentPickerViewController` para un solo archivo, como copia temporal
-/// (la biblioteca con bookmark de carpeta llega en M6).
-struct RomPicker: UIViewControllerRepresentable {
-    let onPick: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true)
-        picker.allowsMultipleSelection = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onPick: (URL) -> Void
-        init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            if let url = urls.first { onPick(url) }
+#if DEBUG
+/// `-contentSizeCategory accessibility5`: Dynamic Type fijo para la captura `library-ax5`.
+private struct DebugDynamicType: ViewModifier {
+    func body(content: Content) -> some View {
+        if DebugArguments.value("-contentSizeCategory") == "accessibility5" {
+            content.dynamicTypeSize(.accessibility5)
+        } else {
+            content
         }
     }
 }
+#endif

@@ -22,3 +22,89 @@ game-acid           portrait  dark   -rom $FIXTURES/dmg-acid2.gb
 game-acid           portrait  light  -rom $FIXTURES/dmg-acid2.gb
 game-acid           landscape dark   -rom $FIXTURES/dmg-acid2.gb
 game-paused         portrait  dark   -rom $FIXTURES/dmg-acid2.gb -paused
+
+# ---- D2 · Biblioteca por carpeta y saves ----
+library-folder-unavailable portrait  light  -screen library-folder-unavailable -demoFolderState stale
+library-folder-unavailable portrait  dark   -screen library-folder-unavailable -demoFolderState stale
+library-cloud-pending      portrait  light  -screen library-cloud-pending -demoLibrary cloud -demoCloudState pending
+library-cloud-pending      portrait  dark   -screen library-cloud-pending -demoLibrary cloud -demoCloudState pending
+library-cloud-downloading  portrait  light  -screen library-cloud-downloading -demoLibrary cloud -demoCloudState downloading
+library-cloud-downloading  portrait  dark   -screen library-cloud-downloading -demoLibrary cloud -demoCloudState downloading
+library-scan-progress      portrait  light  -screen library-scan-progress -demoLibrary standard
+library-scan-progress      portrait  dark   -screen library-scan-progress -demoLibrary standard
+library-scan-summary       portrait  light  -screen library-scan-summary -demoLibrary standard
+library-scan-summary       portrait  dark   -screen library-scan-summary -demoLibrary standard
+library-rom-error          portrait  light  -screen library-rom-error -demoLibrary errors
+library-rom-error          portrait  dark   -screen library-rom-error -demoLibrary errors
+save-data-error            portrait  light  -screen save-data-error -demoLibrary standard -demoSaveError wrong-size
+save-data-error            portrait  dark   -screen save-data-error -demoLibrary standard -demoSaveError wrong-size
+
+# ---- D3 · Biblioteca visual, búsqueda y detalle ----
+library-grid        portrait  light  -screen library-grid -demoLibrary standard
+library-grid        portrait  dark   -screen library-grid -demoLibrary standard
+library-list        portrait  light  -screen library-list -demoLibrary standard
+library-list        portrait  dark   -screen library-list -demoLibrary standard
+library-continue    portrait  light  -screen library-continue -demoLibrary standard
+library-continue    portrait  dark   -screen library-continue -demoLibrary standard
+favorites           portrait  light  -screen favorites -demoLibrary standard
+favorites           portrait  dark   -screen favorites -demoLibrary standard
+search-active       portrait  light  -screen search-active -demoLibrary standard
+search-active       portrait  dark   -screen search-active -demoLibrary standard
+search-results      portrait  light  -screen search-results -demoLibrary standard
+search-results      portrait  dark   -screen search-results -demoLibrary standard
+search-no-results   portrait  light  -screen search-no-results -demoLibrary standard
+search-no-results   portrait  dark   -screen search-no-results -demoLibrary standard
+game-details        portrait  light  -screen game-details -demoLibrary standard
+game-details        portrait  dark   -screen game-details -demoLibrary standard
+# -uiLongPress <id>: ScreenshotTests mantiene pulsado ese elemento antes de capturar.
+game-context-menu   portrait  light  -screen game-context-menu -demoLibrary standard -uiLongPress game-card-dmg-acid2.gb
+game-context-menu   portrait  dark   -screen game-context-menu -demoLibrary standard -uiLongPress game-card-dmg-acid2.gb
+remove-game-confirm portrait  light  -screen remove-game-confirm -demoLibrary standard
+remove-game-confirm portrait  dark   -screen remove-game-confirm -demoLibrary standard
+settings-library    portrait  light  -screen settings-library -demoLibrary standard
+settings-library    portrait  dark   -screen settings-library -demoLibrary standard
+
+# ---- D4 · Gameplay y controles Liquid Glass ----
+gameplay-portrait            portrait  dark   -screen gameplay-portrait -rom $FIXTURES/dmg-acid2.gb
+gameplay-landscape           landscape dark   -screen gameplay-landscape -rom $FIXTURES/dmg-acid2.gb
+gameplay-landscape-clear     landscape dark   -screen gameplay-landscape-clear -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30
+gameplay-landscape-hidden    landscape dark   -screen gameplay-landscape-hidden -rom $FIXTURES/dmg-acid2.gb -controlsVisibility hidden
+gameplay-reduce-transparency landscape dark   -screen gameplay-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30 -reduceTransparency
+customize-controls-portrait  portrait  dark   -screen customize-controls-portrait -rom $FIXTURES/dmg-acid2.gb
+customize-controls-landscape landscape dark   -screen customize-controls-landscape -rom $FIXTURES/dmg-acid2.gb
+settings-controls            portrait  light  -screen settings-controls
+settings-controls            portrait  dark   -screen settings-controls
+# Sin -rom: la vista previa es arte generado y el juego taparía Ajustes.
+settings-display             portrait  light  -screen settings-display
+settings-display             portrait  dark   -screen settings-display
+
+# ---- D5 · HUD, pausa y save states ----
+gameplay-pause        portrait  dark   -screen gameplay-pause -rom $FIXTURES/dmg-acid2.gb -paused
+save-states           portrait  dark   -screen save-states -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+load-state-confirm    portrait  dark   -screen load-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+replace-state-confirm portrait  dark   -screen replace-state-confirm -rom $FIXTURES/dmg-acid2.gb -demoSaveState slots
+
+# Editor con un control elegido: tamaño − / +.
+customize-controls-size   portrait  dark  -screen customize-controls-size -rom $FIXTURES/dmg-acid2.gb
+
+# ---- Cruceta con flechas separadas (estilo PlayStation) ----
+gameplay-portrait-arrows  portrait  dark  -screen gameplay-portrait-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+gameplay-landscape-arrows landscape dark  -screen gameplay-landscape-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+
+# ---- D6 · Mando y avance rápido ----
+gameplay-controller    landscape dark  -screen gameplay-controller -rom $FIXTURES/dmg-acid2.gb -demoController connected
+gameplay-fast-forward  portrait  dark  -screen gameplay-fast-forward -rom $FIXTURES/dmg-acid2.gb
+settings-audio         portrait  light -screen settings-audio
+settings-audio         portrait  dark  -screen settings-audio
+settings-emulation     portrait  light -screen settings-emulation
+settings-emulation     portrait  dark  -screen settings-emulation
+settings-storage       portrait  light -screen settings-storage -demoSaveState slots
+settings-storage       portrait  dark  -screen settings-storage -demoSaveState slots
+settings-saves         portrait  light -screen settings-saves -demoSaveState slots
+settings-saves         portrait  dark  -screen settings-saves -demoSaveState slots
+game-settings          portrait  light -screen game-settings -demoLibrary standard
+game-settings          portrait  dark  -screen game-settings -demoLibrary standard
+
+# ---- D7 · Accesibilidad ----
+library-reduce-transparency portrait dark  -screen library-reduce-transparency -demoLibrary standard -reduceTransparency
+library-ax5                 portrait light -screen library-ax5 -demoLibrary standard -contentSizeCategory accessibility5

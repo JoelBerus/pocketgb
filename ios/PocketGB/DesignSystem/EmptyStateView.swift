@@ -19,12 +19,12 @@ struct EmptyStateView: View {
         } actions: {
             if let primaryTitle, let primaryAction {
                 Button(primaryTitle) { primaryAction() }
-                    .buttonStyle(.glassProminent)
+                    .pocketGlassButton(prominent: true)
                     .controlSize(.large)
             }
             if let secondaryTitle, let secondaryAction {
                 Button(secondaryTitle) { secondaryAction() }
-                    .buttonStyle(.glass)
+                    .pocketGlassButton()
             }
         }
     }

@@ -43,8 +43,10 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .sramSize: return "La partida guardada tiene un tamaño distinto al esperado."
         case .outOfMemory: return "Sin memoria para cargar el ROM."
         case .unknown(let code): return "Error desconocido del núcleo (\(code))."
-        case .nullArgument, .noROM, .stateMagic, .stateVersion, .stateROMMismatch,
-             .stateCorrupt, .bufferTooSmall:
+        case .stateMagic, .stateCorrupt: return "El estado está dañado."
+        case .stateVersion: return "El estado es de una versión anterior de PocketGB."
+        case .stateROMMismatch: return "El estado es de otro juego, o de otro modo (Game Boy o Game Boy Color)."
+        case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
         }
     }
@@ -75,11 +77,18 @@ final class CoreBridge {
     deinit { gb_destroy(g) }
 
     /// Copia el ROM dentro del núcleo (`gb_load_rom` no retiene `data`).
-    func loadROM(_ data: Data, unixTime: Int64, sampleRate: UInt32 = 0) throws(CoreError) -> RomInfo {
+    /// - Parameters:
+    ///   - colorForGameBoy: un juego de Game Boy se ejecuta en una Game Boy Color con paleta
+    ///     de color (`GB_MODEL_CGB`); si no, cada juego en su consola (`GB_MODEL_AUTO`).
+    ///   - compatPalette: 0 = automática; 1…12 = combinaciones del arranque de la CGB.
+    func loadROM(_ data: Data, unixTime: Int64, sampleRate: UInt32 = 0, colorForGameBoy: Bool = false,
+                 compatPalette: UInt8 = 0) throws(CoreError) -> RomInfo {
         var opts = gb_options()
         gb_options_default(&opts)
         opts.sample_rate = sampleRate
         opts.unix_time = unixTime
+        opts.model = colorForGameBoy ? GB_MODEL_CGB : GB_MODEL_AUTO
+        opts.compat_palette = compatPalette
         let r = data.withUnsafeBytes { raw in
             gb_load_rom(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &opts)
         }
@@ -137,4 +146,25 @@ final class CoreBridge {
     }
 
     func setRTCTime(_ unixTime: Int64) { gb_rtc_set_time(g, unixTime) }
+
+    // MARK: Save states
+
+    func stateSave() throws(CoreError) -> Data {
+        var out = Data(count: gb_state_size(g))
+        let count = out.count
+        let r = out.withUnsafeMutableBytes { raw in
+            gb_state_save(g, raw.bindMemory(to: UInt8.self).baseAddress, count)
+        }
+        if let e = CoreError(r) { throw e }
+        return out
+    }
+
+    /// Carga en dos pasadas: si falla (firma, versión, otro ROM, corrupto), el núcleo
+    /// queda como estaba, SRAM incluida.
+    func stateLoad(_ data: Data) throws(CoreError) {
+        let r = data.withUnsafeBytes { raw in
+            gb_state_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+        }
+        if let e = CoreError(r) { throw e }
+    }
 }

@@ -2,6 +2,16 @@ import XCTest
 
 /// D1: la shell tiene las tres tabs y Ajustes navega a Apariencia y Acerca de.
 final class ShellTests: XCTestCase {
+    /// Desplaza la lista hasta que el elemento exista y se pueda tocar (hasta 4 veces).
+    @MainActor
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<4 where !(element.exists && element.isHittable) {
+            let list = app.collectionViews.firstMatch
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            _ = element.waitForExistence(timeout: 1)
+        }
+    }
+
     @MainActor
     func testTabsAndSettingsNavigation() throws {
         let app = XCUIApplication()
@@ -18,52 +28,75 @@ final class ShellTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["GBA"].exists)
         XCTAssertFalse(app.buttons["Abrir ROM"].exists)
 
-        tabs.buttons["Ajustes"].tap()
-        app.buttons["Apariencia"].tap()
+        // La tab puede ignorar el primer toque mientras termina el arranque: se reintenta.
+        for _ in 0..<3 where !app.navigationBars["Ajustes"].waitForExistence(timeout: 3) {
+            tabs.buttons["Ajustes"].tap()
+        }
+        XCTAssertTrue(app.navigationBars["Ajustes"].exists, "No se abrió la tab Ajustes")
+        // Ajustes tiene más filas desde D4: Apariencia puede quedar bajo el pliegue.
+        let appearance = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Apariencia")).firstMatch
+        scrollTo(appearance, in: app)
+        appearance.tap()
         XCTAssertTrue(app.navigationBars["Apariencia"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["Acerca de"].tap()
+        let about = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Acerca de")).firstMatch
+        scrollTo(about, in: app)
+        about.tap()
         XCTAssertTrue(app.navigationBars["Acerca de"].waitForExistence(timeout: 5))
     }
 }
 
-/// La única forma de jugar hasta D2: abrir un ROM suelto. Los dos caminos deben
-/// presentar el selector de documentos (auditoría D1, H1).
+/// D2: "Elegir carpeta" presenta el selector de carpetas del sistema.
 // Nombre con prefijo "Shell": XCTest ordena las clases por nombre y el primer lanzamiento
 // tras los tests unitarios (que usan la app como host) agotó el tiempo en el CI.
-final class ShellOpenFileTests: XCTestCase {
+final class ShellFolderPickerTests: XCTestCase {
     @MainActor
-    private func launchLibrary() -> XCUIApplication {
+    func testChooseFolderOpensPicker() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-uiStyle", "light", "-demoFolderState", "none"]
         app.launch()
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
-        return app
-    }
-
-    /// El selector de documentos del sistema tiene un botón de cancelar.
-    @MainActor
-    private func assertPickerShown(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Cancelar"])).firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "No se presentó el selector de documentos",
-                      file: file, line: line)
-    }
-
-    @MainActor
-    func testMenuOpensFilePicker() throws {
-        let app = launchLibrary()
-        app.buttons["Más opciones"].tap()
-        app.buttons["Abrir un archivo…"].tap()
-        assertPickerShown(app)
-    }
-
-    @MainActor
-    func testFolderNoticeOpensFilePicker() throws {
-        let app = launchLibrary()
         app.buttons["Elegir carpeta"].tap()
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Cancelar"])).firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "No se presentó el selector de carpetas")
+    }
+
+    @MainActor
+    func testUnavailableFolderOffersChooseAgain() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiStyle", "light", "-demoFolderState", "stale"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Elegir de nuevo"].waitForExistence(timeout: 10))
+    }
+}
+
+/// D3: card → detalle → ocultar con confirmación; el juego desaparece de la biblioteca.
+final class ShellLibraryTests: XCTestCase {
+    @MainActor
+    func testDetailsAndHideGame() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard"]
+        app.launch()
+
+        let card = app.buttons["game-card-Pruebas/rtc3test.gb"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        // No hay filtro GBA (SPEC §9).
+        XCTAssertTrue(app.buttons["GBC"].exists)
+        XCTAssertFalse(app.buttons["GBA"].exists)
+        if !card.isHittable { app.swipeUp() }
+        card.tap()
+        XCTAssertTrue(app.buttons["game-details-play"].waitForExistence(timeout: 5))
+
+        let hide = app.buttons["Ocultar de PocketGB"]
+        if !hide.isHittable { app.swipeUp() }
+        hide.tap()
         let alert = app.alerts.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
-        alert.buttons["Abrir un archivo"].tap()
-        assertPickerShown(app)
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "no se modifica")).firstMatch.exists)
+        alert.buttons["Ocultar"].tap()
+
+        // Vuelve a la biblioteca sin el juego oculto.
+        XCTAssertTrue(app.buttons["game-card-dmg-acid2.gb"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["game-card-Pruebas/rtc3test.gb"].exists)
     }
 }
