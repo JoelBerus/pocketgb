@@ -21,6 +21,7 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
+- **D8 (☁️) evidencia consolidada (2026-09-30)**: catálogo completo verde en `7f0fd0f` (84 capturas revisadas), núcleo sin regresiones, 93 tests + UI ([auditorias/D8-evidencia.md](auditorias/D8-evidencia.md)). **Siguiente paso exacto (en el Mac):** auditoría Codex final de `d2-a1-wip` (D6–D8 y las correcciones de D2–D5) → corregir → merge a `main` con aprobación de Joel.
 - **D7 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `7f0fd0f`)**: Reduce Transparency con alternativa sólida, AX5 con reflow, cobertura del catálogo y tests de accesibilidad ([auditorias/D7-evidencia.md](auditorias/D7-evidencia.md)). Siguiente: **D8** (regresión, documentación y auditoría final).
 - **iPhone (2026-09-30):** Joel probó las funciones de D2–D6 en `d2-a1-wip` y pasaron la prueba.
 - **Auditoría Codex D2–D5 (`15c3b49`): RECHAZAR → H1–H3 corregidos** ([auditorias/D2-D5-respuesta.md](auditorias/D2-D5-respuesta.md)); verde en `30f7170`.

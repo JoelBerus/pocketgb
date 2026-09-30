@@ -40,3 +40,17 @@ Tacto real (multitoque, deslizar entre botones), háptica, audio, rendimiento a 
 - `-contentSizeCategory accessibility5`: Dynamic Type AX5 fijo (`library-ax5`); la cuadrícula pasa a una columna y la línea de metadatos a columna.
 - `-reduceMotion`: sin zoom portada → detalle.
 - `ShellAccessibilityTests`: todos los IDs de SPEC §9 están en `screens.txt` sin contradicciones, etiquetas de las cards, áreas ≥ 44 pt y reflow con AX5.
+
+## Registro de revisión visual final (D8, 2026-09-30)
+Run del catálogo completo sobre el código final: `7f0fd0f` (`ci-shots/d2-a1-wip`, 84 capturas; los commits posteriores solo tocan `docs/`). Claude revisó las 84 en hojas de contacto:
+
+| Grupo | Capturas | Resultado |
+|---|---|---|
+| Arranque y carpeta | launch, library-no-folder, library-folder-unavailable, library-empty | ✅ |
+| Biblioteca | library-grid, -list, -continue, -cloud-pending, -cloud-downloading, -scan-progress, -scan-summary, -rom-error, save-data-error | ✅ |
+| Búsqueda y detalle | search-active, -results, -no-results, game-details, game-context-menu, remove-game-confirm, favorites, game-settings | ✅ (en `search-active` claro sale el aviso del teclado bilingüe del simulador) |
+| Gameplay | gameplay-portrait, -landscape, -landscape-clear, -landscape-hidden, -reduce-transparency, -portrait-arrows, -landscape-arrows, -controller, -fast-forward, game-acid ×3, game-paused | ✅ (las horizontales salen giradas en el PNG del simulador) |
+| Editor | customize-controls-portrait, -landscape, -size | ✅ |
+| Pausa y estados | gameplay-pause, save-states, load-state-confirm, replace-state-confirm | ✅ |
+| Ajustes | settings-main, -appearance, -about, -library, -controls, -display, -audio, -emulation, -storage, -saves | ✅ |
+| Accesibilidad | library-reduce-transparency, library-ax5 | ✅ (AX5: una columna; en la captura el botón Continuar queda bajo la tab bar porque el contenido se desplaza) |
