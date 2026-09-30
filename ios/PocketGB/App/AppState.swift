@@ -85,6 +85,10 @@ final class AppState {
         }
     }
     var showingGameMenu = false
+    /// Mando físico (GameController).
+    let gamepad = GamepadInput()
+    /// Avance rápido del juego abierto: 1, 2 o 4.
+    private(set) var gameSpeed = 1
     /// Control elegido en el editor para cambiar su tamaño.
     var editorSelection: ControlID?
     /// Pila de la sheet de pausa (Estados).
@@ -128,6 +132,7 @@ final class AppState {
             || DebugArguments.value("-dpadStyle") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
         gameplay.applyDebugArguments()
+        if DebugArguments.value("-demoController") == "connected" { gamepad.applyDemo() }
         #else
         libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
@@ -262,6 +267,8 @@ final class AppState {
             }
             session.start()
             self.session = session
+            gamepad.target = session.padButtons
+            gameSpeed = 1
             stateStore = (try? StateStore.defaultRoot()).map { StateStore(root: $0, fingerprint: session.info.fingerprint) }
             #if DEBUG
             if let demo = DebugScreenRouter.demoStateStore() { stateStore = demo }
@@ -333,6 +340,8 @@ final class AppState {
         }
         stateStore = nil
         stateEntries = [:]
+        gamepad.target = nil
+        gameSpeed = 1
         pausePath = []
         session = nil
         paused = false
@@ -375,6 +384,15 @@ final class AppState {
     func resumeKeepingEditorPaused() {
         paused = false
         pausePath = []
+    }
+
+    /// Avance rápido: ×1 → ×2 → ×4 → ×1 (SPEC §7.6: háptica rígida al cambiar).
+    func cycleSpeed() {
+        guard let session else { return }
+        let next = FastForward.next(gameSpeed)
+        session.setSpeed(next)
+        gameSpeed = next
+        if gameplay.data.haptics { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
     }
 
     /// Pausa desde el HUD: la sheet de pausa aparece con la emulación ya parada.
@@ -443,5 +461,15 @@ final class AppState {
         if let core = error as? CoreError { return core.description }
         if error as? EmulatorSession.StateError == .notPaused { return "Pausa el juego antes." }
         return error.localizedDescription
+    }
+}
+
+/// Velocidades del avance rápido (D-README §8).
+enum FastForward {
+    static let speeds = [1, 2, 4]
+
+    static func next(_ speed: Int) -> Int {
+        guard let i = speeds.firstIndex(of: speed) else { return 1 }
+        return speeds[(i + 1) % speeds.count]
     }
 }

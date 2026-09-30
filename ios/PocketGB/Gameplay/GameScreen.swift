@@ -93,6 +93,7 @@ struct GameScreen: View {
 
     private func controls(_ orientation: ControlsOrientation) -> some View {
         ControlsOverlay(buttons: session.buttons, orientation: orientation, settings: state.gameplay.data,
+                        controllerConnected: state.gamepad.connected,
                         editing: state.editingControls, reduceTransparency: reduceTransparency,
                         onMenu: { state.pauseGame() },
                         onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation) },

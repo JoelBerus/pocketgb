@@ -7,19 +7,42 @@ struct GameplayHUD: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        Button {
-            state.pauseGame()
-        } label: {
-            Image(systemName: "pause.fill")
-                .font(.body.weight(.bold))
-                .frame(width: 40, height: 40)
-                .contentShape(Circle())
+        GlassEffectContainer(spacing: PocketSpacing.xs) {
+            HStack(spacing: PocketSpacing.xs) {
+                Button {
+                    state.pauseGame()
+                } label: {
+                    Image(systemName: "pause.fill")
+                        .font(.body.weight(.bold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .accessibilityLabel("Pausa y opciones")
+                .accessibilityIdentifier("hud-menu")
+
+                // Avance rápido ×1 → ×2 → ×4. Texto además del símbolo (SPEC §13).
+                Button {
+                    state.cycleSpeed()
+                } label: {
+                    HStack(spacing: 2) {
+                        Image(systemName: state.gameSpeed > 1 ? "forward.fill" : "forward")
+                        if state.gameSpeed > 1 { Text("×\(state.gameSpeed)").monospacedDigit() }
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .padding(.horizontal, PocketSpacing.sm)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(state.gameSpeed > 1 ? PocketColor.controlAWarm : .white)
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .accessibilityLabel("Avance rápido")
+                .accessibilityValue(state.gameSpeed > 1 ? "×\(state.gameSpeed)" : "Desactivado")
+                .accessibilityIdentifier("hud-speed")
+            }
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .frame(minWidth: PocketSpacing.minTouch, minHeight: PocketSpacing.minTouch)
-        .accessibilityLabel("Pausa y opciones")
-        .accessibilityIdentifier("hud-menu")
     }
 }

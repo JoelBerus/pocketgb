@@ -9,6 +9,8 @@ final class EmulatorSession: @unchecked Sendable {
     let info: RomInfo
     let frames = FrameBuffers()
     let buttons = ButtonMask()
+    /// Máscara del mando físico: se combina por OR con la táctil (`buttons`).
+    let padButtons = ButtonMask()
     let audioRing = AudioRingBuffer()
     /// Aviso para mostrar al abrir (p. ej. .sav con tamaño inesperado).
     let loadWarning: SaveLoadWarning?
@@ -18,6 +20,8 @@ final class EmulatorSession: @unchecked Sendable {
     private let audioConsumed = AudioWakeSignal()
     private let audioMode = Atomic<Int>(0)
     private let averageFrameMicros = Atomic<Int>(0)
+    /// Avance rápido: 1, 2 o 4 frames por frame real. Con > 1, pacing por reloj y sin audio.
+    private let speedFactor = Atomic<Int>(1)
     private let audioFallbackCount = Atomic<Int>(0)
     /// Invalida el resultado de un arranque de audio que llegue tras pausar o parar.
     private let audioGeneration = Atomic<Int>(0)
@@ -143,6 +147,15 @@ final class EmulatorSession: @unchecked Sendable {
 
     @MainActor
     func resume() {
+        if speedFactor.load(ordering: .relaxed) > 1 {
+            // Avance rápido: sin audio (el ring nunca se llenaría); sigue el reloj.
+            audioMode.store(Self.audioClock, ordering: .releasing)
+            control.lock()
+            pauseRequested = false
+            control.broadcast()
+            control.unlock()
+            return
+        }
         audioConsumed.reset()
         control.lock()
         audioPrimed = false
@@ -194,6 +207,38 @@ final class EmulatorSession: @unchecked Sendable {
         control.broadcast()
         while !finished { control.wait() }
         control.unlock()
+    }
+
+    // MARK: - Avance rápido (D6)
+
+    var speed: Int { speedFactor.load(ordering: .relaxed) }
+
+    /// ×2/×4: para el audio (que vacía el ring, interfaz de M5) y pasa al reloj. De vuelta
+    /// a ×1, se ceba y arranca el audio igual que al reanudar. En pausa solo se guarda el
+    /// valor: `resume()` hará el cebado.
+    @MainActor
+    func setSpeed(_ factor: Int) {
+        let factor = [1, 2, 4].contains(factor) ? factor : 1
+        let old = speedFactor.exchange(factor, ordering: .relaxed)
+        guard factor != old else { return }
+        control.lock()
+        let isPaused = pauseRequested || finished
+        control.unlock()
+        if factor > 1 {
+            audioGeneration.wrappingAdd(1, ordering: .relaxed)
+            audioOutput.stop()
+            audioMode.store(Self.audioClock, ordering: .releasing)
+            audioConsumed.signal()
+        } else if old > 1 && !isPaused {
+            audioConsumed.reset()
+            control.lock()
+            audioPrimed = false
+            audioMode.store(Self.audioPriming, ordering: .releasing)
+            control.broadcast()
+            while !audioPrimed && !finished && !pauseRequested { control.wait() }
+            control.unlock()
+            startAudio()
+        }
     }
 
     // MARK: - Save states (D5)
@@ -334,9 +379,10 @@ final class EmulatorSession: @unchecked Sendable {
             }
 
             let frameStarted = mach_absolute_time()
-            core.setButtons(buttons.value)
+            core.setButtons(buttons.value | padButtons.value)
+            let speed = speedFactor.load(ordering: .relaxed)
             core.runFrame()
-            drainAudio()
+            drainAudio(discard: speed > 1)
             frames.publish { core.copyFramebuffer(to: $0) }
             checkSRAM()
             recordFrameDuration(from: frameStarted, to: mach_absolute_time())
@@ -347,7 +393,7 @@ final class EmulatorSession: @unchecked Sendable {
 
             if mode == Self.audioClock {
                 // Fallback si iOS no ofrece salida o el motor no pudo arrancar.
-                deadline += frameTicks
+                deadline += frameTicks / Double(speedFactor.load(ordering: .relaxed))
                 let now = Double(mach_absolute_time())
                 if now - deadline > 5 * frameTicks {
                     deadline = now // demasiado atrasados: no intentar recuperar
@@ -364,11 +410,13 @@ final class EmulatorSession: @unchecked Sendable {
         control.unlock()
     }
 
-    private func drainAudio() {
+    /// Con avance rápido el audio del núcleo se lee y se descarta: no se acumula ni llega
+    /// desincronizado al ring.
+    private func drainAudio(discard: Bool = false) {
         while true {
             let count = core.readAudio(into: audioScratch, maxFrames: Self.audioScratchFrames)
             guard count > 0 else { return }
-            _ = audioRing.write(from: audioScratch, frames: count)
+            if !discard { _ = audioRing.write(from: audioScratch, frames: count) }
         }
     }
 

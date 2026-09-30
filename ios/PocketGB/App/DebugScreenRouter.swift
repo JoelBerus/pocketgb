@@ -47,6 +47,8 @@ enum DebugScreen: String, CaseIterable {
     case loadStateConfirm = "load-state-confirm"
     case replaceStateConfirm = "replace-state-confirm"
     case customizeControlsSize = "customize-controls-size"
+    case gameplayController = "gameplay-controller"
+    case gameplayFastForward = "gameplay-fast-forward"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
     case gameplayLandscapeArrows = "gameplay-landscape-arrows"
 }
@@ -112,7 +114,7 @@ enum DebugScreenRouter {
         case .settingsDisplay:
             state.selectedTab = .settings
             state.settingsPath = [.display]
-        case .gameplayPortraitArrows, .gameplayLandscapeArrows:
+        case .gameplayPortraitArrows, .gameplayLandscapeArrows, .gameplayController, .gameplayFastForward:
             break
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
@@ -138,6 +140,12 @@ enum DebugScreenRouter {
         switch screen {
         case .customizeControlsSize:
             state.editorSelection = .a
+        case .gameplayFastForward:
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                state.cycleSpeed()
+                state.cycleSpeed()   // ×4
+            }
         case .saveStates, .loadStateConfirm, .replaceStateConfirm:
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))

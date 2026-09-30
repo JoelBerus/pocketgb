@@ -90,3 +90,7 @@ customize-controls-size   portrait  dark  -screen customize-controls-size -rom $
 # ---- Cruceta con flechas separadas (estilo PlayStation) ----
 gameplay-portrait-arrows  portrait  dark  -screen gameplay-portrait-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
 gameplay-landscape-arrows landscape dark  -screen gameplay-landscape-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+
+# ---- D6 · Mando y avance rápido ----
+gameplay-controller    landscape dark  -screen gameplay-controller -rom $FIXTURES/dmg-acid2.gb -demoController connected
+gameplay-fast-forward  portrait  dark  -screen gameplay-fast-forward -rom $FIXTURES/dmg-acid2.gb

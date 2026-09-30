@@ -37,6 +37,10 @@ final class ControlsOverlayView: UIView {
     var editing = false {
         didSet { if editing != oldValue { releaseAll(); showControls(); setNeedsLayout() } }
     }
+    /// Mando conectado: solo se oculta el dibujo; los toques siguen funcionando.
+    var controllerConnected = false {
+        didSet { if controllerConnected != oldValue { updateAppearance(animated: false) } }
+    }
     var forceReduceTransparency = false {
         didSet { if forceReduceTransparency != oldValue { updateAppearance(animated: false) } }
     }
@@ -134,7 +138,7 @@ final class ControlsOverlayView: UIView {
         let pressed = engine.pressed
         for (id, visual) in visuals {
             // El menú lo dibuja el HUD de SwiftUI (GameplayHUD) en el mismo sitio.
-            let hidden = id == .menu || (!editing && settings.visibility == .hidden)
+            let hidden = id == .menu || (!editing && (settings.visibility == .hidden || controllerConnected))
             visual.configure(style: style, opacity: CGFloat(settings.opacity) / 100,
                              reduceTransparency: reduceTransparency, pressed: pressed.contains(id),
                              editing: editing, animated: animated)
@@ -567,6 +571,7 @@ struct ControlsOverlay: UIViewRepresentable {
     let buttons: ButtonMask
     let orientation: ControlsOrientation
     let settings: GameplaySettingsData
+    var controllerConnected = false
     var editing = false
     var reduceTransparency = false
     let onMenu: () -> Void
@@ -589,6 +594,7 @@ struct ControlsOverlay: UIViewRepresentable {
         view.orientation = orientation
         view.settings = settings
         view.editing = editing
+        view.controllerConnected = controllerConnected
         view.forceReduceTransparency = reduceTransparency
         view.onMenu = onMenu
         view.onMove = onMove
