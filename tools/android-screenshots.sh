@@ -29,6 +29,9 @@ for theme in light dark; do
       --ez dynamicColor false \
       --ef fontScale 1.0 >/dev/null
     sleep 3
+    if [[ "$screen" == "native-video" ]]; then
+      sleep 4
+    fi
     "$adb_bin" shell cmd statusbar collapse >/dev/null 2>&1 || true
     "$adb_bin" exec-out screencap -p > "$out_dir/${screen}-${theme}.png"
   done

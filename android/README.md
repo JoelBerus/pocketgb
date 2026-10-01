@@ -1,6 +1,6 @@
 # PocketGB para Android
 
-Aplicación nativa en Kotlin y Jetpack Compose. A1 establece el proyecto, Material 3/Material You, Navigation 3, edge-to-edge y un catálogo visual determinista. La integración del núcleo C11 comienza en A2.
+Aplicación nativa en Kotlin y Jetpack Compose. A1 establece Material 3/Material You, Navigation 3 y edge-to-edge. A2 integra el núcleo C11 con NDK/JNI, una sesión nativa y salida RGBA8888 mediante `SurfaceView`.
 
 La especificación aprobada está en [`docs/diseno-android/SPEC.md`](../docs/diseno-android/SPEC.md) y el plan de A1 en [`docs/superpowers/plans/2026-09-30-android-a1-foundations.md`](../docs/superpowers/plans/2026-09-30-android-a1-foundations.md).
 
@@ -44,7 +44,7 @@ cd ..
 tools/android-screenshots.sh
 ```
 
-Genera 12 PNG locales —seis pantallas en claro y oscuro— bajo `android/build/screenshots/`. Las capturas no se versionan.
+Genera 14 PNG locales —siete pantallas en claro y oscuro— bajo `android/build/screenshots/`. `native-video` ejecuta una ROM sintética creada en memoria para comprobar la salida del núcleo; las capturas no se versionan.
 
 ## Privacidad
 
