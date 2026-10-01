@@ -53,6 +53,6 @@ Se mantuvo `gameplay-controls` durante 600 segundos continuos en `Small_Phone_AP
 
 No se versionaron ROMs, boot ROMs, partidas, estados, APK ni capturas.
 
-## Pendiente de aceptación real
+## Aceptación real
 
-El Samsung físico no estaba conectado al ejecutar el cierre automatizado. Por tanto, A3 queda implementado y verificado en emulador, pero no se declara cerrado todavía. Falta instalar este commit en el Samsung y comprobar audio audible, dos dedos/diagonales/deslizamiento, háptica, ×2/×4→×1, interrupción por otra app y background sin auto-reanudación. La prueba manual de Joel cerrará A3; la auditoría conjunta con Claude continúa reservada para A8.
+Joel probó A3 en Android el 2026-10-01 y aprobó continuar. Con esta aceptación manual, A3 queda cerrado. La auditoría conjunta con Claude continúa reservada para A8.
