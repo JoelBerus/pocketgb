@@ -27,5 +27,9 @@ DerivedData/
 android/**/build/
 android/.gradle/
 android/local.properties
+android/.idea/
+android/build/screenshots/
+*.jks
+*.keystore
 .DS_Store
 __pycache__/

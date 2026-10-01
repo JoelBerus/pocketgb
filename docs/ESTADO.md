@@ -2,9 +2,10 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-30 · M4, M5, M8 y **D1 (☁️) cerrados**. **D2–D5 (☁️) implementados** en `d2-a1-wip`, con CI verde en `6e0188c`. La auditoría Codex D2–D5 hasta `15c3b49` dio **RECHAZAR** (H1 bloqueante en resolución del espejo; H2 alta al persistir SRAM tras cargar un estado; H3 evidencia incompleta); Joel corregirá los hallazgos antes de repetir la auditoría y probar en el iPhone. **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
+**Actualizado:** 2026-09-30 · Android **A1 implementado y verificado** en `codex/android-port`: proyecto Compose, Material You, Navigation 3, edge-to-edge, tema persistente y catálogo de 12 capturas. iOS D1–D8 continúa siendo la referencia funcional; la auditoría conjunta queda reservada para A8 Android. **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
 
 ## Hecho
+- Android A1: Gradle/Compose nativo, Material 3 con color dinámico y fallback, claro/oscuro, Navigation 3 con tres stacks restaurables, shell teléfono, edge-to-edge, catálogo Debug aislado de Release y 12 capturas revisadas. 9 tests JVM + 4 instrumentados; Debug/Release/lint verdes; APK sin permisos de red. Evidencia: `docs/auditorias/A1-android-evidencia.md`.
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
 - M1: núcleo headless en `core/src` (CPU SM83, MMU, timer, serie, joypad, ROM-only + MBC1 con SRAM, SHA-256) + OAM DMA y PPU mínima de tiempos adelantados de M2. Runner `gbtest` (serial/mooneye/--bench/--unit), `run_suite.py`, `suite.txt`. 63/63 casos requeridos en PASS (incluidos 54 Mooneye), ASan limpio, ~50× tiempo real. Auditoría: `docs/auditorias/M1-*`.
 - M2: PPU DMG por scanline (fondo, ventana, objetos), bloqueo VRAM/OAM por modo, modo `acid` en el runner y `tools/png2rgba.py`. dmg-acid2 idéntico píxel a píxel; 70/70 requeridos; ~45× tiempo real con render. Auditoría: `docs/auditorias/M2-*`.
@@ -21,6 +22,7 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
+- **Android:** iniciar A2 (NDK/CMake, JNI mínimo, validación, sesión y framebuffer) siguiendo `docs/diseno-android/SPEC.md`; no iniciar la auditoría conjunta hasta A8.
 - **D8 (☁️) evidencia consolidada (2026-09-30)**: catálogo completo verde en `7f0fd0f` (84 capturas revisadas), núcleo sin regresiones, 93 tests + UI ([auditorias/D8-evidencia.md](auditorias/D8-evidencia.md)). **Siguiente paso exacto (en el Mac):** auditoría Codex final de `d2-a1-wip` (D6–D8 y las correcciones de D2–D5) → corregir → merge a `main` con aprobación de Joel.
 - **D7 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `7f0fd0f`)**: Reduce Transparency con alternativa sólida, AX5 con reflow, cobertura del catálogo y tests de accesibilidad ([auditorias/D7-evidencia.md](auditorias/D7-evidencia.md)). Siguiente: **D8** (regresión, documentación y auditoría final).
 - **iPhone (2026-09-30):** Joel probó las funciones de D2–D6 en `d2-a1-wip` y pasaron la prueba.

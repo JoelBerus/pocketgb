@@ -1,4 +1,6 @@
-# 05 · Especificación Android (futuro, no híbrido)
+# 05 · Implementación Android nativa
+
+> La especificación vigente y aprobada está en [diseno-android/SPEC.md](diseno-android/SPEC.md). Este documento conserva las equivalencias técnicas entre plataformas.
 
 Objetivo: la **misma app** que [04](04-ios-spec.md), con UI 100 % nativa en Kotlin y el **mismo `core/`** compilado con el NDK. No se usan Flutter, React Native, KMP UI ni WebView.
 
@@ -50,5 +52,6 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 Firmar con un keystore propio (`keytool -genkeypair`), guardado **fuera** del repo. Hay que habilitar en el teléfono *Opciones de desarrollador › Depuración USB*.
 
-## Orden sugerido al portar
-Seguir M4 → M7 con estas equivalencias. El núcleo ya estará probado, así que el port es solo del frontend.
+## Orden de implementación
+
+Se siguen A1–A8 de la especificación Android. A1 (fundamentos Compose) está implementado; A2 integra el núcleo mediante NDK/CMake y JNI. La UI del cable virtual permanece fuera de esta primera entrega.
