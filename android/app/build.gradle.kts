@@ -8,6 +8,7 @@ android {
     namespace = "com.joelbermudez.pocketgb"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
+    ndkVersion = "27.3.13750724"
 
     defaultConfig {
         applicationId = "com.joelbermudez.pocketgb"
@@ -26,6 +27,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
