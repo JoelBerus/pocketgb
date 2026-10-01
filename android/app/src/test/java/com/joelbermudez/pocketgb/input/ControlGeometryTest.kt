@@ -55,4 +55,17 @@ class ControlGeometryTest {
             assertFalse(mask and up != 0 && mask and down != 0)
         }
     }
+
+    @Test
+    fun dimensionsScaleWithDisplayDensity() {
+        val geometry = ControlGeometry(
+            layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT),
+            orientation = ControlsOrientation.PORTRAIT,
+            area = ControlBounds(0f, 0f, 800f, 1400f),
+            density = 2f,
+        )
+
+        assertEquals(280f, geometry.frames.getValue(ControlId.DPAD).width)
+        assertTrue(geometry.touchFrame(ControlId.START).height >= 96f)
+    }
 }

@@ -76,12 +76,13 @@ class ControlGeometry(
     layout: ControlLayout,
     orientation: ControlsOrientation,
     private val area: ControlBounds,
+    private val density: Float = 1f,
 ) {
     val frames: Map<ControlId, ControlBounds> = ControlId.entries.associateWith { id ->
         val base = baseSize(id)
         val scale = layout.scale(id)
-        val width = base.first * scale
-        val height = base.second * scale
+        val width = base.first * scale * density
+        val height = base.second * scale * density
         val relative = layout.centers[id] ?: ControlLayout.defaults(orientation).centers.getValue(id)
         val halfWidth = min(width / 2f, area.width / 2f)
         val halfHeight = min(height / 2f, area.height / 2f)
@@ -95,7 +96,7 @@ class ControlGeometry(
     val abFrame: ControlBounds = run {
         val a = frames.getValue(ControlId.A)
         val b = frames.getValue(ControlId.B)
-        val diameter = 36f
+        val diameter = 36f * density
         val centerX = (a.centerX + b.centerX) / 2f
         val centerY = (a.centerY + b.centerY) / 2f
         ControlBounds(
@@ -109,8 +110,8 @@ class ControlGeometry(
     fun touchFrame(id: ControlId): ControlBounds {
         val frame = frames.getValue(id)
         return frame.expand(
-            horizontal = max(0f, (MIN_TOUCH_SIZE - frame.width) / 2f),
-            vertical = max(0f, (MIN_TOUCH_SIZE - frame.height) / 2f),
+            horizontal = max(0f, (MIN_TOUCH_SIZE * density - frame.width) / 2f),
+            vertical = max(0f, (MIN_TOUCH_SIZE * density - frame.height) / 2f),
         )
     }
 
@@ -120,7 +121,9 @@ class ControlGeometry(
             if (inCircle(point, touchFrame(id))) return ControlHit.Single(id)
         }
         listOf(ControlId.START, ControlId.SELECT).forEach { id ->
-            if (touchFrame(id).expand(6f, 6f).contains(point)) return ControlHit.Single(id)
+            if (touchFrame(id).expand(6f * density, 6f * density).contains(point)) {
+                return ControlHit.Single(id)
+            }
         }
         return null
     }
