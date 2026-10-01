@@ -71,3 +71,7 @@ Se inspeccionaron las 12 capturas. Verificado: barras del sistema con contraste 
 ## Resultado
 
 A1 cumple sus criterios técnicos y queda listo para continuar con A2. La auditoría independiente conjunta con Claude se realizará al cierre de A8, según decisión de Joel.
+
+## Prueba manual
+
+Joel probó A1 en Android el 2026-10-01 y aprobó continuar con A2.

@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-09-30 · Android **A1 implementado y verificado** en `codex/android-port`: proyecto Compose, Material You, Navigation 3, edge-to-edge, tema persistente y catálogo de 12 capturas. iOS D1–D8 continúa siendo la referencia funcional; la auditoría conjunta queda reservada para A8 Android. **M9 (☁️ núcleo) cerrado**: cable virtual en `link.c`; falta su UI y la prueba 🍎.
+**Actualizado:** 2026-10-01 · Android **A1 implementado, verificado y probado por Joel** en `codex/android-port`: proyecto Compose, Material You, Navigation 3, edge-to-edge, tema persistente y catálogo de 12 capturas. **A2 iniciado:** NDK/JNI, sesión nativa y framebuffer. iOS D1–D8 continúa siendo la referencia funcional; la auditoría conjunta queda reservada para A8 Android.
 
 ## Hecho
 - Android A1: Gradle/Compose nativo, Material 3 con color dinámico y fallback, claro/oscuro, Navigation 3 con tres stacks restaurables, shell teléfono, edge-to-edge, catálogo Debug aislado de Release y 12 capturas revisadas. 9 tests JVM + 4 instrumentados; Debug/Release/lint verdes; APK sin permisos de red. Evidencia: `docs/auditorias/A1-android-evidencia.md`.
