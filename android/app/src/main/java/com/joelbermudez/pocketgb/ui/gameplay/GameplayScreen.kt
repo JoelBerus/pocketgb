@@ -59,7 +59,12 @@ fun GameplayScreen(
             }
         }
         Row(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+            modifier = Modifier
+                .align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
+                .padding(
+                    top = if (landscape) 40.dp else 12.dp,
+                    end = if (landscape) 16.dp else 0.dp,
+                ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             listOf(1, 2, 4).forEach { factor ->

@@ -2,9 +2,10 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-10-01 · Android **A2 implementado, verificado y probado por Joel** en `codex/android-port`: núcleo C11 mediante NDK/JNI, sesión con hilo nativo y framebuffer RGBA8888 en `SurfaceView`, sin red ni ROMs incluidas. iOS D1–D8 continúa siendo la referencia funcional; la auditoría conjunta queda reservada para A8 Android.
+**Actualizado:** 2026-10-01 · Android **A3 implementado y verificado en emulador** en `codex/android-port`: AAudio, pacing con fallback, input multitáctil, háptica, ×2/×4 y pausa segura por lifecycle/foco. Falta la prueba de aceptación en el Samsung físico antes de cerrar A3. iOS D1–D8 continúa siendo la referencia funcional; la auditoría conjunta queda reservada para A8 Android.
 
 ## Hecho
+- Android A3 (implementación y automatización): ring SPSC/AAudio, pacing por audio con fallback a reloj, velocidad ×2/×4, controles multitáctiles, háptica y lifecycle sin auto-reanudación. Núcleo 65/65 + ASan, 16 tests JVM + 28 instrumentados, 100 ciclos pausa/reanudar, soak de 600 s sin crash/ANR, Debug/Release/lint verdes y 18 capturas. Pendiente: aceptación en Samsung físico. Evidencia: `docs/auditorias/A3-android-evidencia.md`.
 - Android A2: `libpocketgb.so` para cuatro ABI, puente JNI tipado con límites hostiles, sesión start/pause/resume/stop, pacing nativo, recreación segura de `Surface`, escalado entero y diagnóstico Debug con ROM sintética en memoria. Núcleo 65/65 + ASan, 11 tests JVM + 14 instrumentados, Debug/Release/lint verdes y 14 capturas. Evidencia: `docs/auditorias/A2-android-evidencia.md`.
 - Android A1: Gradle/Compose nativo, Material 3 con color dinámico y fallback, claro/oscuro, Navigation 3 con tres stacks restaurables, shell teléfono, edge-to-edge, catálogo Debug aislado de Release y 12 capturas revisadas. 9 tests JVM + 4 instrumentados; Debug/Release/lint verdes; APK sin permisos de red. Evidencia: `docs/auditorias/A1-android-evidencia.md`.
 - M0: paquete de instrucciones (AGENTS.md, docs 00–09, hitos M0–M9, checklist de auditoría, contrato `core/include/pocketgb.h`, Makefile, descarga verificada de las ROMs de prueba v7.0, hook anti-ROMs). Auditoría: `docs/auditorias/M0-*`.
@@ -23,7 +24,7 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-- **Android:** iniciar A3 (AAudio, input multitáctil, háptica, background y velocidad) siguiendo `docs/diseno-android/SPEC.md`; no iniciar la auditoría conjunta hasta A8.
+- **Android:** instalar A3 en el Samsung y validar audio, multitouch/háptica, ×2/×4→×1, interrupción y background. Si Joel aprueba, cerrar A3 e iniciar A4; no iniciar la auditoría conjunta hasta A8.
 - **D8 (☁️) evidencia consolidada (2026-09-30)**: catálogo completo verde en `7f0fd0f` (84 capturas revisadas), núcleo sin regresiones, 93 tests + UI ([auditorias/D8-evidencia.md](auditorias/D8-evidencia.md)). **Siguiente paso exacto (en el Mac):** auditoría Codex final de `d2-a1-wip` (D6–D8 y las correcciones de D2–D5) → corregir → merge a `main` con aprobación de Joel.
 - **D7 (☁️) implementado en `d2-a1-wip` (2026-09-30, CI verde en `7f0fd0f`)**: Reduce Transparency con alternativa sólida, AX5 con reflow, cobertura del catálogo y tests de accesibilidad ([auditorias/D7-evidencia.md](auditorias/D7-evidencia.md)). Siguiente: **D8** (regresión, documentación y auditoría final).
 - **iPhone (2026-09-30):** Joel probó las funciones de D2–D6 en `d2-a1-wip` y pasaron la prueba.

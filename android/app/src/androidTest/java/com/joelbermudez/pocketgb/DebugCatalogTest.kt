@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
@@ -52,7 +53,9 @@ class DebugCatalogTest {
             compose.onNodeWithTag("debug-screen-gameplay-controls").assertIsDisplayed()
             compose.onNodeWithTag("gameplay-surface").assertIsDisplayed()
             compose.onNodeWithTag("game-controls").assertIsDisplayed()
-            compose.onNodeWithText("MENÚ").assertIsDisplayed()
+            compose.onNodeWithContentDescription(
+                "Controles del juego: cruceta, A, B, Start, Select y Menú",
+            ).assertIsDisplayed()
             compose.onNodeWithText("×1").assertIsDisplayed()
         }
     }

@@ -4,6 +4,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 
@@ -25,7 +27,9 @@ fun GameControlsOverlay(
                 onMenu = onMenu,
             )
         },
-        modifier = modifier,
+        modifier = modifier.semantics {
+            contentDescription = "Controles del juego: cruceta, A, B, Start, Select y Menú"
+        },
         update = { view ->
             view.onMaskChanged = session::setTouchButtons
             view.onMenu = onMenu

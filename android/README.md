@@ -1,6 +1,6 @@
 # PocketGB para Android
 
-Aplicación nativa en Kotlin y Jetpack Compose. A1 establece Material 3/Material You, Navigation 3 y edge-to-edge. A2 integra el núcleo C11 con NDK/JNI, una sesión nativa y salida RGBA8888 mediante `SurfaceView`.
+Aplicación nativa en Kotlin y Jetpack Compose. A1 establece Material 3/Material You, Navigation 3 y edge-to-edge. A2 integra el núcleo C11 con NDK/JNI, una sesión nativa y salida RGBA8888 mediante `SurfaceView`. A3 añade AAudio, pacing por audio con fallback a reloj, controles multitáctiles, háptica, velocidad ×2/×4 y pausa segura por lifecycle/foco de audio.
 
 La especificación aprobada está en [`docs/diseno-android/SPEC.md`](../docs/diseno-android/SPEC.md) y el plan de A1 en [`docs/superpowers/plans/2026-09-30-android-a1-foundations.md`](../docs/superpowers/plans/2026-09-30-android-a1-foundations.md).
 
@@ -44,7 +44,7 @@ cd ..
 tools/android-screenshots.sh
 ```
 
-Genera 14 PNG locales —siete pantallas en claro y oscuro— bajo `android/build/screenshots/`. `native-video` ejecuta una ROM sintética creada en memoria para comprobar la salida del núcleo; las capturas no se versionan.
+Genera 18 PNG locales —nueve pantallas en claro y oscuro— bajo `android/build/screenshots/`. `native-video`, `gameplay-controls` y `gameplay-fast-forward` ejecutan una ROM sintética creada en memoria para comprobar vídeo, controles y velocidad; las capturas no se versionan.
 
 ## Privacidad
 
