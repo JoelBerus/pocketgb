@@ -6,14 +6,14 @@
 
 **Architecture:** Un único módulo `:app` contiene paquetes por responsabilidad. `MainActivity` solo configura la ventana y monta `PocketGBApp`; el estado de navegación y apariencia se mantiene fuera de los composables de pantalla. A1 usa contenido de demostración y no integra todavía JNI, SAF ni emulación.
 
-**Tech Stack:** Gradle 8.13, Android Gradle Plugin 8.13.2, Kotlin 2.2.20, Compose BOM 2026.09.00, Material 3, Navigation 3 1.2.0, Activity Compose 1.13.0, Lifecycle 2.11.0, DataStore 1.2.1, JUnit 4 y AndroidX Compose UI Test.
+**Tech Stack:** Gradle 9.8, Android Gradle Plugin 9.4.1 con Kotlin integrado 2.4.10, Compose BOM 2026.09.00, Material 3, Navigation 3 1.2.0, Activity Compose 1.13.0, Lifecycle 2.11.0, DataStore 1.2.1, JUnit 4 y AndroidX Compose UI Test.
 
 **Spec:** `docs/diseno-android/SPEC.md`
 
 ## Global Constraints
 
 - Un único módulo Gradle `:app`; package/application ID `com.joelbermudez.pocketgb`.
-- `minSdk = 26`, `compileSdk = 35` y `targetSdk = 35`, las plataformas más recientes instaladas al iniciar A1.
+- `minSdk = 26`, `compileSdk = 37` y `targetSdk = 37`, instalados al validar los requisitos estables de Navigation 3 1.2.0.
 - Java/Kotlin JVM 17; APIs y dependencias estables, sin Compose Styles experimental.
 - Sin permiso `INTERNET`, telemetría, WebView, frameworks híbridos ni dependencias runtime fuera de AndroidX/Jetpack.
 - UI en español; identificadores en inglés. Material 3 Expressive, color dinámico por defecto y fallback claro/oscuro.
@@ -63,10 +63,11 @@ Run:
 
 ```bash
 cd android
-JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" gradle wrapper --gradle-version 8.13
+touch settings.gradle.kts
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" gradle wrapper --gradle-version 9.8.0
 ```
 
-Expected: se crean `gradlew`, `gradlew.bat` y `gradle/wrapper/*`; `distributionUrl` termina en `gradle-8.13-bin.zip`.
+Expected: se crean `gradlew`, `gradlew.bat` y `gradle/wrapper/*`; `distributionUrl` termina en `gradle-9.8.0-bin.zip`. Gradle 9 exige que exista primero un archivo de settings.
 
 - [ ] **Step 2: Escribir primero la prueba de política del manifiesto**
 
@@ -117,10 +118,9 @@ include(":app")
 
 ```kotlin
 plugins {
-    id("com.android.application") version "8.13.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.20" apply false
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.20" apply false
+    id("com.android.application") version "9.4.1" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10" apply false
 }
 ```
 
@@ -129,17 +129,17 @@ plugins {
 ```kotlin
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 android {
     namespace = "com.joelbermudez.pocketgb"
-    compileSdk = 35
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
     defaultConfig {
         applicationId = "com.joelbermudez.pocketgb"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -149,7 +149,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 }
 dependencies {
@@ -551,7 +550,7 @@ make -C core test
 cd android
 ./gradlew :app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleDebug :app:assembleRelease :app:lintDebug
 cd ..
-if "$HOME/Library/Android/sdk/build-tools/35.0.0/aapt2" dump permissions \
+if "$HOME/Library/Android/sdk/build-tools/37.0.0/aapt2" dump permissions \
   android/app/build/outputs/apk/release/app-release-unsigned.apk \
   | rg 'android.permission.(INTERNET|ACCESS_NETWORK_STATE)'; then exit 1; fi
 tools/android-screenshots.sh
@@ -582,4 +581,4 @@ git commit -m "Android A1: registrar verificación de fundamentos"
 
 ## Condición de cierre de A1
 
-A1 queda listo para revisión solo si el shell funciona en un emulador API 35, apariencia y stacks sobreviven a recreación, las 12 capturas fueron inspeccionadas, Release no contiene permisos de red ni router Debug y todos los comandos de Task 6 tienen evidencia real. La auditoría independiente se reserva para A8; cualquier fallo de A1 se corrige con una prueba de regresión antes de continuar a A2.
+A1 queda listo para revisión solo si el shell funciona en el emulador API 35 disponible y compila contra API 37, apariencia y stacks sobreviven a recreación, las 12 capturas fueron inspeccionadas, Release no contiene permisos de red ni router Debug y todos los comandos de Task 6 tienen evidencia real. La auditoría independiente se reserva para A8; cualquier fallo de A1 se corrige con una prueba de regresión antes de continuar a A2.
