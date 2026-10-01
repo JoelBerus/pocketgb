@@ -9,6 +9,7 @@ enum class TopLevelDestination {
     SETTINGS,
 }
 
+@Serializable
 sealed interface AppRoute : NavKey {
     val topLevel: TopLevelDestination
 }

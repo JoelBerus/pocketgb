@@ -5,7 +5,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.app.PocketGBApp
+import com.joelbermudez.pocketgb.settings.AppearanceRepository
+import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.settings.appearanceDataStore
+import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -14,6 +20,17 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         super.onCreate(savedInstanceState)
-        setContent { Text("PocketGB") }
+        val appearanceRepository = AppearanceRepository(applicationContext.appearanceDataStore)
+        setContent {
+            val appearance by appearanceRepository.state.collectAsStateWithLifecycle(
+                initialValue = AppearanceState.DEFAULT,
+            )
+            PocketGBTheme(appearance = appearance) {
+                PocketGBApp(
+                    appearance = appearance,
+                    appearanceRepository = appearanceRepository,
+                )
+            }
+        }
     }
 }

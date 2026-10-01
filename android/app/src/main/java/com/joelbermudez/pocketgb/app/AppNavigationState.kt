@@ -6,7 +6,12 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
+@Serializable
 data class NavigationSnapshot(
     val selected: TopLevelDestination,
     val stacks: Map<TopLevelDestination, List<AppRoute>>,
@@ -61,6 +66,11 @@ class AppNavigationState(snapshot: NavigationSnapshot = initialSnapshot()) {
     )
 
     companion object {
+        val Saver: Saver<AppNavigationState, Any> = listSaver(
+            save = { state -> listOf(Json.encodeToString(state.snapshot())) },
+            restore = { values -> AppNavigationState(Json.decodeFromString(values.single())) },
+        )
+
         private fun initialSnapshot() = NavigationSnapshot(
             selected = TopLevelDestination.LIBRARY,
             stacks = TopLevelDestination.entries.associateWith { listOf(rootFor(it)) },
