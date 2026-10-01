@@ -55,6 +55,8 @@ internal fun DebugCatalog(intent: DebugIntent) {
                 "appearance" -> AppearanceScreen(intent.appearance, {}, {}, {})
                 "about" -> AboutScreen(onBack = {})
                 "native-video" -> NativeVideoScreen()
+                "gameplay-controls" -> GameplayDebugScreen()
+                "gameplay-fast-forward" -> GameplayDebugScreen(initialSpeed = 4)
                 else -> UnknownScreen(intent.screen)
             }
         }

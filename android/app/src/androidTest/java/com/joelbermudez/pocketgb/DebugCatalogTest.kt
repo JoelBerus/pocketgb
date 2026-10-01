@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb
 import android.content.Intent
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.lifecycle.Lifecycle
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +43,36 @@ class DebugCatalogTest {
             compose.onNodeWithTag("debug-screen-native-video").assertIsDisplayed()
             compose.onNodeWithTag("native-video-surface").assertIsDisplayed()
             compose.onNodeWithText("Vídeo nativo").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun gameplayControlsScreenShowsSurfaceControlsAndSpeed() {
+        launch("gameplay-controls").use {
+            compose.onNodeWithTag("debug-screen-gameplay-controls").assertIsDisplayed()
+            compose.onNodeWithTag("gameplay-surface").assertIsDisplayed()
+            compose.onNodeWithTag("game-controls").assertIsDisplayed()
+            compose.onNodeWithText("MENÚ").assertIsDisplayed()
+            compose.onNodeWithText("×1").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun gameplayShowsPauseAfterGoingToBackground() {
+        launch("gameplay-controls").use { scenario ->
+            compose.onNodeWithText("Juego en pausa").assertDoesNotExist()
+
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+
+            compose.onNodeWithText("Juego en pausa").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun fastForwardCatalogStartsAtFourTimesSpeed() {
+        launch("gameplay-fast-forward").use {
+            compose.onNodeWithText("×4").assertIsSelected()
         }
     }
 

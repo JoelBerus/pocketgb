@@ -106,6 +106,24 @@ class EmulatorSessionTest {
         }
     }
 
+    @Test
+    fun oneHundredPauseResumeCyclesKeepTheSessionHealthy() {
+        EmulatorSession().use { session ->
+            session.load(SyntheticRom.romOnly())
+            session.start()
+
+            repeat(100) {
+                session.pause()
+                assertEquals(SessionState.Paused, session.state.value)
+                assertEquals(com.joelbermudez.pocketgb.audio.AudioState.Stopped, session.audioState)
+                session.resume()
+                assertEquals(SessionState.Running, session.state.value)
+            }
+
+            waitUntil { session.frameCount > 0 }
+        }
+    }
+
     private fun waitUntil(condition: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 2_000
         while (!condition() && SystemClock.uptimeMillis() < deadline) {
