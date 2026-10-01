@@ -22,14 +22,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val appearanceRepository = AppearanceRepository(applicationContext.appearanceDataStore)
         setContent {
-            val appearance by appearanceRepository.state.collectAsStateWithLifecycle(
-                initialValue = AppearanceState.DEFAULT,
-            )
-            PocketGBTheme(appearance = appearance) {
-                PocketGBApp(
-                    appearance = appearance,
-                    appearanceRepository = appearanceRepository,
+            if (!buildVariantContent(intent)) {
+                val appearance by appearanceRepository.state.collectAsStateWithLifecycle(
+                    initialValue = AppearanceState.DEFAULT,
                 )
+                PocketGBTheme(appearance = appearance) {
+                    PocketGBApp(
+                        appearance = appearance,
+                        appearanceRepository = appearanceRepository,
+                    )
+                }
             }
         }
     }
