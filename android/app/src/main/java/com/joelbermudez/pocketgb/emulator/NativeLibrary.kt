@@ -35,4 +35,28 @@ internal object NativeLibrary {
 
     @JvmStatic
     external fun nativeCopyFrame(handle: Long, destination: IntArray): Int
+
+    @JvmStatic
+    external fun nativeSessionCreate(): Long
+
+    @JvmStatic
+    external fun nativeSessionDestroy(handle: Long)
+
+    @JvmStatic
+    external fun nativeSessionLoad(handle: Long, rom: ByteArray): Int
+
+    @JvmStatic
+    external fun nativeSessionStart(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionPause(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionResume(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionStop(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionFrameCount(handle: Long): Long
 }

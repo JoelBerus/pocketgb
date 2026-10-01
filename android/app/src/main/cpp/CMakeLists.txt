@@ -10,6 +10,7 @@ set(CORE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../core")
 add_library(
     pocketgb
     SHARED
+    native_session.c
     pocketgb_jni.c
     "${CORE_ROOT}/src/apu.c"
     "${CORE_ROOT}/src/cart.c"

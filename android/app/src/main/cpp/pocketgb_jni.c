@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "pocketgb.h"
+#include "native_session.h"
 
 JNIEXPORT jlong JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeCreate(
@@ -170,4 +171,109 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeCopyFrame(
     memcpy(pixels, frame, GB_SCREEN_W * GB_SCREEN_H * sizeof(uint32_t));
     (*env)->ReleasePrimitiveArrayCritical(env, destination, pixels, 0);
     return GB_OK;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCreate(
+    JNIEnv *env,
+    jclass clazz
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)(uintptr_t)native_session_create();
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionDestroy(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    native_session_destroy((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray rom
+) {
+    (void)clazz;
+    native_session *session = (native_session *)(uintptr_t)handle;
+    if (session == NULL || rom == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    const jsize length = (*env)->GetArrayLength(env, rom);
+    jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
+    if (bytes == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    gb_options options;
+    gb_options_default(&options);
+    const gb_result result = native_session_load(
+        session,
+        (const uint8_t *)bytes,
+        (size_t)length,
+        &options
+    );
+    (*env)->ReleaseByteArrayElements(env, rom, bytes, JNI_ABORT);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionStart(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_start((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionPause(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_pause((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionResume(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_resume((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionStop(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_stop((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionFrameCount(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)native_session_frame_count((native_session *)(uintptr_t)handle);
 }
