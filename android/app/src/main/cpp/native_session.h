@@ -7,6 +7,7 @@
 #include "pocketgb.h"
 
 typedef struct native_session native_session;
+typedef struct ANativeWindow ANativeWindow;
 
 enum native_session_state {
     NATIVE_SESSION_NEW = 0,
@@ -30,5 +31,6 @@ int native_session_resume(native_session *session);
 int native_session_stop(native_session *session);
 enum native_session_state native_session_get_state(native_session *session);
 uint64_t native_session_frame_count(native_session *session);
+void native_session_set_window(native_session *session, ANativeWindow *window);
 
 #endif

@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include <pthread.h>
+#include <android/native_window.h>
 
 #define FRAME_NANOS 16742706L
 
@@ -18,7 +19,65 @@ struct native_session {
     bool pause_requested;
     bool stop_requested;
     uint64_t frames;
+    ANativeWindow *window;
 };
+
+static void render_frame(native_session *session) {
+    (void)pthread_mutex_lock(&session->mutex);
+    ANativeWindow *window = session->window;
+    if (window != NULL) {
+        ANativeWindow_acquire(window);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (window == NULL) {
+        return;
+    }
+
+    ANativeWindow_Buffer buffer;
+    if (ANativeWindow_lock(window, &buffer, NULL) != 0) {
+        ANativeWindow_release(window);
+        return;
+    }
+    uint32_t *destination = buffer.bits;
+    for (int y = 0; y < buffer.height; ++y) {
+        for (int x = 0; x < buffer.stride; ++x) {
+            destination[(size_t)y * (size_t)buffer.stride + (size_t)x] = 0xFF000000u;
+        }
+    }
+
+    const uint32_t *source = gb_framebuffer(session->core);
+    if (source != NULL && buffer.width > 0 && buffer.height > 0) {
+        const int integer_scale = buffer.width / GB_SCREEN_W < buffer.height / GB_SCREEN_H
+            ? buffer.width / GB_SCREEN_W
+            : buffer.height / GB_SCREEN_H;
+        int draw_width;
+        int draw_height;
+        if (integer_scale >= 1) {
+            draw_width = GB_SCREEN_W * integer_scale;
+            draw_height = GB_SCREEN_H * integer_scale;
+        } else if ((int64_t)buffer.width * GB_SCREEN_H <= (int64_t)buffer.height * GB_SCREEN_W) {
+            draw_width = buffer.width;
+            draw_height = buffer.width * GB_SCREEN_H / GB_SCREEN_W;
+        } else {
+            draw_height = buffer.height;
+            draw_width = buffer.height * GB_SCREEN_W / GB_SCREEN_H;
+        }
+        if (draw_width < 1) draw_width = 1;
+        if (draw_height < 1) draw_height = 1;
+        const int left = (buffer.width - draw_width) / 2;
+        const int top = (buffer.height - draw_height) / 2;
+        for (int y = 0; y < draw_height; ++y) {
+            const int source_y = y * GB_SCREEN_H / draw_height;
+            uint32_t *row = destination + (size_t)(top + y) * (size_t)buffer.stride + (size_t)left;
+            for (int x = 0; x < draw_width; ++x) {
+                const int source_x = x * GB_SCREEN_W / draw_width;
+                row[x] = source[(size_t)source_y * GB_SCREEN_W + (size_t)source_x];
+            }
+        }
+    }
+    (void)ANativeWindow_unlockAndPost(window);
+    ANativeWindow_release(window);
+}
 
 static void advance_deadline(struct timespec *deadline) {
     deadline->tv_nsec += FRAME_NANOS;
@@ -51,6 +110,7 @@ static void *run_session(void *context) {
         (void)pthread_mutex_unlock(&session->mutex);
 
         gb_run_frame(session->core);
+        render_frame(session);
 
         (void)pthread_mutex_lock(&session->mutex);
         session->frames += 1u;
@@ -87,6 +147,7 @@ void native_session_destroy(native_session *session) {
         return;
     }
     (void)native_session_stop(session);
+    native_session_set_window(session, NULL);
     gb_destroy(session->core);
     (void)pthread_cond_destroy(&session->condition);
     (void)pthread_mutex_destroy(&session->mutex);
@@ -214,4 +275,23 @@ uint64_t native_session_frame_count(native_session *session) {
     const uint64_t frames = session->frames;
     (void)pthread_mutex_unlock(&session->mutex);
     return frames;
+}
+
+void native_session_set_window(native_session *session, ANativeWindow *window) {
+    if (session == NULL) {
+        if (window != NULL) {
+            ANativeWindow_release(window);
+        }
+        return;
+    }
+    if (window != NULL) {
+        (void)ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888);
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    ANativeWindow *previous = session->window;
+    session->window = window;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (previous != NULL) {
+        ANativeWindow_release(previous);
+    }
 }

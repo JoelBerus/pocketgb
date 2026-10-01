@@ -37,4 +37,4 @@ target_include_directories(
 )
 
 target_compile_options(pocketgb PRIVATE -Wall -Wextra -Werror -pedantic)
-target_link_libraries(pocketgb PRIVATE m)
+target_link_libraries(pocketgb PRIVATE android m)

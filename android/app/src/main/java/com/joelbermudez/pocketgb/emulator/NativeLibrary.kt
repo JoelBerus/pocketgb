@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.emulator
 
+import android.view.Surface
+
 internal object NativeLibrary {
     init {
         System.loadLibrary("pocketgb")
@@ -59,4 +61,10 @@ internal object NativeLibrary {
 
     @JvmStatic
     external fun nativeSessionFrameCount(handle: Long): Long
+
+    @JvmStatic
+    external fun nativeSessionAttachSurface(handle: Long, surface: Surface)
+
+    @JvmStatic
+    external fun nativeSessionDetachSurface(handle: Long)
 }

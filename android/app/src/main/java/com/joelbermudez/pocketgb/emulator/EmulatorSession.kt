@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.emulator
 
+import android.view.Surface
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +49,16 @@ class EmulatorSession : AutoCloseable {
         }
         checkNativeControl("detener", NativeLibrary.nativeSessionStop(requireHandle()))
         mutableState.value = SessionState.Stopped
+    }
+
+    fun attachSurface(surface: Surface) {
+        NativeLibrary.nativeSessionAttachSurface(requireHandle(), surface)
+    }
+
+    fun detachSurface() {
+        val nativeHandle = handle
+        if (nativeHandle == 0L) return
+        NativeLibrary.nativeSessionDetachSurface(nativeHandle)
     }
 
     override fun close() {

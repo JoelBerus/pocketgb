@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <stdint.h>
 #include <string.h>
+#include <android/native_window_jni.h>
 
 #include "pocketgb.h"
 #include "native_session.h"
@@ -276,4 +277,27 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionFrameCount(
     (void)env;
     (void)clazz;
     return (jlong)native_session_frame_count((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAttachSurface(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jobject surface
+) {
+    (void)clazz;
+    ANativeWindow *window = surface == NULL ? NULL : ANativeWindow_fromSurface(env, surface);
+    native_session_set_window((native_session *)(uintptr_t)handle, window);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionDetachSurface(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_window((native_session *)(uintptr_t)handle, NULL);
 }
