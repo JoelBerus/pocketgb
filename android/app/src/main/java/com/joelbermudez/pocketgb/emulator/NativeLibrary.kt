@@ -81,6 +81,15 @@ internal object NativeLibrary {
     external fun nativeSessionSpeed(handle: Long): Int
 
     @JvmStatic
+    external fun nativeSessionAudioState(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionAudioFramesProduced(handle: Long): Long
+
+    @JvmStatic
+    external fun nativeSessionAudioFramesConsumed(handle: Long): Long
+
+    @JvmStatic
     external fun nativeSessionAttachSurface(handle: Long, surface: Surface)
 
     @JvmStatic

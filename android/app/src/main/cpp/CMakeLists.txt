@@ -10,6 +10,8 @@ set(CORE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../core")
 add_library(
     pocketgb
     SHARED
+    audio_output.c
+    audio_ring.c
     native_session.c
     pocketgb_jni.c
     "${CORE_ROOT}/src/apu.c"
@@ -37,4 +39,4 @@ target_include_directories(
 )
 
 target_compile_options(pocketgb PRIVATE -Wall -Wextra -Werror -pedantic)
-target_link_libraries(pocketgb PRIVATE android m)
+target_link_libraries(pocketgb PRIVATE aaudio android m)

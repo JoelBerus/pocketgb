@@ -17,6 +17,13 @@ enum native_session_state {
     NATIVE_SESSION_STOPPED
 };
 
+enum native_audio_state {
+    NATIVE_AUDIO_STOPPED = 0,
+    NATIVE_AUDIO_PRIMING,
+    NATIVE_AUDIO_LIVE,
+    NATIVE_AUDIO_CLOCK_FALLBACK
+};
+
 native_session *native_session_create(void);
 void native_session_destroy(native_session *session);
 gb_result native_session_load(
@@ -37,6 +44,9 @@ uint8_t native_session_requested_buttons(native_session *session);
 uint8_t native_session_applied_buttons(native_session *session);
 void native_session_set_speed(native_session *session, unsigned speed);
 unsigned native_session_speed(native_session *session);
+enum native_audio_state native_session_audio_state(native_session *session);
+uint64_t native_session_audio_frames_produced(native_session *session);
+uint64_t native_session_audio_frames_consumed(native_session *session);
 void native_session_set_window(native_session *session, ANativeWindow *window);
 
 #endif

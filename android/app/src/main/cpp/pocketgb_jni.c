@@ -333,6 +333,33 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSpeed(
     return (jint)native_session_speed((native_session *)(uintptr_t)handle);
 }
 
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAudioState(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jint)native_session_audio_state((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAudioFramesProduced(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)native_session_audio_frames_produced((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAudioFramesConsumed(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)native_session_audio_frames_consumed((native_session *)(uintptr_t)handle);
+}
+
 JNIEXPORT void JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAttachSurface(
     JNIEnv *env,

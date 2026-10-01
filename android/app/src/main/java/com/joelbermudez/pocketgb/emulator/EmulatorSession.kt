@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.emulator
 
 import android.view.Surface
+import com.joelbermudez.pocketgb.audio.AudioState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,15 @@ class EmulatorSession : AutoCloseable {
 
     val speed: Int
         get() = NativeLibrary.nativeSessionSpeed(requireHandle())
+
+    val audioState: AudioState
+        get() = AudioState.fromNative(NativeLibrary.nativeSessionAudioState(requireHandle()))
+
+    val audioFramesProduced: Long
+        get() = NativeLibrary.nativeSessionAudioFramesProduced(requireHandle())
+
+    val audioFramesConsumed: Long
+        get() = NativeLibrary.nativeSessionAudioFramesConsumed(requireHandle())
 
     fun load(rom: ByteArray) {
         requireState("cargar", SessionState.New)

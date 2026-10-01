@@ -7,6 +7,9 @@
 #include <pthread.h>
 #include <android/native_window.h>
 
+#include "audio_output.h"
+#include "audio_ring.h"
+
 #define FRAME_NANOS 16742706L
 
 struct native_session {
@@ -24,8 +27,105 @@ struct native_session {
     uint8_t applied_buttons;
     unsigned speed;
     bool timing_reset;
+    audio_ring audio_ring_buffer;
+    audio_output audio;
+    enum native_audio_state audio_state;
+    int16_t audio_scratch[2048];
     ANativeWindow *window;
 };
+
+static void set_audio_state(native_session *session, enum native_audio_state state) {
+    (void)pthread_mutex_lock(&session->mutex);
+    session->audio_state = state;
+    (void)pthread_mutex_unlock(&session->mutex);
+}
+
+static void sync_audio_speed(native_session *session, unsigned speed) {
+    (void)pthread_mutex_lock(&session->mutex);
+    const enum native_audio_state state = session->audio_state;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (speed > 1u && state != NATIVE_AUDIO_STOPPED) {
+        audio_output_stop(&session->audio);
+        audio_ring_clear(&session->audio_ring_buffer);
+        set_audio_state(session, NATIVE_AUDIO_STOPPED);
+    } else if (speed == 1u && state == NATIVE_AUDIO_STOPPED) {
+        audio_ring_clear(&session->audio_ring_buffer);
+        set_audio_state(session, NATIVE_AUDIO_PRIMING);
+    }
+}
+
+static void produce_audio(native_session *session, unsigned speed) {
+    size_t available = gb_audio_available(session->core);
+    while (available > 0u) {
+        const size_t requested = available < 1024u ? available : 1024u;
+        const size_t frames = gb_audio_read(session->core, session->audio_scratch, requested);
+        if (speed == 1u) {
+            (void)audio_ring_write(&session->audio_ring_buffer, session->audio_scratch, frames);
+        }
+        if (frames == 0u) break;
+        available -= frames;
+    }
+
+    if (speed != 1u) return;
+
+    (void)pthread_mutex_lock(&session->mutex);
+    const bool should_start = session->audio_state == NATIVE_AUDIO_PRIMING &&
+        audio_ring_available(&session->audio_ring_buffer) >= 2048u;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (should_start) {
+        const bool started = audio_output_start(&session->audio);
+        (void)pthread_mutex_lock(&session->mutex);
+        session->audio_state = started ? NATIVE_AUDIO_LIVE : NATIVE_AUDIO_CLOCK_FALLBACK;
+        (void)pthread_mutex_unlock(&session->mutex);
+    }
+}
+
+static bool audio_pacing_interrupted(native_session *session) {
+    (void)pthread_mutex_lock(&session->mutex);
+    const bool interrupted = session->pause_requested || session->stop_requested || session->speed > 1u;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return interrupted;
+}
+
+static int64_t elapsed_nanos(const struct timespec *start, const struct timespec *end) {
+    return (int64_t)(end->tv_sec - start->tv_sec) * 1000000000LL + end->tv_nsec - start->tv_nsec;
+}
+
+static void pace_from_audio(native_session *session) {
+    struct timespec window_start;
+    (void)clock_gettime(CLOCK_MONOTONIC, &window_start);
+    uint64_t consumed = atomic_load_explicit(&session->audio_ring_buffer.total_read, memory_order_relaxed);
+    unsigned timeouts = 0u;
+    const struct timespec poll = {.tv_sec = 0, .tv_nsec = 1000000L};
+    while (audio_ring_available(&session->audio_ring_buffer) > 2048u) {
+        if (audio_pacing_interrupted(session)) return;
+        if (atomic_load_explicit(&session->audio.failed, memory_order_acquire)) {
+            audio_output_stop(&session->audio);
+            set_audio_state(session, NATIVE_AUDIO_CLOCK_FALLBACK);
+            return;
+        }
+        (void)nanosleep(&poll, NULL);
+        const uint64_t now_consumed = atomic_load_explicit(
+            &session->audio_ring_buffer.total_read,
+            memory_order_relaxed
+        );
+        struct timespec now;
+        (void)clock_gettime(CLOCK_MONOTONIC, &now);
+        if (now_consumed != consumed) {
+            consumed = now_consumed;
+            timeouts = 0u;
+            window_start = now;
+        } else if (elapsed_nanos(&window_start, &now) >= 25000000LL) {
+            timeouts += 1u;
+            window_start = now;
+            if (timeouts >= 4u) {
+                audio_output_stop(&session->audio);
+                set_audio_state(session, NATIVE_AUDIO_CLOCK_FALLBACK);
+                return;
+            }
+        }
+    }
+}
 
 static void render_frame(native_session *session) {
     (void)pthread_mutex_lock(&session->mutex);
@@ -113,21 +213,29 @@ static void *run_session(void *context) {
         if (timing_reset) {
             (void)clock_gettime(CLOCK_MONOTONIC, &deadline);
         }
+        sync_audio_speed(session, speed);
         gb_set_buttons(session->core, buttons);
         gb_run_frame(session->core);
+        produce_audio(session, speed);
         render_frame(session);
 
         (void)pthread_mutex_lock(&session->mutex);
         session->applied_buttons = buttons;
         session->frames += 1u;
+        const enum native_audio_state audio_state = session->audio_state;
         (void)pthread_mutex_unlock(&session->mutex);
 
-        deadline.tv_nsec += FRAME_NANOS / (long)speed;
-        if (deadline.tv_nsec >= 1000000000L) {
-            deadline.tv_sec += 1;
-            deadline.tv_nsec -= 1000000000L;
+        if (speed == 1u && audio_state == NATIVE_AUDIO_LIVE) {
+            pace_from_audio(session);
+            (void)clock_gettime(CLOCK_MONOTONIC, &deadline);
+        } else if (audio_state != NATIVE_AUDIO_PRIMING) {
+            deadline.tv_nsec += FRAME_NANOS / (long)speed;
+            if (deadline.tv_nsec >= 1000000000L) {
+                deadline.tv_sec += 1;
+                deadline.tv_nsec -= 1000000000L;
+            }
+            (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
         }
-        (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
     }
 }
 
@@ -150,6 +258,9 @@ native_session *native_session_create(void) {
     }
     session->state = NATIVE_SESSION_NEW;
     session->speed = 1u;
+    audio_ring_init(&session->audio_ring_buffer);
+    audio_output_init(&session->audio, &session->audio_ring_buffer);
+    session->audio_state = NATIVE_AUDIO_STOPPED;
     return session;
 }
 
@@ -158,6 +269,7 @@ void native_session_destroy(native_session *session) {
         return;
     }
     (void)native_session_stop(session);
+    audio_output_stop(&session->audio);
     native_session_set_window(session, NULL);
     gb_destroy(session->core);
     (void)pthread_cond_destroy(&session->condition);
@@ -207,6 +319,7 @@ int native_session_start(native_session *session) {
     }
     session->thread_started = true;
     session->state = NATIVE_SESSION_RUNNING;
+    session->audio_state = NATIVE_AUDIO_PRIMING;
     (void)pthread_mutex_unlock(&session->mutex);
     return 0;
 }
@@ -225,6 +338,11 @@ int native_session_pause(native_session *session) {
         (void)pthread_cond_wait(&session->condition, &session->mutex);
     }
     (void)pthread_mutex_unlock(&session->mutex);
+    audio_output_stop(&session->audio);
+    audio_ring_clear(&session->audio_ring_buffer);
+    (void)pthread_mutex_lock(&session->mutex);
+    session->audio_state = NATIVE_AUDIO_STOPPED;
+    (void)pthread_mutex_unlock(&session->mutex);
     return 0;
 }
 
@@ -239,6 +357,7 @@ int native_session_resume(native_session *session) {
     }
     session->pause_requested = false;
     session->state = NATIVE_SESSION_RUNNING;
+    session->audio_state = NATIVE_AUDIO_PRIMING;
     (void)pthread_cond_broadcast(&session->condition);
     (void)pthread_mutex_unlock(&session->mutex);
     return 0;
@@ -261,9 +380,12 @@ int native_session_stop(native_session *session) {
     (void)pthread_cond_broadcast(&session->condition);
     (void)pthread_mutex_unlock(&session->mutex);
     (void)pthread_join(session->thread, NULL);
+    audio_output_stop(&session->audio);
+    audio_ring_clear(&session->audio_ring_buffer);
     (void)pthread_mutex_lock(&session->mutex);
     session->thread_started = false;
     session->state = NATIVE_SESSION_STOPPED;
+    session->audio_state = NATIVE_AUDIO_STOPPED;
     (void)pthread_mutex_unlock(&session->mutex);
     return 0;
 }
@@ -335,6 +457,24 @@ unsigned native_session_speed(native_session *session) {
     const unsigned speed = session->speed;
     (void)pthread_mutex_unlock(&session->mutex);
     return speed;
+}
+
+enum native_audio_state native_session_audio_state(native_session *session) {
+    if (session == NULL) return NATIVE_AUDIO_STOPPED;
+    (void)pthread_mutex_lock(&session->mutex);
+    const enum native_audio_state state = session->audio_state;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return state;
+}
+
+uint64_t native_session_audio_frames_produced(native_session *session) {
+    if (session == NULL) return 0u;
+    return atomic_load_explicit(&session->audio_ring_buffer.total_written, memory_order_relaxed);
+}
+
+uint64_t native_session_audio_frames_consumed(native_session *session) {
+    if (session == NULL) return 0u;
+    return atomic_load_explicit(&session->audio_ring_buffer.total_read, memory_order_relaxed);
 }
 
 void native_session_set_window(native_session *session, ANativeWindow *window) {
