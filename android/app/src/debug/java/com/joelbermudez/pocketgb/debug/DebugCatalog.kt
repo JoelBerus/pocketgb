@@ -54,6 +54,7 @@ internal fun DebugCatalog(intent: DebugIntent) {
                 "settings-main" -> SettingsScreen(onAppearance = {}, onAbout = {})
                 "appearance" -> AppearanceScreen(intent.appearance, {}, {}, {})
                 "about" -> AboutScreen(onBack = {})
+                "native-video" -> NativeVideoScreen()
                 else -> UnknownScreen(intent.screen)
             }
         }

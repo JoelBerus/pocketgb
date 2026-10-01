@@ -35,6 +35,15 @@ class DebugCatalogTest {
         }
     }
 
+    @Test
+    fun nativeVideoScreenShowsRunningSurface() {
+        launch("native-video").use {
+            compose.onNodeWithTag("debug-screen-native-video").assertIsDisplayed()
+            compose.onNodeWithTag("native-video-surface").assertIsDisplayed()
+            compose.onNodeWithText("Vídeo nativo").assertIsDisplayed()
+        }
+    }
+
     private fun launch(screen: String): ActivityScenario<MainActivity> {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val intent = Intent(context, MainActivity::class.java)

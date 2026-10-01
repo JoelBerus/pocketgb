@@ -18,7 +18,7 @@ if ! "$adb_bin" get-state >/dev/null 2>&1; then
 fi
 
 mkdir -p "$out_dir"
-screens=(library-empty library-grid favorites-empty settings-main appearance about)
+screens=(library-empty library-grid favorites-empty settings-main appearance about native-video)
 
 for theme in light dark; do
   for screen in "${screens[@]}"; do
@@ -28,7 +28,7 @@ for theme in light dark; do
       --es theme "$theme" \
       --ez dynamicColor false \
       --ef fontScale 1.0 >/dev/null
-    sleep 1
+    sleep 3
     "$adb_bin" shell cmd statusbar collapse >/dev/null 2>&1 || true
     "$adb_bin" exec-out screencap -p > "$out_dir/${screen}-${theme}.png"
   done
