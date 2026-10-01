@@ -15,6 +15,15 @@ class EmulatorSession : AutoCloseable {
     val frameCount: Long
         get() = NativeLibrary.nativeSessionFrameCount(requireHandle())
 
+    val requestedButtons: Int
+        get() = NativeLibrary.nativeSessionRequestedButtons(requireHandle())
+
+    val appliedButtons: Int
+        get() = NativeLibrary.nativeSessionAppliedButtons(requireHandle())
+
+    val speed: Int
+        get() = NativeLibrary.nativeSessionSpeed(requireHandle())
+
     fun load(rom: ByteArray) {
         requireState("cargar", SessionState.New)
         if (rom.size < CoreBridge.MIN_ROM_BYTES) throw CoreError.RomTooSmall()
@@ -59,6 +68,18 @@ class EmulatorSession : AutoCloseable {
         val nativeHandle = handle
         if (nativeHandle == 0L) return
         NativeLibrary.nativeSessionDetachSurface(nativeHandle)
+    }
+
+    fun setTouchButtons(mask: Int) {
+        NativeLibrary.nativeSessionSetTouchButtons(requireHandle(), mask and 0xFF)
+    }
+
+    fun setPhysicalButtons(mask: Int) {
+        NativeLibrary.nativeSessionSetPhysicalButtons(requireHandle(), mask and 0xFF)
+    }
+
+    fun setSpeed(factor: Int) {
+        NativeLibrary.nativeSessionSetSpeed(requireHandle(), factor)
     }
 
     override fun close() {

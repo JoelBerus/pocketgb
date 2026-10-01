@@ -280,6 +280,60 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionFrameCount(
 }
 
 JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetTouchButtons(
+    JNIEnv *env, jclass clazz, jlong handle, jint mask
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_touch_buttons((native_session *)(uintptr_t)handle, (uint8_t)mask);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetPhysicalButtons(
+    JNIEnv *env, jclass clazz, jlong handle, jint mask
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_physical_buttons((native_session *)(uintptr_t)handle, (uint8_t)mask);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionRequestedButtons(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_requested_buttons((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAppliedButtons(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_applied_buttons((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetSpeed(
+    JNIEnv *env, jclass clazz, jlong handle, jint speed
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_speed((native_session *)(uintptr_t)handle, (unsigned)speed);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSpeed(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jint)native_session_speed((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT void JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionAttachSurface(
     JNIEnv *env,
     jclass clazz,

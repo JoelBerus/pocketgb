@@ -31,6 +31,12 @@ int native_session_resume(native_session *session);
 int native_session_stop(native_session *session);
 enum native_session_state native_session_get_state(native_session *session);
 uint64_t native_session_frame_count(native_session *session);
+void native_session_set_touch_buttons(native_session *session, uint8_t mask);
+void native_session_set_physical_buttons(native_session *session, uint8_t mask);
+uint8_t native_session_requested_buttons(native_session *session);
+uint8_t native_session_applied_buttons(native_session *session);
+void native_session_set_speed(native_session *session, unsigned speed);
+unsigned native_session_speed(native_session *session);
 void native_session_set_window(native_session *session, ANativeWindow *window);
 
 #endif

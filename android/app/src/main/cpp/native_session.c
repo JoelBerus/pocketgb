@@ -19,6 +19,11 @@ struct native_session {
     bool pause_requested;
     bool stop_requested;
     uint64_t frames;
+    uint8_t touch_buttons;
+    uint8_t physical_buttons;
+    uint8_t applied_buttons;
+    unsigned speed;
+    bool timing_reset;
     ANativeWindow *window;
 };
 
@@ -79,14 +84,6 @@ static void render_frame(native_session *session) {
     ANativeWindow_release(window);
 }
 
-static void advance_deadline(struct timespec *deadline) {
-    deadline->tv_nsec += FRAME_NANOS;
-    if (deadline->tv_nsec >= 1000000000L) {
-        deadline->tv_sec += 1;
-        deadline->tv_nsec -= 1000000000L;
-    }
-}
-
 static void *run_session(void *context) {
     native_session *session = context;
     struct timespec deadline;
@@ -107,16 +104,29 @@ static void *run_session(void *context) {
             return NULL;
         }
         session->state = NATIVE_SESSION_RUNNING;
+        const uint8_t buttons = session->touch_buttons | session->physical_buttons;
+        const unsigned speed = session->speed;
+        const bool timing_reset = session->timing_reset;
+        session->timing_reset = false;
         (void)pthread_mutex_unlock(&session->mutex);
 
+        if (timing_reset) {
+            (void)clock_gettime(CLOCK_MONOTONIC, &deadline);
+        }
+        gb_set_buttons(session->core, buttons);
         gb_run_frame(session->core);
         render_frame(session);
 
         (void)pthread_mutex_lock(&session->mutex);
+        session->applied_buttons = buttons;
         session->frames += 1u;
         (void)pthread_mutex_unlock(&session->mutex);
 
-        advance_deadline(&deadline);
+        deadline.tv_nsec += FRAME_NANOS / (long)speed;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec += 1;
+            deadline.tv_nsec -= 1000000000L;
+        }
         (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
     }
 }
@@ -139,6 +149,7 @@ native_session *native_session_create(void) {
         return NULL;
     }
     session->state = NATIVE_SESSION_NEW;
+    session->speed = 1u;
     return session;
 }
 
@@ -275,6 +286,55 @@ uint64_t native_session_frame_count(native_session *session) {
     const uint64_t frames = session->frames;
     (void)pthread_mutex_unlock(&session->mutex);
     return frames;
+}
+
+void native_session_set_touch_buttons(native_session *session, uint8_t mask) {
+    if (session == NULL) return;
+    (void)pthread_mutex_lock(&session->mutex);
+    session->touch_buttons = mask;
+    (void)pthread_mutex_unlock(&session->mutex);
+}
+
+void native_session_set_physical_buttons(native_session *session, uint8_t mask) {
+    if (session == NULL) return;
+    (void)pthread_mutex_lock(&session->mutex);
+    session->physical_buttons = mask;
+    (void)pthread_mutex_unlock(&session->mutex);
+}
+
+uint8_t native_session_requested_buttons(native_session *session) {
+    if (session == NULL) return 0u;
+    (void)pthread_mutex_lock(&session->mutex);
+    const uint8_t buttons = session->touch_buttons | session->physical_buttons;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return buttons;
+}
+
+uint8_t native_session_applied_buttons(native_session *session) {
+    if (session == NULL) return 0u;
+    (void)pthread_mutex_lock(&session->mutex);
+    const uint8_t buttons = session->applied_buttons;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return buttons;
+}
+
+void native_session_set_speed(native_session *session, unsigned speed) {
+    if (session == NULL) return;
+    const unsigned normalized = speed == 2u || speed == 4u ? speed : 1u;
+    (void)pthread_mutex_lock(&session->mutex);
+    if (session->speed != normalized) {
+        session->speed = normalized;
+        session->timing_reset = true;
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+}
+
+unsigned native_session_speed(native_session *session) {
+    if (session == NULL) return 1u;
+    (void)pthread_mutex_lock(&session->mutex);
+    const unsigned speed = session->speed;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return speed;
 }
 
 void native_session_set_window(native_session *session, ANativeWindow *window) {

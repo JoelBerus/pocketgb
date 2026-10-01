@@ -63,6 +63,24 @@ internal object NativeLibrary {
     external fun nativeSessionFrameCount(handle: Long): Long
 
     @JvmStatic
+    external fun nativeSessionSetTouchButtons(handle: Long, mask: Int)
+
+    @JvmStatic
+    external fun nativeSessionSetPhysicalButtons(handle: Long, mask: Int)
+
+    @JvmStatic
+    external fun nativeSessionRequestedButtons(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionAppliedButtons(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionSetSpeed(handle: Long, speed: Int)
+
+    @JvmStatic
+    external fun nativeSessionSpeed(handle: Long): Int
+
+    @JvmStatic
     external fun nativeSessionAttachSurface(handle: Long, surface: Surface)
 
     @JvmStatic
