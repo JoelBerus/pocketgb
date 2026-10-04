@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.app
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -25,10 +26,13 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.ui.about.AboutScreen
+import com.joelbermudez.pocketgb.ui.details.GameDetailsScreen
 import com.joelbermudez.pocketgb.ui.favorites.FavoritesScreen
 import com.joelbermudez.pocketgb.ui.library.LibraryScreen
 import com.joelbermudez.pocketgb.ui.settings.AppearanceScreen
+import com.joelbermudez.pocketgb.ui.settings.LibrarySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
@@ -49,6 +53,7 @@ private val navigationItems = listOf(
 fun PocketGBApp(
     appearance: AppearanceState,
     appearanceRepository: AppearanceRepository,
+    library: LibraryViewModel,
 ) {
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
     val scope = rememberCoroutineScope()
@@ -77,18 +82,36 @@ fun PocketGBApp(
             }
         },
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        // Los insets del sistema y de la barra inferior se consumen aquí una sola vez;
+        // las pantallas hijas no los vuelven a aplicar.
+        Box(modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)) {
             NavDisplay(
                 backStack = navigationState.currentBackStack,
                 onBack = { navigationState.pop() },
                 entryProvider = { route ->
                     when (route) {
-                        LibraryRoute.Root -> NavEntry(route) { LibraryScreen() }
-                        is LibraryRoute.Details -> NavEntry(route) { LibraryScreen() }
-                        FavoritesRoute.Root -> NavEntry(route) { FavoritesScreen() }
+                        LibraryRoute.Root -> NavEntry(route) {
+                            LibraryScreen(
+                                viewModel = library,
+                                onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
+                            )
+                        }
+                        is LibraryRoute.Details -> NavEntry(route) {
+                            GameDetailsScreen(library, route.gameId, onBack = { navigationState.pop() })
+                        }
+                        FavoritesRoute.Root -> NavEntry(route) {
+                            FavoritesScreen(
+                                viewModel = library,
+                                onOpenDetails = { navigationState.push(FavoritesRoute.Details(it)) },
+                            )
+                        }
+                        is FavoritesRoute.Details -> NavEntry(route) {
+                            GameDetailsScreen(library, route.gameId, onBack = { navigationState.pop() })
+                        }
                         SettingsRoute.Root -> NavEntry(route) {
                             SettingsScreen(
                                 onAppearance = { navigationState.push(SettingsRoute.Appearance) },
+                                onLibrary = { navigationState.push(SettingsRoute.Library) },
                                 onAbout = { navigationState.push(SettingsRoute.About) },
                             )
                         }
@@ -103,6 +126,9 @@ fun PocketGBApp(
                                 },
                                 onBack = { navigationState.pop() },
                             )
+                        }
+                        SettingsRoute.Library -> NavEntry(route) {
+                            LibrarySettingsScreen(library, onBack = { navigationState.pop() })
                         }
                         SettingsRoute.About -> NavEntry(route) {
                             AboutScreen(onBack = { navigationState.pop() })

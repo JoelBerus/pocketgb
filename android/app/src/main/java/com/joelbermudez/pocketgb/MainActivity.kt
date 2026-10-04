@@ -5,8 +5,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.library.LibraryViewModel
+import com.joelbermudez.pocketgb.library.LibraryViewModelFactory
 import com.joelbermudez.pocketgb.app.PocketGBApp
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
@@ -14,6 +19,9 @@ import com.joelbermudez.pocketgb.settings.appearanceDataStore
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 
 class MainActivity : ComponentActivity() {
+    // Solo se crea (y escanea) fuera del catálogo debug, que usa datos sintéticos.
+    private val library: LibraryViewModel by viewModels { LibraryViewModelFactory(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -26,10 +34,13 @@ class MainActivity : ComponentActivity() {
                 val appearance by appearanceRepository.state.collectAsStateWithLifecycle(
                     initialValue = AppearanceState.DEFAULT,
                 )
+                // Cada vuelta a primer plano reescanea la biblioteca (SPEC §6).
+                LifecycleEventEffect(Lifecycle.Event.ON_START) { library.rescan() }
                 PocketGBTheme(appearance = appearance) {
                     PocketGBApp(
                         appearance = appearance,
                         appearanceRepository = appearanceRepository,
+                        library = library,
                     )
                 }
             }

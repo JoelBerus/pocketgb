@@ -31,6 +31,23 @@ class DebugCatalogTest {
     }
 
     @Test
+    fun libraryCatalogScreensShowTheirStates() {
+        launch("library-empty").use { compose.onNodeWithText("Elegir carpeta").assertIsDisplayed() }
+        launch("library-error").use { compose.onNodeWithText("Volver a elegir").assertIsDisplayed() }
+        launch("library-search").use { compose.onNodeWithText("Sin resultados").assertIsDisplayed() }
+        launch("library-list").use {
+            compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
+        }
+        launch("library-detail").use { compose.onNodeWithText("Jugar se activa en A5 (partidas seguras)").assertIsDisplayed() }
+        launch("library-detail-problem").use {
+            compose.onNodeWithTag("game-details-problem").assertIsDisplayed()
+        }
+        launch("favorites-empty").use { compose.onNodeWithText("Todavía no hay favoritos").assertIsDisplayed() }
+        launch("favorites").use { compose.onAllNodesWithTag("game-card").assertCountEquals(2) }
+        launch("settings-library").use { compose.onNodeWithText("Juegos ocultos").assertIsDisplayed() }
+    }
+
+    @Test
     fun unknownScreenIsVisibleFailure() {
         launch("missing").use {
             compose.onNodeWithText("Pantalla desconocida").assertIsDisplayed()

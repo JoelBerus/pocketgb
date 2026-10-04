@@ -33,6 +33,9 @@ sealed interface FavoritesRoute : AppRoute {
 
     @Serializable
     data object Root : FavoritesRoute
+
+    @Serializable
+    data class Details(val gameId: String) : FavoritesRoute
 }
 
 @Serializable
@@ -45,6 +48,9 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object Appearance : SettingsRoute
+
+    @Serializable
+    data object Library : SettingsRoute
 
     @Serializable
     data object About : SettingsRoute

@@ -21,14 +21,14 @@ import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.launch
 
 private data class SettingItem(val label: String, val action: SettingAction)
-private enum class SettingAction { APPEARANCE, ABOUT, LATER }
+private enum class SettingAction { APPEARANCE, LIBRARY, ABOUT, LATER }
 
 private val settingItems = listOf(
     SettingItem("Emulación", SettingAction.LATER),
     SettingItem("Controles", SettingAction.LATER),
     SettingItem("Audio", SettingAction.LATER),
     SettingItem("Pantalla", SettingAction.LATER),
-    SettingItem("Biblioteca", SettingAction.LATER),
+    SettingItem("Biblioteca", SettingAction.LIBRARY),
     SettingItem("Partidas", SettingAction.LATER),
     SettingItem("Almacenamiento", SettingAction.LATER),
     SettingItem("Apariencia", SettingAction.APPEARANCE),
@@ -37,7 +37,7 @@ private val settingItems = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onAppearance: () -> Unit, onAbout: () -> Unit) {
+fun SettingsScreen(onAppearance: () -> Unit, onLibrary: () -> Unit, onAbout: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     Scaffold(
@@ -56,6 +56,7 @@ fun SettingsScreen(onAppearance: () -> Unit, onAbout: () -> Unit) {
                     modifier = Modifier.clickable {
                         when (item.action) {
                             SettingAction.APPEARANCE -> onAppearance()
+                            SettingAction.LIBRARY -> onLibrary()
                             SettingAction.ABOUT -> onAbout()
                             SettingAction.LATER -> scope.launch {
                                 snackbar.showSnackbar("Disponible en próximos hitos")
