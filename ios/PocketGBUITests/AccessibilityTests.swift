@@ -40,8 +40,7 @@ final class ShellAccessibilityTests: XCTestCase {
         XCTAssertTrue(favorite.label.contains("Favorito"), favorite.label)
         // Solo controles propios: los botones de barra del sistema se dibujan a 36 pt y
         // iOS gestiona su área táctil.
-        for element in [card, favorite, app.tabBars.buttons["Biblioteca"], app.tabBars.buttons["Ajustes"]]
-            where element.exists {
+        for element in [card, favorite] where element.exists {
             XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.debugDescription)
             XCTAssertGreaterThanOrEqual(element.frame.height, 44, element.debugDescription)
         }

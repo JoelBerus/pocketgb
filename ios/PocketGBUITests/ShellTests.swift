@@ -80,9 +80,9 @@ final class ShellLibraryTests: XCTestCase {
 
         let card = app.buttons["game-card-Pruebas/rtc3test.gb"]
         XCTAssertTrue(card.waitForExistence(timeout: 10))
-        // No hay filtro GBA (SPEC §9).
+        // Filtros por consola, GBA incluido desde G7.
         XCTAssertTrue(app.buttons["GBC"].exists)
-        XCTAssertFalse(app.buttons["GBA"].exists)
+        XCTAssertTrue(app.buttons["GBA"].exists)
         if !card.isHittable { app.swipeUp() }
         card.tap()
         XCTAssertTrue(app.buttons["game-details-play"].waitForExistence(timeout: 5))
