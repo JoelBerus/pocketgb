@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-04
 
-**Rama:** `codex/android-port`. Commit verificado de la implementación original: `44cc0cb8ecda6adec010c8a682e42ff1f813c2c2`. Las correcciones de la 1ª vuelta de auditoría están en el árbol de trabajo (sin commit al redactar esta sección) y se registran en "Correcciones de la 1ª vuelta"; al commitearlas habrá que anotar su hash aquí.
+**Rama:** `codex/android-port`. Implementación original: `44cc0cb8ecda6adec010c8a682e42ff1f813c2c2`. Correcciones de la 1ª vuelta: `5f62e059489feddceeadc3d52ac88d4aa99b34ce` (72 JVM, 70 instrumentados, Debug/Release/lint y núcleo 65/65 verificados sobre ese árbol). Correcciones de la 2ª vuelta: commit siguiente a `5f62e05` (73 JVM; ver "2ª vuelta").
 
 **Alcance:** biblioteca SAF (`SafDocumentTree`, `LibraryFolderStore`), `LibraryViewModel` con escaneo fuera del hilo principal y preferencias en orden, Biblioteca (búsqueda, filtros, cuadrícula/lista, orden, "Continuar jugando", estados vacío/cargando/error), Favoritos reales, detalle del juego, Ajustes › Biblioteca y catálogo debug. Jugar sigue deshabilitado hasta A5 (regla dura 6: no se abre un juego sin la ruta de guardado atómica).
 
@@ -94,3 +94,15 @@ cd android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew clean :app:testDe
 ```
 
 Resultado: `BUILD SUCCESSFUL`. JVM: 72 tests, 0 fallos (antes 49). Instrumentados (emulador `Small_Phone_API_35`): 70 tests, 0 fallos (antes 61). Release: `aapt dump permissions` solo lista `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (sin `INTERNET`); los DEX de Release no contienen `DebugCatalog` ni `TestDocumentsProvider`. `make -C core test`: 65/65 requeridos. `make -C core asan`: 65/65 requeridos. `tools/android-screenshots.sh`: 36 capturas (18 pantallas × claro/oscuro; nuevas `library-loading` y `library-access-error`, inspeccionadas visualmente en claro y oscuro respectivamente).
+
+## 2ª vuelta (final)
+
+Informes: `A4-android-codex-v2.md` (APROBAR CON CAMBIOS, 3 hallazgos) y `A4-android-deepseek-v2.md` (APROBAR sin hallazgos; su 1ª auditoría había pasado por alto H1–H3, por lo que no se le da peso). Auditado: `5f62e05`.
+
+| ID | Corrección | Test |
+|---|---|---|
+| A4-V2-01 | El sufijo de id duplicado ya no usa `String.hashCode()`: son 6 bytes de SHA-256 del id de documento y, ante colisión residual, se desempata ordenando por id de documento (no por orden del proveedor). | `LibraryScannerTest.idsStayStableEvenWhenDocumentIdsShareAJavaHashCode` (`"Aa"`/`"BB"`, orden invertido). JVM: 73/73 tras el cambio. |
+| A4-V2-02 | **Aceptado, sin cambio.** La ventana exacta de H1 no se fuerza con un seam; la corrección elimina el snapshot obsoleto (el escritor persiste siempre `_prefs.value`) y el test de 150 rondas × 4 hilos la cubre de forma probabilística. No se hizo mutation testing. | — |
+| A4-V2-03 | Esta evidencia fija ahora el commit `5f62e05`. | — |
+
+Tras V2-01 solo se reejecutaron los tests JVM (73/73); los instrumentados no se repitieron (el cambio no toca SAF ni UI). `distributionSha256Sum` sigue pendiente.

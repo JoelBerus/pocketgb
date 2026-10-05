@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.library
 
 import java.io.IOException
+import java.security.MessageDigest
 import java.text.Normalizer
 
 /** Entrada de una carpeta, ya independiente de SAF para poder probar el escáner en JVM. */
@@ -73,15 +74,24 @@ object LibraryScanner {
      */
     private fun uniqueIds(items: List<Pair<String, TreeNode>>): List<Pair<String, TreeNode>> {
         val counts = items.groupingBy { it.first }.eachCount()
-        val used = HashSet<String>(items.size)
-        return items.map { (relative, node) ->
-            var id = if (counts.getValue(relative) == 1) relative else "$relative#${hex(node.id.hashCode())}"
-            while (!used.add(id)) id += "~" // colisión de hash o documento repetido: sigue siendo único
-            id to node
+        val base = items.map { (relative, node) ->
+            if (counts.getValue(relative) == 1) relative else "$relative#${digest(node.id)}"
+        }
+        // Colisión residual del resumen (o documento repetido): se desempata por id de documento,
+        // no por el orden del proveedor, para que el resultado siga siendo estable.
+        val rank = HashMap<Int, Int>()
+        items.indices.groupBy { base[it] }.values.filter { it.size > 1 }.forEach { group ->
+            group.sortedBy { items[it].second.id }.forEachIndexed { n, index -> rank[index] = n }
+        }
+        return items.mapIndexed { index, (_, node) ->
+            val n = rank[index]
+            (if (n == null || n == 0) base[index] else "${base[index]}~$n") to node
         }
     }
 
-    private fun hex(value: Int) = Integer.toHexString(value).padStart(8, '0')
+    private fun digest(documentId: String): String =
+        MessageDigest.getInstance("SHA-256").digest(documentId.toByteArray())
+            .take(6).joinToString("") { "%02x".format(it) }
 
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions

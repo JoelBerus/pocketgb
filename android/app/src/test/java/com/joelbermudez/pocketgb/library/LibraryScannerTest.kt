@@ -172,6 +172,18 @@ class LibraryScannerTest {
     }
 
     @Test
+    fun idsStayStableEvenWhenDocumentIdsShareAJavaHashCode() {
+        // "Aa" y "BB" tienen el mismo String.hashCode(): el id no puede depender de ese hash ni del orden.
+        val a = file("Aa", "Juego.gb")
+        val b = file("BB", "Juego.gb")
+        val heads = mapOf("Aa" to rom("A"), "BB" to rom("B"))
+        val forward = LibraryScanner.scan(FakeTree(mapOf(null to listOf(a, b)), heads))
+        val backward = LibraryScanner.scan(FakeTree(mapOf(null to listOf(b, a)), heads))
+        assertEquals(forward.associate { it.uri to it.id }, backward.associate { it.uri to it.id })
+        assertEquals(2, forward.map { it.id }.toSet().size)
+    }
+
+    @Test
     fun rootListingFailurePropagates() {
         val throwing = object : DocumentTree by FakeTree(dirs = emptyMap()) {
             override fun children(directoryId: String?): List<TreeNode> = throw IOException("revocado")
