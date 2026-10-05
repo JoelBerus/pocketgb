@@ -72,6 +72,14 @@ int main(void)
     for (int i = 0; i < 8; i++) if (got[i] != b[i]) { RESULT = 2; for (;;) {} }
     ee_read(7, got);                          /* sin escribir: 0xFF */
     for (int i = 0; i < 8; i++) if (got[i] != 0xFF) { RESULT = 3; for (;;) {} }
+#ifdef EE8K
+    /* Bloque 1000: solo existe con 8 KiB (con 512 B se confundiría con otro). */
+    ee_write(1000, b);
+    ee_read(1000, got);
+    for (int i = 0; i < 8; i++) if (got[i] != b[i]) { RESULT = 4; for (;;) {} }
+    ee_read(1000 & 63, got);
+    for (int i = 0; i < 8; i++) if (got[i] != 0xFF) { RESULT = 5; for (;;) {} }
+#endif
     RESULT = 0x600D;
     for (;;) {}
 }

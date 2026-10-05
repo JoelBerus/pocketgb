@@ -25,7 +25,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G1 · CPU ARM7TDMI | ☁️ | ✅ cerrado 2026-10-05 (SingleStepTests 100 %, arm/thumb/memory.gba PASS; auditoría Opus: APROBAR CON CAMBIOS → corregido) |
 | G2 · Bus, DMA, timers, IRQ, HLE | ☁️ | ✅ cerrado 2026-10-05 (bios/nes/memory.gba PASS; Opus: RECHAZAR → APROBAR CON CAMBIOS → corregido) |
 | G3 · PPU | ☁️ | ✅ cerrado 2026-10-05 (12/14 escenas idénticas a mGBA; Opus: APROBAR CON CAMBIOS → corregido) |
-| G4 · Cartucho y saves | ☁️ | implementado 2026-10-05 en `g4-gba-saves` (SRAM, Flash, EEPROM, RTC); auditoría en curso |
+| G4 · Cartucho y saves | ☁️ | ✅ cerrado 2026-10-05 (SRAM, Flash, EEPROM, RTC; Opus: APROBAR CON CAMBIOS → corregido) |
 | G5–G9 | ☁️ / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.

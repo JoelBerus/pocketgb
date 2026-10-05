@@ -17,6 +17,7 @@
 /* IDs de fabricante/dispositivo que esperan los juegos (GBATEK). */
 #define FLASH64_ID  0x1B32u   /* Panasonic MN63F805MNP */
 #define FLASH128_ID 0x1362u   /* Sanyo LE26FV10N1TS */
+#define GBA_RTC_MAX_OFFSET (200ll * 366 * 86400)   /* ±200 años en segundos */
 
 static bool rom_has(const gba *g, const char *s)
 {
@@ -73,7 +74,9 @@ void gba_cart_init(gba *g)
     g->has_rtc = g->opts.rtc == GBA_RTC_ON || (g->opts.rtc == GBA_RTC_AUTO && game_has_rtc(g));
     memset(&g->rtc, 0, sizeof g->rtc);
     g->rtc.status = 0x40;                         /* 24 horas, sin fallo de alimentación */
-    g->rtc_base = g->opts.unix_time;
+    g->rtc_base = 0;
+    g->rtc_base_cycles = 0;
+    gba_rtc_set_time(g, g->opts.unix_time);
     g->rtc_base_cycles = 0;
 }
 
@@ -101,9 +104,10 @@ uint8_t gba_cart_read8(gba *g, uint32_t addr)
 static void flash_write(gba *g, uint32_t off, uint8_t v)
 {
     gba_flash *f = &g->flash;
-    if (f->state == 3) {                          /* programar un byte */
-        g->save[((uint32_t)f->bank << 16) + off] = v;
-        g->save_dirty = true;
+    if (f->state == 3) {                          /* programar un byte: solo baja bits a 0 */
+        uint8_t *p = &g->save[((uint32_t)f->bank << 16) + off];
+        uint8_t nv = (uint8_t)(*p & v);
+        if (nv != *p) { *p = nv; g->save_dirty = true; }
         f->state = 0;
         return;
     }
@@ -114,10 +118,13 @@ static void flash_write(gba *g, uint32_t off, uint8_t v)
     }
     if (f->state == 0) {
         if (off == 0x5555 && v == 0xAA) f->state = 1;
+        else if (v == 0xF0) { f->id_mode = false; f->erase_armed = false; }   /* reinicio suelto */
+        else f->erase_armed = false;
         return;
     }
     if (f->state == 1) {
-        f->state = (off == 0x2AAA && v == 0x55) ? 2 : 0;
+        if (off == 0x2AAA && v == 0x55) f->state = 2;
+        else { f->state = 0; f->erase_armed = false; }   /* secuencia rota */
         return;
     }
     /* state 2: comando */
@@ -148,8 +155,10 @@ void gba_cart_write8(gba *g, uint32_t addr, uint8_t v)
 {
     switch (g->save_type) {
     case GBA_SAVE_SRAM:
-        g->save[addr & 0x7FFFu] = v;
-        g->save_dirty = true;
+        if (g->save[addr & 0x7FFFu] != v) {
+            g->save[addr & 0x7FFFu] = v;
+            g->save_dirty = true;
+        }
         break;
     case GBA_SAVE_FLASH64:
     case GBA_SAVE_FLASH128:
@@ -213,8 +222,13 @@ void gba_eeprom_write(gba *g, uint16_t v)
         uint32_t blocks = g->save_bytes / 8u;
         uint32_t block = blocks ? (e->addr & 0x3FFu) % blocks : 0;
         if (e->cmd == 2 && g->save_bytes) {
-            for (int i = 0; i < 8; i++) g->save[block * 8u + (uint32_t)i] = (uint8_t)(e->data >> (56 - 8 * i));
-            g->save_dirty = true;
+            for (int i = 0; i < 8; i++) {
+                uint8_t b = (uint8_t)(e->data >> (56 - 8 * i));
+                if (g->save[block * 8u + (uint32_t)i] != b) {
+                    g->save[block * 8u + (uint32_t)i] = b;
+                    g->save_dirty = true;
+                }
+            }
         } else if (e->cmd == 3) {
             e->read_addr = block;
             e->read_pos = 0;
@@ -304,6 +318,7 @@ static void rtc_commit(gba *g)
         int y = 2000 + (int)unbcd(r->buf[0]);
         unsigned m = unbcd(r->buf[1]), d = unbcd(r->buf[2]);
         unsigned hh = unbcd(r->buf[4] & 0x3F), mm = unbcd(r->buf[5]), ss = unbcd(r->buf[6]);
+        if (!(r->status & 0x40) && (r->buf[4] & 0x80) && hh < 12) hh += 12;   /* 12 h con PM */
         if (m < 1 || m > 12 || d < 1 || d > 31 || hh > 23 || mm > 59 || ss > 59) return;
         int yy = y - (m <= 2);
         int64_t era = yy / 400;
@@ -312,7 +327,8 @@ static void rtc_commit(gba *g)
         unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
         int64_t days = era * 146097 + (int64_t)doe - 719468;
         int64_t want = days * 86400 + hh * 3600 + mm * 60 + ss;
-        r->offset += want - rtc_now(g);
+        int64_t no = r->offset + (want - rtc_now(g));
+        if (no <= GBA_RTC_MAX_OFFSET && no >= -GBA_RTC_MAX_OFFSET) r->offset = no;
     } else if (r->cmd == 0) {
         r->status = 0;
         r->offset = 0;
@@ -403,8 +419,10 @@ gba_result gba_save_load(gba *g, const uint8_t *data, size_t len)
     if (!g || !data) return GBA_ERR_NULL_ARG;
     if (!g->rom) return GBA_ERR_NO_ROM;
     bool eeprom = g->save_type == GBA_SAVE_EEPROM512 || g->save_type == GBA_SAVE_EEPROM8K;
-    if (eeprom && g->opts.save_type == GBA_SAVE_AUTO && (len == 512 || len == 8192)) {
-        /* EEPROM sin ajuste: el tamaño del .sav decide. */
+    if (eeprom && g->opts.save_type == GBA_SAVE_AUTO && g->eeprom.addr_bits == 0 && (len == 512 || len == 8192)) {
+        /* EEPROM sin ajuste y sin tamaño confirmado: el tamaño del .sav decide.
+         * Una vez confirmado (por un .sav o por la DMA) ya no cambia: así una
+         * recarga de otro tamaño nunca trunca la partida (auditoría G4, A1). */
         g->save_type = len == 8192 ? GBA_SAVE_EEPROM8K : GBA_SAVE_EEPROM512;
         g->save_bytes = (uint32_t)len;
         g->eeprom.addr_bits = len == 8192 ? 14 : 6;
@@ -437,6 +455,8 @@ gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len)
     if (len != GBA_RTC_BYTES) return GBA_ERR_SAVE_SIZE;
     uint64_t off = 0;
     for (int i = 7; i >= 0; i--) off = (off << 8) | data[i];
+    /* ±200 años: un .rtc dañado no puede desbordar la hora (auditoría G4, M2). */
+    if ((int64_t)off > GBA_RTC_MAX_OFFSET || (int64_t)off < -GBA_RTC_MAX_OFFSET) return GBA_ERR_SAVE_SIZE;
     g->rtc.offset = (int64_t)off;
     g->rtc.status = data[8] & 0x6Au;
     return GBA_OK;
@@ -456,6 +476,8 @@ gba_result gba_rtc_save(const gba *g, uint8_t *out, size_t cap)
 void gba_rtc_set_time(gba *g, int64_t unix_time)
 {
     if (!g) return;
+    if (unix_time > GBA_RTC_MAX_OFFSET * 2) unix_time = GBA_RTC_MAX_OFFSET * 2;
+    if (unix_time < -GBA_RTC_MAX_OFFSET * 2) unix_time = -GBA_RTC_MAX_OFFSET * 2;
     g->rtc_base = unix_time;
     g->rtc_base_cycles = g->cycles;
 }

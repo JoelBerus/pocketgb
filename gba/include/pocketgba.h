@@ -128,14 +128,15 @@ size_t gba_audio_available(const gba *g);
 
 /* Partida del cartucho: bytes crudos del medio (compatible con mGBA/VBA);
  * el RTC va aparte (GBA_RTC_BYTES). */
-/* len == save_bytes (EEPROM sin ajuste: 512 u 8192, que fija el tamaño).
+/* len == save_bytes (EEPROM sin ajuste y sin tamaño confirmado: 512 u 8192, que
+ * lo fija; ya confirmado, solo el mismo tamaño).
  * Cualquier otro tamaño: GBA_ERR_SAVE_SIZE y la partida en memoria no cambia. */
 gba_result gba_save_load(gba *g, const uint8_t *data, size_t len);
 size_t gba_save_size(const gba *g);
 gba_result gba_save_write(const gba *g, uint8_t *out, size_t cap);
 bool gba_save_dirty(const gba *g);
 void gba_save_clear_dirty(gba *g);
-gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len);
+gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len); /* 16 B; desplazamiento ≤ ±200 años */
 gba_result gba_rtc_save(const gba *g, uint8_t *out, size_t cap);
 void gba_rtc_set_time(gba *g, int64_t unix_time);
 

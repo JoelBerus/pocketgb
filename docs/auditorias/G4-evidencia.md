@@ -47,3 +47,11 @@ Done 5336 runs in 601 second(s)
 salida: 0
 ```
 Sin crashes, fugas ni avisos de ASan/UBSan (cada ejecución: carga del ROM, partida y RTC del tamaño esperado, 3 frames con botones de la entrada). La semilla del corpus son las ROMs de jsmolka.
+
+### Fuzzer del cartucho (tras la auditoría, M3)
+```
+$ make -C gba fuzz-one FUZZER=fuzz_cart FUZZ_SECONDS=600
+Done 370715 runs in 601 second(s)
+salida: 0
+```
+Sin crashes ni avisos de ASan/UBSan (bus de cartucho, Flash, EEPROM y RTC con secuencias arbitrarias).

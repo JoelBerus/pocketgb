@@ -371,6 +371,18 @@ static void test_save_api(void)
     CHECK(gba_save_load(g, buf, 8192) == GBA_OK);
     CHECK(gba_save_size(g) == 8192 && g->eeprom.addr_bits == 14);
     CHECK(gba_save_load(g, buf, 1000) == GBA_ERR_SAVE_SIZE);
+    /* Tamaño confirmado: una recarga de otro tamaño se rechaza (auditoría G4, A1). */
+    CHECK(gba_save_load(g, buf, 512) == GBA_ERR_SAVE_SIZE);
+    CHECK(gba_save_size(g) == 8192);
+    gba_destroy(g);
+    /* Sin .sav: 512 hasta la primera DMA, que confirma 8 KiB; después no cambia. */
+    g = rom_with_tag("EEPROM_V124", NULL);
+    CHECK(gba_save_size(g) == 512);
+    gba_eeprom_dma(g, 81);
+    CHECK(gba_save_size(g) == 8192 && g->eeprom.addr_bits == 14);
+    gba_eeprom_dma(g, 9);
+    CHECK(gba_save_size(g) == 8192);
+    CHECK(gba_save_load(g, buf, 512) == GBA_ERR_SAVE_SIZE);
     gba_destroy(g);
     /* Con ajuste por juego el tamaño es fijo. */
     gba_options o;
@@ -387,6 +399,23 @@ static void test_save_api(void)
     gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0xF0);
     gba_bus_write8(g, 0x0E000123, 0x00);
     CHECK(gba_bus_read8(g, 0x0E000123) == 0xFF && !gba_save_dirty(g));
+    /* Programar solo baja bits a 0; reescribir lo mismo no marca la partida. */
+    gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0xA0);
+    gba_bus_write8(g, 0x0E000123, 0x0F);
+    CHECK(gba_bus_read8(g, 0x0E000123) == 0x0F && gba_save_dirty(g));
+    gba_save_clear_dirty(g);
+    gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0xA0);
+    gba_bus_write8(g, 0x0E000123, 0xF5);
+    CHECK(gba_bus_read8(g, 0x0E000123) == 0x05 && gba_save_dirty(g));
+    gba_save_clear_dirty(g);
+    gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0xA0);
+    gba_bus_write8(g, 0x0E000123, 0x05);
+    CHECK(!gba_save_dirty(g));
+    /* Borrado armado y secuencia rota: el 0x10 posterior no borra. */
+    gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0x80);
+    gba_bus_write8(g, 0x0E001234, 0x00);
+    gba_bus_write8(g, 0x0E005555, 0xAA); gba_bus_write8(g, 0x0E002AAA, 0x55); gba_bus_write8(g, 0x0E005555, 0x10);
+    CHECK(gba_bus_read8(g, 0x0E000123) == 0x05);
     gba_destroy(g);
     /* RTC: guardar y cargar el desplazamiento y el estado. */
     o.save_type = GBA_SAVE_AUTO;
@@ -401,6 +430,17 @@ static void test_save_api(void)
     CHECK(gba_rtc_load(g, r16, sizeof r16) == GBA_OK);
     CHECK(g->rtc.offset == -123456789 && g->rtc.status == 0x40);
     CHECK(gba_rtc_load(g, r16, 15) == GBA_ERR_SAVE_SIZE);
+    /* Desplazamiento absurdo (dañado u hostil): se rechaza (auditoría G4, M2). */
+    memset(r16, 0xFF, 8); r16[7] = 0x7F;
+    CHECK(gba_rtc_load(g, r16, sizeof r16) == GBA_ERR_SAVE_SIZE);
+    CHECK(g->rtc.offset == -123456789);
+    gba_destroy(g);
+    /* SRAM: reescribir el mismo byte no marca la partida. */
+    g = rom_with_tag("SRAM_V113", NULL);
+    gba_bus_write8(g, 0x0E000040, 0xFF);
+    CHECK(!gba_save_dirty(g));
+    gba_bus_write8(g, 0x0E000040, 0x12);
+    CHECK(gba_save_dirty(g));
     gba_destroy(g);
     free(buf);
 }

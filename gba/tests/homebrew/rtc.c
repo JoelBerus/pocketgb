@@ -1,8 +1,10 @@
 /*
  * rtc.c — ROM homebrew propia (MIT): lee el RTC S-3511A por GPIO como hacen
  * los juegos (GBATEK §GBA Cart Real-Time Clock): reinicio, modo 24 h, fecha y
- * hora; espera ~2 s y comprueba que avanza. El runner arranca con la hora
- * local 2026-10-05 12:34:56 (lunes). Resultado en 0x03007E00.
+ * hora; espera ~2 s y comprueba que avanza; fija otra fecha y hora y la lee
+ * de vuelta; lee en modo 12 h; envía un comando con los bits invertidos. El
+ * runner arranca con la hora local 2026-10-05 12:34:56 (lunes).
+ * Resultado en 0x03007E00.
  */
 #include "gba.h"
 
@@ -29,6 +31,16 @@ static unsigned recv_byte(void)
         v |= ((GPIO_DATA >> 1) & 1u) << i;
     }
     return v;
+}
+
+static void cmd_write(unsigned c, const unsigned *in, int n)
+{
+    GPIO_DIR = 7;
+    GPIO_DATA = 1;
+    GPIO_DATA = 5;
+    send_byte(c, 1);
+    for (int i = 0; i < n; i++) send_byte(in[i], 0);
+    GPIO_DATA = 1;
 }
 
 static void cmd(unsigned c, unsigned *out, int n)
@@ -66,6 +78,23 @@ int main(void)
     cmd(0x65, dt2, 7);
     unsigned s1 = (dt[6] >> 4) * 10 + (dt[6] & 15), s2 = (dt2[6] >> 4) * 10 + (dt2[6] & 15);
     if (s2 < s1 + 2) { RESULT = 4; for (;;) {} }
+    /* Fijar 2031-02-03 04:05:06 (lunes) y leerla de vuelta. */
+    static const unsigned set[7] = {0x31, 0x02, 0x03, 1, 0x04, 0x05, 0x06};
+    cmd_write(0x64, set, 7);
+    cmd(0x65, dt, 7);
+    if (dt[0] != 0x31 || dt[1] != 0x02 || dt[2] != 0x03 || (dt[4] & 0x3F) != 0x04 || dt[5] != 0x05 || dt[6] > 0x08) {
+        RESULT = 5; for (;;) {}
+    }
+    /* Modo 12 h: las 16:xx se leen como 4 con el bit PM. */
+    static const unsigned pm[7] = {0x31, 0x02, 0x03, 1, 0x16, 0x00, 0x00};
+    cmd_write(0x64, pm, 7);
+    st[0] = 0x00;
+    cmd(0x62, st, -1);
+    cmd(0x67, dt, 3);
+    if ((dt[0] & 0x3F) != 0x04 || !(dt[0] & 0x80)) { RESULT = 6; for (;;) {} }
+    /* Comando con los bits invertidos (0x67 → 0xE6): también se acepta. */
+    cmd(0xE6, dt2, 3);
+    if ((dt2[0] & 0x3F) != 0x04) { RESULT = 7; for (;;) {} }
     RESULT = 0x600D;
     for (;;) {}
 }

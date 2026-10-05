@@ -96,7 +96,7 @@ Detección del tipo de save, SRAM 32 KiB, Flash 64 KiB (SST/Panasonic) y 128 KiB
 - [x] EEPROM de 512 B y 8 KiB y RTC: ROMs homebrew propias que se autoverifican (`eeprom.c`, `rtc.c`).
 - [x] Tests unitarios: detección de las 6 cadenas, `.sav` de tamaño incorrecto rechazado sin tocar la partida, EEPROM con tamaño por `.sav` o por ajuste, modo ID de la Flash, `dirty`, `.rtc` ida y vuelta.
 - [x] ASan + UBSan limpios; fuzzer `fuzz_load_rom` 600 s sin crashes.
-- [ ] Auditoría ([G4-evidencia](../auditorias/G4-evidencia.md)).
+- [x] Auditoría Opus: APROBAR CON CAMBIOS → A1, M1–M3 y B1–B4 corregidos ([G4-opus](../auditorias/G4-opus.md), [respuesta](../auditorias/G4-respuesta.md), [evidencia](../auditorias/G4-evidencia.md)).
 
 ### G5 · APU (☁️)
 Los 4 canales heredados de GB (reutilizando el **diseño** de `apu.c`, no el código tal cual: distinta base de reloj y registros `SOUNDCNT_H` con volúmenes 25/50/100 %), 2 canales DirectSound con FIFO de 32 bytes alimentados por DMA 1/2 y timers 0/1, `SOUNDBIAS`, remuestreo a `sample_rate` (misma técnica de catch-up que M5). Save state v2 de GBA.
