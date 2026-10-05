@@ -55,9 +55,12 @@ final class ShellAccessibilityTests: XCTestCase {
         let first = app.buttons["game-card-cgb-acid2.gbc"]
         let second = app.buttons["game-card-dmg-acid2.gb"]
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
-        // Con AX5 la cuadrícula es larga: se desplaza hasta ver los dos.
-        for _ in 0..<6 where !(first.exists && second.exists && second.isHittable) {
-            app.swipeUp()
+        // Con AX5 cada card ocupa casi la pantalla: se desplaza en pasos cortos (un tercio
+        // de pantalla) hasta ver los dos; un swipe completo puede saltárselos.
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        for _ in 0..<20 where !(first.exists && second.exists && second.isHittable) {
+            from.press(forDuration: 0.05, thenDragTo: to)
         }
         XCTAssertTrue(first.exists && second.exists)
         // Una columna: el segundo juego está debajo del primero, no a su lado.
