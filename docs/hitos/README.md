@@ -28,7 +28,8 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G4 · Cartucho y saves | ☁️ | ✅ cerrado 2026-10-05 (SRAM, Flash, EEPROM, RTC; Opus: APROBAR CON CAMBIOS → corregido) |
 | G5 · APU | ☁️ | ✅ cerrado 2026-10-05 (núcleo; Opus: APROBAR CON CAMBIOS → corregido); 🍎 escucha en G8 |
 | G6 · Save states y determinismo | ☁️ | ✅ cerrado 2026-10-05 (estados validados, determinismo, fuzzers; auditoría de núcleo Opus: APROBAR CON CAMBIOS → corregido) |
-| G7–G9 | ☁️ + CI macOS / 🍎 | pendientes |
+| G7 · App: biblioteca y sesión | ☁️ + CI macOS | implementado 2026-10-05 en `g7-gba-app` (PR #17); falta confirmar CI verde (test AX5), evidencia y auditoría |
+| G8–G9 | ☁️ + CI macOS / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.
