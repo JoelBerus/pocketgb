@@ -499,6 +499,83 @@ static void test_apu(void)
     gba_destroy(g);
 }
 
+static void test_states(void)
+{
+    gba *g = rom_with_tag("FLASH1M_V103", NULL);
+    for (int f = 0; f < 3; f++) gba_run_frame(g);
+    size_t sz = gba_state_size(g);
+    CHECK(sz > 600 * 1024);
+    uint8_t *st = malloc(sz), *st2 = malloc(sz);
+    CHECK(gba_state_save(g, st, sz - 1) == GBA_ERR_BUFFER_TOO_SMALL);
+    CHECK(gba_state_save(g, st, sz) == GBA_OK);
+    /* Ida y vuelta exacta. */
+    CHECK(gba_state_load(g, st, sz) == GBA_OK);
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    CHECK(memcmp(st, st2, sz) == 0);
+    /* Errores: magia, versión, otro ROM, longitud, CRC y un campo fuera de rango. */
+    uint8_t keep = g->iwram[0x100];
+    g->iwram[0x100] = 0xAB;
+    memcpy(st2, st, sz); st2[0] = 'X';
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_MAGIC);
+    memcpy(st2, st, sz); st2[4] = 9;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_VERSION);
+    memcpy(st2, st, sz); st2[8] ^= 1;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_ROM_MISMATCH);
+    CHECK(gba_state_load(g, st, sz - 1) == GBA_ERR_STATE_CORRUPT);
+    memcpy(st2, st, sz); st2[100] ^= 0xFF;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    /* vcount = 300 con un CRC correcto: rango inválido, no se aplica nada. */
+    memcpy(st2, st, sz);
+    size_t vc_off = 44 + 16 * 4 + 2 * 4 + 10 * 4 + 18 * 4 + 2 * 4 + 1 + 3 +
+                    sizeof g->ewram + sizeof g->iwram + sizeof g->io + sizeof g->pal + sizeof g->vram + sizeof g->oam + 4 + 8 + 4;
+    st2[vc_off] = 0x2C; st2[vc_off + 1] = 0x01;
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < sz - 4; i++) {
+        crc ^= st2[i];
+        for (int k = 0; k < 8; k++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    crc = ~crc;
+    st2[sz - 4] = (uint8_t)crc; st2[sz - 3] = (uint8_t)(crc >> 8); st2[sz - 2] = (uint8_t)(crc >> 16); st2[sz - 1] = (uint8_t)(crc >> 24);
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    CHECK(g->iwram[0x100] == 0xAB);              /* la instancia no cambió */
+    st2[vc_off] = 0x10; st2[vc_off + 1] = 0x00;  /* el mismo archivo con vcount válido sí carga */
+    crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < sz - 4; i++) {
+        crc ^= st2[i];
+        for (int k = 0; k < 8; k++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    crc = ~crc;
+    st2[sz - 4] = (uint8_t)crc; st2[sz - 3] = (uint8_t)(crc >> 8); st2[sz - 2] = (uint8_t)(crc >> 16); st2[sz - 1] = (uint8_t)(crc >> 24);
+    CHECK(gba_state_load(g, st2, sz) == GBA_OK);
+    CHECK(g->vcount == 0x10 && g->iwram[0x100] == keep);
+    /* Auditoría G6: campos con CRC correcto pero incoherentes se rechazan. */
+    CHECK(gba_state_save(g, st, sz) == GBA_OK);
+    uint8_t pos = g->apu.ch[0].pos;
+    g->apu.ch[0].pos = 9;                        /* duty de 8 pasos: desplazamiento negativo */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->apu.ch[0].pos = pos;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    int64_t off = g->rtc.offset;
+    g->rtc.offset = INT64_MAX;                   /* rtc_now() desbordaría */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->rtc.offset = off;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    int64_t base = g->rtc_base;
+    g->rtc_base = INT64_MIN;
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->rtc_base = base;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    bool rtc = g->has_rtc;
+    g->has_rtc = !rtc;                           /* otra configuración de RTC */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->has_rtc = rtc;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    CHECK(gba_state_load(g, st, sz) == GBA_OK);
+    free(st);
+    free(st2);
+    gba_destroy(g);
+}
+
 int gba_unit_run(void)
 {
     test_load_rom();
@@ -513,6 +590,7 @@ int gba_unit_run(void)
     test_dma_self_retrigger();
     test_save_api();
     test_apu();
+    test_states();
     printf("%s unit: %d fallos\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }

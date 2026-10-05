@@ -140,7 +140,10 @@ gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len); /* 16 B; despl
 gba_result gba_rtc_save(const gba *g, uint8_t *out, size_t cap);
 void gba_rtc_set_time(gba *g, int64_t unix_time);
 
-/* Save states: formato propio versionado con CRC-32 y huella del ROM. */
+/* Save states: formato propio versionado con CRC-32 y huella del ROM.
+ * Cargar un estado restaura también la partida (SRAM/Flash/EEPROM) y el RTC de
+ * ese momento; se rechaza si el tipo de guardado o el RTC no coinciden con la
+ * sesión. La app debe respaldar el .sav antes de cargar un estado. */
 size_t gba_state_size(const gba *g);
 gba_result gba_state_save(const gba *g, uint8_t *out, size_t cap);
 gba_result gba_state_load(gba *g, const uint8_t *data, size_t len);

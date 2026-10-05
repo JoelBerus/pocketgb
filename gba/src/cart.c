@@ -17,7 +17,6 @@
 /* IDs de fabricante/dispositivo que esperan los juegos (GBATEK). */
 #define FLASH64_ID  0x1B32u   /* Panasonic MN63F805MNP */
 #define FLASH128_ID 0x1362u   /* Sanyo LE26FV10N1TS */
-#define GBA_RTC_MAX_OFFSET (200ll * 366 * 86400)   /* ±200 años en segundos */
 
 static bool rom_has(const gba *g, const char *s)
 {

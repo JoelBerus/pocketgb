@@ -108,7 +108,13 @@ Los 4 canales heredados de GB (reutilizando el **diseño** de `apu.c`, no el có
 - [ ] Escucha en el iPhone (G8).
 
 ### G6 · Save states, fuzzing, determinismo (☁️)
-Formato de estado completo (CPU, bus, PPU, APU, DMA, timers, cartucho, RTC) con CRC-32 y huella del ROM; carga en dos pasadas como en GB; fuzzers `fuzz_load_rom`, `fuzz_state_load`, `fuzz_io` (escrituras aleatorias a E/S) 3×600 s; test de determinismo (dos instancias con la misma entrada → framebuffers idénticos durante 1 000 frames); `check-globals` sin símbolos mutables; ASan y UBSan limpios en toda la suite. **Auditoría de núcleo completa** (Opus de respaldo en la nube; Codex en el Mac) antes de tocar la app.
+Formato de estado completo (CPU, bus, PPU, APU, DMA, timers, cartucho, RTC) con CRC-32 y huella del ROM.
+**Criterios:**
+- [x] Estado completo con validación de rangos y coherencia sobre una copia (la instancia no cambia ante un error); ida y vuelta exacta; errores de magia, versión, ROM, longitud, CRC y campo fuera de rango con CRC correcto (tests unitarios).
+- [x] Determinismo: modo `state` en 7 ROMs (vídeo con IRQ/DMA, audio PSG y DirectSound, EEPROM, Flash, BIOS) y modo `det` (dos instancias, hasta 1 000 frames) en 3: frames y audio idénticos.
+- [x] Fuzzers: `fuzz_load_rom` (600 s en G4), `fuzz_state_load` (datos arbitrarios y estados válidos mutados con CRC recalculado) y `fuzz_io` (escrituras arbitrarias a E/S, VRAM, OAM, paleta, EEPROM y SRAM), 600 s cada uno (resultado en la evidencia).
+- [x] `check-globals` y `check-symbols`; ASan + UBSan limpios en toda la suite.
+- [x] Auditoría de núcleo completa (Opus de respaldo en la nube; Codex en el Mac) antes de tocar la app ([G6-evidencia](../auditorias/G6-evidencia.md), [G6-opus](../auditorias/G6-opus.md): APROBAR CON CAMBIOS → [corregido](../auditorias/G6-respuesta.md)).
 
 ### G7 · App: biblioteca y sesión multiconsola (☁️ + CI macOS)
 `ConsoleCore` como protocolo; `GBCore` envuelve el puente actual sin cambiar su comportamiento (los 93 tests de la app deben seguir en verde); `GBACore` sobre `pocketgba.h` (se añade `gba/src` al target de Xcode como referencia a carpeta y `pocketgba.h` al modulemap); `RomEntry` acepta `.gba` (límite 32 MiB, cabecera GBA válida, mensaje de error propio); portadas, favoritos, filtros por consola en Biblioteca; `SaveStore` guarda `.sav` GBA + `.rtc` con la misma ruta atómica y backups y el mismo espejo junto al ROM (`SaveResolution` no cambia; se parametriza el tamaño esperado); save states GBA en la misma carpeta con prefijo de consola; BIOS opcional detectada en la raíz de la carpeta de la biblioteca (`gba_bios.bin`, 16 KiB, se valida por SHA-256 conocido y se informa en Ajustes). **Criterio:** CI verde, capturas de la biblioteca con un homebrew `.gba`, test de que un save GBA de tamaño incorrecto no se sobrescribe.

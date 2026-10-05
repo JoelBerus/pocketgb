@@ -49,7 +49,7 @@ asan: check-roms
 
 # libFuzzer (clang con -fsanitize=fuzzer; en macOS: brew install llvm).
 fuzz:
-	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_cart
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_cart fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_io
 	@for f in fuzz/fuzz_*.c; do \
 	  n=$$(basename $$f .c); mkdir -p fuzz/corpus/$$n; \
 	  $(CC) -std=c11 -g -O2 -DGBA_FUZZ_HOOKS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include $$f $(SRCS) -o $(BUILD)/$$n -lm || exit 1; \
@@ -57,8 +57,8 @@ fuzz:
 	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) -max_len=262144 -rss_limit_mb=4096 fuzz/corpus/$$n || exit 1; \
 	done
 
-# Un solo fuzzer: make fuzz-one FUZZER=fuzz_cart FUZZ_SECONDS=600
-FUZZER ?= fuzz_cart
+# Un solo fuzzer: make fuzz-one FUZZER=fuzz_io FUZZ_SECONDS=600
+FUZZER ?= fuzz_io
 fuzz-one:
 	@mkdir -p $(BUILD) fuzz/corpus/$(FUZZER)
 	$(CC) -std=c11 -g -O2 -DGBA_FUZZ_HOOKS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include fuzz/$(FUZZER).c $(SRCS) -o $(BUILD)/$(FUZZER) -lm

@@ -325,4 +325,6 @@ static inline uint32_t gba_ror32(uint32_t v, unsigned s)
     return s ? (v >> s) | (v << (32u - s)) : v;
 }
 
+#define GBA_RTC_MAX_OFFSET (200ll * 366 * 86400)   /* ±200 años en segundos */
+
 #endif

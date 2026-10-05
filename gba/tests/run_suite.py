@@ -6,6 +6,8 @@ Formato: hito|ruta|modo|max_frames|tipo[|referencia]
   modo: unit | sst (archivo .json.bin de SingleStepTests) | jsmolka | ref (PNG en gba/tests/ref/)
         | hb (resultado 0x600D en 0x03007E00) | hb-rtc (igual, con RTC forzado)
         | audio:HZ (frecuencia de la salida ±2 % y pico suficiente)
+        | state (guardar a los max_frames, 120 más, cargar, 120 más: todo idéntico)
+        | det (dos instancias, misma entrada: frames y audio idénticos)
   tipo: requerido (bloquea) | known-fail | info
 Sale con 1 si falla un caso requerido de un hito <= --hito.
 """
@@ -82,6 +84,10 @@ def main():
             cmd = [a.bin, fn, "--mode", "audio", "--freq", parts[1], "--max-frames", str(frames)]
             if len(parts) > 2:
                 cmd += ["--side", parts[2]]
+        elif modo == "det":
+            cmd = [a.bin, fn, "--mode", "det", "--max-frames", str(frames)]
+        elif modo == "state":
+            cmd = [a.bin, fn, "--mode", "state", "--max-frames", str(frames)]
         elif modo == "hb-rtc":
             cmd = [a.bin, fn, "--mode", "hb", "--rtc", "--max-frames", str(frames)]
         else:
