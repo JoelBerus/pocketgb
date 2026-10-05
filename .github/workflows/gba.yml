@@ -26,11 +26,13 @@ jobs:
           key: gba-test-roms-${{ hashFiles('tools/fetch-gba-test-roms.sh') }}
       - name: Pruebas libres (jsmolka, SingleStepTests)
         run: tools/fetch-gba-test-roms.sh
-      - name: Compilador
-        run: clang --version
+      - name: Compilador y enlazador ARM (ROMs homebrew de prueba)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lld llvm > /dev/null
+          clang --version && ld.lld --version && llvm-objcopy --version | head -1
       - name: Contrato y reglas del núcleo
         run: make -C gba check-header check-globals check-symbols
       - name: Suite
-        run: make -C gba test HITO=G2
+        run: make -C gba test HITO=G3
       - name: ASan + UBSan
-        run: make -C gba asan HITO=G2
+        run: make -C gba asan HITO=G3

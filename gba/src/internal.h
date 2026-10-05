@@ -87,8 +87,19 @@ typedef struct gba_timer {
     uint32_t sub;                  /* ciclos acumulados bajo el prescaler */
 } gba_timer;
 
+/* PPU: referencias internas de los fondos afines y búferes de una línea. */
+typedef struct gba_ppu {
+    int32_t ref_x[2], ref_y[2];    /* BG2/BG3, 20.8 con signo (se recargan en VBlank) */
+    uint16_t bg[4][GBA_SCREEN_W];  /* color BGR555; bit 15 = transparente */
+    uint16_t obj[GBA_SCREEN_W];    /* color del objeto delantero */
+    uint8_t obj_prio[GBA_SCREEN_W];/* 4 = sin objeto */
+    uint8_t obj_semi[GBA_SCREEN_W];
+    uint8_t obj_win[GBA_SCREEN_W];
+} gba_ppu;
+
 struct gba {
     gba_arm cpu;
+    gba_ppu ppu;
     uint8_t arm_lut[4096];         /* bits 27-20 y 7-4 */
     uint8_t thumb_lut[1024];       /* bits 15-6 */
 
@@ -174,6 +185,11 @@ enum {
     GBA_IRQ_TIMER0 = 1u << 3, GBA_IRQ_SERIAL = 1u << 7, GBA_IRQ_DMA0 = 1u << 8,
     GBA_IRQ_KEYPAD = 1u << 12, GBA_IRQ_GAMEPAK = 1u << 13
 };
+
+/* ppu.c */
+void gba_ppu_render_line(gba *g, unsigned line);
+void gba_ppu_vblank(gba *g);                     /* recarga las referencias afines */
+void gba_ppu_reload_ref(gba *g, unsigned bg);    /* tras escribir BGxX/BGxY */
 
 /* hle.c: BIOS en alto nivel (sin la BIOS de Nintendo) */
 void gba_hle_install(gba *g);                    /* manejador de IRQ propio en la zona de la BIOS */

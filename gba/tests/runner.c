@@ -251,7 +251,7 @@ static bool cpu_idle_loop(const gba *g)
 
 int main(int argc, char **argv)
 {
-    const char *rom = NULL, *mode = NULL, *sst = NULL;
+    const char *rom = NULL, *mode = NULL, *sst = NULL, *dump = NULL, *frames = NULL, *keys = NULL, *ref = NULL;
     long max_frames = 600, limit = 0, bench = 0;
     int show = 5;
     bool unit = false;
@@ -263,6 +263,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--max-frames") && i + 1 < argc) max_frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--bench") && i + 1 < argc) bench = atol(argv[++i]);
         else if (!strcmp(argv[i], "--unit")) unit = true;
+        else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = argv[++i];
+        else if (!strcmp(argv[i], "--keys") && i + 1 < argc) keys = argv[++i];
+        else if (!strcmp(argv[i], "--ref") && i + 1 < argc) ref = argv[++i];
         else if (argv[i][0] != '-') rom = argv[i];
         else { fprintf(stderr, "opción desconocida: %s\n", argv[i]); return 2; }
     }
@@ -280,12 +284,60 @@ int main(int argc, char **argv)
     free(data);
     if (r != GBA_OK) { fprintf(stderr, "%s: %s\n", rom, gba_result_str(r)); gba_destroy(g); return 2; }
     int rc = 0;
-    if (bench > 0) {
+    if (dump && frames) {
+        /* Vuelca los frames pedidos (lista creciente "1,30,60") en RGBA crudo.
+         * --keys "frame:máscara,..." pulsa botones desde ese frame. */
+        FILE *out = fopen(dump, "wb");
+        if (!out) { gba_destroy(g); return 2; }
+        long frame = 0;
+        const char *p = frames;
+        while (*p) {
+            long want = strtol(p, (char **)&p, 10);
+            while (frame < want) {
+                if (keys) {
+                    const char *k = keys;
+                    while (*k) {
+                        long at = strtol(k, (char **)&k, 10);
+                        long mask = (*k == ':') ? strtol(k + 1, (char **)&k, 0) : 0;
+                        if (at == frame) gba_set_buttons(g, (uint16_t)mask);
+                        if (*k == ',') k++;
+                        else break;
+                    }
+                }
+                gba_run_frame(g);
+                frame++;
+            }
+            fwrite(gba_framebuffer(g), 4, GBA_SCREEN_W * GBA_SCREEN_H, out);
+            if (*p == ',') p++;
+            else break;
+        }
+        fclose(out);
+    } else if (bench > 0) {
         clock_t t0 = clock();
         for (long f = 0; f < bench; f++) gba_run_frame(g);
         double s = (double)(clock() - t0) / CLOCKS_PER_SEC;
         double fps = s > 0 ? (double)bench / s : 0;
         printf("bench: %ld frames en %.2f s = %.0f fps (%.1fx tiempo real)\n", bench, s, fps, fps / 59.7275);
+    } else if (mode && !strcmp(mode, "ref") && ref) {
+        /* Frame max_frames idéntico (RGB) a la referencia RGBA cruda. */
+        size_t rlen;
+        uint8_t *want = read_file(ref, &rlen);
+        if (!want || rlen != (size_t)GBA_SCREEN_W * GBA_SCREEN_H * 4) {
+            fprintf(stderr, "referencia no válida: %s\n", ref);
+            free(want);
+            gba_destroy(g);
+            return 2;
+        }
+        for (long f = 0; f < max_frames; f++) gba_run_frame(g);
+        const uint32_t *fb = gba_framebuffer(g);
+        long diff = 0;
+        for (size_t i = 0; i < (size_t)GBA_SCREEN_W * GBA_SCREEN_H; i++) {
+            uint32_t w = (uint32_t)want[i * 4] | ((uint32_t)want[i * 4 + 1] << 8) | ((uint32_t)want[i * 4 + 2] << 16);
+            if ((fb[i] & 0xFFFFFFu) != w) diff++;
+        }
+        free(want);
+        if (diff) { printf("FAIL %s: %ld píxeles distintos de la referencia\n", rom, diff); rc = 1; }
+        else printf("PASS %s (idéntico a la referencia)\n", rom);
     } else if (mode && !strcmp(mode, "jsmolka")) {
         long f;
         for (f = 0; f < max_frames && !cpu_idle_loop(g); f++) gba_run_frame(g);

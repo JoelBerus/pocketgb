@@ -36,3 +36,4 @@ android/local.properties
 .DS_Store
 __pycache__/
 gba/tests/roms
+tools/oracle/mgba

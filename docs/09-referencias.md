@@ -21,4 +21,5 @@
 | **SkyEmu**: https://github.com/skylersaleh/SkyEmu | MIT | Única fuente de la que se puede copiar código, citando el origen en el archivo. |
 | **zaydlang/multiplication-algorithm** | zlib | Acarreo de las multiplicaciones (`gba/src/arm_mulcarry.c`, portado y marcado como modificado). |
 | **jsmolka/gba-tests**, **SingleStepTests/ARM7TDMI** | MIT | Pruebas; descarga fijada a commit. |
-| **mGBA** (MPL-2.0), **NanoBoyAdvance** (GPLv3), **Hades** (GPLv2), **FuzzARM** (GPLv3) | — | Solo lectura. No copiar. |
+| **mGBA** 0.10.5 (MPL-2.0) | — | Solo lectura y **oráculo de desarrollo** de la PPU (`make -C gba oracle`, nunca enlazado en la app). No copiar. |
+| **NanoBoyAdvance** (GPLv3), **Hades** (GPLv2), **FuzzARM** (GPLv3) | — | Solo lectura. No copiar. |
