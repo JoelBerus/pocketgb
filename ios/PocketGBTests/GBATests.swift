@@ -112,6 +112,45 @@ struct GBATests {
         #expect(try store.load() == foreign)
     }
 
+    /// Auditoría Codex G7-2/G7-4: un espejo más nuevo con el tamaño de OTRO medio (64/128 KiB
+    /// en un cartucho SRAM de 32 KiB, medio + RTC sin RTC…) no se instala ni desplaza la local.
+    @Test func newerMirrorOfAnotherMediumNeverReplacesTheLocalSave() throws {
+        let probe = try GBACoreBridge()
+        let info = try probe.loadROM(Self.rom(), bios: nil, unixTime: 0)
+        let validSizes = EmulatorSession.validSaveSizes(info)
+        #expect(validSizes == [32 * 1024])
+        // El puente tampoco acepta esos tamaños aunque sean "de algún medio GBA".
+        for size in [512, 8192, 64 * 1024, 128 * 1024, 32 * 1024 + 16] {
+            #expect(throws: CoreError.sramSize) { try probe.sramLoad(Data(count: size)) }
+        }
+        let store = SaveStore(directory: dir, fingerprint: info.fingerprint)
+        let local = Data(repeating: 0x11, count: 32 * 1024)
+        try store.save(local)
+        let mirror = SaveMirror(url: dir.appendingPathComponent("juego.sav"))
+        for size in [1000, 512, 8192, 64 * 1024, 128 * 1024, 32 * 1024 + 16] {
+            let foreign = Data(repeating: 0x77, count: size)
+            let outcome = try SaveOpening.prepare(
+                store: store, mirror: mirror,
+                snapshot: .read(foreign, Date().addingTimeInterval(3600)), validSizes: validSizes)
+            #expect(outcome.data == local, "tamaño \(size)")
+            #expect(try store.load() == local, "tamaño \(size)")
+            #expect(store.backups().isEmpty, "tamaño \(size)")
+        }
+    }
+
+    /// Con RTC, el medio y el medio + 16 bytes son válidos; ningún otro tamaño.
+    @Test func rtcCartridgeAcceptsOnlyItsMediumWithOrWithoutTheClock() {
+        var info = RomInfo(title: "RTC", cartType: 0, sramBytes: 32 * 1024, hasBattery: true, hasRTC: true,
+                           headerChecksumOK: true, fingerprint: "x")
+        info.console = .gameBoyAdvance
+        #expect(GBACoreBridge.validSaveSizes(info) == [32 * 1024, 32 * 1024 + 16])
+        var eeprom = RomInfo(title: "EE", cartType: 0, sramBytes: 512, hasBattery: true, hasRTC: true,
+                             headerChecksumOK: true, fingerprint: "y")
+        eeprom.console = .gameBoyAdvance
+        eeprom.eeprom = true
+        #expect(GBACoreBridge.validSaveSizes(eeprom) == [512, 8192, 512 + 16, 8192 + 16])
+    }
+
     @Test func sessionSavesGBASRAMThroughTheNormalPath() throws {
         let session = try EmulatorSession(romData: Self.rom(value: 0x7E), savesDirectory: dir,
                                           console: .gameBoyAdvance, onAudioInterrupted: {})
