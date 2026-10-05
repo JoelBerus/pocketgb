@@ -60,16 +60,16 @@ Rama `g0-gba-instrucciones`. Este documento aprobado; `docs/10-gba-spec.md` (equ
 - [x] `gba/` con contrato, Makefile (`test`, `asan`, `check-header`, `check-globals`, `check-symbols`), runner y suite; `tools/fetch-gba-test-roms.sh` (descarga fijada a commit; `codeload` está bloqueado en la nube, así que se usa git en vez de tarballs con hash).
 - [x] El hook bloquea un ROM GBA renombrado a `.txt` y un `gba_bios.bin` de 16 KiB.
 - [x] `.github/workflows/gba.yml` (Linux) y `docs/10-gba-spec.md`.
-- [ ] Auditoría ([G0-evidencia](../auditorias/G0-evidencia.md)).
+- [x] Auditoría Opus: APROBAR CON CAMBIOS → G0-1..4 corregidos ([G0-opus](../auditorias/G0-opus.md), [respuesta](../auditorias/G0-G1-respuesta.md)).
 
 ### G1 · CPU ARM7TDMI (☁️)
 `arm.c`/`thumb.c` (decodificación por tabla de 4096 entradas para ARM y 1024 para Thumb, generada en tiempo de compilación con `.inc`), banca de registros por modo, CPSR/SPSR, excepciones (IRQ, SWI, undefined), pipeline de 3 etapas modelado como prefetch de 2 instrucciones (necesario para que `PC` lea +8/+4), tiempos N/S/I por acceso. Sin PPU: memoria plana de prueba.
 **Criterios:**
-- [x] SingleStepTests/ARM7TDMI al 100 %: 47 archivos × 50 000 casos (incluye el acarreo de las multiplicaciones).
+- [x] SingleStepTests/ARM7TDMI al 100 %: 45 archivos × 50 000 casos (2 250 000) (incluye el acarreo de las multiplicaciones).
 - [x] `arm.gba` y `thumb.gba` de jsmolka en PASS (resultado en r12 al llegar al bucle final). `memory.gba` también pasa.
 - [x] ASan + UBSan limpios.
 - [x] `--bench`: 13,5× tiempo real solo CPU con 1 ciclo por acceso (el 50× que pedía el borrador era irreal para un intérprete ARM; el objetivo que importa es el del iPhone con vídeo y audio, medido en G3 y G8).
-- [ ] Auditoría ([G1-evidencia](../auditorias/G1-evidencia.md)).
+- [x] Auditoría Opus: APROBAR CON CAMBIOS → G1-1..3 corregidos ([G1-opus](../auditorias/G1-opus.md), [respuesta](../auditorias/G0-G1-respuesta.md)).
 
 ### G2 · Bus, DMA, timers, interrupciones, HLE de BIOS (☁️)
 Mapa de memoria completo (BIOS, EWRAM 256 KiB con waitstate 2, IWRAM, E/S, paleta, VRAM con espejo, OAM, ROM con 3 regiones de waitstate y prefetch, SRAM), `WAITCNT`, lecturas abiertas (open bus) y acceso desalineado, `IE/IF/IME`, `HALTCNT`, 4 DMA (inmediato, VBlank, HBlank, FIFO, especial del vídeo), 4 timers en cascada, `KEYINPUT`/`KEYCNT`. HLE de SWI: `SoftReset`, `RegisterRamReset`, `Halt`, `IntrWait`, `VBlankIntrWait`, `Div`, `Sqrt`, `ArcTan(2)`, `CpuSet`, `CpuFastSet`, `BgAffineSet`, `ObjAffineSet`, `LZ77`, `Huffman`, `RLUnComp`, `Diff*`, `MidiKey2Freq`, `SoundBias`; lo no cubierto se registra en una lista de "known-unimplemented" como hoy. Lectura de la BIOS protegida (devuelve la última instrucción leída desde la BIOS).

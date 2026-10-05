@@ -21,8 +21,8 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 | Hito | Dónde | Estado |
 |---|---|---|
-| G0 · Instrucciones y andamiaje | ☁️ | implementado 2026-10-05 en `g0-gba-instrucciones`; auditoría en curso |
-| G1 · CPU ARM7TDMI | ☁️ | implementado 2026-10-05 (SingleStepTests 100 %, arm/thumb.gba PASS); auditoría en curso |
+| G0 · Instrucciones y andamiaje | ☁️ | ✅ cerrado 2026-10-05 (auditoría Opus: APROBAR CON CAMBIOS → corregido) |
+| G1 · CPU ARM7TDMI | ☁️ | ✅ cerrado 2026-10-05 (SingleStepTests 100 %, arm/thumb/memory.gba PASS; auditoría Opus: APROBAR CON CAMBIOS → corregido) |
 | G2–G9 | ☁️ / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.

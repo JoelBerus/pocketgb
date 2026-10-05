@@ -24,8 +24,16 @@ while IFS= read -r -d '' f; do
       printf 'pre-commit: bloqueado %q (contiene cabecera de cartucho Game Boy Advance)\n' "$f"; fail=1
     fi
   fi
+  # BIOS de GBA (16 KiB): por nombre, por su SHA-1 publicado o por el salto de reset
+  # con que empieza (b 0x68 = 18 00 00 EA), sin importar el nombre.
   if [ "$sz" -eq 16384 ]; then
-    case "$lower" in *bios*|*.bin) printf 'pre-commit: bloqueado %q (posible BIOS de GBA)\n' "$f"; fail=1;; esac
+    head4=$(git cat-file blob ":$f" | dd bs=1 count=4 2>/dev/null | xxd -p)
+    if command -v sha1sum >/dev/null; then h=$(git cat-file blob ":$f" | sha1sum | cut -d' ' -f1)
+    else h=$(git cat-file blob ":$f" | shasum -a 1 | cut -d' ' -f1); fi
+    case "$lower" in *bios*|*.bin) bios=1;; *) bios=0;; esac
+    if [ "$bios" = 1 ] || [ "$head4" = "180000ea" ] || [ "$h" = "300c20df6731a33952ded8c436f7f186d25d3492" ]; then
+      printf 'pre-commit: bloqueado %q (posible BIOS de GBA)\n' "$f"; fail=1
+    fi
   fi
 done < <(git diff --cached --name-only -z --diff-filter=ACMR)
 exit $fail

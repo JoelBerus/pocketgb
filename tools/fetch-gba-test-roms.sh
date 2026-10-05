@@ -14,7 +14,7 @@ STAMP="$JSMOLKA_SHA $SST_SHA"
 if [ -f "$DEST/.version" ] && [ "$(cat "$DEST/.version")" = "$STAMP" ]; then
   echo "Pruebas GBA ya presentes en $DEST"; exit 0
 fi
-fetch() { # repo sha dir
+fetch() { # repo dir sha
   rm -rf "$2"; mkdir -p "$2"
   git -C "$2" init -q
   git -C "$2" remote add origin "https://github.com/$1.git"

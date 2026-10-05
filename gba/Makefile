@@ -6,7 +6,7 @@ endif
 HITO    ?= G1
 FUZZ_SECONDS ?= 60
 BUILD   := build
-CSTD    := -std=c11 -Wall -Wextra -Werror -pedantic
+CSTD    := -std=c11 -Wall -Wextra -Werror -pedantic -fno-common
 CFLAGS  ?= -O2 -g
 INC     := -Iinclude -Isrc
 # SHA-256 propio compartido con el núcleo GB (sin copiarlo).
@@ -17,7 +17,7 @@ ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 SST_LIMIT ?= 0
 
-.PHONY: all lib test asan sst fuzz check-header check-globals check-symbols clean
+.PHONY: all lib test asan check-roms check-header check-globals check-symbols clean
 
 all: lib
 
@@ -39,7 +39,7 @@ $(BUILD)/gbatest: $(SRCS) $(TEST_SRCS) include/pocketgba.h $(wildcard src/*.h)
 	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) -DGBA_TEST_HOOKS $(INC) -I../core/include $(SRCS) $(TEST_SRCS) -o $@ -lm
 
 check-roms:
-	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba GBA: ejecuta tools/fetch-test-roms.sh"; exit 1; }
+	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba GBA: ejecuta tools/fetch-gba-test-roms.sh"; exit 1; }
 
 test: check-roms $(BUILD)/gbatest
 	python3 tests/run_suite.py --bin $(BUILD)/gbatest --roms $(ROMS) --suite tests/suite.txt --hito $(HITO) --sst-limit $(SST_LIMIT)
@@ -53,7 +53,7 @@ check-header:
 	@echo "pocketgba.h compila aislado: OK"
 
 check-globals: lib
-	@out=$$(nm $(BUILD)/libpocketgba.a | grep -E ' [bBdD] ' || true); \
+	@out=$$(nm $(BUILD)/libpocketgba.a | grep -E ' [bBdDcCsS] ' || true); \
 	syms=$$(nm $(BUILD)/libpocketgba.a | wc -l); \
 	if [ "$$syms" -eq 0 ]; then echo "nm no produjo salida"; exit 1; fi; \
 	if [ -n "$$out" ]; then echo "Estado global mutable encontrado:"; echo "$$out"; exit 1; else echo "Sin estado global mutable: OK"; fi

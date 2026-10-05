@@ -69,6 +69,7 @@ typedef struct gba_test_bus {
     uint32_t nwrites;
     gba_test_txn writes[GBA_TEST_MAX_TXN];
     bool missing_read;            /* una lectura de datos sin transacción */
+    uint32_t nreads;              /* lecturas de datos hechas */
 } gba_test_bus;
 
 struct gba {

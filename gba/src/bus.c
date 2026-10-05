@@ -16,9 +16,12 @@ static uint32_t test_read(gba *g, uint32_t addr, uint32_t size, bool code)
     gba_test_bus *t = &g->test;
     for (uint32_t i = 0; i < t->ntxn; i++) {
         gba_test_txn *x = &t->txn[i];
-        if (x->kind == (code ? 0u : 1u) && x->size == size && (x->addr & ~(size - 1u)) == addr)
+        if (x->kind == (code ? 0u : 1u) && x->size == size && (x->addr & ~(size - 1u)) == addr) {
+            if (!code) t->nreads++;
             return x->data;
+        }
     }
+    if (!code) t->nreads++;
     if (code) {
         if (addr == t->base_addr) return t->opcode;
         return size == 2 ? (addr & 0xFFFFu) : addr;

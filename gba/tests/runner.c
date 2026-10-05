@@ -194,6 +194,11 @@ static int sst_compare(const gba *g, const sst_case *t, char *why, size_t cap)
         ew++;
     }
     if (ew != g->test.nwrites) { snprintf(why, cap, "%u escrituras de más", g->test.nwrites - ew); return 1; }
+    /* Lecturas de datos: todas deben existir en la prueba y ser las mismas en número. */
+    if (g->test.missing_read) { snprintf(why, cap, "lectura de datos que la prueba no tiene"); return 1; }
+    uint32_t er = 0;
+    for (uint32_t i = 0; i < t->ntxn; i++) er += t->txn[i].kind == 1;
+    if (er != g->test.nreads) { snprintf(why, cap, "%u lecturas de datos, esperadas %u", g->test.nreads, er); return 1; }
     return 0;
 }
 

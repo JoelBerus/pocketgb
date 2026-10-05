@@ -122,6 +122,9 @@ bool gba_arm_mul_carry(int flavor, uint32_t rm, uint32_t rs, uint64_t acc)
         iters++;
     } while (!(multiplier == 0 || (is_signed && multiplier == 0x1FFFFFFFFull)));
     pcarry.lo |= csa.carry;
+    /* Invariante: 1 <= iters <= 4 (el multiplicador de 33 bits queda en 0 o en
+     * todo unos tras 4 desplazamientos aritméticos de 8); se acota por si acaso. */
+    if (iters > 4) iters = 4;
     static const int correction[5] = {0, 23, 15, 7, 31};
     pcarry = mc_ror(pcarry, correction[iters]);
     if (!is_long && iters == 4) return (pcarry.hi >> 31) & 1u;
