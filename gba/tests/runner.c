@@ -251,7 +251,8 @@ static bool cpu_idle_loop(const gba *g)
 
 int main(int argc, char **argv)
 {
-    const char *rom = NULL, *mode = NULL, *sst = NULL, *dump = NULL, *frames = NULL, *keys = NULL, *ref = NULL;
+    const char *rom = NULL, *mode = NULL, *sst = NULL, *dump = NULL, *frames = NULL, *keys = NULL, *ref = NULL, *wav = NULL;
+    double want_freq = 0;
     long max_frames = 600, limit = 0, bench = 0;
     bool force_rtc = false;
     int show = 5;
@@ -269,6 +270,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--keys") && i + 1 < argc) keys = argv[++i];
         else if (!strcmp(argv[i], "--ref") && i + 1 < argc) ref = argv[++i];
         else if (!strcmp(argv[i], "--rtc")) force_rtc = true;
+        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
+        else if (!strcmp(argv[i], "--freq") && i + 1 < argc) want_freq = atof(argv[++i]);
         else if (argv[i][0] != '-') rom = argv[i];
         else { fprintf(stderr, "opción desconocida: %s\n", argv[i]); return 2; }
     }
@@ -344,6 +347,48 @@ int main(int argc, char **argv)
         free(want);
         if (diff) { printf("FAIL %s: %ld píxeles distintos de la referencia\n", rom, diff); rc = 1; }
         else printf("PASS %s (idéntico a la referencia)\n", rom);
+    } else if (mode && !strcmp(mode, "audio")) {
+        /* Mide la frecuencia (cruces por cero ascendentes) y el pico del canal
+         * izquierdo en el último segundo; opcionalmente vuelca un WAV. */
+        size_t cap = (size_t)(max_frames + 2) * 1024u;
+        int16_t *pcm = malloc(cap * 2 * sizeof *pcm);
+        size_t n = 0;
+        if (!pcm) { gba_destroy(g); return 2; }
+        for (long f = 0; f < max_frames; f++) {
+            gba_run_frame(g);
+            n += gba_audio_read(g, pcm + 2 * n, cap - n);
+        }
+        if (wav) {
+            FILE *w = fopen(wav, "wb");
+            if (w) {
+                uint32_t rate = 48000, bytes = (uint32_t)(n * 4);
+                uint8_t h[44] = {'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,1,0,2,0,
+                                 0,0,0,0,0,0,0,0,4,0,16,0,'d','a','t','a',0,0,0,0};
+                uint32_t riff = 36 + bytes, br = rate * 4;
+                memcpy(h + 4, &riff, 4); memcpy(h + 24, &rate, 4); memcpy(h + 28, &br, 4); memcpy(h + 40, &bytes, 4);
+                fwrite(h, 1, 44, w);
+                fwrite(pcm, 4, n, w);
+                fclose(w);
+            }
+        }
+        size_t win = n > 48000 ? 48000 : n, start = n - win;
+        long crossings = 0;
+        int peak = 0;
+        size_t first = 0, last = 0;
+        for (size_t i = start + 1; i < n; i++) {
+            int a = pcm[2 * (i - 1)], b = pcm[2 * i];
+            if (abs(b) > peak) peak = abs(b);
+            if (a < 0 && b >= 0) {
+                if (!crossings) first = i;
+                last = i;
+                crossings++;
+            }
+        }
+        double freq = (crossings > 1) ? (double)(crossings - 1) * 48000.0 / (double)(last - first) : 0;
+        bool ok = peak > 1500 && (want_freq <= 0 || (freq > want_freq * 0.98 && freq < want_freq * 1.02));
+        printf("%s %s: %.1f Hz (esperado %.1f), pico %d, %zu muestras\n", ok ? "PASS" : "FAIL", rom, freq, want_freq, peak, n);
+        if (!ok) rc = 1;
+        free(pcm);
     } else if (mode && !strcmp(mode, "hb")) {
         /* ROM homebrew que escribe su resultado en 0x03007E00 (0x600D = bien). */
         uint32_t res = 0;

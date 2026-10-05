@@ -118,6 +118,52 @@ typedef struct gba_rtc {
     int64_t offset;                /* segundos que el juego ajustó sobre la hora del anfitrión */
 } gba_rtc;
 
+/* APU (apu.c): cuatro canales PSG y dos DirectSound. */
+enum { GBA_APU_BUF_FRAMES = 8192 };
+
+typedef struct gba_apu_env {
+    uint8_t vol, init, period, timer;
+    bool up;
+} gba_apu_env;
+
+typedef struct gba_apu_ch {
+    bool enabled, dac, len_en;
+    uint16_t length;
+    uint16_t freq;
+    int32_t timer;                 /* ciclos del GBA hasta el siguiente paso */
+    uint8_t duty, pos;
+    gba_apu_env env;
+} gba_apu_ch;
+
+typedef struct gba_apu {
+    bool power;
+    uint32_t pending;              /* ciclos aún no procesados (catch-up) */
+    uint32_t fs_counter;           /* ciclos hasta el siguiente paso del secuenciador */
+    uint8_t regs[21];              /* NR10..NR52 tal como se escribieron */
+    uint8_t fs_step;
+    gba_apu_ch ch[4];
+    uint8_t sweep_timer;
+    uint16_t sweep_shadow;
+    bool sweep_enabled, sweep_neg_used;
+    uint8_t wave[2][16];           /* dos bancos de 32 muestras de 4 bits */
+    uint8_t wave_bank_play;
+    uint8_t wave_sample;
+    uint16_t lfsr;
+    uint16_t cnt_h, bias;          /* SOUNDCNT_H, SOUNDBIAS */
+    int8_t fifo[2][32];
+    uint8_t fifo_head[2], fifo_len[2];
+    int8_t fifo_sample[2];         /* muestra que suena en cada DirectSound */
+    /* Salida (no forma parte de los estados): caja integradora + pasa-altos */
+    int32_t mix_l, mix_r;
+    bool mix_dirty;
+    int64_t acc_l, acc_r;
+    uint32_t acc_n;
+    uint32_t phase;
+    double cap_l, cap_r, charge;
+    int16_t buf[GBA_APU_BUF_FRAMES * 2];
+    uint32_t head, count, dropped;
+} gba_apu;
+
 /* PPU: referencias internas de los fondos afines y búferes de una línea. */
 typedef struct gba_ppu {
     int32_t ref_x[2], ref_y[2];    /* BG2/BG3, 20.8 con signo (se recargan en VBlank) */
@@ -174,6 +220,7 @@ struct gba {
 
     gba_dma dma[4];
     gba_timer timer[4];
+    gba_apu apu;
 
     gba_options opts;
     gba_save_type save_type;
@@ -224,6 +271,16 @@ enum {
     GBA_IRQ_TIMER0 = 1u << 3, GBA_IRQ_SERIAL = 1u << 7, GBA_IRQ_DMA0 = 1u << 8,
     GBA_IRQ_KEYPAD = 1u << 12, GBA_IRQ_GAMEPAK = 1u << 13
 };
+
+/* apu.c */
+void gba_apu_reset(gba *g);
+void gba_apu_sync(gba *g);
+uint16_t gba_apu_read16(gba *g, uint32_t off);
+void gba_apu_write16(gba *g, uint32_t off, uint16_t v);
+void gba_apu_write8(gba *g, uint32_t off, uint8_t v);
+void gba_apu_fifo_write(gba *g, int k, uint32_t v, unsigned bytes);
+void gba_apu_timer_overflow(gba *g, int timer);
+void gba_dma_fifo(gba *g, uint32_t fifo_addr);   /* DMA1/2 especial hacia esa FIFO */
 
 /* cart.c */
 void gba_cart_init(gba *g);                      /* tras cargar el ROM: medio y RTC */

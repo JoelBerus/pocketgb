@@ -405,6 +405,60 @@ static void test_save_api(void)
     free(buf);
 }
 
+static void test_apu(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    /* Apagada: los registros PSG no se escriben. */
+    gba_bus_write16(g, 0x04000062, 0xF080);
+    CHECK(gba_bus_read16(g, 0x04000062) == 0);
+    gba_bus_write16(g, 0x04000084, 0x80);
+    gba_bus_write16(g, 0x04000062, 0xF080);
+    CHECK(gba_bus_read16(g, 0x04000062) == 0xF080);
+    CHECK((gba_bus_read16(g, 0x04000084) & 0x80) != 0);
+    /* Bancos de onda: con el banco 0 sonando, se escribe y se lee el 1. */
+    gba_bus_write16(g, 0x04000070, 0x0000);
+    gba_bus_write16(g, 0x04000090, 0x1234);
+    CHECK(g->apu.wave[1][0] == 0x34 && g->apu.wave[1][1] == 0x12 && g->apu.wave[0][0] == 0);
+    gba_bus_write16(g, 0x04000070, 0x0040);
+    CHECK(gba_bus_read16(g, 0x04000090) == 0);
+    /* SOUNDBIAS: valor por defecto y máscara. */
+    CHECK(gba_bus_read16(g, 0x04000088) == 0x200);
+    gba_bus_write16(g, 0x04000088, 0xFFFF);
+    CHECK(gba_bus_read16(g, 0x04000088) == 0xC3FE);
+    /* FIFO A por DMA1 en modo especial, timer 0 a 32768 Hz. */
+    for (int i = 0; i < 256; i++) g->ewram[i] = (uint8_t)i;
+    gba_bus_write16(g, 0x04000082, 0x0B06);
+    gba_bus_write32(g, 0x040000BC, 0x02000000);
+    gba_bus_write32(g, 0x040000C0, 0x040000A0);
+    gba_bus_write16(g, 0x040000C6, 0x8000 | 0x3000 | 0x0200 | 0x0400);
+    CHECK(g->apu.fifo_len[0] == 0);
+    gba_bus_write16(g, 0x04000100, (uint16_t)(65536 - 512));
+    gba_bus_write16(g, 0x04000102, 0x80);
+    gba_tick(g, 512);                          /* primer desborde: FIFO vacía → DMA de 16 bytes */
+    CHECK(g->apu.fifo_len[0] == 16);
+    CHECK(g->dma[1].src == 0x02000010);
+    gba_tick(g, 512);                          /* saca el byte 0 y vuelve a pedir: 31 */
+    CHECK(g->apu.fifo_sample[0] == 0);
+    CHECK(g->apu.fifo_len[0] == 31);
+    gba_tick(g, 512 * 4);
+    CHECK(g->apu.fifo_sample[0] == 4);
+    CHECK(g->apu.fifo_len[0] == 27);
+    /* Vaciar la FIFO con el bit de reinicio. */
+    gba_bus_write16(g, 0x04000082, 0x0B06);
+    CHECK(g->apu.fifo_len[0] == 0);
+    /* Ritmo de salida: ~804 frames estéreo por frame de vídeo a 48 kHz. */
+    int16_t pcm[4096];
+    gba_run_frame(g);                          /* alinear con el VBlank */
+    while (gba_audio_read(g, pcm, 2048)) {}
+    gba_run_frame(g);
+    gba_run_frame(g);
+    size_t n = gba_audio_read(g, pcm, 2048);
+    if (n < 1600 || n > 1610) printf("  frames de audio en 2 frames: %zu\n", n);
+    CHECK(n >= 1600 && n <= 1610);
+    gba_destroy(g);
+}
+
 int gba_unit_run(void)
 {
     test_load_rom();
@@ -418,6 +472,7 @@ int gba_unit_run(void)
     test_vblank_intr_wait();
     test_dma_self_retrigger();
     test_save_api();
+    test_apu();
     printf("%s unit: %d fallos\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }

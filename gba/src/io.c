@@ -159,6 +159,16 @@ void gba_dma_service(gba *g)
     }
 }
 
+/* FIFO de sonido medio vacía: la DMA1/2 en modo especial con destino en esa FIFO. */
+void gba_dma_fifo(gba *g, uint32_t fifo_addr)
+{
+    for (int ch = 1; ch <= 2; ch++) {
+        gba_dma *d = &g->dma[ch];
+        if ((d->cnt_h & 0x8000u) && ((d->cnt_h >> 12) & 3u) == 3 && (d->dad & 0x0FFFFFFCu) == fifo_addr)
+            dma_run(g, ch);
+    }
+}
+
 void gba_dma_trigger(gba *g, int timing)
 {
     for (int ch = 0; ch < 4; ch++) {
@@ -180,6 +190,7 @@ static void timer_overflow(gba *g, int i)
 {
     gba_timer *t = &g->timer[i];
     if (t->cnt & 0x40u) gba_irq_raise(g, (uint16_t)(GBA_IRQ_TIMER0 << i));
+    if (i < 2) gba_apu_timer_overflow(g, i);
     if (i < 3) {
         gba_timer *n = &g->timer[i + 1];
         if ((n->cnt & 0x80u) && (n->cnt & 0x04u)) timer_add(g, i + 1, 1);
@@ -233,6 +244,7 @@ static void timer_write_cnt(gba *g, int i, uint16_t v)
 void gba_tick(gba *g, uint32_t n)
 {
     if (g->dma_pending && !g->dma_active) gba_dma_service(g);
+    g->apu.pending += n;
     timers_tick(g, n);
     g->line_cycles += n;
     for (;;) {
@@ -289,7 +301,6 @@ void gba_io_reset(gba *g)
     g->waitcnt = 0;
     g->postflg = 1;                      /* tras el arranque de la BIOS */
     io_set(g, 0x134, 0x8000);            /* RCNT */
-    io_set(g, 0x088, 0x0200);            /* SOUNDBIAS */
     io_set(g, 0x020, 0x100); io_set(g, 0x026, 0x100);   /* BG2PA/PD = 1.0 */
     io_set(g, 0x030, 0x100); io_set(g, 0x036, 0x100);   /* BG3PA/PD */
     gba_bus_update_waitstates(g);
@@ -328,8 +339,9 @@ uint16_t gba_io_read16(gba *g, uint32_t off)
     case 0x20A: return 0;
     case 0x300: return g->postflg;
     default:
-        /* Sonido (G5) y serie: se devuelven tal cual; el resto (solo escritura) lee 0. */
-        if ((off >= 0x060 && off < 0x0B0) || (off >= 0x120 && off < 0x160)) return io_raw(g, off);
+        if (off >= 0x060 && off < 0x0A8) return gba_apu_read16(g, off);
+        /* Serie: se devuelve tal cual; el resto (solo escritura) lee 0. */
+        if (off >= 0x120 && off < 0x160) return io_raw(g, off);
         return 0;
     }
 }
@@ -360,6 +372,13 @@ void gba_io_write16(gba *g, uint32_t off, uint16_t v)
     case 0x100: case 0x104: case 0x108: case 0x10C: g->timer[(off - 0x100) >> 2].reload = v; break;
     case 0x102: case 0x106: case 0x10A: case 0x10E: timer_write_cnt(g, (int)((off - 0x100) >> 2), v); break;
     case 0x130: return;
+    case 0x060: case 0x062: case 0x064: case 0x066: case 0x068: case 0x06A: case 0x06C: case 0x06E:
+    case 0x070: case 0x072: case 0x074: case 0x076: case 0x078: case 0x07A: case 0x07C: case 0x07E:
+    case 0x080: case 0x082: case 0x084: case 0x086: case 0x088: case 0x08A: case 0x08C: case 0x08E:
+    case 0x090: case 0x092: case 0x094: case 0x096: case 0x098: case 0x09A: case 0x09C: case 0x09E:
+    case 0x0A0: case 0x0A2: case 0x0A4: case 0x0A6:
+        gba_apu_write16(g, off, v);
+        return;
     case 0x132: g->keycnt = v & 0xC3FFu; keypad_check(g); break;
     case 0x200: g->ie = v & 0x3FFFu; break;
     case 0x202: g->if_ &= (uint16_t)~v; return;
@@ -384,6 +403,7 @@ void gba_io_write8(gba *g, uint32_t off, uint8_t v)
     if (off == 0x301) { g->cpu.halted = true; return; }   /* HALTCNT */
     if (off == 0x300) { g->postflg = v & 1u; return; }
     if (off == 0x202 || off == 0x203) { g->if_ &= (uint16_t)~((uint16_t)v << ((off & 1u) * 8u)); return; }
+    if (off >= 0x060 && off < 0x0A8) { gba_apu_write8(g, off, v); return; }
     uint32_t base = off & ~1u;
     uint16_t cur;
     switch (base) {

@@ -100,7 +100,11 @@ Detección del tipo de save, SRAM 32 KiB, Flash 64 KiB (SST/Panasonic) y 128 KiB
 
 ### G5 · APU (☁️)
 Los 4 canales heredados de GB (reutilizando el **diseño** de `apu.c`, no el código tal cual: distinta base de reloj y registros `SOUNDCNT_H` con volúmenes 25/50/100 %), 2 canales DirectSound con FIFO de 32 bytes alimentados por DMA 1/2 y timers 0/1, `SOUNDBIAS`, remuestreo a `sample_rate` (misma técnica de catch-up que M5). Save state v2 de GBA.
-**Pruebas:** tests unitarios de FIFO (llenado por DMA al bajar de 16 bytes, IRQ), WAV de referencia de un homebrew de audio libre; escucha en el iPhone en G8.
+**Criterios:**
+- [x] Tests unitarios: FIFO con recarga por DMA al bajar de 16 bytes, reinicio de FIFO, apagado, bancos de onda, SOUNDBIAS, ~804 frames de audio por frame de vídeo a 48 kHz.
+- [x] ROMs homebrew propias de audio: pulso PSG (439,8 Hz) y seno por DirectSound (1024 Hz) con la frecuencia correcta en la salida; proporción de niveles PSG/DirectSound igual a mGBA (oráculo con `--audio`). No hay homebrew de audio libre con WAV de referencia publicado.
+- [x] ASan + UBSan limpios (77/77); 6,4–12,3× tiempo real con vídeo y audio.
+- [ ] Escucha en el iPhone (G8). Auditoría ([G5-evidencia](../auditorias/G5-evidencia.md)).
 
 ### G6 · Save states, fuzzing, determinismo (☁️)
 Formato de estado completo (CPU, bus, PPU, APU, DMA, timers, cartucho, RTC) con CRC-32 y huella del ROM; carga en dos pasadas como en GB; fuzzers `fuzz_load_rom`, `fuzz_state_load`, `fuzz_io` (escrituras aleatorias a E/S) 3×600 s; test de determinismo (dos instancias con la misma entrada → framebuffers idénticos durante 1 000 frames); `check-globals` sin símbolos mutables; ASan y UBSan limpios en toda la suite. **Auditoría de núcleo completa** (Opus de respaldo en la nube; Codex en el Mac) antes de tocar la app.

@@ -75,13 +75,23 @@ oracle: $(BUILD)/gbatest
 HB := tests/homebrew
 HB_CFLAGS := --target=armv4t-none-eabi -mthumb -O2 -ffreestanding -nostdlib -fno-builtin -Wall -Werror -Wno-unused-command-line-argument
 SCENES := 0 1 2 3 4 5 6 7 8 9 10 11 12 13
-HB_TESTS := eeprom eeprom8k rtc
+HB_TESTS := eeprom eeprom8k rtc audio_psg audio_ds
 homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba) $(foreach t,$(HB_TESTS),$(BUILD)/hb/$(t).gba)
 
 $(BUILD)/hb/eeprom8k.gba: $(HB)/eeprom.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
 	clang $(HB_CFLAGS) -DEE8K -c $< -o $(BUILD)/hb/eeprom8k.o
 	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/eeprom8k.o $(BUILD)/hb/support.o -o $(BUILD)/hb/eeprom8k.elf
 	llvm-objcopy -O binary $(BUILD)/hb/eeprom8k.elf $@
+
+$(BUILD)/hb/audio_psg.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DPSG -c $< -o $(BUILD)/hb/audio_psg.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_psg.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_psg.elf
+	llvm-objcopy -O binary $(BUILD)/hb/audio_psg.elf $@
+
+$(BUILD)/hb/audio_ds.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -c $< -o $(BUILD)/hb/audio_ds.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_ds.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_ds.elf
+	llvm-objcopy -O binary $(BUILD)/hb/audio_ds.elf $@
 
 $(BUILD)/hb/%.gba: $(HB)/%.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
 	clang $(HB_CFLAGS) -c $< -o $(BUILD)/hb/$*.o

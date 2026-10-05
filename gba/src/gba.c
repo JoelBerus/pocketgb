@@ -50,6 +50,7 @@ static void gba_power_on(gba *g)
     memset(g->ewram, 0, sizeof g->ewram);
     memset(g->iwram, 0, sizeof g->iwram);
     gba_io_reset(g);
+    gba_apu_reset(g);
     memset(g->pal, 0, sizeof g->pal);
     memset(g->vram, 0, sizeof g->vram);
     memset(g->oam, 0, sizeof g->oam);
@@ -165,6 +166,7 @@ uint32_t gba_run_cycles(gba *g, uint32_t cycles)
     if (!g || !g->rom) return 0;
     uint64_t start = g->cycles;
     while (g->cycles - start < cycles) gba_step(g);
+    gba_apu_sync(g);
     return (uint32_t)(g->cycles - start);
 }
 
@@ -175,14 +177,13 @@ void gba_run_frame(gba *g)
     uint64_t start = g->cycles;
     /* Tope de seguridad: dos frames (el VBlank llega siempre antes). */
     while (!g->frame_done && g->cycles - start < 2u * GBA_CYCLES_PER_FRAME) gba_step(g);
+    gba_apu_sync(g);
 }
 
 uint64_t gba_cycle_count(const gba *g) { return g ? g->cycles : 0; }
 const uint32_t *gba_framebuffer(const gba *g) { return g ? g->framebuffer : NULL; }
 
-/* ---- Pendiente de G4 (saves), G5 (audio) y G6 (estados) ---- */
-size_t gba_audio_read(gba *g, int16_t *out, size_t max_frames) { (void)g; (void)out; (void)max_frames; return 0; }
-size_t gba_audio_available(const gba *g) { (void)g; return 0; }
+/* ---- Pendiente de G6 (estados) ---- */
 
 size_t gba_state_size(const gba *g) { (void)g; return 0; }
 gba_result gba_state_save(const gba *g, uint8_t *out, size_t cap)
