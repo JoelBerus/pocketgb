@@ -548,6 +548,29 @@ static void test_states(void)
     st2[sz - 4] = (uint8_t)crc; st2[sz - 3] = (uint8_t)(crc >> 8); st2[sz - 2] = (uint8_t)(crc >> 16); st2[sz - 1] = (uint8_t)(crc >> 24);
     CHECK(gba_state_load(g, st2, sz) == GBA_OK);
     CHECK(g->vcount == 0x10 && g->iwram[0x100] == keep);
+    /* Auditoría G6: campos con CRC correcto pero incoherentes se rechazan. */
+    CHECK(gba_state_save(g, st, sz) == GBA_OK);
+    uint8_t pos = g->apu.ch[0].pos;
+    g->apu.ch[0].pos = 9;                        /* duty de 8 pasos: desplazamiento negativo */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->apu.ch[0].pos = pos;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    int64_t off = g->rtc.offset;
+    g->rtc.offset = INT64_MAX;                   /* rtc_now() desbordaría */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->rtc.offset = off;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    int64_t base = g->rtc_base;
+    g->rtc_base = INT64_MIN;
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->rtc_base = base;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    bool rtc = g->has_rtc;
+    g->has_rtc = !rtc;                           /* otra configuración de RTC */
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->has_rtc = rtc;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    CHECK(gba_state_load(g, st, sz) == GBA_OK);
     free(st);
     free(st2);
     gba_destroy(g);

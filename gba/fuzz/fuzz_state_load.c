@@ -18,6 +18,8 @@ static uint32_t crc32(const uint8_t *p, size_t n)
     return ~c;
 }
 
+uint32_t gba_fuzz_bus(gba *g, int op, uint32_t addr, uint32_t v);
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t len)
 {
     static const char tag[] = "FLASH1M_V103";
@@ -26,7 +28,21 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t len)
     rom[0xB2] = 0x96;
     memcpy(rom + 0x200, tag, sizeof tag - 1);
     gba *g = gba_create();
-    if (!g || gba_load_rom(g, rom, sizeof rom, NULL) != GBA_OK) { gba_destroy(g); return 0; }
+    /* RTC encendido y audio activo (canales de pulso con duty y onda en marcha)
+     * para que las mutaciones lleguen a esos caminos de la carga. */
+    gba_options opts;
+    gba_options_default(&opts);
+    opts.rtc = GBA_RTC_ON;
+    if (!g || gba_load_rom(g, rom, sizeof rom, &opts) != GBA_OK) { gba_destroy(g); return 0; }
+    gba_fuzz_bus(g, 4, 0x04000084, 0x0080);   /* SOUNDCNT_X: APU encendida */
+    gba_fuzz_bus(g, 4, 0x04000080, 0xFF77);   /* SOUNDCNT_L: PSG a ambos lados */
+    gba_fuzz_bus(g, 4, 0x04000062, 0xF080);   /* canal 1: duty 50 %, volumen 15 */
+    gba_fuzz_bus(g, 4, 0x04000064, 0x8400);   /* canal 1: disparo */
+    gba_fuzz_bus(g, 4, 0x04000068, 0xF040);   /* canal 2 */
+    gba_fuzz_bus(g, 4, 0x0400006C, 0x8300);
+    gba_fuzz_bus(g, 4, 0x04000070, 0x0080);   /* canal 3 (onda) */
+    gba_fuzz_bus(g, 4, 0x04000072, 0x2000);
+    gba_fuzz_bus(g, 4, 0x04000074, 0x8200);
     gba_run_frame(g);
     /* 1) Datos arbitrarios tal cual. */
     if (gba_state_load(g, data, len) == GBA_OK) gba_run_frame(g);

@@ -27,7 +27,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G3 · PPU | ☁️ | ✅ cerrado 2026-10-05 (12/14 escenas idénticas a mGBA; Opus: APROBAR CON CAMBIOS → corregido) |
 | G4 · Cartucho y saves | ☁️ | ✅ cerrado 2026-10-05 (SRAM, Flash, EEPROM, RTC; Opus: APROBAR CON CAMBIOS → corregido) |
 | G5 · APU | ☁️ | ✅ cerrado 2026-10-05 (núcleo; Opus: APROBAR CON CAMBIOS → corregido); 🍎 escucha en G8 |
-| G6 · Save states y determinismo | ☁️ | implementado 2026-10-05 en `g6-gba-states`; auditoría en curso |
+| G6 · Save states y determinismo | ☁️ | ✅ cerrado 2026-10-05 (estados validados, determinismo, fuzzers; auditoría de núcleo Opus: APROBAR CON CAMBIOS → corregido) |
 | G7–G9 | ☁️ + CI macOS / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.

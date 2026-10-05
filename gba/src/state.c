@@ -208,6 +208,11 @@ static bool consistent(const gba *g)
     if (g->dma_active) return false;                 /* nunca a mitad de una DMA */
     for (int i = 0; i < 4; i++) if (g->apu.ch[i].enabled && g->apu.ch[i].timer <= 0) return false;
     if (g->apu.fs_counter == 0) return false;
+    /* Los canales de pulso indexan 8 pasos de duty (apu.c, desplazamiento 7 - pos). */
+    if (g->apu.ch[0].pos > 7 || g->apu.ch[1].pos > 7) return false;
+    /* Mismos límites que mantienen cart.c (RTC por GPIO) y gba_rtc_set_time. */
+    if (g->rtc.offset > GBA_RTC_MAX_OFFSET || g->rtc.offset < -GBA_RTC_MAX_OFFSET) return false;
+    if (g->rtc_base > GBA_RTC_MAX_OFFSET * 2 || g->rtc_base < -GBA_RTC_MAX_OFFSET * 2) return false;
     return true;
 }
 
@@ -255,12 +260,17 @@ gba_result gba_state_load(gba *g, const uint8_t *data, size_t len)
     size_t payload = get32(data + 40);
     if (len != gba_state_size(g) || payload != len - HEADER_BYTES - CRC_BYTES) return GBA_ERR_STATE_CORRUPT;
     if (gba_crc32(data, len - CRC_BYTES) != get32(data + len - CRC_BYTES)) return GBA_ERR_STATE_CORRUPT;
+    /* Copia de trabajo (~1,3 MB): se reserva aquí, fuera de gba_run_frame. */
     gba *tmp = malloc(sizeof *tmp);
     if (!tmp) return GBA_ERR_OUT_OF_MEMORY;
     memcpy(tmp, g, sizeof *tmp);
     visitor v = {V_LOAD, NULL, data + HEADER_BYTES, 0, payload, false};
     visit(&v, tmp);
-    if (v.bad || v.pos != payload || !consistent(tmp)) {
+    /* El medio de guardado debe coincidir con el de la sesión: un estado de otra
+     * configuración cambiaría el tamaño del .sav que la app escribe. */
+    bool same_media = tmp->save_type == g->save_type && tmp->save_bytes == g->save_bytes &&
+                      tmp->has_rtc == g->has_rtc;
+    if (v.bad || v.pos != payload || !same_media || !consistent(tmp)) {
         free(tmp);
         return GBA_ERR_STATE_CORRUPT;
     }
