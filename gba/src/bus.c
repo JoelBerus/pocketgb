@@ -85,7 +85,7 @@ static inline void charge_fetch(gba *g, uint32_t addr, bool wide, bool force_n)
 
 static uint32_t open_bus(const gba *g)
 {
-    if (g->dma_active) return g->dma[0].latch;   /* aproximación: último dato de DMA */
+    if (g->dma_active) return g->dma[g->dma_cur & 3u].latch;   /* último dato de la DMA activa */
     const gba_arm *c = &g->cpu;
     if (c->cpsr & ARM_T) {
         uint32_t h = c->pipe[1] & 0xFFFFu;
@@ -182,9 +182,7 @@ uint32_t gba_bus_read32(gba *g, uint32_t addr)
     TEST_READ(4, false);
     addr &= ~3u;
     charge(g, addr, true, g->cpu.seq);
-    uint32_t v = mem_read32(g, addr);
-    g->open_bus = v;
-    return v;
+    return mem_read32(g, addr);
 }
 
 uint16_t gba_bus_read16(gba *g, uint32_t addr)

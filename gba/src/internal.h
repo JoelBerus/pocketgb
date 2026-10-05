@@ -126,7 +126,9 @@ struct gba {
     uint32_t last_fetch_addr;      /* para decidir acceso secuencial */
     bool last_was_fetch;
     bool dma_active;               /* el bus lo usa la DMA (bus abierto de la DMA) */
-    uint32_t open_bus;             /* último dato del bus (lecturas no mapeadas) */
+    uint8_t dma_cur;               /* canal que transfiere */
+    uint8_t dma_pending;           /* DMA inmediatas por ejecutar (sin recursión) */
+    bool hle_waiting;              /* IntrWait/VBlankIntrWait esperando su IRQ */
 
     gba_dma dma[4];
     gba_timer timer[4];
@@ -164,6 +166,7 @@ uint32_t gba_cycles_to_event(const gba *g);      /* para saltar mientras la CPU 
 void gba_irq_raise(gba *g, uint16_t bits);
 bool gba_irq_pending(const gba *g);              /* IE & IF */
 void gba_dma_trigger(gba *g, int timing);        /* 1 VBlank, 2 HBlank, 3 especial */
+void gba_dma_service(gba *g);                    /* ejecuta las DMA inmediatas pendientes */
 void gba_bus_update_waitstates(gba *g);
 
 enum {

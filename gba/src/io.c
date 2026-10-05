@@ -85,7 +85,12 @@ static void dma_write_cnt_h(gba *g, int ch, uint16_t v)
     d->cnt_h = v & (ch == 3 ? 0xFFE0u : 0xF7E0u);
     if (!was && (d->cnt_h & 0x8000u)) {
         dma_latch(g, ch);
-        if (((d->cnt_h >> 12) & 3u) == 0) dma_run(g, ch);
+        if (((d->cnt_h >> 12) & 3u) == 0) {
+            /* Nunca recursiva: una DMA que reescribe su propio CNT_H solo deja
+             * el canal pendiente (ROM no confiable, auditoría G2 H1). */
+            g->dma_pending |= (uint8_t)(1u << ch);
+            if (!g->dma_active) gba_dma_service(g);
+        }
     }
 }
 
@@ -104,7 +109,9 @@ static void dma_run(gba *g, int ch)
     int32_t dinc = (dctl == 0 || dctl == 3) ? step : dctl == 1 ? -step : 0;
     if (d->src >= 0x08000000u && d->src < 0x0E000000u) sinc = step;   /* ROM: siempre incrementa */
     bool prev = g->dma_active;
+    uint8_t prev_ch = g->dma_cur;
     g->dma_active = true;
+    g->dma_cur = (uint8_t)ch;
     g->cycles += 2;
     for (uint32_t i = 0; i < count; i++) {
         g->cpu.seq = i != 0;
@@ -127,6 +134,7 @@ static void dma_run(gba *g, int ch)
     }
     g->cpu.seq = false;
     g->dma_active = prev;
+    g->dma_cur = prev_ch;
     if ((cnt & 0x200u) && timing != 0) {
         uint32_t n = d->cnt_l & (ch == 3 ? 0xFFFFu : 0x3FFFu);
         d->count = n ? n : (ch == 3 ? 0x10000u : 0x4000u);
@@ -135,6 +143,19 @@ static void dma_run(gba *g, int ch)
         d->cnt_h &= (uint16_t)~0x8000u;
     }
     if (cnt & 0x4000u) gba_irq_raise(g, (uint16_t)(GBA_IRQ_DMA0 << ch));
+}
+
+/* Cada canal pendiente se ejecuta como mucho una vez por llamada; lo que una
+ * DMA vuelva a dejar pendiente se atiende en el siguiente paso (acotado). */
+void gba_dma_service(gba *g)
+{
+    uint8_t todo = g->dma_pending;
+    g->dma_pending = 0;
+    for (int ch = 0; ch < 4; ch++) {
+        if (!(todo & (1u << ch))) continue;
+        gba_dma *d = &g->dma[ch];
+        if ((d->cnt_h & 0x8000u) && ((d->cnt_h >> 12) & 3u) == 0) dma_run(g, ch);
+    }
 }
 
 void gba_dma_trigger(gba *g, int timing)
@@ -210,6 +231,7 @@ static void timer_write_cnt(gba *g, int i, uint16_t v)
 
 void gba_tick(gba *g, uint32_t n)
 {
+    if (g->dma_pending && !g->dma_active) gba_dma_service(g);
     timers_tick(g, n);
     g->line_cycles += n;
     for (;;) {
@@ -256,6 +278,8 @@ void gba_io_reset(gba *g)
     memset(g->io, 0, sizeof g->io);
     memset(g->dma, 0, sizeof g->dma);
     memset(g->timer, 0, sizeof g->timer);
+    g->dma_pending = 0;
+    g->dma_cur = 0;
     g->ie = g->if_ = g->ime = 0;
     g->dispstat = 0;
     g->keycnt = 0;

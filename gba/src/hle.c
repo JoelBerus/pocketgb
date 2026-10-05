@@ -12,7 +12,6 @@
  *   IRQ hasta que el manejador del juego marca el bit en 0x03007FF8.
  */
 #include "internal.h"
-#include <math.h>
 
 /* sin(2*pi*i/256) * 0x4000, redondeado (tabla calculada, no copiada). */
 static const int16_t hle_sin[256] = {
@@ -32,6 +31,28 @@ static const int16_t hle_sin[256] = {
     -15137, -14978, -14811, -14635, -14449, -14256, -14053, -13842, -13623, -13395, -13160, -12916, -12665, -12406, -12140, -11866,
     -11585, -11297, -11003, -10702, -10394, -10080, -9760, -9434, -9102, -8765, -8423, -8076, -7723, -7366, -7005, -6639,
     -6270, -5897, -5520, -5139, -4756, -4370, -3981, -3590, -3196, -2801, -2404, -2006, -1606, -1205, -804, -402
+};
+
+/* 2^(-s/12) y 2^(-f/3072) en Q16 (MidiKey2Freq en entero: determinista en
+ * todas las plataformas, sin libm; tablas calculadas, no copiadas). */
+static const uint32_t hle_semi[12] = {65536, 61858, 58386, 55109, 52016, 49097, 46341, 43740, 41285, 38968, 36781, 34716};
+static const uint32_t hle_fine[256] = {
+    65536, 65521, 65506, 65492, 65477, 65462, 65447, 65433, 65418, 65403, 65388, 65374, 65359, 65344, 65329, 65315,
+    65300, 65285, 65270, 65256, 65241, 65226, 65211, 65197, 65182, 65167, 65153, 65138, 65123, 65109, 65094, 65079,
+    65065, 65050, 65035, 65020, 65006, 64991, 64976, 64962, 64947, 64933, 64918, 64903, 64889, 64874, 64859, 64845,
+    64830, 64815, 64801, 64786, 64772, 64757, 64742, 64728, 64713, 64699, 64684, 64669, 64655, 64640, 64626, 64611,
+    64596, 64582, 64567, 64553, 64538, 64524, 64509, 64494, 64480, 64465, 64451, 64436, 64422, 64407, 64393, 64378,
+    64364, 64349, 64335, 64320, 64306, 64291, 64277, 64262, 64248, 64233, 64219, 64204, 64190, 64175, 64161, 64146,
+    64132, 64117, 64103, 64088, 64074, 64059, 64045, 64030, 64016, 64002, 63987, 63973, 63958, 63944, 63929, 63915,
+    63901, 63886, 63872, 63857, 63843, 63829, 63814, 63800, 63785, 63771, 63757, 63742, 63728, 63713, 63699, 63685,
+    63670, 63656, 63642, 63627, 63613, 63599, 63584, 63570, 63555, 63541, 63527, 63512, 63498, 63484, 63470, 63455,
+    63441, 63427, 63412, 63398, 63384, 63369, 63355, 63341, 63326, 63312, 63298, 63284, 63269, 63255, 63241, 63227,
+    63212, 63198, 63184, 63169, 63155, 63141, 63127, 63112, 63098, 63084, 63070, 63056, 63041, 63027, 63013, 62999,
+    62984, 62970, 62956, 62942, 62928, 62913, 62899, 62885, 62871, 62857, 62843, 62828, 62814, 62800, 62786, 62772,
+    62757, 62743, 62729, 62715, 62701, 62687, 62673, 62658, 62644, 62630, 62616, 62602, 62588, 62574, 62560, 62545,
+    62531, 62517, 62503, 62489, 62475, 62461, 62447, 62433, 62419, 62404, 62390, 62376, 62362, 62348, 62334, 62320,
+    62306, 62292, 62278, 62264, 62250, 62236, 62222, 62208, 62194, 62180, 62166, 62152, 62138, 62124, 62109, 62095,
+    62081, 62067, 62053, 62039, 62025, 62011, 61997, 61983, 61970, 61956, 61942, 61928, 61914, 61900, 61886, 61872
 };
 
 static void put32(gba *g, uint32_t off, uint32_t v)
@@ -129,7 +150,7 @@ static void hle_div(gba *g, int32_t num, int32_t den)
     int32_t q = num / den, m = num % den;
     r[0] = (uint32_t)q;
     r[1] = (uint32_t)m;
-    r[3] = (uint32_t)(q < 0 ? -q : q);
+    r[3] = q < 0 ? 0u - (uint32_t)q : (uint32_t)q;
 }
 
 static uint32_t hle_isqrt(uint32_t v)
@@ -398,6 +419,8 @@ static void hle_bit_unpack(gba *g, uint32_t src, uint32_t dst, uint32_t info)
 static void hle_intr_wait(gba *g, bool discard, uint16_t mask)
 {
     gba_arm *c = &g->cpu;
+    /* Al reejecutarse tras la IRQ ya no se descarta (auditoría G2 H2). */
+    if (g->hle_waiting) discard = false;
     g->ime = 1;
     uint16_t flags = (uint16_t)(g->iwram[0x7FF8] | (g->iwram[0x7FF9] << 8));
     if (discard) {
@@ -409,10 +432,11 @@ static void hle_intr_wait(gba *g, bool discard, uint16_t mask)
         flags &= (uint16_t)~mask;
         g->iwram[0x7FF8] = (uint8_t)flags;
         g->iwram[0x7FF9] = (uint8_t)(flags >> 8);
+        g->hle_waiting = false;
         return;
     }
     /* Aún no: parar y volver a ejecutar esta SWI tras la IRQ (ya sin descartar). */
-    c->r[0] = 0;
+    g->hle_waiting = true;
     c->halted = true;
     uint32_t here = c->r[15] - ((c->cpsr & ARM_T) ? 4u : 8u);
     gba_arm_branch(g, here);
@@ -454,10 +478,17 @@ bool gba_hle_swi(gba *g, uint32_t number)
         break;
     }
     case 0x1F: {
-        /* MidiKey2Freq: freq = [wave+4] / 2^((180 - key - fine/256) / 12) */
-        uint32_t base = rd32(g, r[0] + 4);
-        double e = (180.0 - (double)(r[1] & 0xFFu) - (double)(r[2] & 0xFFu) / 256.0) / 12.0;
-        r[0] = (uint32_t)((double)base / pow(2.0, e));
+        /* MidiKey2Freq: freq = [wave+4] / 2^((180 - key - fine/256) / 12),
+         * en unidades de 1/256 de semitono y coma fija; satura a 32 bits. */
+        uint64_t base = rd32(g, r[0] + 4);
+        int32_t n = 180 * 256 - (int32_t)((r[1] & 0xFFu) * 256u + (r[2] & 0xFFu));
+        int32_t oct = n >= 0 ? n / 3072 : -((-n + 3071) / 3072);
+        int32_t rem = n - oct * 3072;              /* 0..3071 */
+        uint64_t v = (base * hle_semi[rem / 256]) >> 16;
+        v = (v * hle_fine[rem % 256]) >> 16;
+        if (oct >= 0) v = oct >= 64 ? 0 : v >> oct;
+        else v = v > (0xFFFFFFFFull >> -oct) ? 0xFFFFFFFFull : v << -oct;
+        r[0] = v > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)v;
         break;
     }
     default:

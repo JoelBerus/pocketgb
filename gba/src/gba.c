@@ -61,6 +61,7 @@ static void gba_power_on(gba *g)
     g->frame_done = false;
     g->last_was_fetch = false;
     g->dma_active = false;
+    g->hle_waiting = false;
     if (!g->bios_loaded) gba_hle_install(g);
     g->bios_last = 0xE129F000u;            /* lo que deja el arranque de la BIOS */
     gba_arm_reset(g, true);

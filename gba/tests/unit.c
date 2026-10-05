@@ -171,7 +171,15 @@ static void test_hle_math(void)
     CHECK(r[0] >= 0x1FF0 && r[0] <= 0x2010);
     r[0] = (uint32_t)-0x4000; r[1] = (uint32_t)-0x4000; gba_hle_swi(g, 0x0A);
     CHECK(r[0] >= 0x9FF0 && r[0] <= 0xA010);
-    r[0] = 0; r[1] = 1; gba_hle_swi(g, 0x06);      /* división por cero: sin cuelgue */
+    r[0] = 1; r[1] = 0; gba_hle_swi(g, 0x06);      /* división por cero: sin cuelgue */
+    r[0] = 0x80000000u; r[1] = 1; gba_hle_swi(g, 0x06);
+    CHECK(r[0] == 0x80000000u && r[3] == 0x80000000u);
+    /* MidiKey2Freq: tecla 180 da la frecuencia base; 12 semitonos menos, la mitad. */
+    g->ewram[4] = 0x00; g->ewram[5] = 0x00; g->ewram[6] = 0x01; g->ewram[7] = 0x00;   /* 0x10000 */
+    r[0] = 0x02000000; r[1] = 180; r[2] = 0; gba_hle_swi(g, 0x1F); CHECK(r[0] == 0x10000);
+    r[0] = 0x02000000; r[1] = 168; r[2] = 0; gba_hle_swi(g, 0x1F); CHECK(r[0] == 0x8000);
+    g->ewram[4] = 0xFF; g->ewram[5] = 0xFF; g->ewram[6] = 0xFF; g->ewram[7] = 0xFF;
+    r[0] = 0x02000000; r[1] = 255; r[2] = 255; gba_hle_swi(g, 0x1F); CHECK(r[0] == 0xFFFFFFFFu);
     gba_destroy(g);
 }
 
@@ -198,10 +206,22 @@ static void test_hle_decompress(void)
     CHECK(g->iwram[0x80] == 0x34 && g->iwram[0x85] == 0x12 && g->iwram[0x86] == 0);
     r[0] = 0x02000000; r[1] = 0x03000400; r[2] = 1; gba_hle_swi(g, 0x0C);   /* se redondea a 8 palabras */
     CHECK(memcmp(&g->iwram[0x400], g->ewram, 32) == 0);
-    /* Huffman con un árbol que nunca llega a una hoja: termina igual. */
+    /* Huffman válido de 8 bits: hojas 'A' (0) y 'B' (1); "ABBA" = 0110... */
+    static const uint8_t hv[] = {0x28, 4, 0, 0, 0x01, 0xC0, 'A', 'B', 0x00, 0x00, 0x00, 0x60};
+    memcpy(g->ewram + 0x380, hv, sizeof hv);
+    r[0] = 0x02000380; r[1] = 0x03000700; gba_hle_swi(g, 0x13);
+    CHECK(memcmp(&g->iwram[0x700], "ABBA", 4) == 0);
+    /* LZ77 a VRAM con distancia 1 (repite el byte pendiente de la media palabra). */
+    static const uint8_t lz1[] = {0x10, 6, 0, 0, 0x40, 'Q', 0x20, 0x00};
+    memcpy(g->ewram + 0x3C0, lz1, sizeof lz1);
+    r[0] = 0x020003C0; r[1] = 0x06000100; gba_hle_swi(g, 0x12);
+    CHECK(memcmp(&g->vram[0x100], "QQQQQQ", 6) == 0);
+    /* Huffman con un árbol que nunca llega a una hoja: termina y no escribe. */
+    g->iwram[0x600] = 0x5A;
     static const uint8_t hf[] = {0x28, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00};
     memcpy(g->ewram + 0x300, hf, sizeof hf);
     r[0] = 0x02000300; r[1] = 0x03000600; gba_hle_swi(g, 0x13);
+    CHECK(g->iwram[0x600] == 0x5A);
     /* La BIOS no copia desde su propia zona. */
     g->iwram[0x500] = 0xAA;
     r[0] = 0x00000000; r[1] = 0x03000500; r[2] = 1; gba_hle_swi(g, 0x0B);
@@ -248,6 +268,49 @@ static void test_intr_wait(void)
     gba_destroy(g);
 }
 
+/* Igual que test_intr_wait pero con VBlankIntrWait (SWI 05h): debe volver. */
+static void test_vblank_intr_wait(void)
+{
+    static const uint32_t prog[] = {
+        0xEF050000u, /* C0: swi 0x05 */
+        0xE2855001u, /* C4: add r5, r5, #1 */
+        0xEAFFFFFCu, /* C8: b C0 */
+    };
+    static const uint32_t isr[] = {
+        0xE3A00301u, 0xE2800C02u, 0xE3A01001u, 0xE1C010B2u,
+        0xE3A02403u, 0xE2822C7Fu, 0xE28220F8u, 0xE1C210B0u, 0xE12FFF1Eu,
+    };
+    gba *g = boot_rom(prog, 3, 0xC0);
+    for (size_t i = 0; i < 9; i++) {
+        size_t o = 0x100 + i * 4;
+        g->rom[o] = (uint8_t)isr[i]; g->rom[o + 1] = (uint8_t)(isr[i] >> 8);
+        g->rom[o + 2] = (uint8_t)(isr[i] >> 16); g->rom[o + 3] = (uint8_t)(isr[i] >> 24);
+    }
+    g->iwram[0x7FFC] = 0x00; g->iwram[0x7FFD] = 0x01; g->iwram[0x7FFE] = 0x00; g->iwram[0x7FFF] = 0x08;
+    gba_io_write16(g, 0x200, 1);
+    gba_io_write16(g, 0x004, 0x0008);
+    for (int f = 0; f < 5; f++) gba_run_frame(g);
+    CHECK(g->cpu.r[5] >= 4 && g->cpu.r[5] <= 6);   /* una vuelta por frame */
+    gba_destroy(g);
+}
+
+/* Una DMA3 que escribe en su propio CNT_H {0, 0x8040}: se desactiva y se
+ * reactiva a sí misma. Antes era recursión infinita (auditoría G2 H1). */
+static void test_dma_self_retrigger(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    g->ewram[0] = 0x00; g->ewram[1] = 0x00; g->ewram[2] = 0x40; g->ewram[3] = 0x80;
+    gba_bus_write32(g, 0x040000D4, 0x02000000);
+    gba_bus_write32(g, 0x040000D8, 0x040000DE);
+    gba_bus_write16(g, 0x040000DC, 2);
+    gba_bus_write16(g, 0x040000DE, 0x8040);          /* inmediata, destino fijo, 16 bits */
+    for (int i = 0; i < 1000; i++) gba_tick(g, 4);  /* acotado: una ejecución por paso */
+    gba_run_frame(g);
+    CHECK(true);
+    gba_destroy(g);
+}
+
 int gba_unit_run(void)
 {
     test_load_rom();
@@ -258,6 +321,8 @@ int gba_unit_run(void)
     test_hle_math();
     test_hle_decompress();
     test_intr_wait();
+    test_vblank_intr_wait();
+    test_dma_self_retrigger();
     printf("%s unit: %d fallos\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }
