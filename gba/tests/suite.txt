@@ -30,3 +30,11 @@ G3|hb:ppu_scene_13.gba|ref|120|requerido|ppu_scene_13-mgba.png
 # §PPU, "Diferencias con mGBA"); la referencia es nuestra salida, como regresión.
 G3|hb:ppu_scene_8.gba|ref|120|requerido|ppu_scene_8-pocketgb.png
 G3|hb:ppu_scene_10.gba|ref|120|requerido|ppu_scene_10-pocketgb.png
+# ---- G4: cartucho y saves ----
+G4|gba-tests/save/sram.gba|jsmolka|120|requerido
+G4|gba-tests/save/flash64.gba|jsmolka|300|requerido
+G4|gba-tests/save/flash128.gba|jsmolka|300|requerido
+G4|gba-tests/save/none.gba|jsmolka|120|requerido
+G4|hb:eeprom.gba|hb|60|requerido
+G4|hb:eeprom8k.gba|hb|60|requerido
+G4|hb:rtc.gba|hb-rtc|300|requerido

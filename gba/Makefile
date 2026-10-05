@@ -17,7 +17,7 @@ ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 SST_LIMIT ?= 0
 
-.PHONY: all lib test asan oracle homebrew check-roms check-header check-globals check-symbols clean
+.PHONY: all lib test asan fuzz oracle homebrew check-roms check-header check-globals check-symbols clean
 
 all: lib
 
@@ -47,6 +47,16 @@ test: check-roms $(BUILD)/gbatest homebrew
 asan: check-roms
 	$(MAKE) BUILD=$(BUILD)/asan EXTRA="$(SAN)" CFLAGS="-O1 -g" SST_LIMIT=$(if $(filter 0,$(SST_LIMIT)),5000,$(SST_LIMIT)) test
 
+# libFuzzer (clang con -fsanitize=fuzzer; en macOS: brew install llvm).
+fuzz:
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom
+	@for f in fuzz/fuzz_*.c; do \
+	  n=$$(basename $$f .c); mkdir -p fuzz/corpus/$$n; \
+	  $(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include $$f $(SRCS) -o $(BUILD)/$$n -lm || exit 1; \
+	  cp -n tests/roms/gba-tests/*/*.gba fuzz/corpus/$$n/ 2>/dev/null || true; \
+	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) -max_len=262144 -rss_limit_mb=4096 fuzz/corpus/$$n || exit 1; \
+	done
+
 # Oráculo de la PPU (dev-only, nunca en la app): mGBA compilado sin frontends.
 MGBA_TAG ?= 0.10.5
 MGBA := ../tools/oracle/mgba
@@ -65,7 +75,18 @@ oracle: $(BUILD)/gbatest
 HB := tests/homebrew
 HB_CFLAGS := --target=armv4t-none-eabi -mthumb -O2 -ffreestanding -nostdlib -fno-builtin -Wall -Werror -Wno-unused-command-line-argument
 SCENES := 0 1 2 3 4 5 6 7 8 9 10 11 12 13
-homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba)
+HB_TESTS := eeprom eeprom8k rtc
+homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba) $(foreach t,$(HB_TESTS),$(BUILD)/hb/$(t).gba)
+
+$(BUILD)/hb/eeprom8k.gba: $(HB)/eeprom.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DEE8K -c $< -o $(BUILD)/hb/eeprom8k.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/eeprom8k.o $(BUILD)/hb/support.o -o $(BUILD)/hb/eeprom8k.elf
+	llvm-objcopy -O binary $(BUILD)/hb/eeprom8k.elf $@
+
+$(BUILD)/hb/%.gba: $(HB)/%.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -c $< -o $(BUILD)/hb/$*.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/$*.o $(BUILD)/hb/support.o -o $(BUILD)/hb/$*.elf
+	llvm-objcopy -O binary $(BUILD)/hb/$*.elf $@
 
 $(BUILD)/hb/rt.o: $(HB)/crt0.s $(HB)/support.c
 	@mkdir -p $(BUILD)/hb

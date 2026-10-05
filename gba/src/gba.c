@@ -84,8 +84,8 @@ gba_result gba_load_rom(gba *g, const uint8_t *data, size_t len, const gba_optio
     g->rom_mask = mask - 1u;
     if (opts) g->opts = *opts;
     else gba_options_default(&g->opts);
-    g->save_type = g->opts.save_type == GBA_SAVE_AUTO ? GBA_SAVE_NONE : g->opts.save_type;
     sha256(rom, len, g->fingerprint);
+    gba_cart_init(g);
     gba_power_on(g);
     return GBA_OK;
 }
@@ -115,6 +115,8 @@ gba_result gba_rom_info_get(const gba *g, gba_rom_info *out)
     chk = (uint8_t)(chk - 0x19);
     out->header_checksum_ok = chk == g->rom[0xBD];
     out->save_type = g->save_type;
+    out->save_bytes = g->save_bytes;
+    out->has_rtc = g->has_rtc;
     out->bios_loaded = g->bios_loaded;
     memcpy(out->fingerprint, g->fingerprint, sizeof out->fingerprint);
     return GBA_OK;
@@ -182,34 +184,6 @@ const uint32_t *gba_framebuffer(const gba *g) { return g ? g->framebuffer : NULL
 size_t gba_audio_read(gba *g, int16_t *out, size_t max_frames) { (void)g; (void)out; (void)max_frames; return 0; }
 size_t gba_audio_available(const gba *g) { (void)g; return 0; }
 
-gba_result gba_save_load(gba *g, const uint8_t *data, size_t len)
-{
-    if (!g || !data) return GBA_ERR_NULL_ARG;
-    if (!g->rom) return GBA_ERR_NO_ROM;
-    return len == 0 ? GBA_OK : GBA_ERR_SAVE_SIZE;
-}
-size_t gba_save_size(const gba *g) { (void)g; return 0; }
-gba_result gba_save_write(const gba *g, uint8_t *out, size_t cap)
-{
-    (void)cap;
-    if (!g || !out) return GBA_ERR_NULL_ARG;
-    return g->rom ? GBA_OK : GBA_ERR_NO_ROM;
-}
-bool gba_save_dirty(const gba *g) { (void)g; return false; }
-void gba_save_clear_dirty(gba *g) { (void)g; }
-gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len)
-{
-    if (!g || !data) return GBA_ERR_NULL_ARG;
-    return len == GBA_RTC_BYTES ? GBA_OK : GBA_ERR_SAVE_SIZE;
-}
-gba_result gba_rtc_save(const gba *g, uint8_t *out, size_t cap)
-{
-    if (!g || !out) return GBA_ERR_NULL_ARG;
-    if (cap < GBA_RTC_BYTES) return GBA_ERR_BUFFER_TOO_SMALL;
-    memset(out, 0, GBA_RTC_BYTES);
-    return GBA_OK;
-}
-void gba_rtc_set_time(gba *g, int64_t unix_time) { (void)g; (void)unix_time; }
 size_t gba_state_size(const gba *g) { (void)g; return 0; }
 gba_result gba_state_save(const gba *g, uint8_t *out, size_t cap)
 {

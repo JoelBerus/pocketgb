@@ -77,8 +77,11 @@ enum {
 typedef struct gba_options {
     uint32_t sample_rate;       /* p. ej. 48000; 0 = sin audio */
     gba_save_type save_type;    /* GBA_SAVE_AUTO salvo ajuste por juego */
-    int64_t unix_time;          /* hora inicial del RTC del cartucho (si lo tiene) */
+    int64_t unix_time;          /* hora LOCAL inicial del RTC (segundos desde 1970 en la zona del usuario) */
+    uint8_t rtc;                /* GBA_RTC_AUTO (por código de juego), GBA_RTC_ON u GBA_RTC_OFF */
 } gba_options;
+
+enum { GBA_RTC_AUTO = 0, GBA_RTC_ON = 1, GBA_RTC_OFF = 2 };
 
 typedef struct gba_rom_info {
     char title[13];             /* 0xA0, ASCII imprimible, terminado en NUL */
@@ -87,7 +90,9 @@ typedef struct gba_rom_info {
     uint8_t version;            /* 0xBC */
     uint32_t rom_bytes;         /* tamaño real del archivo */
     gba_save_type save_type;    /* el efectivo (nunca AUTO) */
-    uint32_t save_bytes;        /* tamaño exacto del .sav (0 sin medio) */
+    uint32_t save_bytes;        /* tamaño del .sav (0 sin medio). EEPROM sin ajuste: 512
+                                 * hasta que el .sav o la primera DMA digan 8 KiB; pedir
+                                 * gba_save_size() al guardar. */
     bool has_rtc;               /* GPIO con RTC (Pokémon R/S/E y otros) */
     bool header_checksum_ok;    /* 0xBD */
     bool bios_loaded;           /* BIOS real del usuario; si no, HLE */
@@ -123,7 +128,9 @@ size_t gba_audio_available(const gba *g);
 
 /* Partida del cartucho: bytes crudos del medio (compatible con mGBA/VBA);
  * el RTC va aparte (GBA_RTC_BYTES). */
-gba_result gba_save_load(gba *g, const uint8_t *data, size_t len); /* len == save_bytes */
+/* len == save_bytes (EEPROM sin ajuste: 512 u 8192, que fija el tamaño).
+ * Cualquier otro tamaño: GBA_ERR_SAVE_SIZE y la partida en memoria no cambia. */
+gba_result gba_save_load(gba *g, const uint8_t *data, size_t len);
 size_t gba_save_size(const gba *g);
 gba_result gba_save_write(const gba *g, uint8_t *out, size_t cap);
 bool gba_save_dirty(const gba *g);

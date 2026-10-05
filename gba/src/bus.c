@@ -39,7 +39,7 @@ static void test_write(gba *g, uint32_t addr, uint32_t size, uint32_t v)
     gba_test_bus *t = &g->test;
     if (t->nwrites < GBA_TEST_MAX_TXN) {
         gba_test_txn *x = &t->writes[t->nwrites++];
-        x->kind = 2; x->size = size; x->addr = addr; x->data = v;
+        x->kind = 2; x->size = size; x->addr = addr & ~(size - 1u); x->data = v;
     }
 }
 #define TEST_READ(sz, code) do { if (g->test.active) return (test_read(g, addr, (sz), (code))); } while (0)
@@ -115,10 +115,13 @@ static uint32_t mem_read32(gba *g, uint32_t addr)
     case 0x6: return le32(&g->vram[vram_offset(addr) & ~3u]);
     case 0x7: return le32(&g->oam[addr & 0x3FCu]);
     case 0x8: case 0x9: case 0xA: case 0xB: case 0xC: case 0xD: {
+        if (gba_cart_is_eeprom(g, addr) || gba_gpio_readable(g, addr)) break;
         uint32_t o = addr & 0x1FFFFFCu;
         if (g->rom && o + 3 < g->rom_size) return le32(&g->rom[o]);
         break;
     }
+    case 0xE: case 0xF:
+        return gba_cart_read8(g, addr) * 0x01010101u;
     case 0x1:
         return open_bus(g);
     default:
@@ -146,14 +149,14 @@ static uint16_t mem_read16(gba *g, uint32_t addr)
     case 0x6: { uint32_t o = vram_offset(addr) & ~1u; return (uint16_t)(g->vram[o] | (g->vram[o + 1] << 8)); }
     case 0x7: { uint32_t o = addr & 0x3FEu; return (uint16_t)(g->oam[o] | (g->oam[o + 1] << 8)); }
     case 0x8: case 0x9: case 0xA: case 0xB: case 0xC: case 0xD: {
+        if (gba_cart_is_eeprom(g, addr)) return gba_eeprom_read(g);
+        if (gba_gpio_readable(g, addr)) return gba_gpio_read(g, addr);
         uint32_t o = addr & 0x1FFFFFEu;
         if (g->rom && o + 1 < g->rom_size) return (uint16_t)(g->rom[o] | (g->rom[o + 1] << 8));
         return (uint16_t)(addr >> 1);             /* bus abierto del cartucho */
     }
-    case 0xE: case 0xF: {
-        uint8_t b = g->sram[addr & 0x7FFFu];
-        return (uint16_t)(b * 0x0101u);
-    }
+    case 0xE: case 0xF:
+        return (uint16_t)(gba_cart_read8(g, addr) * 0x0101u);
     default:
         return (uint16_t)(open_bus(g) >> ((addr & 2u) * 8u));
     }
@@ -170,7 +173,10 @@ static void mem_write16(gba *g, uint32_t addr, uint16_t v)
     case 0x5: { uint32_t o = addr & 0x3FEu; g->pal[o] = (uint8_t)v; g->pal[o + 1] = (uint8_t)(v >> 8); break; }
     case 0x6: { uint32_t o = vram_offset(addr) & ~1u; g->vram[o] = (uint8_t)v; g->vram[o + 1] = (uint8_t)(v >> 8); break; }
     case 0x7: { uint32_t o = addr & 0x3FEu; g->oam[o] = (uint8_t)v; g->oam[o + 1] = (uint8_t)(v >> 8); break; }
-    case 0xE: case 0xF: g->sram[addr & 0x7FFFu] = (uint8_t)(v >> ((addr & 1u) * 8u)); break;
+    case 0x8: case 0x9: case 0xA: case 0xB: case 0xC: case 0xD:
+        if (gba_cart_is_eeprom(g, addr)) gba_eeprom_write(g, v);
+        else if (addr >= 0x080000C4u && addr <= 0x080000C9u) gba_gpio_write(g, addr, v);
+        break;
     default: break;
     }
 }
@@ -197,23 +203,26 @@ uint8_t gba_bus_read8(gba *g, uint32_t addr)
 {
     TEST_READ(1, false);
     charge(g, addr, false, false);
-    if ((addr >> 24) == 0xE || (addr >> 24) == 0xF) return g->sram[addr & 0x7FFFu];
+    if ((addr >> 24) == 0xE || (addr >> 24) == 0xF) return gba_cart_read8(g, addr);
     return (uint8_t)(mem_read16(g, addr & ~1u) >> ((addr & 1u) * 8u));
 }
 
 void gba_bus_write32(gba *g, uint32_t addr, uint32_t v)
 {
-    TEST_WRITE(4);
+    if ((addr >> 24) == 0xE || (addr >> 24) == 0xF) {
+        /* Bus de 8 bits: se escribe el byte que corresponde a la dirección. */
+        TEST_WRITE(4);
+        charge(g, addr, true, g->cpu.seq);
+        gba_cart_write8(g, addr, (uint8_t)(v >> ((addr & 3u) * 8u)));
+        return;
+    }
     addr &= ~3u;
+    TEST_WRITE(4);
     charge(g, addr, true, g->cpu.seq);
     if ((addr >> 24) == 0x4 && addr < 0x04000400u) {
         /* E/S: primero la media palabra baja (p. ej. DMA SAD antes que CNT). */
         gba_io_write16(g, addr & 0x3FEu, (uint16_t)v);
         gba_io_write16(g, (addr + 2) & 0x3FEu, (uint16_t)(v >> 16));
-        return;
-    }
-    if ((addr >> 24) == 0xE || (addr >> 24) == 0xF) {
-        g->sram[addr & 0x7FFFu] = (uint8_t)v;
         return;
     }
     mem_write16(g, addr, (uint16_t)v);
@@ -222,8 +231,14 @@ void gba_bus_write32(gba *g, uint32_t addr, uint32_t v)
 
 void gba_bus_write16(gba *g, uint32_t addr, uint16_t v)
 {
-    TEST_WRITE(2);
+    if ((addr >> 24) == 0xE || (addr >> 24) == 0xF) {
+        TEST_WRITE(2);
+        charge(g, addr, false, g->cpu.seq);
+        gba_cart_write8(g, addr, (uint8_t)(v >> ((addr & 1u) * 8u)));
+        return;
+    }
     addr &= ~1u;
+    TEST_WRITE(2);
     charge(g, addr, false, g->cpu.seq);
     mem_write16(g, addr, v);
 }
@@ -243,7 +258,7 @@ void gba_bus_write8(gba *g, uint32_t addr, uint8_t v)
         if (vram_offset(addr) < ((g->io[0] & 7u) >= 3 ? 0x14000u : 0x10000u))
             mem_write16(g, addr & ~1u, (uint16_t)(v * 0x0101u));
         break;
-    case 0xE: case 0xF: g->sram[addr & 0x7FFFu] = v; break;
+    case 0xE: case 0xF: gba_cart_write8(g, addr, v); break;
     default: break;                       /* OAM ignora escrituras de 8 bits */
     }
 }

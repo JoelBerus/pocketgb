@@ -253,6 +253,7 @@ int main(int argc, char **argv)
 {
     const char *rom = NULL, *mode = NULL, *sst = NULL, *dump = NULL, *frames = NULL, *keys = NULL, *ref = NULL;
     long max_frames = 600, limit = 0, bench = 0;
+    bool force_rtc = false;
     int show = 5;
     bool unit = false;
     for (int i = 1; i < argc; i++) {
@@ -267,6 +268,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = argv[++i];
         else if (!strcmp(argv[i], "--keys") && i + 1 < argc) keys = argv[++i];
         else if (!strcmp(argv[i], "--ref") && i + 1 < argc) ref = argv[++i];
+        else if (!strcmp(argv[i], "--rtc")) force_rtc = true;
         else if (argv[i][0] != '-') rom = argv[i];
         else { fprintf(stderr, "opción desconocida: %s\n", argv[i]); return 2; }
     }
@@ -280,7 +282,11 @@ int main(int argc, char **argv)
     uint8_t *data = read_file(rom, &len);
     if (!data) { fprintf(stderr, "no se puede leer %s\n", rom); return 2; }
     gba *g = gba_create();
-    gba_result r = g ? gba_load_rom(g, data, len, NULL) : GBA_ERR_OUT_OF_MEMORY;
+    gba_options o;
+    gba_options_default(&o);
+    o.unix_time = 1791203696;          /* 2026-10-05 12:34:56 (hora local de prueba) */
+    if (force_rtc) o.rtc = GBA_RTC_ON;
+    gba_result r = g ? gba_load_rom(g, data, len, &o) : GBA_ERR_OUT_OF_MEMORY;
     free(data);
     if (r != GBA_OK) { fprintf(stderr, "%s: %s\n", rom, gba_result_str(r)); gba_destroy(g); return 2; }
     int rc = 0;
@@ -338,6 +344,17 @@ int main(int argc, char **argv)
         free(want);
         if (diff) { printf("FAIL %s: %ld píxeles distintos de la referencia\n", rom, diff); rc = 1; }
         else printf("PASS %s (idéntico a la referencia)\n", rom);
+    } else if (mode && !strcmp(mode, "hb")) {
+        /* ROM homebrew que escribe su resultado en 0x03007E00 (0x600D = bien). */
+        uint32_t res = 0;
+        long f;
+        for (f = 0; f < max_frames; f++) {
+            gba_run_frame(g);
+            res = g->iwram[0x7E00] | (g->iwram[0x7E01] << 8) | ((uint32_t)g->iwram[0x7E02] << 16) | ((uint32_t)g->iwram[0x7E03] << 24);
+            if (res) break;
+        }
+        if (res == 0x600D) printf("PASS %s (%ld frames)\n", rom, f + 1);
+        else { printf("FAIL %s: resultado %u\n", rom, res); rc = 1; }
     } else if (mode && !strcmp(mode, "jsmolka")) {
         long f;
         for (f = 0; f < max_frames && !cpu_idle_loop(g); f++) gba_run_frame(g);

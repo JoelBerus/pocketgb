@@ -87,6 +87,37 @@ typedef struct gba_timer {
     uint32_t sub;                  /* ciclos acumulados bajo el prescaler */
 } gba_timer;
 
+/* Cartucho: medio de guardado y RTC por GPIO (cart.c, GBATEK §GBA Cart). */
+typedef struct gba_flash {
+    uint8_t state;                 /* 0 listo, 1 tras AA, 2 tras 55, 3 escribir byte, 4 elegir banco */
+    bool erase_armed;              /* tras 0x80: el siguiente AA-55 completa el borrado */
+    bool id_mode;
+    uint8_t bank;
+} gba_flash;
+
+typedef struct gba_eeprom {
+    uint8_t addr_bits;             /* 6 (512 B) o 14 (8 KiB); 0 = aún sin detectar */
+    uint8_t phase;                 /* 0 comando, 1 dirección, 2 datos, 3 bit final */
+    uint8_t cmd;                   /* 2 = escribir (10), 3 = leer (11) */
+    uint8_t nbits;
+    uint32_t addr;
+    uint64_t data;
+    uint32_t read_addr;
+    int8_t read_pos;               /* -1 = sin lectura; 0..67 bit siguiente */
+    uint32_t dma_len;              /* longitud de la última DMA a la EEPROM */
+} gba_eeprom;
+
+typedef struct gba_rtc {
+    uint8_t data, dir, ctrl;       /* registros GPIO (0x80000C4/C6/C8) */
+    uint8_t state;                 /* 0 inactivo, 1 comando, 2 datos */
+    uint8_t cmd, bitpos, bytepos, nbytes;
+    uint8_t shift;
+    uint8_t buf[8];
+    uint8_t status;                /* registro de control: bit 6 = 24 h */
+    bool reading;
+    int64_t offset;                /* segundos que el juego ajustó sobre la hora del anfitrión */
+} gba_rtc;
+
 /* PPU: referencias internas de los fondos afines y búferes de una línea. */
 typedef struct gba_ppu {
     int32_t ref_x[2], ref_y[2];    /* BG2/BG3, 20.8 con signo (se recargan en VBlank) */
@@ -114,7 +145,7 @@ struct gba {
     uint8_t *rom;                  /* malloc en gba_load_rom */
     uint32_t rom_size;             /* tamaño real del archivo */
     uint32_t rom_mask;             /* potencia de 2 - 1 que cubre rom_size */
-    uint8_t sram[64 * 1024];       /* G4: SRAM/Flash/EEPROM */
+    uint8_t save[128 * 1024];      /* SRAM, Flash o EEPROM (cart.c) */
     bool bios_loaded;
     uint32_t bios_last;            /* última instrucción leída desde la BIOS */
 
@@ -146,6 +177,14 @@ struct gba {
 
     gba_options opts;
     gba_save_type save_type;
+    uint32_t save_bytes;
+    bool save_dirty;
+    bool has_rtc;
+    gba_flash flash;
+    gba_eeprom eeprom;
+    gba_rtc rtc;
+    int64_t rtc_base;              /* hora local del anfitrión en el ciclo rtc_base_cycles */
+    uint64_t rtc_base_cycles;
     uint8_t fingerprint[32];
     uint32_t framebuffer[GBA_SCREEN_W * GBA_SCREEN_H];
 
@@ -185,6 +224,18 @@ enum {
     GBA_IRQ_TIMER0 = 1u << 3, GBA_IRQ_SERIAL = 1u << 7, GBA_IRQ_DMA0 = 1u << 8,
     GBA_IRQ_KEYPAD = 1u << 12, GBA_IRQ_GAMEPAK = 1u << 13
 };
+
+/* cart.c */
+void gba_cart_init(gba *g);                      /* tras cargar el ROM: medio y RTC */
+uint8_t gba_cart_read8(gba *g, uint32_t addr);   /* 0x0E000000-0x0FFFFFFF */
+void gba_cart_write8(gba *g, uint32_t addr, uint8_t v);
+bool gba_cart_is_eeprom(const gba *g, uint32_t addr);
+uint16_t gba_eeprom_read(gba *g);
+void gba_eeprom_write(gba *g, uint16_t v);
+void gba_eeprom_dma(gba *g, uint32_t count);     /* una DMA va a escribir/leer la EEPROM */
+bool gba_gpio_readable(const gba *g, uint32_t addr);
+uint16_t gba_gpio_read(gba *g, uint32_t addr);
+void gba_gpio_write(gba *g, uint32_t addr, uint16_t v);
 
 /* ppu.c */
 void gba_ppu_render_line(gba *g, unsigned line);
