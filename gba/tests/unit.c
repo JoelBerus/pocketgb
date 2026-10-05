@@ -180,6 +180,9 @@ static void test_hle_math(void)
     r[0] = 0x02000000; r[1] = 168; r[2] = 0; gba_hle_swi(g, 0x1F); CHECK(r[0] == 0x8000);
     g->ewram[4] = 0xFF; g->ewram[5] = 0xFF; g->ewram[6] = 0xFF; g->ewram[7] = 0xFF;
     r[0] = 0x02000000; r[1] = 255; r[2] = 255; gba_hle_swi(g, 0x1F); CHECK(r[0] == 0xFFFFFFFFu);
+    /* Tecla > 180 con base pequeña: b=7, k=229, f=255 → 125,7 según GBATEK. */
+    g->ewram[4] = 7; g->ewram[5] = 0; g->ewram[6] = 0; g->ewram[7] = 0;
+    r[0] = 0x02000000; r[1] = 229; r[2] = 255; gba_hle_swi(g, 0x1F); CHECK(r[0] == 125 || r[0] == 126);
     gba_destroy(g);
 }
 
@@ -305,9 +308,12 @@ static void test_dma_self_retrigger(void)
     gba_bus_write32(g, 0x040000D8, 0x040000DE);
     gba_bus_write16(g, 0x040000DC, 2);
     gba_bus_write16(g, 0x040000DE, 0x8040);          /* inmediata, destino fijo, 16 bits */
+    uint64_t c0 = g->cycles;
     for (int i = 0; i < 1000; i++) gba_tick(g, 4);  /* acotado: una ejecución por paso */
     gba_run_frame(g);
-    CHECK(true);
+    CHECK(g->dma_pending == 0);
+    CHECK(!(g->dma[3].cnt_h & 0x8000u));
+    CHECK(g->cycles - c0 < 3u * GBA_CYCLES_PER_FRAME);
     gba_destroy(g);
 }
 

@@ -120,6 +120,7 @@ static void hle_register_ram_reset(gba *g, uint32_t flags)
 static void hle_soft_reset(gba *g)
 {
     uint8_t flag = g->iwram[0x7FFA];
+    g->hle_waiting = false;
     memset(&g->iwram[0x7E00], 0, 0x200);
     gba_arm *c = &g->cpu;
     gba_arm_set_cpsr(g, ARM_MODE_SVC);
@@ -484,10 +485,13 @@ bool gba_hle_swi(gba *g, uint32_t number)
         int32_t n = 180 * 256 - (int32_t)((r[1] & 0xFFu) * 256u + (r[2] & 0xFFu));
         int32_t oct = n >= 0 ? n / 3072 : -((-n + 3071) / 3072);
         int32_t rem = n - oct * 3072;              /* 0..3071 */
-        uint64_t v = (base * hle_semi[rem / 256]) >> 16;
-        v = (v * hle_fine[rem % 256]) >> 16;
-        if (oct >= 0) v = oct >= 64 ? 0 : v >> oct;
-        else v = v > (0xFFFFFFFFull >> -oct) ? 0xFFFFFFFFull : v << -oct;
+        /* Producto en Q8 (8 bits de fracción) y redondeo al final: el error no
+         * se amplifica al subir de octava (auditoría G2, segunda vuelta, N1). */
+        uint64_t v = (base * hle_semi[rem / 256]) >> 8;          /* < 2^40 */
+        v = (v * hle_fine[rem % 256]) >> 16;                     /* Q8, < 2^40 */
+        if (oct >= 0) v = oct >= 48 ? 0 : v >> oct;
+        else v = v > (0xFFFFFFFFFFull >> -oct) ? 0xFFFFFFFFFFull : v << -oct;
+        v = (v + 0x80u) >> 8;
         r[0] = v > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)v;
         break;
     }

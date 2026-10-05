@@ -17,3 +17,15 @@ $ make -C gba test HITO=G2
 $ make -C gba asan HITO=G2
 51/51 sin fallos requeridos
 ```
+
+## Segunda vuelta ([G2-opus-v2](G2-opus-v2.md): APROBAR CON CAMBIOS)
+| ID | Corrección |
+|---|---|
+| N1 | MidiKey2Freq calcula en Q8 (8 bits de fracción), desplaza por octava y redondea al final. b=7, k=229, f=255 → 126 (GBATEK: 125,7); test añadido. |
+| N2 | `hle_soft_reset` limpia `hle_waiting`. |
+| N3 | El test comprueba `dma_pending == 0`, el canal desactivado y menos de 3 frames de ciclos. |
+
+```
+$ make -C gba test HITO=G2   → 51/51 sin fallos requeridos
+$ make -C gba asan HITO=G2   → 51/51 sin fallos requeridos
+```
