@@ -5,6 +5,7 @@ Formato: hito|ruta|modo|max_frames|tipo[|referencia]
   ruta: relativa a gba/tests/roms/, o "hb:NOMBRE" para las ROMs homebrew de gba/build/hb/
   modo: unit | sst (archivo .json.bin de SingleStepTests) | jsmolka | ref (PNG en gba/tests/ref/)
         | hb (resultado 0x600D en 0x03007E00) | hb-rtc (igual, con RTC forzado)
+        | audio:HZ (frecuencia de la salida ±2 % y pico suficiente)
   tipo: requerido (bloquea) | known-fail | info
 Sale con 1 si falla un caso requerido de un hito <= --hito.
 """
@@ -76,6 +77,11 @@ def main():
                     sys.exit(f"{ref}: {w}x{h}, se esperaba 240x160")
                 open(raw, "wb").write(rgba)
             cmd = [a.bin, fn, "--mode", "ref", "--ref", raw, "--max-frames", str(frames)]
+        elif modo.startswith("audio:"):
+            parts = modo.split(":")             # audio:HZ[:L|R|L!|R!]  (! = el otro lado en silencio)
+            cmd = [a.bin, fn, "--mode", "audio", "--freq", parts[1], "--max-frames", str(frames)]
+            if len(parts) > 2:
+                cmd += ["--side", parts[2]]
         elif modo == "hb-rtc":
             cmd = [a.bin, fn, "--mode", "hb", "--rtc", "--max-frames", str(frames)]
         else:

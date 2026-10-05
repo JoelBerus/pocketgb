@@ -103,7 +103,12 @@ static void hle_register_ram_reset(gba *g, uint32_t flags)
     if (flags & 0x08) memset(g->vram, 0, sizeof g->vram);
     if (flags & 0x10) memset(g->oam, 0, sizeof g->oam);
     if (flags & 0x20) memset(&g->io[0x120], 0, 0x40);
-    if (flags & 0x40) memset(&g->io[0x060], 0, 0x50);
+    if (flags & 0x40) {
+        for (uint32_t off = 0x060; off < 0x0A0; off += 2) if (off != 0x084 && off != 0x082) gba_io_write16(g, off, 0);
+        gba_io_write16(g, 0x082, 0x8800);       /* SOUNDCNT_H = 0 y vaciar las dos FIFO */
+        gba_io_write16(g, 0x082, 0);
+        gba_io_write16(g, 0x084, 0);
+    }
     if (flags & 0x80) {
         for (uint32_t off = 0; off < 0x060; off += 2) gba_io_write16(g, off, 0);
         gba_io_write16(g, 0x020, 0x100); gba_io_write16(g, 0x026, 0x100);
@@ -473,7 +478,7 @@ bool gba_hle_swi(gba *g, uint32_t number)
     case 0x17: hle_diff(g, r[0], r[1], false, true); break;
     case 0x18: hle_diff(g, r[0], r[1], true, false); break;
     case 0x19: {
-        uint16_t bias = (uint16_t)(g->io[0x88] | (g->io[0x89] << 8));
+        uint16_t bias = gba_io_read16(g, 0x088);
         bias = (uint16_t)((bias & ~0x3FEu) | (r[0] ? 0x200u : 0u));
         gba_io_write16(g, 0x088, bias);
         break;

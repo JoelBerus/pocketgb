@@ -38,3 +38,10 @@ G4|gba-tests/save/none.gba|jsmolka|120|requerido
 G4|hb:eeprom.gba|hb|60|requerido
 G4|hb:eeprom8k.gba|hb|60|requerido
 G4|hb:rtc.gba|hb-rtc|300|requerido
+# ---- G5: APU (frecuencia medida en la salida; niveles PSG/DirectSound calibrados con mGBA) ----
+G5|hb:audio_psg.gba|audio:439.8|120|requerido
+G5|hb:audio_ds.gba|audio:1024|120|requerido
+G5|hb:audio_ds.gba|audio:1024:R|120|requerido
+G5|hb:audio_wave.gba|audio:128:L!|120|requerido
+G5|hb:audio_noise.gba|audio:0:R!|120|requerido
+G5|hb:audio_dsb.gba|audio:512:R!|120|requerido
