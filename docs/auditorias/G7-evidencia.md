@@ -31,3 +31,6 @@ Capturas `game-gba-portrait-dark.png` / `game-gba-landscape-dark.png`: `arm.gba`
 - No se probó en el iPhone (es G8) ni con un cartucho real; solo con homebrew libre.
 - `make -C gba test` no se ejecutó en el Mac (faltan `ld.lld` y el cross-compiler para los homebrew propios); la regresión del núcleo GBA (91/91 + ASan, G6) corre en el CI Linux `gba.yml` (verde en la PR).
 - Al auditar: `core/` no cambia; `gba/` solo añade `include/module.modulemap`.
+
+## Auditoría
+Codex (solo lectura): RECHAZAR → [G7-codex.md](G7-codex.md); respuesta y correcciones en [G7-respuesta.md](G7-respuesta.md) (G7-1 y G7-2 descartados con evidencia, G7-3 documentado, G7-4 corregido). Tras las correcciones: 102 tests unitarios en verde.
