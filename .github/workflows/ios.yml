@@ -2,12 +2,12 @@
 # del catálogo (ios/PocketGBUITests/screens.txt) en la rama huérfana ci-shots/<rama>.
 # Así Claude en la nube (sin Xcode) puede ver la UI: git fetch origin ci-shots/<rama>.
 # Corre en el runner propio del Mac de Joel (sin coste; solo si el Mac está encendido,
-# si no, el job espera en cola). Solo corre si cambian ios/ o core/.
+# si no, el job espera en cola). Solo corre si cambian ios/, core/ o gba/.
 name: iOS
 on:
   push:
     branches-ignore: ['ci-shots/**']
-    paths: ['ios/**', 'core/**', 'tools/ios-screenshots.sh', '.github/workflows/ios.yml']
+    paths: ['ios/**', 'core/**', 'gba/**', 'tools/ios-screenshots.sh', 'tools/fetch-gba-test-roms.sh', '.github/workflows/ios.yml']
   workflow_dispatch:
 concurrency:
   group: ios-${{ github.ref }}

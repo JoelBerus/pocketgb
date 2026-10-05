@@ -6,7 +6,7 @@
  *   gbatest --unit                                       tests unitarios
  * Se compila con GBA_TEST_HOOKS (acceso a internal.h y al bus de prueba).
  */
-#include "internal.h"
+#include "gba_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

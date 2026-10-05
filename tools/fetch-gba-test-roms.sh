@@ -11,8 +11,14 @@ DEST="$ROOT/gba/tests/roms"
 JSMOLKA_SHA="a7113b67e63f83a9b321696ddd7042ccfad6c881"
 SST_SHA="e3097d88d428752736b949d94c094d5da50f0db6"
 STAMP="$JSMOLKA_SHA $SST_SHA"
+# --solo-jsmolka: solo las ROMs homebrew (~1 MB), p. ej. para las capturas de la app.
+ONLY_JSMOLKA=0
+[ "${1:-}" = "--solo-jsmolka" ] && ONLY_JSMOLKA=1
 if [ -f "$DEST/.version" ] && [ "$(cat "$DEST/.version")" = "$STAMP" ]; then
   echo "Pruebas GBA ya presentes en $DEST"; exit 0
+fi
+if [ "$ONLY_JSMOLKA" = 1 ] && [ -f "$DEST/.version-jsmolka" ] && [ "$(cat "$DEST/.version-jsmolka")" = "$JSMOLKA_SHA" ]; then
+  echo "ROMs de jsmolka ya presentes en $DEST"; exit 0
 fi
 fetch() { # repo dir sha
   rm -rf "$2"; mkdir -p "$2"
@@ -30,6 +36,8 @@ fetch() { # repo dir sha
 }
 mkdir -p "$DEST"
 fetch jsmolka/gba-tests "$DEST/gba-tests" "$JSMOLKA_SHA"
+echo "$JSMOLKA_SHA" > "$DEST/.version-jsmolka"
+if [ "$ONLY_JSMOLKA" = 1 ]; then echo "OK: ROMs de jsmolka en $DEST"; exit 0; fi
 fetch SingleStepTests/ARM7TDMI "$DEST/ARM7TDMI" "$SST_SHA"
 echo "$STAMP" > "$DEST/.version"
 echo "OK: pruebas GBA en $DEST"

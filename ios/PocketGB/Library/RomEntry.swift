@@ -1,6 +1,6 @@
 import Foundation
 
-/// Un archivo `.gb`/`.gbc` de la carpeta de la biblioteca (SPEC §4, docs/04 §Biblioteca).
+/// Un archivo `.gb`/`.gbc`/`.gba` de la carpeta de la biblioteca (SPEC §4, docs/04 §Biblioteca).
 /// Es un valor inmutable que el escáner crea fuera del hilo principal.
 struct RomEntry: Identifiable, Hashable, Sendable {
     enum CloudState: Hashable, Sendable {
@@ -17,6 +17,10 @@ struct RomEntry: Identifiable, Hashable, Sendable {
         case tooLarge
         /// Demasiado corto o sin cabecera de Game Boy.
         case invalidHeader
+        /// `.gba` de más de 32 MiB.
+        case tooLargeGBA
+        /// `.gba` demasiado corto o sin el byte fijo 0x96 de la cabecera.
+        case invalidHeaderGBA
         /// No se pudo leer (permisos, error de coordinación).
         case unreadable
 
@@ -24,6 +28,8 @@ struct RomEntry: Identifiable, Hashable, Sendable {
             switch self {
             case .tooLarge: "Supera los 8 MiB, así que no es un ROM de Game Boy."
             case .invalidHeader: "No tiene una cabecera de Game Boy válida."
+            case .tooLargeGBA: "Supera los 32 MiB, así que no es un ROM de Game Boy Advance."
+            case .invalidHeaderGBA: "No tiene una cabecera de Game Boy Advance válida."
             case .unreadable: "No se pudo leer el archivo."
             }
         }
@@ -52,6 +58,34 @@ struct RomEntry: Identifiable, Hashable, Sendable {
     }
 
     var isPlayable: Bool { problem == nil && cloud == .current }
+
+    /// Por la extensión: `.gba` es Game Boy Advance.
+    var console: Console { Console(fileName: fileName) }
+
+    var badge: ConsoleBadge {
+        console == .gameBoyAdvance ? .gba : (isColor ? .gbc : .gb)
+    }
+}
+
+/// Chip de consola de la biblioteca (SPEC §8): texto, nunca solo color.
+enum ConsoleBadge: Sendable {
+    case gb, gbc, gba
+
+    var label: String {
+        switch self {
+        case .gb: "GB"
+        case .gbc: "GBC"
+        case .gba: "GBA"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .gb: "Game Boy"
+        case .gbc: "Game Boy Color"
+        case .gba: "Game Boy Advance"
+        }
+    }
 }
 
 /// Lectura de la cabecera del cartucho (docs/03 §Cabecera), solo para mostrar.
@@ -78,6 +112,23 @@ enum RomHeader {
         let title = String(printable).trimmingCharacters(in: .whitespaces)
         return Info(title: title, isColor: isColor, checksumOK: checksumOK(bytes))
     }
+
+    /// Cabecera de Game Boy Advance (GBATEK): título en 0xA0..0xAB, byte fijo 0x96 en 0xB2
+    /// y complemento en 0xBD. Sin el byte fijo no se considera un ROM de GBA.
+    static func parseGBA(_ data: Data) -> Info? {
+        guard data.count >= gbaMinimumBytes else { return nil }
+        let bytes = [UInt8](data.prefix(gbaMinimumBytes))
+        guard bytes[0xB2] == 0x96 else { return nil }
+        var sum: UInt8 = 0
+        for i in 0xA0...0xBC { sum = sum &- bytes[i] }
+        let checksumOK = sum &- 0x19 == bytes[0xBD]
+        let raw = bytes[0xA0..<0xAC].prefix { $0 != 0 }
+        let printable = raw.map { $0 >= 0x20 && $0 < 0x7F ? Character(UnicodeScalar($0)) : "?" }
+        let title = String(printable).trimmingCharacters(in: .whitespaces)
+        return Info(title: title, isColor: false, checksumOK: checksumOK)
+    }
+
+    static let gbaMinimumBytes = 0xC0
 
     private static func checksumOK(_ bytes: [UInt8]) -> Bool {
         var x: UInt8 = 0

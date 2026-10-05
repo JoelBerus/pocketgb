@@ -1,0 +1,4 @@
+module PocketGBACore {
+    header "pocketgba.h"
+    export *
+}

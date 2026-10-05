@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Gameplay a pantalla completa (SPEC §10): viewport 10:9 y una única capa multitáctil.
+/// Gameplay a pantalla completa (SPEC §10): viewport 10:9 (GB) o 3:2 (GBA) y una única capa multitáctil.
 /// Vertical: imagen arriba y controles sobre `GameplayBackground`. Horizontal: imagen a
 /// todo el alto y controles de vidrio claro dentro del área segura.
 struct GameScreen: View {
@@ -35,7 +35,7 @@ struct GameScreen: View {
                     // Vertical: imagen bajo la Dynamic Island (no dentro), controles hasta el borde.
                     VStack(spacing: 0) {
                         viewport(integerScale: false)
-                            .aspectRatio(10.0 / 9.0, contentMode: .fit)
+                            .aspectRatio(session.frames.size.aspectRatio, contentMode: .fit)
                         controls(.portrait)
                             .ignoresSafeArea(edges: .bottom)
                             .overlay(alignment: .top) { hud.padding(.top, 6) }

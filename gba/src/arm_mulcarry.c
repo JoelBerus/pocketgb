@@ -29,7 +29,7 @@
  * acumulador pasa a ser local; se devuelve solo la bandera C (el producto lo
  * calcula arm7.c directamente); nombres con prefijo gba_.
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 typedef struct { uint64_t lo, hi; } mc_u128;
 typedef struct { uint64_t output, carry; } mc_csa;

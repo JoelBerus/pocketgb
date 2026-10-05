@@ -12,7 +12,7 @@
  * no cambia. El tamaño es constante para una misma versión. CRC-32 IEEE
  * (polinomio reflejado 0xEDB88320) con tabla de 16 entradas.
  */
-#include "internal.h"
+#include "gba_internal.h"
 #include <stdlib.h>
 
 enum { STATE_VERSION = 1, HEADER_BYTES = 4 + 4 + 32 + 4, CRC_BYTES = 4 };

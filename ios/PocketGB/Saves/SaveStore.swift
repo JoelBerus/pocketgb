@@ -177,11 +177,17 @@ struct SaveStore: Sendable {
     /// Paso 6 de docs/04 §Saves: un `.sav.tmp` huérfano se instala si no hay
     /// `.sav` y tiene el tamaño esperado; si no, se borra. Los `.1.tmp` se borran.
     func recoverOrphans(expectedSize: Int) throws {
+        try recoverOrphans(validSizes: [expectedSize])
+    }
+
+    /// Igual, con varios tamaños válidos (Game Boy Advance: la EEPROM puede ser de 512 B o
+    /// de 8 KiB antes de que el juego la use, y el RTC puede ir al final).
+    func recoverOrphans(validSizes: Set<Int>) throws {
         let fm = FileManager.default
         let tmp = saveURL.appendingPathExtension("tmp")
         if fm.fileExists(atPath: tmp.path) {
             let size = (try? fm.attributesOfItem(atPath: tmp.path)[.size] as? Int) ?? -1
-            if !fm.fileExists(atPath: saveURL.path) && size == expectedSize {
+            if !fm.fileExists(atPath: saveURL.path) && validSizes.contains(size) {
                 try AtomicFile.rename(tmp, saveURL)
                 try AtomicFile.syncDirectory(directory)
             } else {

@@ -12,7 +12,7 @@
  * - RTC S-3511A por GPIO (0x080000C4–C9) en los juegos que lo llevan.
  * Todo índice se acota con el tamaño del medio (regla dura 3).
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 /* IDs de fabricante/dispositivo que esperan los juegos (GBATEK). */
 #define FLASH64_ID  0x1B32u   /* Panasonic MN63F805MNP */

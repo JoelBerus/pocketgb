@@ -26,6 +26,7 @@
 /* Begin PBXFileReference section */
 		AA0000000000000000000010 /* PocketGB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PocketGB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000011 /* include */ = {isa = PBXFileReference; lastKnownFileType = folder; name = include; path = ../core/include; sourceTree = "<group>"; };
+		AA0000000000000000000014 /* include */ = {isa = PBXFileReference; lastKnownFileType = folder; name = include; path = ../gba/include; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* PocketGBTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PocketGBTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000013 /* PocketGBUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PocketGBUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -63,6 +64,12 @@
 			);
 			name = core;
 			path = ../core/src;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000034 /* gba */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = gba;
+			path = ../gba/src;
 			sourceTree = "<group>";
 		};
 		AA0000000000000000000032 /* PocketGBTests */ = {
@@ -108,6 +115,8 @@
 				AA0000000000000000000030 /* PocketGB */,
 				AA0000000000000000000031 /* core */,
 				AA0000000000000000000011 /* include */,
+				AA0000000000000000000034 /* gba */,
+				AA0000000000000000000014 /* include */,
 				AA0000000000000000000032 /* PocketGBTests */,
 				AA0000000000000000000033 /* PocketGBUITests */,
 				AA0000000000000000000002 /* Products */,
@@ -142,6 +151,7 @@
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000030 /* PocketGB */,
 				AA0000000000000000000031 /* core */,
+				AA0000000000000000000034 /* gba */,
 			);
 			name = PocketGB;
 			productName = PocketGB;
@@ -404,7 +414,10 @@
 				DEVELOPMENT_TEAM = 3TC3R6S79G;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../core/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				INFOPLIST_FILE = PocketGB/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -421,7 +434,10 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../core/include";
+				SWIFT_INCLUDE_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -437,7 +453,10 @@
 				DEVELOPMENT_TEAM = 3TC3R6S79G;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../core/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				INFOPLIST_FILE = PocketGB/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -454,7 +473,10 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../core/include";
+				SWIFT_INCLUDE_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -473,7 +495,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.joelbermudez.pocketgb.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../core/include";
+				SWIFT_INCLUDE_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -493,7 +518,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.joelbermudez.pocketgb.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../core/include";
+				SWIFT_INCLUDE_PATHS = (
+					"$(SRCROOT)/../core/include",
+					"$(SRCROOT)/../gba/include",
+				);
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;

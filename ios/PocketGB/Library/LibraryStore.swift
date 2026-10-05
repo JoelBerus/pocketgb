@@ -44,6 +44,8 @@ final class LibraryStore {
 
     private let storage: BookmarkStorage
     private var folderURL: URL?
+    /// Carpeta de la biblioteca (BIOS opcional de GBA en su raíz).
+    var rootURL: URL? { folderURL }
     private var accessingURL: URL?
     private var scanGeneration = 0
     /// Último escaneo terminado: un aviso de progreso que llegue tarde no lo reabre (auditoría D2, H7).

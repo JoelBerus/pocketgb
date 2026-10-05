@@ -11,7 +11,7 @@
  *   IntrWait/VBlankIntrWait paran la CPU y reejecutan la SWI al volver de la
  *   IRQ hasta que el manejador del juego marca el bit en 0x03007FF8.
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 /* sin(2*pi*i/256) * 0x4000, redondeado (tabla calculada, no copiada). */
 static const int16_t hle_sin[256] = {

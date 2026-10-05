@@ -18,7 +18,7 @@ enum LibrarySort: String, Codable, CaseIterable, Sendable {
 
 /// Filtros de la biblioteca (SPEC §4): solo Game Boy y Game Boy Color.
 enum LibraryFilter: String, CaseIterable, Identifiable, Sendable {
-    case all, gb, gbc, favorites
+    case all, gb, gbc, gba, favorites
 
     var id: Self { self }
     var title: String {
@@ -26,6 +26,7 @@ enum LibraryFilter: String, CaseIterable, Identifiable, Sendable {
         case .all: "Todos"
         case .gb: "GB"
         case .gbc: "GBC"
+        case .gba: "GBA"
         case .favorites: "Favoritos"
         }
     }
@@ -176,8 +177,9 @@ enum LibraryQuery {
     static func matches(_ entry: RomEntry, filter: LibraryFilter, isFavorite: Bool) -> Bool {
         switch filter {
         case .all: true
-        case .gb: !entry.isColor
-        case .gbc: entry.isColor
+        case .gb: entry.badge == .gb
+        case .gbc: entry.badge == .gbc
+        case .gba: entry.badge == .gba
         case .favorites: isFavorite
         }
     }

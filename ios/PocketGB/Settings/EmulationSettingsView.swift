@@ -25,10 +25,18 @@ struct EmulationSettingsView: View {
             Section {
                 LabeledContent("Juegos de Game Boy Color", value: "Siempre en color")
             }
+            Section {
+                LabeledContent("BIOS", value: state.gbaBIOSStatus?.settingsText ?? "Comprobando…")
+            } header: {
+                Text("Juegos de Game Boy Advance")
+            } footer: {
+                Text("Opcional: copia tu propio volcado como “\(BIOSFile.fileName)” en la carpeta de juegos. Solo se usa si es la BIOS oficial; si no, PocketGB emula sus funciones y los juegos funcionan igual.")
+            }
         }
         .scrollContentBackground(.hidden)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
         .navigationTitle("Emulación")
+        .onAppear { state.refreshBIOSStatus() }
     }
 }
 
@@ -73,11 +81,12 @@ struct GameSettingsView: View {
                     }
                     .disabled(!resolved.colorForGameBoy)
                 } header: {
-                    Text(entry.isColor ? "Juego de Game Boy Color: siempre en color" : "Juego de Game Boy")
+                    Text(entry.badge == .gba ? "Juego de Game Boy Advance: sin ajustes de color"
+                         : entry.isColor ? "Juego de Game Boy Color: siempre en color" : "Juego de Game Boy")
                 } footer: {
                     Text("Se aplica la próxima vez que abras el juego.")
                 }
-                .disabled(entry.isColor)
+                .disabled(entry.badge != .gb)
                 if !overrides.isEmpty {
                     Section {
                         Button("Usar los ajustes globales", systemImage: "arrow.uturn.backward") {
