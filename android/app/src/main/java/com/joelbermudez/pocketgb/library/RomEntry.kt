@@ -21,6 +21,8 @@ data class RomEntry(
     val sizeBytes: Long,
     val headerChecksumOk: Boolean,
     val problem: RomProblem?,
+    /** Id de documento de la carpeta que contiene el ROM: ahí vive el `.sav` del espejo SAF. */
+    val folderDocumentId: String? = null,
 ) {
     val subfolder: String
         get() = id.substringBeforeLast('/', missingDelimiterValue = "")

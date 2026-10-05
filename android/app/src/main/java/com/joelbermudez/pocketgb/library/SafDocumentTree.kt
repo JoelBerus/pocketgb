@@ -21,7 +21,7 @@ class SafDocumentTree(
     private val resolver: ContentResolver,
     private val treeUri: Uri,
 ) : DocumentTree {
-    private val rootId: String = DocumentsContract.getTreeDocumentId(treeUri)
+    override val rootId: String = DocumentsContract.getTreeDocumentId(treeUri)
 
     override fun children(directoryId: String?): List<TreeNode> {
         try {

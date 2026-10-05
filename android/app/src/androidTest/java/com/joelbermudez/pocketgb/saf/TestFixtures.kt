@@ -15,7 +15,59 @@ class TestFixtures(private val resolver: ContentResolver) {
         checkNotNull(resolver.call(authorityUri, method, arg, extras))
 
     fun reset() = call("reset")
-    fun put(path: String, bytes: ByteArray) = call("put", path, Bundle().apply { putByteArray("bytes", bytes) })
+    fun put(path: String, bytes: ByteArray, mtimeMs: Long? = null) = call(
+        "put",
+        path,
+        Bundle().apply {
+            putByteArray("bytes", bytes)
+            if (mtimeMs != null) putLong("mtime", mtimeMs)
+        },
+    )
+
+    /** Contenido de un archivo del proveedor, o `null` si no existe (lectura directa, sin pasar por SAF). */
+    fun read(path: String): ByteArray? {
+        val result = call("get", path)
+        return if (result.getBoolean("exists")) result.getByteArray("bytes") else null
+    }
+
+    fun setMtime(path: String, ms: Long) = call("setMtime", path, Bundle().apply { putLong("ms", ms) })
+
+    private fun flag(method: String, on: Boolean) = call(method, null, Bundle().apply { putBoolean("on", on) })
+
+    /** Abrir para escribir falla. */
+    fun failWrite(on: Boolean) = flag("failWrite", on)
+
+    /** El descriptor es una tubería cuyo lector descarta los datos y reporta error. */
+    fun failClose(on: Boolean) = flag("failClose", on)
+
+    /** El modo `"w"` no trunca (como algunos proveedores); `"wt"` sí. */
+    fun noTruncateOnW(on: Boolean) = flag("noTruncateOnW", on)
+
+    /** Ningún modo trunca: la verificación posterior debe detectarlo. */
+    fun noTruncateAtAll(on: Boolean) = flag("noTruncateAtAll", on)
+
+    /** El descriptor es una tubería (fsync imposible) y la copia al archivo es asíncrona. */
+    fun pipeFd(on: Boolean) = flag("pipeFd", on)
+
+    /** `createDocument` devuelve un documento con otro nombre (extensión añadida). */
+    fun createRenames(on: Boolean) = flag("createRenames", on)
+
+    /** Las banderas no anuncian escritura ni creación, y el proveedor las rechaza. */
+    fun readOnlyFlags(on: Boolean) = flag("readOnlyFlags", on)
+
+    /** El permiso desaparece justo después de entregar el descriptor de escritura. */
+    fun denyMidWrite(on: Boolean) = flag("denyMidWrite", on)
+
+    /** COLUMN_LAST_MODIFIED llega nulo. */
+    fun omitMtime(on: Boolean) = flag("omitMtime", on)
+
+    /** Las aperturas para escribir esperan hasta [releaseWrite]. */
+    fun blockWrite(on: Boolean) = flag("blockWrite", on)
+    fun releaseWrite() = call("releaseWrite")
+    fun waitingWriters(): Int = call("waitingWriters").getInt("count")
+
+    /** Modos con que se abrieron documentos para escribir (`"wt"`...), en orden. */
+    fun writeModes(): List<String> = call("writeModes").getStringArrayList("modes").orEmpty()
     fun putSparse(path: String, size: Long) = call("sparse", path, Bundle().apply { putLong("size", size) })
     fun mkdir(path: String) = call("mkdir", path)
     fun deleteAll() = call("deleteAll")

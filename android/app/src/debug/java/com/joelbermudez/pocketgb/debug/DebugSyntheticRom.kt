@@ -46,4 +46,54 @@ internal object DebugSyntheticRom {
         rom[0x14F] = globalChecksum.toByte()
         return rom
     }
+
+    /**
+     * MBC1 + 8 KiB de RAM + batería que incrementa `$A000` cada frame y cierra la RAM tras cada escritura
+     * (el núcleo lo toma como "el juego guardó"). Sirve para ver el guardado de partidas sin ROMs comerciales.
+     */
+    fun sramCounter(): ByteArray = batteryProgram(
+        "A5 CONTADOR",
+        byteArrayOf(
+            0x3E, 0x01, 0xE0.toByte(), 0xFF.toByte(), 0xFB.toByte(),
+            0x76, 0x00,
+            0x3E, 0x0A, 0xEA.toByte(), 0x00, 0x00,
+            0xFA.toByte(), 0x00, 0xA0.toByte(),
+            0x3C,
+            0xEA.toByte(), 0x00, 0xA0.toByte(),
+            0x3E, 0x00, 0xEA.toByte(), 0x00, 0x00,
+            0x18, 0xEB.toByte(),
+        ),
+    )
+
+    /** MBC1 + RAM + batería que escribe [value] en `$A000`, cierra la RAM y se queda en bucle. */
+    fun sramWriter(value: Int): ByteArray = batteryProgram(
+        "A5 ESCRITOR",
+        byteArrayOf(
+            0x3E, 0x0A, 0xEA.toByte(), 0x00, 0x00,
+            0x3E, value.toByte(), 0xEA.toByte(), 0x00, 0xA0.toByte(),
+            0x3E, 0x00, 0xEA.toByte(), 0x00, 0x00,
+            0x18, 0xFE.toByte(),
+        ),
+    )
+
+    private fun batteryProgram(title: String, code: ByteArray): ByteArray {
+        val rom = ByteArray(32 * 1024)
+        rom[0x40] = 0xD9.toByte() // RETI en el vector de VBlank
+        rom[0x100] = 0xC3.toByte()
+        rom[0x101] = 0x50
+        rom[0x102] = 0x01
+        title.encodeToByteArray().copyInto(rom, destinationOffset = 0x134)
+        rom[0x147] = 0x03 // MBC1 + RAM + batería
+        rom[0x148] = 0x00 // 32 KiB
+        rom[0x149] = 0x02 // 8 KiB de RAM
+        code.copyInto(rom, destinationOffset = 0x150)
+        var header = 0
+        for (index in 0x134..0x14C) header = (header - (rom[index].toInt() and 0xFF) - 1) and 0xFF
+        rom[0x14D] = header.toByte()
+        var global = 0
+        rom.indices.forEach { index -> if (index != 0x14E && index != 0x14F) global = (global + (rom[index].toInt() and 0xFF)) and 0xFFFF }
+        rom[0x14E] = (global ushr 8).toByte()
+        rom[0x14F] = global.toByte()
+        return rom
+    }
 }

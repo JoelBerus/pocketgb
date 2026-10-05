@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <android/native_window_jni.h>
 
@@ -200,7 +201,8 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     JNIEnv *env,
     jclass clazz,
     jlong handle,
-    jbyteArray rom
+    jbyteArray rom,
+    jlong unix_time
 ) {
     (void)clazz;
     native_session *session = (native_session *)(uintptr_t)handle;
@@ -214,6 +216,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     }
     gb_options options;
     gb_options_default(&options);
+    options.unix_time = (int64_t)unix_time;
     const gb_result result = native_session_load(
         session,
         (const uint8_t *)bytes,
@@ -381,4 +384,240 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionDetachSurface
     (void)env;
     (void)clazz;
     native_session_set_window((native_session *)(uintptr_t)handle, NULL);
+}
+
+/* ---- Partidas y estados ----
+ * Los datos del disco (.sav, .state) son entrada no confiable: se validan longitudes antes de reservar o
+ * copiar, se trabaja sobre un búfer temporal nativo y nunca se llama a JNI con el mutex de la sesión tomado
+ * (las funciones de native_session ya lo sueltan al volver). */
+
+#define NS_SRAM_RTC_EXTRA 48u
+
+static native_session *session_from_handle(jlong handle) {
+    return (native_session *)(uintptr_t)handle;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionRomInfo(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jintArray ints,
+    jbyteArray fingerprint,
+    jbyteArray title
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || ints == NULL || fingerprint == NULL || title == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    if ((*env)->GetArrayLength(env, ints) < 10 ||
+        (*env)->GetArrayLength(env, fingerprint) < 32 ||
+        (*env)->GetArrayLength(env, title) < 17) {
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    gb_rom_info info;
+    memset(&info, 0, sizeof(info));
+    const int result = native_session_rom_info(session, &info);
+    if (result != NS_OK) {
+        return result;
+    }
+    jint values[10];
+    values[0] = info.cgb_flag;
+    values[1] = info.cart_type;
+    values[2] = (jint)info.rom_bytes;
+    values[3] = (jint)info.sram_bytes;
+    values[4] = info.has_battery;
+    values[5] = info.has_rtc;
+    values[6] = info.header_checksum_ok;
+    values[7] = info.global_checksum_ok;
+    values[8] = info.cgb_mode;
+    values[9] = info.cgb_compat;
+    (*env)->SetIntArrayRegion(env, ints, 0, 10, values);
+    (*env)->SetByteArrayRegion(env, fingerprint, 0, 32, (const jbyte *)info.fingerprint);
+    (*env)->SetByteArrayRegion(env, title, 0, 17, (const jbyte *)info.title);
+    return GB_OK;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramSize(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jint)native_session_sram_size(session_from_handle(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramLoad(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray data
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || data == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    const size_t limit = native_session_sram_size(session) + NS_SRAM_RTC_EXTRA;
+    const size_t length = (size_t)(*env)->GetArrayLength(env, data);
+    /* Un .sav mayor que RAM + bloque RTC nunca es válido: se rechaza sin copiarlo. */
+    if (length > limit) {
+        return GB_ERR_SRAM_SIZE;
+    }
+    uint8_t *temporary = malloc(length > 0u ? length : 1u);
+    if (temporary == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    if (length > 0u) {
+        (*env)->GetByteArrayRegion(env, data, 0, (jsize)length, (jbyte *)temporary);
+        if ((*env)->ExceptionCheck(env)) {
+            free(temporary);
+            return GB_ERR_NULL_ARG;
+        }
+    }
+    const int result = native_session_sram_load(session, temporary, length);
+    free(temporary);
+    return result;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramDirtySeq(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)native_session_sram_dirty_seq(session_from_handle(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramCopy(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray out
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || out == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    const size_t size = native_session_sram_size(session);
+    if ((size_t)(*env)->GetArrayLength(env, out) < size) {
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    uint8_t *temporary = malloc(size > 0u ? size : 1u);
+    if (temporary == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    const int result = native_session_sram_copy(session, temporary, size);
+    if (result == NS_OK && size > 0u) {
+        (*env)->SetByteArrayRegion(env, out, 0, (jsize)size, (const jbyte *)temporary);
+    }
+    free(temporary);
+    return result;
+}
+
+/* Entrega el estado en `holder[0]` (un ByteArray del tamaño exacto): Kotlin no necesita conocer el tamaño antes. */
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionStateSave(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jobjectArray holder
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || holder == NULL || (*env)->GetArrayLength(env, holder) < 1) {
+        return GB_ERR_NULL_ARG;
+    }
+    size_t size = 0u;
+    const int sized = native_session_state_size(session, &size);
+    if (sized != NS_OK) {
+        return sized;
+    }
+    uint8_t *temporary = malloc(size);
+    if (temporary == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    const int result = native_session_state_save(session, temporary, size);
+    if (result == NS_OK) {
+        jbyteArray array = (*env)->NewByteArray(env, (jsize)size);
+        if (array == NULL) {
+            free(temporary);
+            return GB_ERR_OUT_OF_MEMORY;
+        }
+        (*env)->SetByteArrayRegion(env, array, 0, (jsize)size, (const jbyte *)temporary);
+        (*env)->SetObjectArrayElement(env, holder, 0, array);
+        (*env)->DeleteLocalRef(env, array);
+    }
+    free(temporary);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionStateLoad(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray data
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || data == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    size_t size = 0u;
+    const int sized = native_session_state_size(session, &size);
+    if (sized != NS_OK) {
+        return sized;
+    }
+    const size_t length = (size_t)(*env)->GetArrayLength(env, data);
+    /* Un estado de este ROM mide exactamente `size`; uno mayor es entrada hostil o de otro juego y no se copia. */
+    if (length > size) {
+        return GB_ERR_STATE_CORRUPT;
+    }
+    uint8_t *temporary = malloc(length > 0u ? length : 1u);
+    if (temporary == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    if (length > 0u) {
+        (*env)->GetByteArrayRegion(env, data, 0, (jsize)length, (jbyte *)temporary);
+        if ((*env)->ExceptionCheck(env)) {
+            free(temporary);
+            return GB_ERR_NULL_ARG;
+        }
+    }
+    const int result = native_session_state_load(session, temporary, length);
+    free(temporary);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCopyFrame(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jintArray out
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || out == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    const size_t pixels = (size_t)GB_SCREEN_W * (size_t)GB_SCREEN_H;
+    if ((size_t)(*env)->GetArrayLength(env, out) < pixels) {
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    uint32_t *temporary = malloc(pixels * sizeof(uint32_t));
+    if (temporary == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    const int result = native_session_copy_framebuffer(session, temporary, pixels);
+    if (result == NS_OK) {
+        (*env)->SetIntArrayRegion(env, out, 0, (jsize)pixels, (const jint *)temporary);
+    }
+    free(temporary);
+    return result;
 }

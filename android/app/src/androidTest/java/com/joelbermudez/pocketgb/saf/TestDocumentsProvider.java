@@ -8,22 +8,35 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract.Document;
+import android.provider.DocumentsContract;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Proveedor de prueba que habla el protocolo de DocumentsContract sobre un directorio privado
  * del APK de test. Los ids de documento son rutas relativas: {@code root}, {@code root/Sub},
  * {@code root/Sub/Juego.gb}. Un archivo cuyo nombre empieza por {@code virtual-} se anuncia como
- * documento virtual. Es de solo lectura para el cliente; el test lo provisiona con
- * {@link TestFixtures} (mediante {@code call}).
+ * documento virtual. El test lo provisiona con {@link TestFixtures} (mediante {@code call}).
+ *
+ * <p>Admite escritura (modos {@code w}, {@code wt}, {@code rw}, {@code rwt}) y los métodos
+ * {@code android:createDocument}, {@code android:renameDocument} y {@code android:deleteDocument}, con
+ * controles para simular proveedores mal portados: {@code failWrite}, {@code failClose},
+ * {@code noTruncateOnW}, {@code noTruncateAtAll}, {@code pipeFd}, {@code createRenames},
+ * {@code readOnlyFlags}, {@code denyMidWrite} y {@code blockWrite}.
  *
  * <p>Está en Java a propósito: corre en el proceso del APK de test, que no incluye la librería
  * estándar de Kotlin (AGP la deja solo en el APK de la app).
@@ -49,6 +62,19 @@ public class TestDocumentsProvider extends ContentProvider {
     private volatile boolean omitMimeColumn = false;
     private volatile boolean textSize = false;
     private final java.util.Map<String, Long> declaredSizes = new java.util.concurrent.ConcurrentHashMap<>();
+    // Escritura (A5): modos de fallo y de comportamiento anómalo.
+    private volatile boolean failWrite = false;
+    private volatile boolean failClose = false;
+    private volatile boolean noTruncateOnW = false;
+    private volatile boolean noTruncateAtAll = false;
+    private volatile boolean pipeFd = false;
+    private volatile boolean createRenames = false;
+    private volatile boolean readOnlyFlags = false;
+    private volatile boolean denyMidWrite = false;
+    private volatile boolean omitMtime = false;
+    private volatile CountDownLatch writeGate = null;
+    private final AtomicInteger waitingWriters = new AtomicInteger();
+    private final List<String> writeModes = Collections.synchronizedList(new ArrayList<>());
 
     private File base() {
         return new File(getContext().getCacheDir(), "saf-fixture");
@@ -72,6 +98,17 @@ public class TestDocumentsProvider extends ContentProvider {
                     omitMimeColumn = false;
                     textSize = false;
                     declaredSizes.clear();
+                    failWrite = false;
+                    failClose = false;
+                    noTruncateOnW = false;
+                    noTruncateAtAll = false;
+                    pipeFd = false;
+                    createRenames = false;
+                    readOnlyFlags = false;
+                    denyMidWrite = false;
+                    omitMtime = false;
+                    releaseGate();
+                    writeModes.clear();
                     deleteRecursively(base());
                     base().mkdirs();
                     break;
@@ -81,8 +118,67 @@ public class TestDocumentsProvider extends ContentProvider {
                     try (FileOutputStream out = new FileOutputStream(file)) {
                         out.write(extras.getByteArray("bytes"));
                     }
+                    if (extras.containsKey("mtime")) file.setLastModified(extras.getLong("mtime"));
                     break;
                 }
+                case "get": {
+                    File file = new File(base(), arg);
+                    result.putBoolean("exists", file.isFile());
+                    if (file.isFile()) result.putByteArray("bytes", readAll(new FileInputStream(file)));
+                    break;
+                }
+                case "setMtime":
+                    new File(base(), arg).setLastModified(extras.getLong("ms"));
+                    break;
+                case "failWrite":
+                    failWrite = extras.getBoolean("on");
+                    break;
+                case "failClose":
+                    failClose = extras.getBoolean("on");
+                    break;
+                case "noTruncateOnW":
+                    noTruncateOnW = extras.getBoolean("on");
+                    break;
+                case "noTruncateAtAll":
+                    noTruncateAtAll = extras.getBoolean("on");
+                    break;
+                case "pipeFd":
+                    pipeFd = extras.getBoolean("on");
+                    break;
+                case "createRenames":
+                    createRenames = extras.getBoolean("on");
+                    break;
+                case "readOnlyFlags":
+                    readOnlyFlags = extras.getBoolean("on");
+                    break;
+                case "denyMidWrite":
+                    denyMidWrite = extras.getBoolean("on");
+                    break;
+                case "omitMtime":
+                    omitMtime = extras.getBoolean("on");
+                    break;
+                case "blockWrite":
+                    if (extras.getBoolean("on")) {
+                        writeGate = new CountDownLatch(1);
+                    } else {
+                        releaseGate();
+                    }
+                    break;
+                case "releaseWrite":
+                    releaseGate();
+                    break;
+                case "waitingWriters":
+                    result.putInt("count", waitingWriters.get());
+                    break;
+                case "writeModes":
+                    result.putStringArrayList("modes", new ArrayList<>(writeModes));
+                    break;
+                case "android:createDocument":
+                    return createDocument(extras);
+                case "android:renameDocument":
+                    return renameDocument(extras);
+                case "android:deleteDocument":
+                    return deleteDocument(extras);
                 case "sparse": {
                     File file = new File(base(), arg);
                     file.getParentFile().mkdirs();
@@ -174,10 +270,153 @@ public class TestDocumentsProvider extends ContentProvider {
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         if (denied) throw new SecurityException("Permiso revocado (simulado)");
-        if (!"r".equals(mode)) throw new IllegalArgumentException("El proveedor de prueba es de solo lectura");
         Parsed parsed = parse(uri);
         if (parsed == null) throw new FileNotFoundException(uri.toString());
-        return ParcelFileDescriptor.open(resolve(parsed.documentId), ParcelFileDescriptor.MODE_READ_ONLY);
+        if ("r".equals(mode)) {
+            return ParcelFileDescriptor.open(resolve(parsed.documentId), ParcelFileDescriptor.MODE_READ_ONLY);
+        }
+        if (!mode.equals("w") && !mode.equals("wt") && !mode.equals("rw") && !mode.equals("rwt")) {
+            throw new IllegalArgumentException("Modo no soportado: " + mode);
+        }
+        writeModes.add(mode);
+        if (readOnlyFlags) throw new SecurityException("Proveedor de solo lectura (simulado)");
+        if (failWrite) throw new FileNotFoundException("Fallo de escritura (simulado)");
+        awaitWriteGate();
+        File file = resolve(parsed.documentId);
+        boolean truncate = mode.contains("t") || ("w".equals(mode) && !noTruncateOnW);
+        if (noTruncateAtAll) truncate = false;
+        try {
+            if (truncate) {
+                try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+                    raf.setLength(0);
+                }
+            }
+            ParcelFileDescriptor result;
+            if (failClose || pipeFd) {
+                result = openPipe(file);
+            } else {
+                int flags = mode.startsWith("rw") ? ParcelFileDescriptor.MODE_READ_WRITE : ParcelFileDescriptor.MODE_WRITE_ONLY;
+                result = ParcelFileDescriptor.open(file, flags);
+            }
+            // La revocación llega "a mitad": el cliente ya tiene el descriptor, pero la siguiente consulta falla.
+            if (denyMidWrite) denied = true;
+            return result;
+        } catch (IOException error) {
+            throw new FileNotFoundException(error.toString());
+        }
+    }
+
+    /** Tubería hacia el archivo: sin fsync posible; con {@code failClose} el lector descarta los datos y reporta un error. */
+    private ParcelFileDescriptor openPipe(final File file) throws IOException {
+        final boolean discard = failClose;
+        final ParcelFileDescriptor[] pipe = discard ? ParcelFileDescriptor.createReliablePipe() : ParcelFileDescriptor.createPipe();
+        final ParcelFileDescriptor readSide = pipe[0];
+        new Thread(() -> {
+            try {
+                byte[] data = readAll(new FileInputStream(readSide.getFileDescriptor()));
+                if (discard) {
+                    readSide.closeWithError("Fallo al cerrar (simulado)");
+                    return;
+                }
+                try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+                    raf.seek(0);
+                    raf.write(data);
+                }
+                readSide.close();
+            } catch (IOException ignored) {
+            }
+        }, "test-documents-pipe").start();
+        return pipe[1];
+    }
+
+    private void awaitWriteGate() {
+        CountDownLatch gate = writeGate;
+        if (gate == null) return;
+        waitingWriters.incrementAndGet();
+        try {
+            gate.await(20, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } finally {
+            waitingWriters.decrementAndGet();
+        }
+    }
+
+    private void releaseGate() {
+        CountDownLatch gate = writeGate;
+        writeGate = null;
+        if (gate != null) gate.countDown();
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        try (InputStream stream = in) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = stream.read(buffer)) >= 0) out.write(buffer, 0, n);
+            return out.toByteArray();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private Bundle createDocument(Bundle extras) throws IOException {
+        if (denied) throw new SecurityException("Permiso revocado (simulado)");
+        if (readOnlyFlags) throw new SecurityException("Proveedor de solo lectura (simulado)");
+        Uri parentUri = extras.getParcelable("uri");
+        Parsed parent = parse(parentUri);
+        if (parent == null) throw new FileNotFoundException(String.valueOf(parentUri));
+        File dir = resolve(parent.documentId);
+        String mime = extras.getString(Document.COLUMN_MIME_TYPE);
+        String name = extras.getString(Document.COLUMN_DISPLAY_NAME);
+        boolean isDirectory = Document.MIME_TYPE_DIR.equals(mime);
+        // Un proveedor real puede añadir una extensión según el tipo MIME.
+        if (createRenames && !isDirectory) name = name + ".bin";
+        File created = new File(dir, name);
+        int counter = 1;
+        while (created.exists()) {
+            int dot = name.lastIndexOf('.');
+            String stem = dot > 0 ? name.substring(0, dot) : name;
+            String ext = dot > 0 ? name.substring(dot) : "";
+            created = new File(dir, stem + " (" + counter++ + ")" + ext);
+        }
+        if (isDirectory ? !created.mkdirs() : !created.createNewFile()) throw new IOException("No se pudo crear " + created);
+        Bundle result = new Bundle();
+        result.putParcelable("uri", documentUriLike(parentUri, parent.documentId + "/" + created.getName()));
+        return result;
+    }
+
+    @SuppressWarnings("deprecation")
+    private Bundle renameDocument(Bundle extras) throws IOException {
+        if (denied) throw new SecurityException("Permiso revocado (simulado)");
+        Uri uri = extras.getParcelable("uri");
+        Parsed parsed = parse(uri);
+        if (parsed == null) throw new FileNotFoundException(String.valueOf(uri));
+        File file = resolve(parsed.documentId);
+        File target = new File(file.getParentFile(), extras.getString(Document.COLUMN_DISPLAY_NAME));
+        if (target.exists() || !file.renameTo(target)) throw new IOException("No se pudo renombrar a " + target);
+        String parentId = parsed.documentId.substring(0, parsed.documentId.lastIndexOf('/'));
+        Bundle result = new Bundle();
+        result.putParcelable("uri", documentUriLike(uri, parentId + "/" + target.getName()));
+        return result;
+    }
+
+    @SuppressWarnings("deprecation")
+    private Bundle deleteDocument(Bundle extras) throws IOException {
+        if (denied) throw new SecurityException("Permiso revocado (simulado)");
+        Uri uri = extras.getParcelable("uri");
+        Parsed parsed = parse(uri);
+        if (parsed == null) throw new FileNotFoundException(String.valueOf(uri));
+        File file = resolve(parsed.documentId);
+        if (file.getCanonicalFile().equals(base().getCanonicalFile())) throw new SecurityException("No se borra la raíz");
+        deleteRecursively(file);
+        return new Bundle();
+    }
+
+    /** URI de documento con el mismo árbol que {@code like}. */
+    private static Uri documentUriLike(Uri like, String documentId) {
+        List<String> segments = like.getPathSegments();
+        Uri tree = DocumentsContract.buildTreeDocumentUri(AUTHORITY, segments.get(1));
+        return DocumentsContract.buildDocumentUriUsingTree(tree, documentId);
     }
 
     @Override
@@ -234,7 +473,14 @@ public class TestDocumentsProvider extends ContentProvider {
 
     private void addRow(MatrixCursor cursor, String documentId, File file) {
         boolean isDirectory = file.isDirectory();
-        int flags = file.getName().startsWith("virtual-") ? Document.FLAG_VIRTUAL_DOCUMENT : 0;
+        int flags = 0;
+        if (file.getName().startsWith("virtual-")) {
+            flags = Document.FLAG_VIRTUAL_DOCUMENT;
+        } else if (!readOnlyFlags) {
+            flags = isDirectory
+                ? Document.FLAG_DIR_SUPPORTS_CREATE | Document.FLAG_SUPPORTS_DELETE
+                : Document.FLAG_SUPPORTS_WRITE | Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_RENAME;
+        }
         MatrixCursor.RowBuilder row = cursor.newRow();
         for (String column : cursor.getColumnNames()) {
             Object value = null;
@@ -261,7 +507,7 @@ public class TestDocumentsProvider extends ContentProvider {
                     value = flags;
                     break;
                 case Document.COLUMN_LAST_MODIFIED:
-                    value = file.lastModified();
+                    value = omitMtime ? null : (Object) file.lastModified();
                     break;
                 default:
                     break;

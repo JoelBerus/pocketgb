@@ -14,6 +14,7 @@ class LibraryScannerTest {
         val failures: Map<String, IOException> = emptyMap(),
         val failingDirs: Set<String> = emptySet(),
         val revokedDirs: Set<String> = emptySet(),
+        override val rootId: String? = null,
     ) : DocumentTree {
         override fun children(directoryId: String?): List<TreeNode> {
             if (directoryId in revokedDirs) throw TreePermissionException()
@@ -60,6 +61,31 @@ class LibraryScannerTest {
         assertTrue(entries.single { it.id == "Amarillo/Yellow.GBC" }.isColor)
         assertEquals("Amarillo", entries.single { it.title == "POKEMON YELLOW" }.subfolder)
         assertEquals("content://tree/a", entries.single { it.id == "Rojo.gb" }.uri)
+    }
+
+    @Test
+    fun entriesRememberTheFolderThatHoldsThem() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(file("a", "Rojo.gb"), dir("d1", "Amarillo")),
+                "d1" to listOf(file("b", "Yellow.gb"), file("c", "Azul.gb")),
+            ),
+            heads = mapOf("a" to rom("RED"), "b" to rom("YELLOW"), "c" to rom("BLUE")),
+            rootId = "raiz",
+        )
+        val entries = LibraryScanner.scan(tree).associateBy { it.id }
+        assertEquals("raiz", entries.getValue("Rojo.gb").folderDocumentId)
+        assertEquals("d1", entries.getValue("Amarillo/Yellow.gb").folderDocumentId)
+        assertEquals("d1", entries.getValue("Amarillo/Azul.gb").folderDocumentId)
+    }
+
+    @Test
+    fun aTreeThatDoesNotKnowItsRootLeavesTheRootFolderUnknown() {
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Rojo.gb"))),
+            heads = mapOf("a" to rom("RED")),
+        )
+        assertNull(LibraryScanner.scan(tree).single().folderDocumentId)
     }
 
     @Test

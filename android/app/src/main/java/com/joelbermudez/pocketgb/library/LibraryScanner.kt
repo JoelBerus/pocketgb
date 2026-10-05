@@ -18,6 +18,12 @@ data class TreeNode(
 class DocumentReadException(val remote: Boolean, cause: Throwable? = null) : IOException(cause)
 
 interface DocumentTree {
+    /**
+     * Id del documento de la carpeta raíz, o `null` si el árbol no lo sabe. Los ROMs de la raíz lo
+     * heredan como `folderDocumentId`, que el espejo SAF usa para buscar el `.sav` hermano.
+     */
+    val rootId: String? get() = null
+
     /** Hijos directos de [directoryId], o `null` si es la raíz. Falla con [IOException]. */
     fun children(directoryId: String?): List<TreeNode>
 
@@ -37,14 +43,17 @@ object LibraryScanner {
 
     fun scan(tree: DocumentTree, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): List<RomEntry> {
         val candidates = uniqueIds(candidates(tree))
-        val entries = candidates.mapIndexed { index, (relative, node) ->
-            entry(tree, relative, node).also { progress(index + 1, candidates.size) }
+        val entries = candidates.mapIndexed { index, (relative, node, folderId) ->
+            entry(tree, relative, node, folderId).also { progress(index + 1, candidates.size) }
         }
         return entries.sortedWith(titleOrder)
     }
 
-    private fun candidates(tree: DocumentTree): List<Pair<String, TreeNode>> {
-        val result = mutableListOf<Pair<String, TreeNode>>()
+    /** Ruta relativa, documento y carpeta que lo contiene (id de documento; `null` si se desconoce la raíz). */
+    private data class Candidate(val relative: String, val node: TreeNode, val folderId: String?)
+
+    private fun candidates(tree: DocumentTree): List<Candidate> {
+        val result = mutableListOf<Candidate>()
         for (item in tree.children(null)) {
             if (item.name.startsWith(".")) continue
             if (item.isDirectory) {
@@ -58,9 +67,9 @@ object LibraryScanner {
                     continue
                 }
                 inner.filter { !it.isDirectory && isRom(it.name) }
-                    .forEach { result += "${item.name}/${it.name}" to it }
+                    .forEach { result += Candidate("${item.name}/${it.name}", it, item.id) }
             } else if (isRom(item.name)) {
-                result += item.name to item
+                result += Candidate(item.name, item, tree.rootId)
             }
         }
         return result
@@ -72,8 +81,8 @@ object LibraryScanner {
      * `#<hash del id de documento>`: así el id no depende del orden en que el proveedor las liste.
      * El sufijo va tras el nombre de archivo, por lo que `subfolder` no cambia.
      */
-    private fun uniqueIds(items: List<Pair<String, TreeNode>>): List<Pair<String, TreeNode>> {
-        val counts = items.groupingBy { it.first }.eachCount()
+    private fun uniqueIds(items: List<Candidate>): List<Candidate> {
+        val counts = items.groupingBy { it.relative }.eachCount()
         val base = items.map { (relative, node) ->
             if (counts.getValue(relative) == 1) relative else "$relative#${digest(node.id)}"
         }
@@ -81,11 +90,11 @@ object LibraryScanner {
         // no por el orden del proveedor, para que el resultado siga siendo estable.
         val rank = HashMap<Int, Int>()
         items.indices.groupBy { base[it] }.values.filter { it.size > 1 }.forEach { group ->
-            group.sortedBy { items[it].second.id }.forEachIndexed { n, index -> rank[index] = n }
+            group.sortedBy { items[it].node.id }.forEachIndexed { n, index -> rank[index] = n }
         }
-        return items.mapIndexed { index, (_, node) ->
+        return items.mapIndexed { index, item ->
             val n = rank[index]
-            (if (n == null || n == 0) base[index] else "${base[index]}~$n") to node
+            item.copy(relative = if (n == null || n == 0) base[index] else "${base[index]}~$n")
         }
     }
 
@@ -96,7 +105,7 @@ object LibraryScanner {
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions
 
-    private fun entry(tree: DocumentTree, relative: String, node: TreeNode): RomEntry {
+    private fun entry(tree: DocumentTree, relative: String, node: TreeNode, folderId: String?): RomEntry {
         val fallbackTitle = node.name.substringBeforeLast('.')
         val colorByName = node.name.substringAfterLast('.').equals("gbc", ignoreCase = true)
 
@@ -114,6 +123,7 @@ object LibraryScanner {
             sizeBytes = node.sizeBytes,
             headerChecksumOk = checksumOk,
             problem = problem,
+            folderDocumentId = folderId,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)

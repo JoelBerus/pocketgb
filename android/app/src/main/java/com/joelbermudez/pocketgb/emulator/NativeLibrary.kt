@@ -45,7 +45,33 @@ internal object NativeLibrary {
     external fun nativeSessionDestroy(handle: Long)
 
     @JvmStatic
-    external fun nativeSessionLoad(handle: Long, rom: ByteArray): Int
+    external fun nativeSessionLoad(handle: Long, rom: ByteArray, unixTime: Long): Int
+
+    /** Rellena [ints] (10 campos), [fingerprint] (32) y [title] (17, ASCII terminado en NUL). Solo sesión sin arrancar. */
+    @JvmStatic
+    external fun nativeSessionRomInfo(handle: Long, ints: IntArray, fingerprint: ByteArray, title: ByteArray): Int
+
+    @JvmStatic
+    external fun nativeSessionSramSize(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeSessionSramLoad(handle: Long, data: ByteArray): Int
+
+    @JvmStatic
+    external fun nativeSessionSramDirtySeq(handle: Long): Long
+
+    @JvmStatic
+    external fun nativeSessionSramCopy(handle: Long, out: ByteArray): Int
+
+    /** Entrega el estado en `holder[0]`. */
+    @JvmStatic
+    external fun nativeSessionStateSave(handle: Long, holder: Array<ByteArray?>): Int
+
+    @JvmStatic
+    external fun nativeSessionStateLoad(handle: Long, data: ByteArray): Int
+
+    @JvmStatic
+    external fun nativeSessionCopyFrame(handle: Long, out: IntArray): Int
 
     @JvmStatic
     external fun nativeSessionStart(handle: Long): Int

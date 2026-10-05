@@ -1,7 +1,9 @@
 #include "native_session.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <pthread.h>
@@ -32,7 +34,16 @@ struct native_session {
     enum native_audio_state audio_state;
     int16_t audio_scratch[2048];
     ANativeWindow *window;
+    /* Partidas. `sram_snapshot` se reserva en load (nunca en el bucle de emulación) y es el buzón por el
+     * que el hilo nativo entrega la SRAM a otro hilo mientras corre. Todo bajo `mutex`. */
+    uint8_t *sram_snapshot;
+    size_t sram_size;
+    uint64_t sram_dirty_seq;
+    bool snapshot_requested;
+    uint64_t snapshots_served;
 };
+
+#define SNAPSHOT_TIMEOUT_NANOS 1000000000L
 
 static void set_audio_state(native_session *session, enum native_audio_state state) {
     (void)pthread_mutex_lock(&session->mutex);
@@ -192,6 +203,18 @@ static void render_frame(native_session *session) {
     ANativeWindow_release(window);
 }
 
+/* Hilo nativo, con `mutex` tomado: atiende una petición de instantánea de la SRAM. gb_sram_save solo copia
+ * memoria (sin malloc) hacia el búfer reservado en load. */
+static void serve_snapshot_locked(native_session *session) {
+    if (!session->snapshot_requested) return;
+    if (session->sram_snapshot != NULL) {
+        (void)gb_sram_save(session->core, session->sram_snapshot, session->sram_size);
+    }
+    session->snapshot_requested = false;
+    session->snapshots_served += 1u;
+    (void)pthread_cond_broadcast(&session->condition);
+}
+
 static void *run_session(void *context) {
     native_session *session = context;
     struct timespec deadline;
@@ -224,12 +247,17 @@ static void *run_session(void *context) {
         sync_audio_speed(session, speed);
         gb_set_buttons(session->core, buttons);
         gb_run_frame(session->core);
+        /* Solo este hilo toca el core mientras corre: se lee y se limpia el flag aquí, sin bloquear. */
+        const bool sram_dirty = gb_sram_dirty(session->core);
+        if (sram_dirty) gb_sram_clear_dirty(session->core);
         produce_audio(session, speed);
         render_frame(session);
 
         (void)pthread_mutex_lock(&session->mutex);
         session->applied_buttons = buttons;
         session->frames += 1u;
+        if (sram_dirty) session->sram_dirty_seq += 1u;
+        serve_snapshot_locked(session);
         const enum native_audio_state audio_state = session->audio_state;
         (void)pthread_mutex_unlock(&session->mutex);
 
@@ -258,7 +286,18 @@ native_session *native_session_create(void) {
         free(session);
         return NULL;
     }
-    if (pthread_cond_init(&session->condition, NULL) != 0) {
+    /* Reloj monotónico: la espera acotada de la instantánea no debe depender de cambios de hora. */
+    pthread_condattr_t attr;
+    if (pthread_condattr_init(&attr) != 0) {
+        (void)pthread_mutex_destroy(&session->mutex);
+        gb_destroy(session->core);
+        free(session);
+        return NULL;
+    }
+    (void)pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    const int cond_result = pthread_cond_init(&session->condition, &attr);
+    (void)pthread_condattr_destroy(&attr);
+    if (cond_result != 0) {
         (void)pthread_mutex_destroy(&session->mutex);
         gb_destroy(session->core);
         free(session);
@@ -280,6 +319,7 @@ void native_session_destroy(native_session *session) {
     audio_output_stop(&session->audio);
     native_session_set_window(session, NULL);
     gb_destroy(session->core);
+    free(session->sram_snapshot);
     (void)pthread_cond_destroy(&session->condition);
     (void)pthread_mutex_destroy(&session->mutex);
     free(session);
@@ -300,9 +340,19 @@ gb_result native_session_load(
     if (!can_load) {
         return GB_ERR_NULL_ARG;
     }
-    const gb_result result = gb_load_rom(session->core, rom, length, options);
+    gb_result result = gb_load_rom(session->core, rom, length, options);
     if (result == GB_OK) {
+        const size_t sram_size = gb_sram_save_size(session->core);
+        uint8_t *snapshot = malloc(sram_size > 0u ? sram_size : 1u);
+        if (snapshot == NULL) {
+            return GB_ERR_OUT_OF_MEMORY;
+        }
         (void)pthread_mutex_lock(&session->mutex);
+        free(session->sram_snapshot);
+        session->sram_snapshot = snapshot;
+        session->sram_size = sram_size;
+        session->sram_dirty_seq = 0u;
+        session->snapshot_requested = false;
         session->state = NATIVE_SESSION_READY;
         session->frames = 0u;
         (void)pthread_mutex_unlock(&session->mutex);
@@ -363,6 +413,9 @@ int native_session_resume(native_session *session) {
         (void)pthread_mutex_unlock(&session->mutex);
         return 1;
     }
+    /* El hilo está aparcado en la espera de pausa: este es el único momento seguro para adelantar el RTC
+     * lo que pasó con la partida en pausa (gb_rtc_set_time nunca retrocede ni toca un reloj detenido). */
+    gb_rtc_set_time(session->core, (int64_t)time(NULL));
     session->pause_requested = false;
     session->state = NATIVE_SESSION_RUNNING;
     session->audio_state = NATIVE_AUDIO_PRIMING;
@@ -504,4 +557,150 @@ void native_session_set_window(native_session *session, ANativeWindow *window) {
     if (previous != NULL) {
         ANativeWindow_release(previous);
     }
+}
+
+/* ---- Partidas y estados ---- */
+
+/* Con `mutex` tomado: ¿puede otro hilo tocar el core? (hilo sin arrancar, PAUSED o STOPPED) */
+static bool parked_locked(const native_session *session) {
+    if (!session->thread_started) {
+        return session->state == NATIVE_SESSION_READY || session->state == NATIVE_SESSION_STOPPED;
+    }
+    return session->state == NATIVE_SESSION_PAUSED;
+}
+
+int native_session_rom_info(native_session *session, gb_rom_info *out) {
+    if (session == NULL || out == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (!session->thread_started && session->state == NATIVE_SESSION_READY) {
+        result = (int)gb_rom_info_get(session->core, out);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+size_t native_session_sram_size(native_session *session) {
+    if (session == NULL) return 0u;
+    (void)pthread_mutex_lock(&session->mutex);
+    const size_t size = session->sram_size;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return size;
+}
+
+int native_session_sram_load(native_session *session, const uint8_t *data, size_t length) {
+    if (session == NULL || (data == NULL && length > 0u)) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    const bool unstarted = !session->thread_started && session->state == NATIVE_SESSION_READY;
+    const bool paused = session->thread_started && session->state == NATIVE_SESSION_PAUSED;
+    if (unstarted || paused) {
+        result = (int)gb_sram_load(session->core, data, length);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+uint64_t native_session_sram_dirty_seq(native_session *session) {
+    if (session == NULL) return 0u;
+    (void)pthread_mutex_lock(&session->mutex);
+    const uint64_t seq = session->sram_dirty_seq;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return seq;
+}
+
+int native_session_sram_copy(native_session *session, uint8_t *out, size_t capacity) {
+    if (session == NULL || (out == NULL && capacity > 0u)) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    if (session->sram_snapshot == NULL) {
+        (void)pthread_mutex_unlock(&session->mutex);
+        return GB_ERR_NO_ROM;
+    }
+    if (capacity < session->sram_size) {
+        (void)pthread_mutex_unlock(&session->mutex);
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    int result = NS_OK;
+    if (session->thread_started && session->state == NATIVE_SESSION_RUNNING) {
+        /* Corriendo: el hilo nativo es el único que puede leer el core. Se le pide una instantánea; si la
+         * sesión se aparca o detiene mientras tanto, el core ya no avanza y se copia directo. */
+        struct timespec deadline;
+        (void)clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_nsec += SNAPSHOT_TIMEOUT_NANOS;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec += 1;
+            deadline.tv_nsec -= 1000000000L;
+        }
+        session->snapshot_requested = true;
+        const uint64_t wanted = session->snapshots_served + 1u;
+        while (session->snapshots_served < wanted &&
+               session->thread_started && session->state == NATIVE_SESSION_RUNNING) {
+            if (pthread_cond_timedwait(&session->condition, &session->mutex, &deadline) == ETIMEDOUT) {
+                break;
+            }
+        }
+        if (session->snapshots_served >= wanted) {
+            if (session->sram_size > 0u) memcpy(out, session->sram_snapshot, session->sram_size);
+        } else if (session->thread_started && session->state == NATIVE_SESSION_RUNNING) {
+            result = NS_TIMEOUT;
+        } else {
+            result = (int)gb_sram_save(session->core, out, capacity);
+        }
+    } else {
+        result = (int)gb_sram_save(session->core, out, capacity);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+int native_session_state_size(native_session *session, size_t *out) {
+    if (session == NULL || out == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        *out = gb_state_size(session->core);
+        result = *out == 0u ? GB_ERR_NO_ROM : NS_OK;
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+int native_session_state_save(native_session *session, uint8_t *out, size_t capacity) {
+    if (session == NULL || out == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        result = (int)gb_state_save(session->core, out, capacity);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+int native_session_state_load(native_session *session, const uint8_t *data, size_t length) {
+    if (session == NULL || data == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        result = (int)gb_state_load(session->core, data, length);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+int native_session_copy_framebuffer(native_session *session, uint32_t *out, size_t pixel_capacity) {
+    if (session == NULL || out == NULL) return GB_ERR_NULL_ARG;
+    if (pixel_capacity < (size_t)GB_SCREEN_W * (size_t)GB_SCREEN_H) return GB_ERR_BUFFER_TOO_SMALL;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        const uint32_t *frame = gb_framebuffer(session->core);
+        if (frame == NULL) {
+            result = GB_ERR_NO_ROM;
+        } else {
+            memcpy(out, frame, (size_t)GB_SCREEN_W * (size_t)GB_SCREEN_H * sizeof(uint32_t));
+            result = NS_OK;
+        }
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
 }
