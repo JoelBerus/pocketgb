@@ -2,6 +2,9 @@
 *.gb
 *.gbc
 *.sgb
+*.gba
+*.agb
+*.srl
 *.sav
 *.rtc
 *.state
@@ -11,6 +14,9 @@
 # ROMs de prueba descargadas por tools/fetch-test-roms.sh
 core/tests/roms/
 core/tests/roms
+gba/tests/roms/
+gba/fuzz/corpus/
+gba/fuzz/crash-*
 tools/oracle/SameBoy/
 # Build
 build/

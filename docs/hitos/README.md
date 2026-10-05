@@ -17,7 +17,13 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 **Hitos de diseño D1–D8** (D1 ✅ cerrado 2026-09-29; D2–D7 ☁️ implementados en `d2-a1-wip`, CI verde y probados por Joel en el iPhone (D2–D6); D8 ☁️ evidencia consolidada, falta la auditoría Codex final y el merge) (app con la propuesta Liquid Glass de Joel): ☁️ nube + CI de macOS con capturas · 🍎 validación final en el iPhone. Plan: [D-README](D-README.md) · Spec: [../diseno/SPEC.md](../diseno/SPEC.md).
 
-**Game Boy Advance (G0–G9)**: plan propuesto en [G-README](G-README.md) (2026-10-05), pendiente de las decisiones de Joel (§1) antes de abrir `g0-gba-instrucciones`.
+**Game Boy Advance (G0–G9)**: plan en [G-README](G-README.md), spec en [10-gba-spec](../10-gba-spec.md).
+
+| Hito | Dónde | Estado |
+|---|---|---|
+| G0 · Instrucciones y andamiaje | ☁️ | implementado 2026-10-05 en `g0-gba-instrucciones`; auditoría en curso |
+| G1 · CPU ARM7TDMI | ☁️ | implementado 2026-10-05 (SingleStepTests 100 %, arm/thumb.gba PASS); auditoría en curso |
+| G2–G9 | ☁️ / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.

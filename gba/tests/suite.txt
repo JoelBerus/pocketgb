@@ -1,0 +1,7 @@
+# Casos del núcleo GBA (docs/06-testing.md §GBA). Rutas relativas a gba/tests/roms/.
+# Formato: hito|ruta|modo|max_frames|tipo
+# ---- G1: CPU ARM7TDMI ----
+G1|unit|unit|0|requerido
+G1|ARM7TDMI/v1/*.json.bin|sst|0|requerido
+G1|gba-tests/arm/arm.gba|jsmolka|120|requerido
+G1|gba-tests/thumb/thumb.gba|jsmolka|120|requerido

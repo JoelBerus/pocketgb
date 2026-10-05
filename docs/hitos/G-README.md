@@ -1,6 +1,6 @@
 # PocketGB — Plan de soporte para Game Boy Advance (hitos G0–G9)
 
-> Estado: **propuesta** (2026-10-05), pendiente de la aprobación de Joel antes de abrir `g0-gba-instrucciones`.
+> Estado: **en marcha** (2026-10-05). Joel pidió aplicar el plan; se toman las recomendaciones de §1. G0 y G1 implementados en `g0-gba-instrucciones`.
 > Ejecutor: Claude en la nube para el núcleo (☁️) y para la app con el CI de macOS; Joel en el iPhone (🍎).
 > Mismas reglas que el resto del repo: [AGENTS.md](../../AGENTS.md), un hito a la vez, auditoría antes de cerrar.
 
@@ -11,15 +11,15 @@
 - **Licencias:** SkyEmu (MIT) es la única referencia de la que se puede copiar código con cita. mGBA (MPL 2.0), NanoBoyAdvance (GPLv3), Hades (GPLv2) y FuzzARM (GPLv3): **leer sí, copiar no**. Ninguno de sus bytes ni "adaptaciones" entran en `gba/`.
 - Pruebas libres (MIT): [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests) (arm, thumb, memory, bios, flash64/128, sram, eeprom, nes), [SingleStepTests/ARM7TDMI](https://github.com/SingleStepTests/ARM7TDMI) (JSON de instrucciones aisladas), más la suite de mGBA **solo como ROM para ejecutar** (los resultados en pantalla sí se pueden usar como oráculo; su código no se copia). AGS aging cartridge es comercial: no.
 - Estimación de tamaño del núcleo: ~9 000 líneas de C (el núcleo GB tiene 3 665). Es el mayor bloque de trabajo del proyecto hasta ahora.
-- Rendimiento objetivo en el iPhone: intérprete con decodificación por tabla, ≥ 5× tiempo real en un A15 sin JIT (iOS no permite JIT en apps instaladas con Apple ID gratuito). En Linux el runner mide `--bench`.
+- Rendimiento objetivo en el iPhone: intérprete con decodificación por tabla, ≥ 2× tiempo real con vídeo y audio en un A15 sin JIT (iOS no permite JIT en apps instaladas con Apple ID gratuito). En Linux el runner mide `--bench`.
 - Partidas: formato `.sav` crudo compatible con mGBA/VBA (SRAM 32 KiB, Flash 64/128 KiB, EEPROM 512 B/8 KiB) y RTC de 16 bytes aparte. Misma ruta atómica + 5 backups de la app (regla dura 6). Las partidas GB y GBA no se mezclan: huella SHA-256 del ROM entero, como hoy.
 - App: `.gba` en la biblioteca (hasta 32 MiB), pantalla 3:2, botones L/R, disposición de controles propia, misma pausa, save states, mando, avance rápido y ajustes. Lo que ya existe se parametriza por consola; no se duplica.
 - Orden: G0 instrucciones → G1 CPU → G2 memoria+DMA+timers+IRQ → G3 PPU → G4 cartucho/saves → G5 APU → G6 save states+fuzz → G7 app (biblioteca, sesión) → G8 app (controles, pantalla) → G9 cierre. Cada hito con su auditoría.
 
-## 1. Decisiones que necesita Joel (antes de G0)
+## 1. Decisiones (tomadas el 2026-10-05: las recomendaciones; la 5 sigue abierta)
 | # | Pregunta | Recomendación |
 |---|---|---|
-| 1 | ¿Segundo núcleo `gba/` separado o un `core/` común con `#ifdef`? | **Separado.** Ninguna pieza de hardware coincide; un núcleo común solo añadiría ramas y riesgo de regresión al GB. Se comparte únicamente `sha256` (se mueve a `common/`). |
+| 1 | ¿Segundo núcleo `gba/` separado o un `core/` común con `#ifdef`? | **Separado.** Ninguna pieza de hardware coincide; un núcleo común solo añadiría ramas y riesgo de regresión al GB. Se comparte `sha256` **sin moverlo**: `gba/Makefile` compila `core/src/sha256.c` y la app ya lo enlaza con el núcleo GB (moverlo obligaría a tocar el proyecto Xcode y el núcleo GB). |
 | 2 | ¿BIOS? | **HLE propio** por defecto (Nintendo no se puede incluir). Añadir soporte para un `gba_bios.bin` que Joel vuelque de su propia GBA, en la carpeta de la biblioteca, para los juegos que la HLE no cubra. Normmatt publicó una BIOS libre, pero su repositorio no expone licencia (`github.com/Normmatt/gba_bios`, LICENSE 404): **no se usa** hasta que se verifique. |
 | 3 | ¿Referencia de la que copiar? | Solo **SkyEmu** (MIT, confirmado en su `LICENSE`). Para todo lo demás, GBATEK y las ROMs de prueba. El oráculo de comparación dev-only pasa a ser mGBA (como SameBoy en GB: se compila, no se enlaza en la app). |
 | 4 | ¿Cómo se llama el proyecto cuando reproduce GBA? | Sin cambios de nombre: PocketGB sigue. (Si Joel quiere, se renombra al final en G9.) |
@@ -34,7 +34,7 @@ ios/ (Swift)
                       └── GBACore (nuevo        → pocketgba.h)
 core/   (C11)  Game Boy / Color — sin cambios funcionales
 gba/    (C11)  Game Boy Advance — nuevo: include/pocketgba.h, src/, tests/, fuzz/, Makefile
-common/ (C11)  sha256.c/.h (compartido; antes core/src/sha256.c)
+               (usa core/src/sha256.c; símbolos con prefijo gba_/arm_, make check-symbols)
 ```
 Reglas del núcleo `gba/` (idénticas a las de `core/`, regla dura 4): sin I/O, sin `malloc` en `gba_run_frame`, sin estáticos mutables, determinista, bounds-check en todo acceso al cartucho, `-std=c11 -Wall -Wextra -Werror -pedantic`, `make -C gba test|asan|fuzz|check-globals`.
 
@@ -55,11 +55,21 @@ Reglas del núcleo `gba/` (idénticas a las de `core/`, regla dura 4): sin I/O, 
 ## 3. Hitos
 
 ### G0 · Instrucciones y andamiaje (☁️)
-Rama `g0-gba-instrucciones`. Este documento aprobado; `docs/10-gba-spec.md` (equivalente a [03-core-spec](../03-core-spec.md): mapa de memoria, waitstates, registros E/S, tiempos del frame, qué se emula y qué no); `gba/` con Makefile, header, `check-globals`, `check-header`, runner `gbatest` vacío; `tools/fetch-test-roms.sh` descarga con hash jsmolka/gba-tests (release) y los JSON de SingleStepTests/ARM7TDMI; `.githooks/pre-commit` detecta también ROMs GBA por contenido (logo Nintendo en `0x004`, 156 bytes, y `0x96` en `0xB2`) y `*.gba`; `.gitignore`. CI: job Linux para `make -C gba test asan`. **Criterio:** `make -C gba test` corre y falla por "sin implementación", el hook bloquea un `.gba` renombrado, auditoría del paquete de instrucciones (como M0).
+Rama `g0-gba-instrucciones`. Este documento aprobado; `docs/10-gba-spec.md` (equivalente a [03-core-spec](../03-core-spec.md): mapa de memoria, waitstates, registros E/S, tiempos del frame, qué se emula y qué no); `gba/` con Makefile, header, `check-globals`, `check-header`, runner `gbatest` vacío; `tools/fetch-test-roms.sh` descarga con hash jsmolka/gba-tests (release) y los JSON de SingleStepTests/ARM7TDMI; `.githooks/pre-commit` detecta también ROMs GBA por contenido (logo Nintendo en `0x004`, 156 bytes, y `0x96` en `0xB2`) y `*.gba`; `.gitignore`. CI: job Linux para `make -C gba test asan`.
+**Criterios:**
+- [x] `gba/` con contrato, Makefile (`test`, `asan`, `check-header`, `check-globals`, `check-symbols`), runner y suite; `tools/fetch-gba-test-roms.sh` (descarga fijada a commit; `codeload` está bloqueado en la nube, así que se usa git en vez de tarballs con hash).
+- [x] El hook bloquea un ROM GBA renombrado a `.txt` y un `gba_bios.bin` de 16 KiB.
+- [x] `.github/workflows/gba.yml` (Linux) y `docs/10-gba-spec.md`.
+- [ ] Auditoría ([G0-evidencia](../auditorias/G0-evidencia.md)).
 
 ### G1 · CPU ARM7TDMI (☁️)
 `arm.c`/`thumb.c` (decodificación por tabla de 4096 entradas para ARM y 1024 para Thumb, generada en tiempo de compilación con `.inc`), banca de registros por modo, CPSR/SPSR, excepciones (IRQ, SWI, undefined), pipeline de 3 etapas modelado como prefetch de 2 instrucciones (necesario para que `PC` lea +8/+4), tiempos N/S/I por acceso. Sin PPU: memoria plana de prueba.
-**Pruebas:** SingleStepTests/ARM7TDMI al 100 % (todas las instrucciones, con y sin flags), `arm.gba` y `thumb.gba` de jsmolka en PASS (leyendo el resultado de la pantalla como hace el runner GB con acid2, o el valor del registro de resultado), ASan limpio, `--bench` ≥ 50× tiempo real solo CPU.
+**Criterios:**
+- [x] SingleStepTests/ARM7TDMI al 100 %: 47 archivos × 50 000 casos (incluye el acarreo de las multiplicaciones).
+- [x] `arm.gba` y `thumb.gba` de jsmolka en PASS (resultado en r12 al llegar al bucle final). `memory.gba` también pasa.
+- [x] ASan + UBSan limpios.
+- [x] `--bench`: 13,5× tiempo real solo CPU con 1 ciclo por acceso (el 50× que pedía el borrador era irreal para un intérprete ARM; el objetivo que importa es el del iPhone con vídeo y audio, medido en G3 y G8).
+- [ ] Auditoría ([G1-evidencia](../auditorias/G1-evidencia.md)).
 
 ### G2 · Bus, DMA, timers, interrupciones, HLE de BIOS (☁️)
 Mapa de memoria completo (BIOS, EWRAM 256 KiB con waitstate 2, IWRAM, E/S, paleta, VRAM con espejo, OAM, ROM con 3 regiones de waitstate y prefetch, SRAM), `WAITCNT`, lecturas abiertas (open bus) y acceso desalineado, `IE/IF/IME`, `HALTCNT`, 4 DMA (inmediato, VBlank, HBlank, FIFO, especial del vídeo), 4 timers en cascada, `KEYINPUT`/`KEYCNT`. HLE de SWI: `SoftReset`, `RegisterRamReset`, `Halt`, `IntrWait`, `VBlankIntrWait`, `Div`, `Sqrt`, `ArcTan(2)`, `CpuSet`, `CpuFastSet`, `BgAffineSet`, `ObjAffineSet`, `LZ77`, `Huffman`, `RLUnComp`, `Diff*`, `MidiKey2Freq`, `SoundBias`; lo no cubierto se registra en una lista de "known-unimplemented" como hoy. Lectura de la BIOS protegida (devuelve la última instrucción leída desde la BIOS).

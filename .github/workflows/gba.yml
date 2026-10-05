@@ -1,0 +1,36 @@
+# CI del núcleo GBA (docs/hitos/G-README.md): Linux, gratis en runners de GitHub.
+# Solo corre si cambian gba/, el SHA-256 compartido o este archivo.
+name: GBA
+on:
+  push:
+    branches-ignore: ['ci-shots/**']
+    paths: ['gba/**', 'core/src/sha256.c', 'tools/fetch-gba-test-roms.sh', '.github/workflows/gba.yml']
+  pull_request:
+    paths: ['gba/**', 'core/src/sha256.c', 'tools/fetch-gba-test-roms.sh', '.github/workflows/gba.yml']
+  workflow_dispatch:
+concurrency:
+  group: gba-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Caché de las pruebas libres (commit fijado en el script)
+        uses: actions/cache@v4
+        with:
+          path: gba/tests/roms
+          key: gba-test-roms-${{ hashFiles('tools/fetch-gba-test-roms.sh') }}
+      - name: Pruebas libres (jsmolka, SingleStepTests)
+        run: tools/fetch-gba-test-roms.sh
+      - name: Compilador
+        run: clang --version
+      - name: Contrato y reglas del núcleo
+        run: make -C gba check-header check-globals check-symbols
+      - name: Suite
+        run: make -C gba test HITO=G1
+      - name: ASan + UBSan
+        run: make -C gba asan HITO=G1

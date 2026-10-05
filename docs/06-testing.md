@@ -78,3 +78,10 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - [ ] Horizontal: botones translúcidos, A+B simultáneos y deslizar sobre el D-pad funcionan.
 - [ ] Vertical: layout correcto.
 - [ ] Modo avión activado: todo funciona (confirma que la app no necesita red).
+
+## Núcleo GBA (`gba/`)
+- **Pruebas libres:** `tools/fetch-gba-test-roms.sh` descarga [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests) (MIT) y [SingleStepTests/ARM7TDMI](https://github.com/SingleStepTests/ARM7TDMI) (MIT, ~1 GB) en `gba/tests/roms/` (ignorado por git), cada repo fijado a un commit (git verifica cada objeto por su hash). No corre en el arranque de sesión por su tamaño.
+- **Runner `gbatest`** (`gba/tests/runner.c`): `--sst ARCHIVO` (una instrucción por caso: registros de todos los bancos, CPSR/SPSR, pipeline y escrituras al bus en orden), `ROM --mode jsmolka` (termina en un bucle `b .` con el resultado en r12; 0 = todo bien), `ROM --bench N`, `--unit`.
+- **Suite:** `gba/tests/suite.txt`, formato `hito|ruta|modo|max_frames|tipo`. `make -C gba test HITO=Gn` ejecuta los casos de los hitos ≤ Gn; `make -C gba asan` repite con ASan + UBSan (SingleStepTests limitado a 5 000 casos por archivo).
+- **Reglas:** `make -C gba check-header check-globals check-symbols`.
+- **CI:** `.github/workflows/gba.yml` (Linux, runners de GitHub) con caché de las pruebas.

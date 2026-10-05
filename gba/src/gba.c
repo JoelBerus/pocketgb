@@ -1,0 +1,221 @@
+/*
+ * gba.c — ciclo de vida, carga del ROM y bucle de ejecución del núcleo GBA.
+ */
+#include "internal.h"
+#include <stdlib.h>
+
+gba *gba_create(void)
+{
+    gba *g = calloc(1, sizeof *g);
+    if (!g) return NULL;
+    gba_arm_init_tables(g);
+    gba_options_default(&g->opts);
+    return g;
+}
+
+void gba_destroy(gba *g)
+{
+    if (!g) return;
+    free(g->rom);
+    free(g);
+}
+
+void gba_options_default(gba_options *opts)
+{
+    if (!opts) return;
+    memset(opts, 0, sizeof *opts);
+    opts->sample_rate = 48000;
+    opts->save_type = GBA_SAVE_AUTO;
+}
+
+gba_result gba_load_bios(gba *g, const uint8_t *data, size_t len)
+{
+    if (!g || !data) return GBA_ERR_NULL_ARG;
+    if (len != GBA_BIOS_BYTES) return GBA_ERR_BIOS_SIZE;
+    memcpy(g->bios, data, GBA_BIOS_BYTES);
+    g->bios_loaded = true;
+    return GBA_OK;
+}
+
+static void gba_unload(gba *g)
+{
+    free(g->rom);
+    g->rom = NULL;
+    g->rom_size = 0;
+    g->rom_mask = 0;
+}
+
+static void gba_power_on(gba *g)
+{
+    memset(g->ewram, 0, sizeof g->ewram);
+    memset(g->iwram, 0, sizeof g->iwram);
+    memset(g->io, 0, sizeof g->io);
+    memset(g->pal, 0, sizeof g->pal);
+    memset(g->vram, 0, sizeof g->vram);
+    memset(g->oam, 0, sizeof g->oam);
+    memset(g->framebuffer, 0, sizeof g->framebuffer);
+    g->cycles = 0;
+    g->line_cycles = 0;
+    g->vcount = 0;
+    g->frame_done = false;
+    gba_arm_reset(g, true);
+}
+
+gba_result gba_load_rom(gba *g, const uint8_t *data, size_t len, const gba_options *opts)
+{
+    if (!g || !data) return GBA_ERR_NULL_ARG;
+    gba_unload(g);
+    if (len < GBA_ROM_MIN_BYTES) return GBA_ERR_ROM_TOO_SMALL;
+    if (len > GBA_ROM_MAX_BYTES) return GBA_ERR_ROM_TOO_LARGE;
+    if (data[0xB2] != 0x96) return GBA_ERR_BAD_HEADER;
+    uint8_t *rom = malloc(len);
+    if (!rom) return GBA_ERR_OUT_OF_MEMORY;
+    memcpy(rom, data, len);
+    g->rom = rom;
+    g->rom_size = (uint32_t)len;
+    uint32_t mask = 1;
+    while (mask < g->rom_size) mask <<= 1;
+    g->rom_mask = mask - 1u;
+    if (opts) g->opts = *opts;
+    else gba_options_default(&g->opts);
+    g->save_type = g->opts.save_type == GBA_SAVE_AUTO ? GBA_SAVE_NONE : g->opts.save_type;
+    sha256(rom, len, g->fingerprint);
+    gba_power_on(g);
+    return GBA_OK;
+}
+
+gba_result gba_rom_info_get(const gba *g, gba_rom_info *out)
+{
+    if (!g || !out) return GBA_ERR_NULL_ARG;
+    if (!g->rom) return GBA_ERR_NO_ROM;
+    memset(out, 0, sizeof *out);
+    for (int i = 0; i < 12; i++) {
+        uint8_t ch = g->rom[0xA0 + i];
+        out->title[i] = (ch >= 0x20 && ch < 0x7F) ? (char)ch : '\0';
+        if (!ch) break;
+    }
+    for (int i = 0; i < 4; i++) {
+        uint8_t ch = g->rom[0xAC + i];
+        out->game_code[i] = (ch >= 0x20 && ch < 0x7F) ? (char)ch : '?';
+    }
+    for (int i = 0; i < 2; i++) {
+        uint8_t ch = g->rom[0xB0 + i];
+        out->maker_code[i] = (ch >= 0x20 && ch < 0x7F) ? (char)ch : '?';
+    }
+    out->version = g->rom[0xBC];
+    out->rom_bytes = g->rom_size;
+    uint8_t chk = 0;
+    for (int i = 0xA0; i <= 0xBC; i++) chk = (uint8_t)(chk - g->rom[i]);
+    chk = (uint8_t)(chk - 0x19);
+    out->header_checksum_ok = chk == g->rom[0xBD];
+    out->save_type = g->save_type;
+    out->bios_loaded = g->bios_loaded;
+    memcpy(out->fingerprint, g->fingerprint, sizeof out->fingerprint);
+    return GBA_OK;
+}
+
+void gba_reset(gba *g)
+{
+    if (!g || !g->rom) return;
+    gba_power_on(g);
+}
+
+void gba_set_buttons(gba *g, uint16_t mask)
+{
+    if (g) g->keys = mask & 0x3FFu;
+}
+
+uint32_t gba_run_cycles(gba *g, uint32_t cycles)
+{
+    if (!g || !g->rom) return 0;
+    uint64_t start = g->cycles;
+    while (g->cycles - start < cycles) {
+        uint64_t before = g->cycles;
+        gba_arm_step(g);
+        gba_video_tick(g, (uint32_t)(g->cycles - before));
+    }
+    return (uint32_t)(g->cycles - start);
+}
+
+void gba_run_frame(gba *g)
+{
+    if (!g || !g->rom) return;
+    g->frame_done = false;
+    uint64_t start = g->cycles;
+    /* Tope de seguridad: dos frames (el VBlank llega siempre antes). */
+    while (!g->frame_done && g->cycles - start < 2u * GBA_CYCLES_PER_FRAME) {
+        uint64_t before = g->cycles;
+        gba_arm_step(g);
+        gba_video_tick(g, (uint32_t)(g->cycles - before));
+    }
+}
+
+uint64_t gba_cycle_count(const gba *g) { return g ? g->cycles : 0; }
+const uint32_t *gba_framebuffer(const gba *g) { return g ? g->framebuffer : NULL; }
+
+/* ---- Pendiente de G4 (saves), G5 (audio) y G6 (estados) ---- */
+size_t gba_audio_read(gba *g, int16_t *out, size_t max_frames) { (void)g; (void)out; (void)max_frames; return 0; }
+size_t gba_audio_available(const gba *g) { (void)g; return 0; }
+
+gba_result gba_save_load(gba *g, const uint8_t *data, size_t len)
+{
+    if (!g || !data) return GBA_ERR_NULL_ARG;
+    if (!g->rom) return GBA_ERR_NO_ROM;
+    return len == 0 ? GBA_OK : GBA_ERR_SAVE_SIZE;
+}
+size_t gba_save_size(const gba *g) { (void)g; return 0; }
+gba_result gba_save_write(const gba *g, uint8_t *out, size_t cap)
+{
+    (void)cap;
+    if (!g || !out) return GBA_ERR_NULL_ARG;
+    return g->rom ? GBA_OK : GBA_ERR_NO_ROM;
+}
+bool gba_save_dirty(const gba *g) { (void)g; return false; }
+void gba_save_clear_dirty(gba *g) { (void)g; }
+gba_result gba_rtc_load(gba *g, const uint8_t *data, size_t len)
+{
+    if (!g || !data) return GBA_ERR_NULL_ARG;
+    return len == GBA_RTC_BYTES ? GBA_OK : GBA_ERR_SAVE_SIZE;
+}
+gba_result gba_rtc_save(const gba *g, uint8_t *out, size_t cap)
+{
+    if (!g || !out) return GBA_ERR_NULL_ARG;
+    if (cap < GBA_RTC_BYTES) return GBA_ERR_BUFFER_TOO_SMALL;
+    memset(out, 0, GBA_RTC_BYTES);
+    return GBA_OK;
+}
+void gba_rtc_set_time(gba *g, int64_t unix_time) { (void)g; (void)unix_time; }
+size_t gba_state_size(const gba *g) { (void)g; return 0; }
+gba_result gba_state_save(const gba *g, uint8_t *out, size_t cap)
+{
+    (void)cap;
+    if (!g || !out) return GBA_ERR_NULL_ARG;
+    return GBA_ERR_BUFFER_TOO_SMALL;
+}
+gba_result gba_state_load(gba *g, const uint8_t *data, size_t len)
+{
+    (void)len;
+    if (!g || !data) return GBA_ERR_NULL_ARG;
+    return GBA_ERR_STATE_MAGIC;
+}
+
+const char *gba_result_str(gba_result r)
+{
+    switch (r) {
+    case GBA_OK: return "ok";
+    case GBA_ERR_NULL_ARG: return "argumento nulo";
+    case GBA_ERR_OUT_OF_MEMORY: return "sin memoria";
+    case GBA_ERR_ROM_TOO_SMALL: return "ROM demasiado pequeño";
+    case GBA_ERR_ROM_TOO_LARGE: return "ROM de más de 32 MiB";
+    case GBA_ERR_BAD_HEADER: return "cabecera de GBA no válida";
+    case GBA_ERR_NO_ROM: return "no hay ROM cargado";
+    case GBA_ERR_BIOS_SIZE: return "la BIOS debe tener 16 KiB";
+    case GBA_ERR_SAVE_SIZE: return "tamaño de partida incorrecto";
+    case GBA_ERR_STATE_MAGIC: return "no es un estado de PocketGB (GBA)";
+    case GBA_ERR_STATE_VERSION: return "versión de estado no soportada";
+    case GBA_ERR_STATE_ROM_MISMATCH: return "el estado es de otro juego";
+    case GBA_ERR_STATE_CORRUPT: return "estado corrupto";
+    case GBA_ERR_BUFFER_TOO_SMALL: return "búfer demasiado pequeño";
+    }
+    return "error desconocido";
+}
