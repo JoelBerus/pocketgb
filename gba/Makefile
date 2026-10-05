@@ -64,7 +64,7 @@ oracle: $(BUILD)/gbatest
 # ROMs homebrew propias (MIT) para la PPU: clang --target=armv4t + ld.lld.
 HB := tests/homebrew
 HB_CFLAGS := --target=armv4t-none-eabi -mthumb -O2 -ffreestanding -nostdlib -fno-builtin -Wall -Werror -Wno-unused-command-line-argument
-SCENES := 0 1 2 3 4 5 6 7 8 9 10 11
+SCENES := 0 1 2 3 4 5 6 7 8 9 10 11 12 13
 homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba)
 
 $(BUILD)/hb/rt.o: $(HB)/crt0.s $(HB)/support.c

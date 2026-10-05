@@ -24,6 +24,8 @@ G3|hb:ppu_scene_6.gba|ref|120|requerido|ppu_scene_6-mgba.png
 G3|hb:ppu_scene_7.gba|ref|120|requerido|ppu_scene_7-mgba.png
 G3|hb:ppu_scene_9.gba|ref|120|requerido|ppu_scene_9-mgba.png
 G3|hb:ppu_scene_11.gba|ref|120|requerido|ppu_scene_11-mgba.png
+G3|hb:ppu_scene_12.gba|ref|120|requerido|ppu_scene_12-mgba.png
+G3|hb:ppu_scene_13.gba|ref|120|requerido|ppu_scene_13-mgba.png
 # Escenas 8 y 10: mGBA difiere por detalles de su implementación (docs/10-gba-spec.md
 # §PPU, "Diferencias con mGBA"); la referencia es nuestra salida, como regresión.
 G3|hb:ppu_scene_8.gba|ref|120|requerido|ppu_scene_8-pocketgb.png

@@ -131,7 +131,13 @@ static void render_affine_bg(gba *g, unsigned n, unsigned line, uint16_t *out)
     int32_t rx = g->ppu.ref_x[n - 2], ry = g->ppu.ref_y[n - 2];
     uint16_t mosaic = ioreg(g, 0x4C);
     unsigned mh = (cnt & 0x40u) ? (mosaic & 15u) + 1u : 1u;
-    (void)line;
+    unsigned mv = (cnt & 0x40u) ? ((mosaic >> 4) & 15u) + 1u : 1u;
+    if (mv > 1) {
+        /* Mosaico vertical: la fila de la primera línea del bloque se repite. */
+        unsigned k = line % mv;
+        rx = (int32_t)((uint32_t)rx - (uint32_t)((int32_t)(int16_t)ioreg(g, base + 2) * (int32_t)k));
+        ry = (int32_t)((uint32_t)ry - (uint32_t)((int32_t)(int16_t)ioreg(g, base + 6) * (int32_t)k));
+    }
     for (unsigned x = 0; x < GBA_SCREEN_W; x++) {
         unsigned sx = x - x % mh;
         int32_t tx = (rx + pa * (int32_t)sx) >> 8, ty = (ry + pc * (int32_t)sx) >> 8;
@@ -151,7 +157,7 @@ static void render_affine_bg(gba *g, unsigned n, unsigned line, uint16_t *out)
     }
 }
 
-static void render_bitmap_bg(gba *g, unsigned mode, uint16_t *out)
+static void render_bitmap_bg(gba *g, unsigned mode, unsigned line, uint16_t *out)
 {
     uint16_t cnt = ioreg(g, 0x0C);
     int32_t pa = (int16_t)ioreg(g, 0x20), pc = (int16_t)ioreg(g, 0x24);
@@ -160,6 +166,12 @@ static void render_bitmap_bg(gba *g, unsigned mode, uint16_t *out)
     unsigned w = mode == 5 ? 160u : 240u, h = mode == 5 ? 128u : 160u;
     uint16_t mosaic = ioreg(g, 0x4C);
     unsigned mh = (cnt & 0x40u) ? (mosaic & 15u) + 1u : 1u;
+    unsigned mv = (cnt & 0x40u) ? ((mosaic >> 4) & 15u) + 1u : 1u;
+    if (mv > 1) {
+        unsigned k = line % mv;
+        rx = (int32_t)((uint32_t)rx - (uint32_t)((int32_t)(int16_t)ioreg(g, 0x22) * (int32_t)k));
+        ry = (int32_t)((uint32_t)ry - (uint32_t)((int32_t)(int16_t)ioreg(g, 0x26) * (int32_t)k));
+    }
     for (unsigned x = 0; x < GBA_SCREEN_W; x++) {
         unsigned sx = x - x % mh;
         int32_t tx = (rx + pa * (int32_t)sx) >> 8, ty = (ry + pc * (int32_t)sx) >> 8;
@@ -259,7 +271,7 @@ static void render_objs(gba *g, unsigned line)
             unsigned tnum, idx;
             uint32_t addr;
             if (c256) {
-                tnum = (tile & ~1u) + (unsigned)(ty >> 3) * row_tiles + (unsigned)(tx >> 3) * 2u;
+                tnum = (one_d ? tile : (tile & ~1u)) + (unsigned)(ty >> 3) * row_tiles + (unsigned)(tx >> 3) * 2u;
                 addr = 0x10000u + (tnum & 0x3FFu) * 32u + (unsigned)(ty & 7) * 8u + (unsigned)(tx & 7);
                 if (bitmap && addr < 0x14000u) continue;
                 idx = g->vram[addr];
@@ -342,7 +354,7 @@ void gba_ppu_render_line(gba *g, unsigned line)
             bool exists = mode == 0 || (mode == 1 && n <= 2) || (mode == 2 && n >= 2) || (mode >= 3 && mode <= 5 && n == 2);
             bg_on[n] = en && exists;
             if (!bg_on[n]) continue;
-            if (mode >= 3) render_bitmap_bg(g, mode, p->bg[n]);
+            if (mode >= 3) render_bitmap_bg(g, mode, line, p->bg[n]);
             else if (mode == 0 || (mode == 1 && n < 2)) render_text_bg(g, n, line, p->bg[n]);
             else render_affine_bg(g, n, line, p->bg[n]);
         }
@@ -415,8 +427,9 @@ void gba_ppu_render_line(gba *g, unsigned line)
     }
 advance:
     /* Las referencias afines avanzan PB/PD por línea dibujada. */
-    p->ref_x[0] += (int16_t)ioreg(g, 0x22);
-    p->ref_y[0] += (int16_t)ioreg(g, 0x26);
-    p->ref_x[1] += (int16_t)ioreg(g, 0x32);
-    p->ref_y[1] += (int16_t)ioreg(g, 0x36);
+    /* En aritmética sin signo: sin desbordamiento con signo aunque falte la recarga. */
+    p->ref_x[0] = (int32_t)((uint32_t)p->ref_x[0] + (uint32_t)(int32_t)(int16_t)ioreg(g, 0x22));
+    p->ref_y[0] = (int32_t)((uint32_t)p->ref_y[0] + (uint32_t)(int32_t)(int16_t)ioreg(g, 0x26));
+    p->ref_x[1] = (int32_t)((uint32_t)p->ref_x[1] + (uint32_t)(int32_t)(int16_t)ioreg(g, 0x32));
+    p->ref_y[1] = (int32_t)((uint32_t)p->ref_y[1] + (uint32_t)(int32_t)(int16_t)ioreg(g, 0x36));
 }

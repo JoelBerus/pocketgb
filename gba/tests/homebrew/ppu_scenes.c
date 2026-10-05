@@ -4,7 +4,9 @@
  * 0 cuatro fondos de texto · 1 modo 1 afín · 2 modo 2 · 3 modo 3 + objetos ·
  * 4 modo 4 página 1 · 5 modo 5 rotado · 6 objetos 1D · 7 objetos 2D y afines ·
  * 8 ventanas + alfa · 9 aclarar + semitransparentes + mosaico · 10 oscurecer +
- * mosaico de objetos · 11 efectos por línea (IRQ de HBlank/VCount, DMA de HBlank).
+ * mosaico de objetos · 11 efectos por línea (IRQ de HBlank/VCount, DMA de HBlank) ·
+ * 12 modo 1 con mosaico en el afín y objetos de 256 colores con tesela impar en 1D ·
+ * 13 modo 3 con mosaico (sin rotación: con rotación mGBA usa otro muestreo, ver la spec).
  * Se compara en el frame 120 (tools/gba-compare.py).
  */
 #include "gba.h"
@@ -260,6 +262,27 @@ static void scene(int s)
         BLDALPHA = 12 | (6 << 8);
         BLDY = s == 9 ? 6 : 11;
         DISPCNT = 0x1340;
+        break;
+    case 12:
+        tiles8(0x4000, 64, 16);
+        affine_map(20, 32);
+        BGCNT(2) = (uint16_t)(0 | (1 << 2) | (20 << 8) | (1 << 14) | 0x2000 | 0x40);
+        BG2PA = 0xE0; BG2PB = (uint16_t)-0x60; BG2PC = 0x60; BG2PD = 0xE0;
+        BG2X = 0x1800; BG2Y = (uint32_t)-0x800;
+        MOSAIC = 2 | (3 << 4);
+        tiles8(0x10000, 64, 17);
+        for (int i = 0; i < 8; i++)
+            obj_set(i, (20 + i * 16) | 0x2000, (10 + i * 28) | (1 << 14), (2 * i + 1) | ((i % 4) << 10));
+        DISPCNT = 0x1441;
+        break;
+    case 13:
+        for (int y = 0, i = 0; y < 160; y++)
+            for (int x = 0; x < 240; x++, i++)
+                VRAM[i] = (uint16_t)(((x >> 2) & 31) | ((((x ^ y) >> 1) & 31) << 5) | (((y >> 2) & 31) << 10));
+        BGCNT(2) = 0x40;
+        MOSAIC = 4 | (2 << 4);
+        BG2PA = 0x100; BG2PD = 0x100; BG2X = 0x300; BG2Y = 0x200;
+        DISPCNT = 0x0403;
         break;
     case 11:
         tiles4(0x0000, 64, 14);
