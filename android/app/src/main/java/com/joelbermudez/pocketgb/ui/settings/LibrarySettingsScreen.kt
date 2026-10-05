@@ -62,6 +62,7 @@ fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit) {
 }
 
 private fun statusText(state: LibraryState): String = when (state) {
+    LibraryState.Loading -> "Cargando…"
     LibraryState.NoFolder -> "Sin carpeta elegida"
     is LibraryState.Scanning -> "Buscando juegos…"
     is LibraryState.Ready -> when (state.entries.size) {
@@ -73,6 +74,7 @@ private fun statusText(state: LibraryState): String = when (state) {
         LibraryError.PermissionRevoked -> "Permiso revocado: vuelve a elegir la carpeta"
         LibraryError.FolderMissing -> "La carpeta ya no existe"
         LibraryError.Unreadable -> "No se pudo leer la carpeta"
+        LibraryError.AccessNotKept -> "No se pudo conservar el acceso a la carpeta"
     }
 }
 
@@ -91,7 +93,7 @@ fun LibrarySettingsContent(
     modifier: Modifier = Modifier,
 ) {
     var confirmForget by remember { mutableStateOf(false) }
-    val hasFolder = state != LibraryState.NoFolder
+    val hasFolder = state != LibraryState.NoFolder && state != LibraryState.Loading
     Scaffold(
         modifier = modifier,
         topBar = {

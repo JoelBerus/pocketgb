@@ -382,4 +382,123 @@ class LibraryUiTest {
         compose.onNodeWithTag("settings-no-hidden").assertIsDisplayed()
         compose.onAllNodesWithText("Volver a escanear").assertCountEquals(0)
     }
+
+    // ---- Correcciones de la 1ª vuelta de auditoría ----
+
+    @Test
+    fun loadingStateShowsProgressAndNeverTheNoFolderInvitation() {
+        compose.setContent { LibraryHarness(LibraryState.Loading) }
+        compose.onNodeWithTag("library-progress").assertIsDisplayed()
+        compose.onNodeWithText("Cargando biblioteca…").assertIsDisplayed()
+        compose.onAllNodesWithText("Elegir carpeta").assertCountEquals(0)
+    }
+
+    @Test
+    fun accessNotKeptHasItsOwnMessageAndRecovery() {
+        compose.setContent { LibraryHarness(LibraryState.Failed(LibraryError.AccessNotKept)) }
+        compose.onNodeWithText("No se pudo conservar el acceso a la carpeta").assertIsDisplayed()
+        compose.onNodeWithText("Reintentar").performClick()
+        assertEquals(1, rescanCount)
+        compose.onNodeWithText("Elegir carpeta").performClick()
+        assertEquals(1, chooseCount)
+    }
+
+    private class RepeatedNamesTree : com.joelbermudez.pocketgb.library.DocumentTree {
+        private fun file(id: String, name: String) =
+            com.joelbermudez.pocketgb.library.TreeNode(id, name, isDirectory = false, sizeBytes = 32768)
+
+        private fun dir(id: String, name: String) =
+            com.joelbermudez.pocketgb.library.TreeNode(id, name, isDirectory = true, sizeBytes = 0)
+
+        override fun children(directoryId: String?) = when (directoryId) {
+            null -> listOf(file("d1", "Juego.gb"), file("d2", "Juego.gb"), dir("s1", "Rojo"), dir("s2", "Rojo"))
+            "s1" -> listOf(file("s1a", "Pokemon.gb"))
+            "s2" -> listOf(file("s2a", "Pokemon.gb"))
+            else -> emptyList()
+        }
+
+        override fun readHead(node: com.joelbermudez.pocketgb.library.TreeNode, limit: Int): ByteArray {
+            val bytes = ByteArray(0x150)
+            "JUEGO".forEachIndexed { i, c -> bytes[0x134 + i] = c.code.toByte() }
+            return bytes
+        }
+
+        override fun uriOf(node: com.joelbermudez.pocketgb.library.TreeNode) = "content://t/${node.id}"
+    }
+
+    @Test
+    fun repeatedFileNamesDoNotCrashGridListOrFavorites() {
+        val scanned = com.joelbermudez.pocketgb.library.LibraryScanner.scan(RepeatedNamesTree())
+        assertEquals(4, scanned.map { it.id }.toSet().size)
+        // Favoritos sobre uno solo de los duplicados: no se marca el otro.
+        val prefs = LibraryPreferencesData().toggleFavorite(scanned.first())
+        var layout by mutableStateOf(LibraryLayout.GRID)
+        compose.setContent {
+            PocketGBTheme {
+                LibraryContent(
+                    state = LibraryState.Ready(scanned, "Juegos"),
+                    prefs = prefs.copy(layout = layout),
+                    query = "",
+                    filter = LibraryFilter.ALL,
+                    onQueryChange = {},
+                    onFilterChange = {},
+                    onLayoutChange = {},
+                    onSortChange = {},
+                    onChooseFolder = {},
+                    onRescan = {},
+                    actions = GameActions({}, {}, {}),
+                )
+            }
+        }
+        cards().assertCountEquals(4)
+        compose.runOnIdle { layout = LibraryLayout.LIST }
+        compose.onAllNodesWithTag("game-list-item").assertCountEquals(4)
+    }
+
+    @Test
+    fun detailsShowLoadingUntilTheFirstScanInsteadOfUnavailable() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val tree = object : com.joelbermudez.pocketgb.library.DocumentTree {
+            override fun children(directoryId: String?): List<com.joelbermudez.pocketgb.library.TreeNode> {
+                gate.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                return emptyList()
+            }
+            override fun readHead(node: com.joelbermudez.pocketgb.library.TreeNode, limit: Int) = ByteArray(0)
+            override fun uriOf(node: com.joelbermudez.pocketgb.library.TreeNode) = "content://t/${node.id}"
+        }
+        val folders = object : com.joelbermudez.pocketgb.library.FolderStore {
+            override fun currentUri() = "content://t/tree"
+            override fun hasPersistedPermission() = true
+            override fun select(uri: String) = com.joelbermudez.pocketgb.library.FolderGrant(false)
+            override fun forget() {}
+            override fun displayName() = "Juegos"
+        }
+        val dir = java.io.File(
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
+            "ui-details-prefs",
+        ).apply { deleteRecursively() }
+        val vm = com.joelbermudez.pocketgb.library.LibraryViewModel(
+            folders = folders,
+            openTree = { tree },
+            roms = { _, _ -> ByteArray(0) },
+            inspector = { error("no se usa") },
+            preferencesFile = com.joelbermudez.pocketgb.library.LibraryPreferencesFile(java.io.File(dir, "p.json")),
+            io = kotlinx.coroutines.Dispatchers.IO,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
+        )
+        compose.setContent {
+            PocketGBTheme { com.joelbermudez.pocketgb.ui.details.GameDetailsScreen(vm, "Red.gb", onBack = {}) }
+        }
+        // Antes del primer escaneo (Loading) y durante él (Scanning sin datos) se ve progreso, no "no disponible".
+        compose.onNodeWithTag("library-progress").assertIsDisplayed()
+        compose.onAllNodesWithText("Juego no disponible").assertCountEquals(0)
+        vm.rescan()
+        compose.onNodeWithTag("library-progress").assertIsDisplayed()
+        compose.onAllNodesWithText("Juego no disponible").assertCountEquals(0)
+        gate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Juego no disponible").fetchSemanticsNodes().isNotEmpty()
+        }
+        dir.deleteRecursively()
+    }
 }

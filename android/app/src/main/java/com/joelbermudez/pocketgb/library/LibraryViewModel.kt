@@ -17,7 +17,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Lee un ROM completo desde su URI, con un tope de bytes. Solo lectura. */
@@ -42,11 +45,11 @@ class LibraryViewModel(
     private val openTree: (String) -> DocumentTree,
     private val roms: RomSource,
     private val inspector: RomInspector,
-    private val preferencesFile: LibraryPreferencesFile,
+    private val preferencesFile: PreferencesStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) : ViewModel(scope) {
-    private val _state = MutableStateFlow<LibraryState>(LibraryState.NoFolder)
+    private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     private val _folderName = MutableStateFlow<String?>(null)
@@ -61,98 +64,138 @@ class LibraryViewModel(
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
 
-    private var scanJob: Job? = null
+    // ---- Operaciones de carpeta: una a la vez, y solo la más reciente publica estado ----
 
-    // Las preferencias se cargan en `io`; los cambios que lleguen antes se aplican después, en orden.
+    private val folderMutex = Mutex()
+    private val generation = AtomicInteger()
+    private val jobLock = Any()
+    private var folderJob: Job? = null
+
+    // ---- Preferencias ----
+    //
+    // `_prefs` es la fuente de verdad en memoria y se actualiza bajo `lock`. El escritor siempre persiste
+    // el ÚLTIMO valor de `_prefs` (nunca una copia del momento de la petición), así que el orden de las
+    // señales no importa: lo que acaba en disco es lo que hay en memoria. Si guardar falla, `lastSaved`
+    // no avanza y la versión sigue pendiente hasta el siguiente intento.
     private val lock = Any()
-    private var prefsLoaded = false
+    private val persistLock = Any()
+    @Volatile private var loaded = false
+    private var lastSaved: LibraryPreferencesData? = null
     private val pendingChanges = ArrayList<(LibraryPreferencesData) -> LibraryPreferencesData>()
-    private val prefsLoad = CompletableDeferred<Unit>()
 
-    private class WriteRequest(val data: LibraryPreferencesData?, val done: CompletableDeferred<Unit>?)
-
-    private val writes = Channel<WriteRequest>(Channel.UNLIMITED)
+    /** `null` = solo "persiste lo último"; con valor, además se completa con el resultado. */
+    private val writes = Channel<CompletableDeferred<PersistResult>?>(Channel.UNLIMITED)
 
     init {
         scope.launch(io) {
             for (request in writes) {
-                request.data?.let {
-                    try {
-                        preferencesFile.save(it)
-                    } catch (_: IOException) {
-                        // Un fallo de preferencias no debe tumbar la biblioteca; el siguiente cambio reintenta.
-                    }
-                }
-                request.done?.complete(Unit)
+                val result = persistLatest()
+                request?.complete(result)
             }
         }
-        scope.launch(io) {
-            val loaded = preferencesFile.load()
-            val persistNeeded: Boolean
-            val merged: LibraryPreferencesData
-            synchronized(lock) {
-                persistNeeded = pendingChanges.isNotEmpty()
-                merged = pendingChanges.fold(loaded) { data, change -> change(data) }
-                pendingChanges.clear()
-                prefsLoaded = true
-                _prefs.value = merged
+        writes.trySend(null) // carga inicial
+    }
+
+    private fun persistLatest(): PersistResult = synchronized(persistLock) {
+        try {
+            if (!loaded) loadNow()
+            val snapshot = _prefs.value
+            if (snapshot != lastSaved) {
+                preferencesFile.save(snapshot)
+                lastSaved = snapshot
             }
-            if (persistNeeded) writes.trySend(WriteRequest(merged, null))
-            prefsLoad.complete(Unit)
+            PersistResult.Saved
+        } catch (error: IOException) {
+            PersistResult.Failed(error)
+        } catch (error: RuntimeException) {
+            PersistResult.Failed(IOException("Fallo inesperado al guardar preferencias", error))
+        }
+    }
+
+    /** Carga el archivo y aplica encima los cambios hechos mientras tanto. Un fallo de I/O deja todo pendiente. */
+    private fun loadNow() {
+        val data = preferencesFile.load()
+        synchronized(lock) {
+            _prefs.value = pendingChanges.fold(data) { current, change -> change(current) }
+            pendingChanges.clear()
+            lastSaved = data
+            loaded = true
         }
     }
 
     // ---- Carpeta y escaneo ----
 
-    fun chooseFolder(uri: String) {
-        scanJob?.cancel()
-        scanJob = scope.launch(io) {
-            try {
-                folders.select(uri)
-            } catch (_: SecurityException) {
-                _state.value = LibraryState.Failed(LibraryError.PermissionRevoked)
-                return@launch
+    private fun launchFolderOperation(block: suspend (isCurrent: () -> Boolean) -> Unit) {
+        val mine = generation.incrementAndGet()
+        synchronized(jobLock) {
+            folderJob?.cancel()
+            folderJob = scope.launch(io) {
+                folderMutex.withLock { block { generation.get() == mine } }
             }
-            scan()
         }
+    }
+
+    fun chooseFolder(uri: String) = launchFolderOperation { isCurrent ->
+        try {
+            folders.select(uri)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: SecurityException) {
+            if (isCurrent()) _state.value = LibraryState.Failed(LibraryError.AccessNotKept)
+            return@launchFolderOperation
+        } catch (_: IllegalArgumentException) {
+            if (isCurrent()) _state.value = LibraryState.Failed(LibraryError.AccessNotKept)
+            return@launchFolderOperation
+        } catch (_: Exception) {
+            if (isCurrent()) _state.value = LibraryState.Failed(LibraryError.Unreadable)
+            return@launchFolderOperation
+        }
+        scan(isCurrent)
     }
 
     /** Vuelve a listar la carpeta; cancela el escaneo anterior. */
-    fun rescan() {
-        scanJob?.cancel()
-        scanJob = scope.launch(io) { scan() }
-    }
+    fun rescan() = launchFolderOperation { isCurrent -> scan(isCurrent) }
 
-    fun forgetFolder() {
-        scanJob?.cancel()
-        scanJob = scope.launch(io) {
+    fun forgetFolder() = launchFolderOperation { isCurrent ->
+        try {
             folders.forget()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Olvidar es local; si falla, el siguiente escaneo lo reflejará.
+        }
+        if (isCurrent()) {
             _folderName.value = null
             _state.value = LibraryState.NoFolder
         }
     }
 
-    private suspend fun scan() {
+    /** Siempre termina publicando un estado: ninguna excepción del proveedor escapa de aquí. */
+    private suspend fun scan(isCurrent: () -> Boolean) {
         val context = currentCoroutineContext()
-        val uri = folders.currentUri()
-        if (uri == null) {
-            _folderName.value = null
-            _state.value = LibraryState.NoFolder
-            return
+        fun publish(state: LibraryState) {
+            context.ensureActive()
+            if (isCurrent()) _state.value = state
         }
-        if (!folders.hasPersistedPermission()) {
-            _state.value = LibraryState.Failed(LibraryError.PermissionRevoked)
-            return
-        }
-        val name = folders.displayName()
-        _folderName.value = name
-        val previous = when (val current = _state.value) {
-            is LibraryState.Ready -> current.entries
-            is LibraryState.Scanning -> current.previous
-            else -> emptyList()
-        }
-        _state.value = LibraryState.Scanning(previous, name)
         val outcome: LibraryState = try {
+            val uri = folders.currentUri()
+            if (uri == null) {
+                if (isCurrent()) _folderName.value = null
+                publish(LibraryState.NoFolder)
+                return
+            }
+            if (!folders.hasPersistedPermission()) {
+                publish(LibraryState.Failed(LibraryError.PermissionRevoked))
+                return
+            }
+            val name = folders.displayName()
+            if (isCurrent()) _folderName.value = name
+            val previous = when (val current = _state.value) {
+                is LibraryState.Ready -> current.entries
+                is LibraryState.Scanning -> current.previous
+                else -> emptyList()
+            }
+            publish(LibraryState.Scanning(previous, name))
             val entries = LibraryScanner.scan(openTree(uri)) { _, _ -> context.ensureActive() }
             LibraryState.Ready(entries, name)
         } catch (error: CancellationException) {
@@ -165,9 +208,11 @@ class LibraryViewModel(
             LibraryState.Failed(LibraryError.FolderMissing)
         } catch (_: IOException) {
             LibraryState.Failed(LibraryError.Unreadable)
+        } catch (_: Exception) {
+            // Red de seguridad: un proveedor mal portado (IllegalStateException, etc.) no debe tumbar la app.
+            LibraryState.Failed(LibraryError.Unreadable)
         }
-        context.ensureActive()
-        _state.value = outcome
+        publish(outcome)
     }
 
     // ---- Búsqueda y filtro ----
@@ -180,7 +225,7 @@ class LibraryViewModel(
         _filter.value = value
     }
 
-    // ---- Preferencias ----
+    // ---- Preferencias (acciones) ----
 
     fun toggleFavorite(entry: RomEntry) = mutate { it.toggleFavorite(entry) }
 
@@ -192,27 +237,34 @@ class LibraryViewModel(
 
     fun setSort(sort: LibrarySort) = mutate { it.copy(sort = sort) }
 
-    /** Espera a que las preferencias pendientes estén en disco. Útil en pruebas y antes de salir. */
-    suspend fun flushPreferences() {
-        prefsLoad.await()
-        val done = CompletableDeferred<Unit>()
-        writes.send(WriteRequest(null, done))
-        done.await()
+    /**
+     * Espera a que lo último en memoria esté en disco. Devuelve [PersistResult.Failed] si no se pudo;
+     * en ese caso la versión sigue pendiente y se reintenta sola.
+     */
+    suspend fun flushPreferences(): PersistResult {
+        val done = CompletableDeferred<PersistResult>()
+        writes.send(done)
+        return done.await()
+    }
+
+    /** Pide (sin esperar) que se persista lo pendiente; la UI lo llama al parar la actividad. */
+    fun retryPendingWrites() {
+        writes.trySend(null)
+    }
+
+    /** Escritura síncrona de último recurso para [onCleared]; ya no habrá "siguiente cambio". */
+    internal fun persistBlocking(): PersistResult = persistLatest()
+
+    override fun onCleared() {
+        persistBlocking()
     }
 
     private fun mutate(change: (LibraryPreferencesData) -> LibraryPreferencesData) {
         synchronized(lock) {
-            if (!prefsLoaded) {
-                pendingChanges += change
-                return
-            }
-            var next: LibraryPreferencesData? = null
-            _prefs.update { current ->
-                change(current).also { next = it }
-            }
-            val updated = next!!
-            writes.trySend(WriteRequest(updated, null))
+            _prefs.update(change)
+            if (!loaded) pendingChanges += change
         }
+        writes.trySend(null)
     }
 
     // ---- Detalle ----
@@ -226,9 +278,14 @@ class LibraryViewModel(
                 roms.read(entry.uri, LibraryScanner.MAX_ROM_BYTES.toInt() + 1)
             } catch (error: DocumentReadException) {
                 return@withContext DetailsLoad.Failed(if (error.remote) DetailsError.Remote else DetailsError.Unreadable)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: SecurityException) {
                 return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             } catch (_: IOException) {
+                return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
+            } catch (_: Exception) {
+                // Red de seguridad: un proveedor mal portado no debe tumbar la pantalla de detalle.
                 return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             }
             if (bytes.size > LibraryScanner.MAX_ROM_BYTES) {
@@ -238,6 +295,10 @@ class LibraryViewModel(
                 inspector.inspect(bytes)
             } catch (error: CoreError) {
                 return@withContext DetailsLoad.Failed(DetailsError.CoreRejected(error))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             }
             val fingerprint = info.fingerprintHex
             if (_prefs.value.fingerprints[entry.id] != fingerprint) {

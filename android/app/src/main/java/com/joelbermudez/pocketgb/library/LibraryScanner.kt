@@ -35,7 +35,7 @@ object LibraryScanner {
     private val extensions = setOf("gb", "gbc")
 
     fun scan(tree: DocumentTree, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): List<RomEntry> {
-        val candidates = candidates(tree)
+        val candidates = uniqueIds(candidates(tree))
         val entries = candidates.mapIndexed { index, (relative, node) ->
             entry(tree, relative, node).also { progress(index + 1, candidates.size) }
         }
@@ -47,9 +47,12 @@ object LibraryScanner {
         for (item in tree.children(null)) {
             if (item.name.startsWith(".")) continue
             if (item.isDirectory) {
-                // Una subcarpeta que no se puede listar no tira el escaneo entero.
+                // Una subcarpeta que falla de forma recuperable no tira el escaneo entero, pero perder el
+                // permiso sí lo es: la biblioteca parcial sería engañosa.
                 val inner = try {
                     tree.children(item.id)
+                } catch (error: TreePermissionException) {
+                    throw error
                 } catch (_: IOException) {
                     continue
                 }
@@ -61,6 +64,24 @@ object LibraryScanner {
         }
         return result
     }
+
+    /**
+     * Garantiza ids únicos (se usan como clave en favoritos, ocultos y listas Lazy*). Si varias entradas
+     * comparten ruta relativa (proveedores remotos permiten nombres repetidos), TODAS reciben un sufijo
+     * `#<hash del id de documento>`: así el id no depende del orden en que el proveedor las liste.
+     * El sufijo va tras el nombre de archivo, por lo que `subfolder` no cambia.
+     */
+    private fun uniqueIds(items: List<Pair<String, TreeNode>>): List<Pair<String, TreeNode>> {
+        val counts = items.groupingBy { it.first }.eachCount()
+        val used = HashSet<String>(items.size)
+        return items.map { (relative, node) ->
+            var id = if (counts.getValue(relative) == 1) relative else "$relative#${hex(node.id.hashCode())}"
+            while (!used.add(id)) id += "~" // colisión de hash o documento repetido: sigue siendo único
+            id to node
+        }
+    }
+
+    private fun hex(value: Int) = Integer.toHexString(value).padStart(8, '0')
 
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions

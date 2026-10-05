@@ -2,7 +2,9 @@ package com.joelbermudez.pocketgb.library
 
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.Normalizer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -128,34 +130,104 @@ object LibraryQuery {
             .lowercase()
 }
 
+/** Resultado de intentar llevar las preferencias a disco. */
+sealed interface PersistResult {
+    data object Saved : PersistResult
+
+    /** La última versión sigue solo en memoria; se reintenta con el siguiente cambio, al parar o al salir. */
+    data class Failed(val error: IOException) : PersistResult
+}
+
+/** Dónde viven las preferencias. Interfaz pequeña para inyectar fallos de I/O en las pruebas. */
+interface PreferencesStore {
+    /** Lee las preferencias. Falla con [IOException] si el disco no responde (no es "corrupto"). */
+    fun load(): LibraryPreferencesData
+
+    fun save(data: LibraryPreferencesData)
+}
+
+/** Operaciones de archivo de [LibraryPreferencesFile], separadas para poder probar fallos a mitad de la escritura. */
+interface PreferencesFileOps {
+    /** Escribe todos los bytes y los sincroniza a disco. */
+    fun writeSynced(file: File, bytes: ByteArray)
+
+    fun rename(from: File, to: File): Boolean
+}
+
+object DefaultPreferencesFileOps : PreferencesFileOps {
+    override fun writeSynced(file: File, bytes: ByteArray) {
+        FileOutputStream(file).use { out ->
+            out.write(bytes)
+            out.fd.sync()
+        }
+    }
+
+    override fun rename(from: File, to: File): Boolean = from.renameTo(to)
+}
+
 /**
  * Persistencia de [LibraryPreferencesData] en un archivo privado, con escritura atómica:
- * temporal sincronizado y renombrado. Un archivo ilegible se aparta como `.corrupt`
- * en vez de sobrescribirse.
+ * temporal sincronizado y renombrado. Si el rename no ocurre, el archivo previo queda intacto.
+ *
+ * - Un error de I/O al leer se propaga: no es motivo para apartar ni sobrescribir el archivo.
+ * - Un contenido que no se puede interpretar se aparta como `.corrupt-<timestamp>` (sin pisar uno previo).
+ * - Si falta el archivo pero hay un temporal completo (se cortó la primera escritura justo antes del rename),
+ *   se recupera el temporal.
  */
-class LibraryPreferencesFile(private val file: File) {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+class LibraryPreferencesFile(
+    private val file: File,
+    private val ops: PreferencesFileOps = DefaultPreferencesFileOps,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : PreferencesStore {
+    // coerceInputValues: un enum desconocido (versión futura) cae en su valor por defecto sin descartar el resto.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; coerceInputValues = true }
+    private val temp get() = File(file.parentFile, file.name + ".tmp")
 
-    fun load(): LibraryPreferencesData {
-        if (!file.exists()) return LibraryPreferencesData()
-        return try {
-            json.decodeFromString(LibraryPreferencesData.serializer(), file.readText())
-        } catch (_: Exception) {
-            file.renameTo(File(file.parentFile, file.name + ".corrupt"))
+    override fun load(): LibraryPreferencesData {
+        if (!file.exists()) return recoverTemp() ?: LibraryPreferencesData()
+        val text = file.readText()
+        return decode(text) ?: run {
+            quarantine()
             LibraryPreferencesData()
         }
     }
 
-    fun save(data: LibraryPreferencesData) {
+    override fun save(data: LibraryPreferencesData) {
         file.parentFile?.mkdirs()
-        val temp = File(file.parentFile, file.name + ".tmp")
-        FileOutputStream(temp).use { out ->
-            out.write(json.encodeToString(LibraryPreferencesData.serializer(), data).toByteArray())
-            out.fd.sync()
-        }
-        if (!temp.renameTo(file)) {
+        val temp = temp
+        try {
+            ops.writeSynced(temp, json.encodeToString(LibraryPreferencesData.serializer(), data).toByteArray())
+        } catch (error: IOException) {
             temp.delete()
-            throw java.io.IOException("No se pudo reemplazar ${file.name}")
+            throw error
         }
+        if (!ops.rename(temp, file)) {
+            temp.delete()
+            throw IOException("No se pudo reemplazar ${file.name}")
+        }
+    }
+
+    private fun decode(text: String): LibraryPreferencesData? = try {
+        json.decodeFromString(LibraryPreferencesData.serializer(), text)
+    } catch (_: SerializationException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    private fun recoverTemp(): LibraryPreferencesData? {
+        val temp = temp
+        if (!temp.exists()) return null
+        val data = decode(temp.readText()) ?: return null
+        ops.rename(temp, file) // si falla, la próxima escritura lo regenera igualmente
+        return data
+    }
+
+    private fun quarantine() {
+        val base = "${file.name}.corrupt-${clock()}"
+        var target = File(file.parentFile, base)
+        var n = 1
+        while (target.exists()) target = File(file.parentFile, "$base-${n++}")
+        if (!file.renameTo(target)) throw IOException("No se pudo apartar ${file.name} ilegible")
     }
 }

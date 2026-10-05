@@ -9,29 +9,39 @@ import com.joelbermudez.pocketgb.emulator.CoreBridge
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileNotFoundException
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Lee ROMs por `ContentResolver`; nunca los modifica ni los copia. */
 class ContentResolverRomSource(private val resolver: ContentResolver) : RomSource {
     override fun read(uri: String, limit: Int): ByteArray {
         val parsed = Uri.parse(uri)
-        val stream = try {
-            resolver.openInputStream(parsed)
-        } catch (error: FileNotFoundException) {
-            throw DocumentReadException(remote = false, cause = error)
-        } ?: throw DocumentReadException(remote = false)
-        stream.use { input ->
-            val out = ByteArrayOutputStream(minOf(limit, 64 * 1024))
-            val buffer = ByteArray(16 * 1024)
-            var total = 0
-            while (total < limit) {
-                val read = input.read(buffer, 0, minOf(buffer.size, limit - total))
-                if (read < 0) break
-                out.write(buffer, 0, read)
-                total += read
+        val remote = ProviderLocality.isRemote(parsed)
+        try {
+            val stream = resolver.openInputStream(parsed) ?: throw DocumentReadException(remote)
+            stream.use { input ->
+                val out = ByteArrayOutputStream(minOf(limit, 64 * 1024))
+                val buffer = ByteArray(16 * 1024)
+                var total = 0
+                while (total < limit) {
+                    val read = input.read(buffer, 0, minOf(buffer.size, limit - total))
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    total += read
+                }
+                return out.toByteArray()
             }
-            return out.toByteArray()
+        } catch (error: DocumentReadException) {
+            throw error
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IOException) {
+            throw DocumentReadException(remote, error)
+        } catch (error: SecurityException) {
+            throw DocumentReadException(remote = false, cause = error)
+        } catch (error: RuntimeException) {
+            // Un proveedor mal portado puede lanzar IllegalStateException, etc.
+            throw DocumentReadException(remote, error)
         }
     }
 }

@@ -22,6 +22,16 @@ class AppNavigationStateTest {
     }
 
     @Test
+    fun pushingTheSameRouteTwiceStacksItOnce() {
+        val state = AppNavigationState()
+        state.push(LibraryRoute.Details("demo-red"))
+        state.push(LibraryRoute.Details("demo-red"))
+        assertEquals(2, state.currentBackStack.size)
+        state.push(LibraryRoute.Details("demo-yellow"))
+        assertEquals(3, state.currentBackStack.size)
+    }
+
+    @Test
     fun popAtRootReturnsFalseAndKeepsRoot() {
         val state = AppNavigationState()
 

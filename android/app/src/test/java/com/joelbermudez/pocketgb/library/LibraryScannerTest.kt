@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb.library
 import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,8 +13,10 @@ class LibraryScannerTest {
         val heads: Map<String, ByteArray> = emptyMap(),
         val failures: Map<String, IOException> = emptyMap(),
         val failingDirs: Set<String> = emptySet(),
+        val revokedDirs: Set<String> = emptySet(),
     ) : DocumentTree {
         override fun children(directoryId: String?): List<TreeNode> {
+            if (directoryId in revokedDirs) throw TreePermissionException()
             if (directoryId in failingDirs) throw IOException("sin permiso")
             return dirs[directoryId].orEmpty()
         }
@@ -107,6 +110,65 @@ class LibraryScannerTest {
             failingDirs = setOf("bad"),
         )
         assertEquals(listOf("Ok.gb"), LibraryScanner.scan(tree).map { it.id })
+    }
+
+    @Test
+    fun permissionRevokedOnASubfolderPropagatesInsteadOfReturningAPartialLibrary() {
+        // La raíz se lista bien y el permiso desaparece justo al entrar en la subcarpeta.
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Ok.gb"), dir("sub", "Sub"))),
+            heads = mapOf("a" to rom("OK")),
+            revokedDirs = setOf("sub"),
+        )
+        assertThrows(TreePermissionException::class.java) { LibraryScanner.scan(tree) }
+    }
+
+    @Test
+    fun missingSubfolderIsRecoverableAndIgnored() {
+        val tree = object : DocumentTree by FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Ok.gb"), dir("sub", "Sub"))),
+            heads = mapOf("a" to rom("OK")),
+        ) {
+            override fun children(directoryId: String?): List<TreeNode> =
+                if (directoryId == "sub") throw TreeMissingException() else if (directoryId == null) {
+                    listOf(file("a", "Ok.gb"), dir("sub", "Sub"))
+                } else {
+                    emptyList()
+                }
+        }
+        assertEquals(listOf("Ok.gb"), LibraryScanner.scan(tree).map { it.id })
+    }
+
+    @Test
+    fun repeatedNamesGetDeterministicStableAndUniqueIds() {
+        // Proveedores remotos permiten dos "Juego.gb" en la misma carpeta y dos subcarpetas homónimas.
+        val dirs = mapOf(
+            null to listOf(
+                file("d1", "Juego.gb"),
+                file("d2", "Juego.gb"),
+                file("solo", "Unico.gb"),
+                dir("s1", "Rojo"),
+                dir("s2", "Rojo"),
+            ),
+            "s1" to listOf(file("s1a", "Pokemon.gb"), file("s1b", "Otro.gb")),
+            "s2" to listOf(file("s2a", "Pokemon.gb")),
+        )
+        val heads = listOf("d1", "d2", "solo", "s1a", "s1b", "s2a").associateWith { rom(it.uppercase()) }
+        val first = LibraryScanner.scan(FakeTree(dirs, heads))
+        val ids = first.map { it.id }
+        assertEquals("ids únicos", ids.size, ids.toSet().size)
+        assertEquals(6, ids.size)
+        // Solo se renombran los que colisionan; el resto conserva su ruta relativa.
+        assertTrue("Unico.gb" in ids)
+        assertTrue("Rojo/Otro.gb" in ids)
+        assertEquals(2, ids.count { it.startsWith("Juego.gb#") })
+        assertEquals(2, ids.count { it.startsWith("Rojo/Pokemon.gb#") })
+        // La subcarpeta mostrada no cambia por el sufijo.
+        assertEquals(setOf("Rojo"), first.filter { it.id.startsWith("Rojo/") }.map { it.subfolder }.toSet())
+        // Estable: el mismo contenido en otro orden de proveedor da el mismo conjunto de ids por documento.
+        val reversed = dirs.mapValues { (_, nodes) -> nodes.reversed() }
+        val second = LibraryScanner.scan(FakeTree(reversed, heads))
+        assertEquals(first.associate { it.uri to it.id }, second.associate { it.uri to it.id })
     }
 
     @Test

@@ -42,6 +42,13 @@ public class TestDocumentsProvider extends ContentProvider {
     };
 
     private volatile boolean denied = false;
+    // Modos de fallo de un proveedor mal portado (H3) y revocación parcial (A4-01).
+    private volatile String deniedDir = null;
+    private volatile String throwingDir = null;
+    private volatile boolean omitSizeColumn = false;
+    private volatile boolean omitMimeColumn = false;
+    private volatile boolean textSize = false;
+    private final java.util.Map<String, Long> declaredSizes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private File base() {
         return new File(getContext().getCacheDir(), "saf-fixture");
@@ -59,6 +66,12 @@ public class TestDocumentsProvider extends ContentProvider {
             switch (method) {
                 case "reset":
                     denied = false;
+                    deniedDir = null;
+                    throwingDir = null;
+                    omitSizeColumn = false;
+                    omitMimeColumn = false;
+                    textSize = false;
+                    declaredSizes.clear();
                     deleteRecursively(base());
                     base().mkdirs();
                     break;
@@ -84,6 +97,24 @@ public class TestDocumentsProvider extends ContentProvider {
                 case "deleteAll":
                     deleteRecursively(base());
                     break;
+                case "denyDir":
+                    deniedDir = arg;
+                    break;
+                case "throwDir":
+                    throwingDir = arg;
+                    break;
+                case "omitSize":
+                    omitSizeColumn = extras.getBoolean("on");
+                    break;
+                case "omitMime":
+                    omitMimeColumn = extras.getBoolean("on");
+                    break;
+                case "textSize":
+                    textSize = extras.getBoolean("on");
+                    break;
+                case "declareSize":
+                    declaredSizes.put(arg, extras.getLong("size"));
+                    break;
                 case "deny":
                     denied = extras.getBoolean("denied");
                     break;
@@ -107,7 +138,23 @@ public class TestDocumentsProvider extends ContentProvider {
         if (denied) throw new SecurityException("Permiso revocado (simulado)");
         Parsed parsed = parse(uri);
         if (parsed == null) return null;
-        MatrixCursor cursor = new MatrixCursor(projection != null ? projection : DEFAULT_PROJECTION);
+        if (parsed.children && parsed.documentId.equals(deniedDir)) {
+            throw new SecurityException("Permiso revocado en la subcarpeta (simulado)");
+        }
+        if (parsed.children && parsed.documentId.equals(throwingDir)) {
+            throw new IllegalStateException("Proveedor roto (simulado)");
+        }
+        String[] columns = projection != null ? projection : DEFAULT_PROJECTION;
+        if (omitSizeColumn || omitMimeColumn) {
+            ArrayList<String> kept = new ArrayList<>();
+            for (String column : columns) {
+                if (omitSizeColumn && Document.COLUMN_SIZE.equals(column)) continue;
+                if (omitMimeColumn && Document.COLUMN_MIME_TYPE.equals(column)) continue;
+                kept.add(column);
+            }
+            columns = kept.toArray(new String[0]);
+        }
+        MatrixCursor cursor = new MatrixCursor(columns);
         // Igual que DocumentsProvider: un documento inexistente devuelve null, no una excepción.
         try {
             if (parsed.children) {
@@ -185,7 +232,7 @@ public class TestDocumentsProvider extends ContentProvider {
         return file;
     }
 
-    private static void addRow(MatrixCursor cursor, String documentId, File file) {
+    private void addRow(MatrixCursor cursor, String documentId, File file) {
         boolean isDirectory = file.isDirectory();
         int flags = file.getName().startsWith("virtual-") ? Document.FLAG_VIRTUAL_DOCUMENT : 0;
         MatrixCursor.RowBuilder row = cursor.newRow();
@@ -202,7 +249,13 @@ public class TestDocumentsProvider extends ContentProvider {
                     value = isDirectory ? Document.MIME_TYPE_DIR : "application/octet-stream";
                     break;
                 case Document.COLUMN_SIZE:
-                    value = isDirectory ? null : (Object) file.length();
+                    if (isDirectory) {
+                        value = null;
+                    } else {
+                        Long declared = declaredSizes.get(documentId);
+                        long size = declared != null ? declared : file.length();
+                        value = textSize ? (Object) "no-es-un-numero" : (Object) size;
+                    }
                     break;
                 case Document.COLUMN_FLAGS:
                     value = flags;

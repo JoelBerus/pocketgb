@@ -77,8 +77,10 @@ fun GameDetailsScreen(viewModel: LibraryViewModel, gameId: String, onBack: () ->
     }
     val entry = entries.firstOrNull { it.id == gameId }?.takeUnless { prefs.isHidden(it) }
     if (entry == null) {
-        if (state is LibraryState.Scanning && entries.isEmpty()) {
-            ScanningPane()
+        if (state is LibraryState.Loading || state is LibraryState.Scanning && entries.isEmpty()) {
+            ScanningPane(
+                message = if (state is LibraryState.Loading) "Cargando biblioteca…" else "Buscando juegos…",
+            )
         } else {
             GameUnavailable(onBack)
         }

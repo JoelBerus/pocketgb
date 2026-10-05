@@ -143,6 +143,14 @@ static void render_frame(native_session *session) {
         ANativeWindow_release(window);
         return;
     }
+    /* Solo se dibuja en buffers de 32 bpp RGBA/RGBX con geometría válida; con cualquier otro formato
+     * (el sistema puede ignorar setBuffersGeometry) se publica el buffer sin escribirlo. */
+    if ((buffer.format != WINDOW_FORMAT_RGBA_8888 && buffer.format != WINDOW_FORMAT_RGBX_8888) ||
+        buffer.bits == NULL || buffer.width <= 0 || buffer.height <= 0 || buffer.stride < buffer.width) {
+        (void)ANativeWindow_unlockAndPost(window);
+        ANativeWindow_release(window);
+        return;
+    }
     uint32_t *destination = buffer.bits;
     for (int y = 0; y < buffer.height; ++y) {
         for (int x = 0; x < buffer.stride; ++x) {
@@ -484,8 +492,10 @@ void native_session_set_window(native_session *session, ANativeWindow *window) {
         }
         return;
     }
-    if (window != NULL) {
-        (void)ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888);
+    if (window != NULL && ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888) != 0) {
+        /* Sin formato RGBA garantizado no se dibuja: se descarta la ventana en vez de arriesgar escrituras. */
+        ANativeWindow_release(window);
+        window = NULL;
     }
     (void)pthread_mutex_lock(&session->mutex);
     ANativeWindow *previous = session->window;

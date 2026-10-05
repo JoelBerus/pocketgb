@@ -91,6 +91,8 @@ internal fun DebugCatalog(intent: DebugIntent) {
                     query = "zelda",
                 )
                 "library-error" -> DemoLibrary(LibraryState.Failed(LibraryError.PermissionRevoked))
+                "library-loading" -> DemoLibrary(LibraryState.Loading)
+                "library-access-error" -> DemoLibrary(LibraryState.Failed(LibraryError.AccessNotKept))
                 "library-detail" -> GameDetailsContent(
                     entry = demoGames[0],
                     load = DetailsLoad.Loaded(demoDetails(demoGames[0])),

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copia en la nube y transferencia entre dispositivos (Android 12+). Misma política que backup_rules.xml:
+    el URI de la carpeta (library_folder) no viaja; las preferencias de biblioteca sí.
+    TODO(A5): decidir sobre `saves/` (partidas) antes de que existan.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="library_folder.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="library_folder.xml" />
+    </device-transfer>
+</data-extraction-rules>

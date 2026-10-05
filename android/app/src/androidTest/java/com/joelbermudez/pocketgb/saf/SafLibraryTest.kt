@@ -211,4 +211,82 @@ class SafLibraryTest {
         await { vm.state.first { it == LibraryState.Failed(LibraryError.FolderMissing) } }
         assertNotNull(vm.folderName.value)
     }
+
+    // ---- Correcciones de la 1ª vuelta de auditoría ----
+
+    @Test
+    fun revocationOnASubfolderPropagatesAndTheViewModelReportsPermissionRevoked() {
+        fixtures.denyDir("root/Sub") // la raíz se lista bien; el permiso desaparece al entrar en Sub
+        assertTrue(tree().children(null).isNotEmpty()) // la raíz sí responde
+        assertThrows(TreePermissionException::class.java) { LibraryScanner.scan(tree()) }
+
+        val vm = viewModel()
+        vm.rescan()
+        await { vm.state.first { it == LibraryState.Failed(LibraryError.PermissionRevoked) } }
+    }
+
+    @Test
+    fun providerThrowingIllegalStateIsAnIoErrorNotACrash() {
+        fixtures.throwDir("root/Sub")
+        assertThrows(IOException::class.java) { tree().children("root/Sub") }
+        // Un fallo no-permiso en una subcarpeta se ignora: el resto de la biblioteca sigue disponible.
+        val ids = LibraryScanner.scan(tree()).map { it.id }
+        assertTrue("Alfa.gb" in ids)
+        assertFalse(ids.any { it.startsWith("Sub/") })
+
+        fixtures.throwDir("root")
+        val vm = viewModel()
+        vm.rescan()
+        await { vm.state.first { it == LibraryState.Failed(LibraryError.Unreadable) } }
+    }
+
+    @Test
+    fun cursorWithoutOptionalColumnsOrWithTextSizeIsTolerated() {
+        fixtures.omitSizeColumn(true)
+        val withoutSize = tree().children(null).associateBy { it.name }
+        assertEquals(0L, withoutSize.getValue("Alfa.gb").sizeBytes)
+        fixtures.omitSizeColumn(false)
+
+        fixtures.omitMimeColumn(true)
+        val withoutMime = tree().children(null)
+        assertTrue(withoutMime.none { it.isDirectory })
+        fixtures.omitMimeColumn(false)
+
+        fixtures.textSize(true)
+        val textSize = tree().children(null).associateBy { it.name }
+        assertEquals("tamaño no numérico = desconocido", 0L, textSize.getValue("Alfa.gb").sizeBytes)
+        val entries = LibraryScanner.scan(tree()).associateBy { it.id }
+        assertNull(entries.getValue("Alfa.gb").problem)
+    }
+
+    @Test
+    fun declaredSmallSizeButHugeContentIsStopppedByTheReadCapAtMaxPlusOne() {
+        // El proveedor anuncia 32 KiB pero el contenido real ocupa 9 MiB: el tope de lectura es la defensa.
+        fixtures.putSparse("Mentiroso.gb", 9L * 1024 * 1024)
+        fixtures.declareSize("root/Mentiroso.gb", 32L * 1024)
+        val entry = LibraryScanner.scan(tree()).single { it.id == "Mentiroso.gb" }
+        assertNull("el escáner confía en el tamaño anunciado", entry.problem)
+
+        val limit = LibraryScanner.MAX_ROM_BYTES.toInt() + 1
+        assertEquals(limit, ContentResolverRomSource(resolver).read(entry.uri, limit).size)
+
+        val vm = viewModel()
+        vm.rescan()
+        await { vm.state.first { it is LibraryState.Ready } }
+        assertEquals(DetailsLoad.Failed(DetailsError.TooLarge), await { vm.loadDetails("Mentiroso.gb") })
+    }
+
+    @Test
+    fun romSourceMarksProviderFailuresAsRemoteWithTheSameCriterionAsTheTree() {
+        val vm = viewModel()
+        vm.rescan()
+        val ready = await { vm.state.first { it is LibraryState.Ready } } as LibraryState.Ready
+        val alfa = ready.entries.single { it.id == "Alfa.gb" }
+        fixtures.deleteAll() // el documento desaparece tras escanear
+        val error = assertThrows(DocumentReadException::class.java) {
+            ContentResolverRomSource(resolver).read(alfa.uri, 0x150)
+        }
+        assertTrue(error.remote)
+        assertEquals(DetailsLoad.Failed(DetailsError.Remote), await { vm.loadDetails(alfa.id) })
+    }
 }

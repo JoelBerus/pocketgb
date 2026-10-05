@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copia de seguridad automática (Android 11 e inferior).
+    - library_folder: guarda el URI de la carpeta de juegos. Es un permiso SAF ligado a este dispositivo;
+      restaurarlo en otro sin su permiso persistente sería un puntero muerto, así que no se respalda.
+    - files/library/preferences.json (favoritos, ocultos, huellas por ruta relativa) sí se respalda.
+    - TODO(A5): decidir qué hacer con `saves/` (partidas) antes de que existan; hasta entonces no hay nada que respaldar.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="library_folder.xml" />
+</full-backup-content>

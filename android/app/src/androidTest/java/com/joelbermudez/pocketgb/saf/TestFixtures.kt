@@ -20,5 +20,15 @@ class TestFixtures(private val resolver: ContentResolver) {
     fun mkdir(path: String) = call("mkdir", path)
     fun deleteAll() = call("deleteAll")
     fun deny(denied: Boolean) = call("deny", null, Bundle().apply { putBoolean("denied", denied) })
+    fun denyDir(documentId: String?) = call("denyDir", documentId)
+    fun throwDir(documentId: String?) = call("throwDir", documentId)
+    fun omitSizeColumn(on: Boolean) = call("omitSize", null, Bundle().apply { putBoolean("on", on) })
+    fun omitMimeColumn(on: Boolean) = call("omitMime", null, Bundle().apply { putBoolean("on", on) })
+    fun textSize(on: Boolean) = call("textSize", null, Bundle().apply { putBoolean("on", on) })
+
+    /** El proveedor anuncia [size] como SIZE del documento [documentId] aunque su contenido real sea otro. */
+    fun declareSize(documentId: String, size: Long) =
+        call("declareSize", documentId, Bundle().apply { putLong("size", size) })
+
     fun snapshot(): List<String> = call("snapshot").getStringArrayList("files").orEmpty()
 }

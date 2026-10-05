@@ -111,6 +111,7 @@ fun LibraryContent(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
             when (state) {
+                LibraryState.Loading -> ScanningPane(message = "Cargando biblioteca…")
                 LibraryState.NoFolder -> EmptyState(
                     icon = Icons.Outlined.FolderOpen,
                     title = "Elige una carpeta con tus juegos",
@@ -143,7 +144,7 @@ fun LibraryContent(
 }
 
 @Composable
-internal fun ScanningPane(modifier: Modifier = Modifier) {
+internal fun ScanningPane(modifier: Modifier = Modifier, message: String = "Buscando juegos…") {
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -151,7 +152,7 @@ internal fun ScanningPane(modifier: Modifier = Modifier) {
     ) {
         CircularProgressIndicator(modifier = Modifier.testTag("library-progress"))
         Text(
-            "Buscando juegos…",
+            message,
             modifier = Modifier.padding(top = 16.dp),
             style = MaterialTheme.typography.titleMedium,
         )
@@ -174,6 +175,16 @@ private fun LibraryErrorPane(error: LibraryError, onChooseFolder: () -> Unit, on
             message = "Se movió o se borró. Elige otra carpeta o reintenta si la restauraste.",
             actions = {
                 Button(onClick = onChooseFolder) { Text("Elegir otra carpeta") }
+                OutlinedButton(onClick = onRescan) { Text("Reintentar") }
+            },
+        )
+        LibraryError.AccessNotKept -> EmptyState(
+            icon = Icons.Outlined.ErrorOutline,
+            title = "No se pudo conservar el acceso a la carpeta",
+            message = "El sistema no permitió recordar la carpeta elegida. La carpeta anterior no se tocó; " +
+                "elige otra vez o reintenta con la que ya tenías.",
+            actions = {
+                Button(onClick = onChooseFolder) { Text("Elegir carpeta") }
                 OutlinedButton(onClick = onRescan) { Text("Reintentar") }
             },
         )

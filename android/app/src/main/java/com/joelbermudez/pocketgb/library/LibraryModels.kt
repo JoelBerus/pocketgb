@@ -14,9 +14,15 @@ sealed interface LibraryError {
 
     /** El proveedor falló al listarla; reintentar puede bastar. */
     data object Unreadable : LibraryError
+
+    /** El sistema no concedió el permiso persistente de la carpeta recién elegida; la anterior sigue intacta. */
+    data object AccessNotKept : LibraryError
 }
 
 sealed interface LibraryState {
+    /** Estado inicial: aún no se sabe si hay carpeta (p. ej. tras morir el proceso). No es `NoFolder`. */
+    data object Loading : LibraryState
+
     data object NoFolder : LibraryState
 
     /** Escaneando; [previous] es lo último conocido, para no vaciar la pantalla al volver a primer plano. */

@@ -61,7 +61,9 @@ fun FavoritesContent(
                     title = "Sin carpeta de juegos",
                     message = "Elige o repara la carpeta en Biblioteca para ver aquí tus favoritos.",
                 )
-                entries == null || entries.isEmpty() && state is LibraryState.Scanning -> ScanningPane()
+                entries == null || entries.isEmpty() && state is LibraryState.Scanning -> ScanningPane(
+                    message = if (state is LibraryState.Loading) "Cargando biblioteca…" else "Buscando juegos…",
+                )
                 else -> {
                     val favorites = remember(entries, prefs) {
                         LibraryQuery.visible(entries, prefs, LibraryFilter.FAVORITES, "")

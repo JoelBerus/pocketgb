@@ -49,6 +49,8 @@ class AppNavigationState(snapshot: NavigationSnapshot = initialSnapshot()) {
         require(route.topLevel == selected) {
             "La ruta pertenece a ${route.topLevel}, pero la pestaña activa es $selected"
         }
+        // Un doble toque durante la transición no apila dos veces la misma pantalla (equivalente a singleTop).
+        if (currentBackStack.lastOrNull() == route) return
         currentBackStack.add(route)
     }
 

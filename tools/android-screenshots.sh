@@ -18,7 +18,7 @@ if ! "$adb_bin" get-state >/dev/null 2>&1; then
 fi
 
 mkdir -p "$out_dir"
-screens=(library-empty library-grid library-list library-search library-error library-detail library-detail-problem favorites-empty favorites settings-main settings-library appearance about native-video gameplay-controls gameplay-fast-forward)
+screens=(library-empty library-grid library-list library-search library-error library-loading library-access-error library-detail library-detail-problem favorites-empty favorites settings-main settings-library appearance about native-video gameplay-controls gameplay-fast-forward)
 
 for theme in light dark; do
   for screen in "${screens[@]}"; do

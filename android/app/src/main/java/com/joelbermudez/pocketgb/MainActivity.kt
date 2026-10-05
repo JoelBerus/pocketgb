@@ -36,6 +36,8 @@ class MainActivity : ComponentActivity() {
                 )
                 // Cada vuelta a primer plano reescanea la biblioteca (SPEC §6).
                 LifecycleEventEffect(Lifecycle.Event.ON_START) { library.rescan() }
+                // Reintenta las preferencias cuya escritura falló, antes de que el proceso pueda morir.
+                LifecycleEventEffect(Lifecycle.Event.ON_STOP) { library.retryPendingWrites() }
                 PocketGBTheme(appearance = appearance) {
                     PocketGBApp(
                         appearance = appearance,
