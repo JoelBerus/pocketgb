@@ -93,6 +93,7 @@ struct GameScreen: View {
 
     private func controls(_ orientation: ControlsOrientation) -> some View {
         ControlsOverlay(buttons: session.buttons, orientation: orientation, settings: state.gameplay.data,
+                        showsShoulders: session.info.console == .gameBoyAdvance,
                         controllerConnected: state.gamepad.connected,
                         editing: state.editingControls, reduceTransparency: reduceTransparency,
                         onMenu: { state.pauseGame() },
@@ -188,6 +189,8 @@ extension ControlID {
         case .start: "Start"
         case .select: "Select"
         case .menu: "Menú"
+        case .l: "L"
+        case .r: "R"
         }
     }
 }

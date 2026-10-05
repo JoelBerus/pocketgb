@@ -49,8 +49,10 @@ final class GBACoreBridge: ConsoleCore {
 
     /// - Parameters:
     ///   - bios: volcado propio del usuario ya validado (`BIOSFile`); `nil` = BIOS HLE.
+    ///   - saveType: `GBA_SAVE_*` forzado por juego (0 = automático); `rtc`: `GBA_RTC_*`.
     ///   - unixTime: hora UTC; el RTC del GBA cuenta hora local.
-    func loadROM(_ data: Data, bios: Data?, unixTime: Int64, sampleRate: UInt32 = 0) throws(CoreError) -> RomInfo {
+    func loadROM(_ data: Data, bios: Data?, unixTime: Int64, sampleRate: UInt32 = 0,
+                 saveType: UInt8 = 0, rtc: UInt8 = 0) throws(CoreError) -> RomInfo {
         if let bios {
             let r = bios.withUnsafeBytes { raw in
                 gba_load_bios(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
@@ -60,6 +62,8 @@ final class GBACoreBridge: ConsoleCore {
         var opts = gba_options()
         gba_options_default(&opts)
         opts.sample_rate = sampleRate
+        opts.save_type = gba_save_type(UInt32(saveType))
+        opts.rtc = rtc
         opts.unix_time = Self.localTime(unixTime)
         let r = data.withUnsafeBytes { raw in
             gba_load_rom(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &opts)
@@ -93,7 +97,7 @@ final class GBACoreBridge: ConsoleCore {
         return media.union(media.map { $0 + rtcBytes })
     }
 
-    func setButtons(_ mask: UInt8) { gba_set_buttons(g, UInt16(mask)) }
+    func setButtons(_ mask: UInt16) { gba_set_buttons(g, mask) }
     func runFrame() { gba_run_frame(g) }
     /// El ARM7TDMI no tiene un estado de bloqueo como el `STOP`/opcode ilegal del LR35902.
     var cpuLocked: Bool { false }

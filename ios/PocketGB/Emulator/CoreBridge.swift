@@ -118,7 +118,7 @@ final class CoreBridge: ConsoleCore {
                        headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
     }
 
-    func setButtons(_ mask: UInt8) { gb_set_buttons(g, mask) }
+    func setButtons(_ mask: UInt16) { gb_set_buttons(g, UInt8(truncatingIfNeeded: mask)) }
     func runFrame() { gb_run_frame(g) }
     var cpuLocked: Bool { gb_cpu_locked(g) }
 

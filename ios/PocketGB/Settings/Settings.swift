@@ -17,8 +17,14 @@ enum CompatPalette {
 struct GameOverrides: Codable, Equatable, Sendable {
     var colorForGameBoy: Bool?
     var compatPalette: UInt8?
+    // Game Boy Advance (G8): tipo de partida forzado (`GBA_SAVE_*`), reloj y uso de la BIOS propia.
+    var gbaSaveType: UInt8?
+    var gbaRTC: UInt8?
+    var gbaUseBIOS: Bool?
 
-    var isEmpty: Bool { colorForGameBoy == nil && compatPalette == nil }
+    var isEmpty: Bool {
+        colorForGameBoy == nil && compatPalette == nil && gbaSaveType == nil && gbaRTC == nil && gbaUseBIOS == nil
+    }
 }
 
 /// Opciones de emulación resueltas para abrir un juego.
@@ -26,6 +32,12 @@ struct EmulationOptions: Equatable, Sendable {
     /// Juegos de Game Boy (DMG) en una Game Boy Color, con paleta de color.
     var colorForGameBoy: Bool
     var compatPalette: UInt8
+    /// Game Boy Advance: 0 = automático (`GBA_SAVE_AUTO`); el resto, el tipo forzado.
+    var gbaSaveType: UInt8 = 0
+    /// 0 = automático, 1 = con reloj, 2 = sin reloj (`GBA_RTC_*`).
+    var gbaRTC: UInt8 = 0
+    /// Usar `gba_bios.bin` si es la BIOS oficial; false = siempre la BIOS emulada.
+    var gbaUseBIOS = true
 }
 
 extension GameplaySettingsData {
@@ -33,6 +45,8 @@ extension GameplaySettingsData {
     func emulation(for gameID: String?) -> EmulationOptions {
         let override = gameID.flatMap { perGame[$0] }
         return EmulationOptions(colorForGameBoy: override?.colorForGameBoy ?? colorForGameBoy,
-                                compatPalette: override?.compatPalette ?? compatPalette)
+                                compatPalette: override?.compatPalette ?? compatPalette,
+                                gbaSaveType: override?.gbaSaveType ?? 0, gbaRTC: override?.gbaRTC ?? 0,
+                                gbaUseBIOS: override?.gbaUseBIOS ?? true)
     }
 }

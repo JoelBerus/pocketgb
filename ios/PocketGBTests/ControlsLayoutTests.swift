@@ -1,24 +1,25 @@
 import CoreGraphics
 import Foundation
+import PocketGBACore
 import PocketGBCore
 import Testing
 @testable import PocketGB
 
 /// D4: geometría y motor de input de los controles táctiles (D-README §6, criterios CI).
 struct ControlsLayoutTests {
-    static let right = UInt8(GB_BTN_RIGHT), left = UInt8(GB_BTN_LEFT)
-    static let up = UInt8(GB_BTN_UP), down = UInt8(GB_BTN_DOWN)
-    static let a = UInt8(GB_BTN_A), b = UInt8(GB_BTN_B)
+    static let right = UInt16(GB_BTN_RIGHT), left = UInt16(GB_BTN_LEFT)
+    static let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN)
+    static let a = UInt16(GB_BTN_A), b = UInt16(GB_BTN_B)
 
     /// Máscara para un punto a `angle` grados (0 = derecha, antihorario) y distancia `r`.
-    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70) -> UInt8 {
+    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70) -> UInt16 {
         let rad = angle * .pi / 180
-        return ControlsGeometry.dpadMask(dx: CGFloat(cos(rad) * r), dy: CGFloat(-sin(rad) * r),
-                                         radius: CGFloat(radius))
+        return UInt16(ControlsGeometry.dpadMask(dx: CGFloat(cos(rad) * r), dy: CGFloat(-sin(rad) * r),
+                                                radius: CGFloat(radius)))
     }
 
     @Test func eightSectorsOf45Degrees() {
-        let expected: [(Double, UInt8)] = [
+        let expected: [(Double, UInt16)] = [
             (0, Self.right), (45, Self.right | Self.up), (90, Self.up), (135, Self.up | Self.left),
             (180, Self.left), (225, Self.left | Self.down), (270, Self.down), (315, Self.down | Self.right),
         ]
@@ -201,7 +202,38 @@ struct ControlsLayoutTests {
         #expect(decoded.dpadStyle == .separated)
     }
 
-    @Test func noShoulderButtons() {
-        #expect(ControlID.allCases.map(\.rawValue).sorted() == ["a", "b", "dpad", "menu", "select", "start"])
+    @Test func shoulderButtonsExistOnlyOnGameBoyAdvance() throws {
+        #expect(ControlID.allCases.map(\.rawValue).sorted() == ["a", "b", "dpad", "l", "menu", "r", "select", "start"])
+        // Game Boy: sin marcos ni zona táctil para L y R.
+        let gb = Self.geometry()
+        #expect(gb.frames[.l] == nil && gb.frames[.r] == nil)
+        // Game Boy Advance: L (bit 9) y R (bit 8) llegan al núcleo y no pisan al resto.
+        let gba = ControlsGeometry(layout: .defaults(.landscape), orientation: .landscape, area: Self.area,
+                                   metrics: ControlMetrics(), shoulders: true)
+        let l = try #require(gba.frames[.l]), r = try #require(gba.frames[.r])
+        #expect(Self.area.contains(l) && Self.area.contains(r))
+        var engine = ControlsInputEngine(geometry: gba)
+        _ = engine.began(1, at: CGPoint(x: l.midX, y: l.midY))
+        _ = engine.began(2, at: CGPoint(x: r.midX, y: r.midY))
+        #expect(engine.mask == UInt16(GBA_BTN_L) | UInt16(GBA_BTN_R))
+        #expect(engine.pressed == [.l, .r])
+        // Deslizar de L a fuera lo suelta; L también se puede deslizar a R.
+        engine.moved(1, to: CGPoint(x: r.midX, y: r.midY))
+        #expect(engine.mask == UInt16(GBA_BTN_R))
+        engine.cancelAll()
+        #expect(engine.mask == 0)
+    }
+
+    @Test func portraitShouldersStayInsideTheControlsArea() throws {
+        let area = CGRect(x: 0, y: 0, width: 402, height: 420)
+        let g = ControlsGeometry(layout: .defaults(.portrait), orientation: .portrait, area: area,
+                                 metrics: ControlMetrics(), shoulders: true)
+        let l = try #require(g.frames[.l]), r = try #require(g.frames[.r]), menu = try #require(g.frames[.menu])
+        #expect(area.contains(l) && area.contains(r))
+        #expect(!l.intersects(menu) && !r.intersects(menu) && !l.intersects(r))
+        for id in [ControlID.a, .b, .dpad, .start, .select] {
+            let f = try #require(g.frames[id])
+            #expect(!l.intersects(f) && !r.intersects(f), "\(id) solapa un hombro")
+        }
     }
 }

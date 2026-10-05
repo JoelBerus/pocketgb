@@ -89,7 +89,8 @@ final class EmulatorSession: @unchecked Sendable {
             core = gb
         case .gameBoyAdvance:
             let gba = try GBACoreBridge()
-            info = try gba.loadROM(romData, bios: bios, unixTime: now, sampleRate: 48_000)
+            info = try gba.loadROM(romData, bios: emulation.gbaUseBIOS ? bios : nil, unixTime: now, sampleRate: 48_000,
+                                   saveType: emulation.gbaSaveType, rtc: emulation.gbaRTC)
             core = gba
         }
         self.core = core

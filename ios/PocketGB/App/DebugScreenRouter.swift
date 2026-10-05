@@ -54,6 +54,9 @@ enum DebugScreen: String, CaseIterable {
     case settingsStorage = "settings-storage"
     case settingsSaves = "settings-saves"
     case gameSettings = "game-settings"
+    case gameSettingsGBA = "game-settings-gba"
+    case customizeControlsGBAPortrait = "customize-controls-gba-portrait"
+    case customizeControlsGBALandscape = "customize-controls-gba-landscape"
     case gameplayController = "gameplay-controller"
     case gameplayFastForward = "gameplay-fast-forward"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
@@ -135,6 +138,13 @@ enum DebugScreenRouter {
                 state.libraryPath = [.details(id: dmg.id, source: dmg.id)]
                 state.gameSettingsEntry = dmg
             }
+        case .gameSettingsGBA:
+            // Un juego de Game Boy Advance con el tipo de partida forzado.
+            if let gba = standard.first(where: { $0.badge == .gba }) {
+                state.gameplay.setOverrides(GameOverrides(gbaSaveType: 3), for: gba.id)
+                state.libraryPath = [.details(id: gba.id, source: gba.id)]
+                state.gameSettingsEntry = gba
+            }
         case .settingsControls:
             state.selectedTab = .settings
             state.settingsPath = [.controls]
@@ -145,7 +155,8 @@ enum DebugScreenRouter {
             break
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
-        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize:
+        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
+             .customizeControlsGBAPortrait, .customizeControlsGBALandscape:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:

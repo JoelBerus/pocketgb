@@ -5,9 +5,9 @@ import UIKit
 
 /// Máscara de botones publicada por la UI y leída por el hilo de emulación cada frame.
 final class ButtonMask: Sendable {
-    private let state = Atomic<UInt8>(0)
-    var value: UInt8 { state.load(ordering: .acquiring) }
-    func set(_ mask: UInt8) { state.store(mask, ordering: .releasing) }
+    private let state = Atomic<UInt16>(0)
+    var value: UInt16 { state.load(ordering: .acquiring) }
+    func set(_ mask: UInt16) { state.store(mask, ordering: .releasing) }
 }
 
 /// Una sola UIView multitáctil para todos los controles (docs/04 §Controles, SPEC §10).
@@ -16,6 +16,10 @@ final class ButtonMask: Sendable {
 /// cambia el área táctil.
 final class ControlsOverlayView: UIView {
     var buttons: ButtonMask?
+    /// Game Boy Advance: dibuja y atiende L y R.
+    var showsShoulders = false {
+        didSet { if showsShoulders != oldValue { releaseAll(); setNeedsLayout() } }
+    }
     var onMenu: (() -> Void)?
     /// El editor guarda aquí la nueva posición relativa de un control.
     var onMove: ((ControlID, CGPoint) -> Void)?
@@ -112,7 +116,7 @@ final class ControlsOverlayView: UIView {
         backgroundColor = orientation == .portrait ? UIColor(named: "GameplayBackground") : .clear
         let metrics = ControlMetrics(scale: settings.sizeScale)
         let geometry = ControlsGeometry(layout: settings.layout(orientation), orientation: orientation,
-                                        area: area, metrics: metrics)
+                                        area: area, metrics: metrics, shoulders: showsShoulders)
         engine.geometry = geometry
         for (id, visual) in visuals where drags.values.first(where: { $0.id == id }) == nil {
             guard let frame = geometry.frames[id] else { continue }
@@ -138,7 +142,7 @@ final class ControlsOverlayView: UIView {
         let pressed = engine.pressed
         for (id, visual) in visuals {
             // El menú lo dibuja el HUD de SwiftUI (GameplayHUD) en el mismo sitio.
-            let hidden = id == .menu || (!editing && (settings.visibility == .hidden || controllerConnected))
+            let hidden = id == .menu || (id.isShoulder && !showsShoulders) || (!editing && (settings.visibility == .hidden || controllerConnected))
             visual.configure(style: style, opacity: CGFloat(settings.opacity) / 100,
                              reduceTransparency: reduceTransparency, pressed: pressed.contains(id),
                              editing: editing, animated: animated)
@@ -165,6 +169,8 @@ final class ControlsOverlayView: UIView {
             case .start: element.accessibilityLabel = "Start"
             case .select: element.accessibilityLabel = "Select"
             case .menu: element.accessibilityLabel = "Abrir menú"
+            case .l: element.accessibilityLabel = "L"
+            case .r: element.accessibilityLabel = "R"
             }
             elements.append(element)
         }
@@ -262,7 +268,7 @@ final class ControlsOverlayView: UIView {
         // Háptica solo al entrar en pulsado o al cambiar de sector del D-pad.
         let newlyPressed = pressed.subtracting(lastPressed).subtracting([.dpad])
         if !newlyPressed.isEmpty { haptics.buttonDown() }
-        let dpad = mask & UInt8(GB_BTN_UP | GB_BTN_DOWN | GB_BTN_LEFT | GB_BTN_RIGHT)
+        let dpad = UInt8(truncatingIfNeeded: mask) & UInt8(GB_BTN_UP | GB_BTN_DOWN | GB_BTN_LEFT | GB_BTN_RIGHT)
         if dpad != lastDpadMask && dpad != 0 { haptics.dpadChanged() }
         lastDpadMask = dpad
         if pressed != lastPressed {
@@ -353,6 +359,8 @@ final class ControlVisualView: UIView {
         switch id {
         case .a, .b: label.text = id == .a ? "A" : "B"
         case .start: label.text = "START"
+        case .l: label.text = "L"
+        case .r: label.text = "R"
         case .select: label.text = "SELECT"
         case .menu:
             symbol.image = UIImage(systemName: "ellipsis")
@@ -375,7 +383,7 @@ final class ControlVisualView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) no se usa") }
 
-    private var isCapsule: Bool { id == .start || id == .select }
+    private var isCapsule: Bool { id == .start || id == .select || id.isShoulder }
 
     private var arrowsMode: Bool { id == .dpad && separatedArrows }
 
@@ -443,6 +451,7 @@ final class ControlVisualView: UIView {
         let size: CGFloat = switch id {
         case .a, .b: 24
         case .start, .select: 11
+        case .l, .r: 16
         default: 14
         }
         label.font = .systemFont(ofSize: size * scale, weight: .bold)
@@ -571,6 +580,7 @@ struct ControlsOverlay: UIViewRepresentable {
     let buttons: ButtonMask
     let orientation: ControlsOrientation
     let settings: GameplaySettingsData
+    var showsShoulders = false
     var controllerConnected = false
     var editing = false
     var reduceTransparency = false
@@ -591,6 +601,7 @@ struct ControlsOverlay: UIViewRepresentable {
     }
 
     private func update(_ view: ControlsOverlayView) {
+        view.showsShoulders = showsShoulders
         view.orientation = orientation
         view.settings = settings
         view.editing = editing

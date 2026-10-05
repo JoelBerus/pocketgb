@@ -49,8 +49,9 @@ protocol ConsoleCore: AnyObject {
     var console: Console { get }
 
     /// Máscara con el orden de bits común a los dos núcleos: A, B, Select, Start,
-    /// derecha, izquierda, arriba, abajo (L y R del GBA llegan en G8).
-    func setButtons(_ mask: UInt8)
+    /// derecha, izquierda, arriba, abajo y, solo en GBA, R (bit 8) y L (bit 9). El núcleo
+    /// Game Boy ignora los bits altos.
+    func setButtons(_ mask: UInt16)
     func runFrame()
     var cpuLocked: Bool { get }
     /// Copia `console.screen.pixelCount` píxeles RGBA8888 a `dst`.

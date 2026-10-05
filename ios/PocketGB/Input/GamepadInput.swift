@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import GameController
 import Observation
+import PocketGBACore
 import PocketGBCore
 
 /// Lectura instantánea de un mando: valores ya normalizados, sin tipos de GameController
@@ -12,24 +13,27 @@ struct GamepadSnapshot: Equatable, Sendable {
     /// Botones por posición física, no por letra (Xbox, PlayStation y Switch difieren).
     var faceRight = false, faceBottom = false, faceLeft = false, faceTop = false
     var menu = false, options = false
+    var shoulderLeft = false, shoulderRight = false   // Game Boy Advance: L y R
 }
 
 /// Mapeo por posición (D-README §8): derecho = A, inferior = B (como en la Game Boy),
-/// Menu = Start, Options = Select. Cruceta y stick izquierdo dan la misma máscara.
+/// Menu = Start, Options = Select, hombros = L/R (GBA). Cruceta y stick izquierdo dan la misma máscara.
 enum GamepadMapping {
     /// Umbral de inclinación del stick y del D-pad analógico.
     static let threshold: Float = 0.5
 
-    static func mask(_ s: GamepadSnapshot) -> UInt8 {
-        var mask: UInt8 = 0
-        if s.faceRight { mask |= UInt8(GB_BTN_A) }
-        if s.faceBottom { mask |= UInt8(GB_BTN_B) }
-        if s.menu { mask |= UInt8(GB_BTN_START) }
-        if s.options { mask |= UInt8(GB_BTN_SELECT) }
-        mask |= directions(x: s.dpadX, y: s.dpadY)
-        mask |= directions(x: s.stickX, y: s.stickY)
+    static func mask(_ s: GamepadSnapshot) -> UInt16 {
+        var mask: UInt16 = 0
+        if s.faceRight { mask |= UInt16(GB_BTN_A) }
+        if s.faceBottom { mask |= UInt16(GB_BTN_B) }
+        if s.menu { mask |= UInt16(GB_BTN_START) }
+        if s.options { mask |= UInt16(GB_BTN_SELECT) }
+        if s.shoulderLeft { mask |= UInt16(GBA_BTN_L) }
+        if s.shoulderRight { mask |= UInt16(GBA_BTN_R) }
+        mask |= UInt16(directions(x: s.dpadX, y: s.dpadY))
+        mask |= UInt16(directions(x: s.stickX, y: s.stickY))
         // Cruceta y stick a la vez en sentidos contrarios: nunca direcciones opuestas.
-        let up = UInt8(GB_BTN_UP), down = UInt8(GB_BTN_DOWN), left = UInt8(GB_BTN_LEFT), right = UInt8(GB_BTN_RIGHT)
+        let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN), left = UInt16(GB_BTN_LEFT), right = UInt16(GB_BTN_RIGHT)
         if mask & (up | down) == (up | down) { mask &= ~(up | down) }
         if mask & (left | right) == (left | right) { mask &= ~(left | right) }
         return mask
@@ -50,7 +54,7 @@ final class GamepadInput {
     private(set) var controllerName: String?
     /// Máscara del mando para la sesión abierta (nil sin juego).
     @ObservationIgnored var target: ButtonMask? { didSet { target?.set(currentMask) } }
-    @ObservationIgnored private var currentMask: UInt8 = 0
+    @ObservationIgnored private var currentMask: UInt16 = 0
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     /// - Parameter observesHardware: false en el catálogo de capturas DEBUG, para que un mando
@@ -86,7 +90,7 @@ final class GamepadInput {
         if pad == nil { publish(0) }
     }
 
-    private func publish(_ mask: UInt8) {
+    private func publish(_ mask: UInt16) {
         currentMask = mask
         target?.set(mask)
     }
@@ -96,6 +100,7 @@ final class GamepadInput {
                         stickX: g.leftThumbstick.xAxis.value, stickY: g.leftThumbstick.yAxis.value,
                         faceRight: g.buttonB.isPressed, faceBottom: g.buttonA.isPressed,
                         faceLeft: g.buttonX.isPressed, faceTop: g.buttonY.isPressed,
-                        menu: g.buttonMenu.isPressed, options: g.buttonOptions?.isPressed ?? false)
+                        menu: g.buttonMenu.isPressed, options: g.buttonOptions?.isPressed ?? false,
+                        shoulderLeft: g.leftShoulder.isPressed, shoulderRight: g.rightShoulder.isPressed)
     }
 }

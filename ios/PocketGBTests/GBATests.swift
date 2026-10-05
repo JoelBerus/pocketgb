@@ -139,4 +139,24 @@ struct GBATests {
         #expect(read.status == .invalid && read.data == nil)
         #expect(!BIOSFile.isOfficial(Data(count: 10)))
     }
+
+    @Test func perGameOverridesForceSaveTypeAndRTC() throws {
+        var data = GameplaySettingsData()
+        data.perGame["x.gba"] = GameOverrides(gbaSaveType: 3, gbaRTC: 2, gbaUseBIOS: false)
+        let o = data.emulation(for: "x.gba")
+        #expect(o.gbaSaveType == 3 && o.gbaRTC == 2 && !o.gbaUseBIOS)
+        let global = data.emulation(for: "otro.gba")
+        #expect(global.gbaSaveType == 0 && global.gbaRTC == 0 && global.gbaUseBIOS)
+        // Se guardan y se leen; un juego sin ajustes nunca deja una entrada vacía.
+        let decoded = try JSONDecoder().decode(GameplaySettingsData.self, from: JSONEncoder().encode(data))
+        #expect(decoded.perGame["x.gba"]?.gbaSaveType == 3)
+        #expect(GameOverrides().isEmpty && !GameOverrides(gbaRTC: 1).isEmpty)
+
+        // El tipo forzado cambia el tamaño de la partida que el núcleo espera: Flash de 64 KiB
+        // en lugar de la SRAM de 32 KiB detectada. Un .sav de 32 KiB ya no se acepta ni se pisa.
+        let core = try GBACoreBridge()
+        let info = try core.loadROM(Self.rom(), bios: nil, unixTime: 0, saveType: o.gbaSaveType, rtc: o.gbaRTC)
+        #expect(info.sramBytes == 64 * 1024 && !info.hasRTC)
+        #expect(EmulatorSession.validSaveSizes(info) == [64 * 1024])
+    }
 }

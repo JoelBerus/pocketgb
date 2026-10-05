@@ -1,10 +1,13 @@
 import CoreGraphics
 import Foundation
+import PocketGBACore
 import PocketGBCore
 
-/// Controles táctiles de gameplay (SPEC §10). No hay L/R.
+/// Controles táctiles de gameplay (SPEC §10). `l` y `r` solo existen en Game Boy Advance.
 enum ControlID: String, Codable, CaseIterable, Sendable {
-    case dpad, a, b, start, select, menu
+    case dpad, a, b, start, select, menu, l, r
+
+    var isShoulder: Bool { self == .l || self == .r }
 }
 
 /// Orientación del layout: cada una se guarda por separado (D-README §6).
@@ -44,11 +47,13 @@ struct ControlsLayout: Codable, Equatable, Sendable {
             ControlsLayout(centers: [
                 .dpad: CGPoint(x: 0.25, y: 0.44), .a: CGPoint(x: 0.84, y: 0.36), .b: CGPoint(x: 0.64, y: 0.52),
                 .start: CGPoint(x: 0.59, y: 0.86), .select: CGPoint(x: 0.41, y: 0.86), .menu: CGPoint(x: 0.5, y: 0.07),
+                .l: CGPoint(x: 0.17, y: 0.14), .r: CGPoint(x: 0.83, y: 0.14),
             ])
         case .landscape:
             ControlsLayout(centers: [
                 .dpad: CGPoint(x: 0.12, y: 0.62), .a: CGPoint(x: 0.91, y: 0.52), .b: CGPoint(x: 0.81, y: 0.72),
                 .start: CGPoint(x: 0.56, y: 0.93), .select: CGPoint(x: 0.44, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
+                .l: CGPoint(x: 0.1, y: 0.1), .r: CGPoint(x: 0.9, y: 0.1),
             ])
         }
     }
@@ -67,6 +72,7 @@ struct ControlMetrics: Equatable, Sendable {
     var abDiameter: CGFloat { 36 * scale }
     var pillSize: CGSize { CGSize(width: 66 * scale, height: 28 * scale) }
     var menuDiameter: CGFloat { 40 }
+    var shoulderSize: CGSize { CGSize(width: 92 * scale, height: 40 * scale) }
     /// El área táctil nunca baja de 44 pt (SPEC §7.2), aunque el dibujo sea menor.
     static let minTouch: CGFloat = 44
 
@@ -76,6 +82,7 @@ struct ControlMetrics: Equatable, Sendable {
         case .a, .b: CGSize(width: faceDiameter, height: faceDiameter)
         case .start, .select: pillSize
         case .menu: CGSize(width: menuDiameter, height: menuDiameter)
+        case .l, .r: shoulderSize
         }
     }
 }
@@ -94,9 +101,11 @@ struct ControlsGeometry: Equatable, Sendable {
 
     /// Resuelve un layout dentro de `area` (bounds menos safe area). Cada control se clama
     /// para quedar entero dentro del área: nunca bajo la Dynamic Island ni el Home Indicator.
-    init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics) {
+    /// `shoulders`: dibuja y atiende L y R (solo Game Boy Advance).
+    init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics,
+         shoulders: Bool = false) {
         var frames: [ControlID: CGRect] = [:]
-        for id in ControlID.allCases {
+        for id in ControlID.allCases where shoulders || !id.isShoulder {
             let base = metrics.size(id)
             let k = layout.scale(id)
             let size = CGSize(width: base.width * k, height: base.height * k)
@@ -139,7 +148,7 @@ struct ControlsGeometry: Equatable, Sendable {
         for id in [ControlID.a, .b, .dpad, .menu] where Self.inCircle(p, touchFrame(id)) {
             return .control(id)
         }
-        for id in [ControlID.start, .select] where touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
+        for id in [ControlID.start, .select, .l, .r] where frames[id] != nil && touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
             return .control(id)
         }
         return nil
@@ -211,16 +220,18 @@ struct ControlsInputEngine: Sendable {
         points.removeAll()
     }
 
-    var mask: UInt8 {
-        var mask: UInt8 = 0
+    var mask: UInt16 {
+        var mask: UInt16 = 0
         for (id, hit) in touches {
             switch hit {
-            case .control(.dpad): mask |= points[id].flatMap { geometry?.dpadMask(at: $0) } ?? 0
-            case .control(.a): mask |= UInt8(GB_BTN_A)
-            case .control(.b): mask |= UInt8(GB_BTN_B)
-            case .ab: mask |= UInt8(GB_BTN_A | GB_BTN_B)
-            case .control(.start): mask |= UInt8(GB_BTN_START)
-            case .control(.select): mask |= UInt8(GB_BTN_SELECT)
+            case .control(.dpad): mask |= UInt16(points[id].flatMap { geometry?.dpadMask(at: $0) } ?? 0)
+            case .control(.a): mask |= UInt16(GB_BTN_A)
+            case .control(.b): mask |= UInt16(GB_BTN_B)
+            case .ab: mask |= UInt16(GB_BTN_A | GB_BTN_B)
+            case .control(.start): mask |= UInt16(GB_BTN_START)
+            case .control(.select): mask |= UInt16(GB_BTN_SELECT)
+            case .control(.l): mask |= UInt16(GBA_BTN_L)
+            case .control(.r): mask |= UInt16(GBA_BTN_R)
             case .control(.menu): break
             }
         }
