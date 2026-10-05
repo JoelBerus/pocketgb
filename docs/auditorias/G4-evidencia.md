@@ -37,3 +37,13 @@ OK: todos los casos requeridos en PASS
 ```
 
 Las suites de SingleStepTests y las 16 escenas de PPU siguen en PASS (omitidas; incluidas en el 75/75). La segunda línea "75/75" es `make asan`; la última, el núcleo GB (`make -C core test HITO=M9`).
+
+## Fuzzing
+```
+$ make -C gba fuzz FUZZ_SECONDS=600
+#14	INITED cov: 726 ft: 1156 corp: 13/32Kb exec/s: 0 rss: 46Mb
+Done 5336 runs in 601 second(s)
+Done 5336 runs in 601 second(s)
+salida: 0
+```
+Sin crashes, fugas ni avisos de ASan/UBSan (cada ejecución: carga del ROM, partida y RTC del tamaño esperado, 3 frames con botones de la entrada). La semilla del corpus son las ROMs de jsmolka.
