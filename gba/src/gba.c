@@ -183,6 +183,22 @@ void gba_run_frame(gba *g)
     gba_apu_sync(g);
 }
 
+#ifdef GBA_FUZZ_HOOKS
+/* Solo para los fuzzers: un acceso al bus como lo haría la CPU. */
+uint32_t gba_fuzz_bus(gba *g, int op, uint32_t addr, uint32_t v);
+uint32_t gba_fuzz_bus(gba *g, int op, uint32_t addr, uint32_t v)
+{
+    switch (op) {
+    case 0: return gba_bus_read8(g, addr);
+    case 1: return gba_bus_read16(g, addr);
+    case 2: return gba_bus_read32(g, addr);
+    case 3: gba_bus_write8(g, addr, (uint8_t)v); return 0;
+    case 4: gba_bus_write16(g, addr, (uint16_t)v); return 0;
+    default: gba_bus_write32(g, addr, v); return 0;
+    }
+}
+#endif
+
 uint64_t gba_cycle_count(const gba *g) { return g ? g->cycles : 0; }
 const uint32_t *gba_framebuffer(const gba *g) { return g ? g->framebuffer : NULL; }
 

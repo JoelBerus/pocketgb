@@ -17,7 +17,7 @@ ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 SST_LIMIT ?= 0
 
-.PHONY: all lib test asan fuzz oracle homebrew check-roms check-header check-globals check-symbols clean
+.PHONY: all lib test asan fuzz fuzz-one oracle homebrew check-roms check-header check-globals check-symbols clean
 
 all: lib
 
@@ -49,13 +49,20 @@ asan: check-roms
 
 # libFuzzer (clang con -fsanitize=fuzzer; en macOS: brew install llvm).
 fuzz:
-	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_cart
 	@for f in fuzz/fuzz_*.c; do \
 	  n=$$(basename $$f .c); mkdir -p fuzz/corpus/$$n; \
-	  $(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include $$f $(SRCS) -o $(BUILD)/$$n -lm || exit 1; \
-	  cp -n tests/roms/gba-tests/*/*.gba fuzz/corpus/$$n/ 2>/dev/null || true; \
+	  $(CC) -std=c11 -g -O2 -DGBA_FUZZ_HOOKS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include $$f $(SRCS) -o $(BUILD)/$$n -lm || exit 1; \
+	  [ $$n = fuzz_load_rom ] && cp -n tests/roms/gba-tests/*/*.gba fuzz/corpus/$$n/ 2>/dev/null; \
 	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) -max_len=262144 -rss_limit_mb=4096 fuzz/corpus/$$n || exit 1; \
 	done
+
+# Un solo fuzzer: make fuzz-one FUZZER=fuzz_cart FUZZ_SECONDS=600
+FUZZER ?= fuzz_cart
+fuzz-one:
+	@mkdir -p $(BUILD) fuzz/corpus/$(FUZZER)
+	$(CC) -std=c11 -g -O2 -DGBA_FUZZ_HOOKS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) -I../core/include fuzz/$(FUZZER).c $(SRCS) -o $(BUILD)/$(FUZZER) -lm
+	$(BUILD)/$(FUZZER) -max_total_time=$(FUZZ_SECONDS) -max_len=262144 -rss_limit_mb=4096 fuzz/corpus/$(FUZZER)
 
 # Oráculo de la PPU (dev-only, nunca en la app): mGBA compilado sin frontends.
 MGBA_TAG ?= 0.10.5
