@@ -491,7 +491,7 @@ static void arm_op_swp(gba *g, uint32_t op)
         gba_bus_write8(g, addr, (uint8_t)src);
     } else {
         tmp = arm_load32(g, addr);
-        gba_bus_write32(g, addr & ~3u, src);
+        gba_bus_write32(g, addr, src);
     }
     gba_bus_idle(g, 1);
     if (rd == 15) arm_write_pc(g, tmp);
@@ -519,7 +519,7 @@ static void arm_op_half(gba *g, uint32_t op)
         else c->r[rd] = v;
     } else if (sh == 1) {
         uint32_t v = c->r[rd] + (rd == 15 ? 4u : 0u);
-        gba_bus_write16(g, addr & ~1u, (uint16_t)v);
+        gba_bus_write16(g, addr, (uint16_t)v);
         if (wb) c->r[rn] = moved;
     } else {
         /* LDRD/STRD no existen en ARMv4: el ARM7TDMI no hace nada útil. */
@@ -553,7 +553,7 @@ static void arm_op_sdt(gba *g, uint32_t op)
     } else {
         uint32_t v = c->r[rd] + (rd == 15 ? 4u : 0u);
         if (b) gba_bus_write8(g, addr, (uint8_t)v);
-        else gba_bus_write32(g, addr & ~3u, v);
+        else gba_bus_write32(g, addr, v);
         if (wb) c->r[rn] = moved;
     }
     if (wb && rn == 15 && !(l && rd == 15)) arm_write_pc(g, c->r[15] + 4u);
@@ -602,7 +602,7 @@ static void arm_op_ldm(gba *g, uint32_t op)
             uint32_t v = c->r[i];
             if (i == rn && !first && w) v = new_base;
             else if (i == 15) v += 4u;
-            gba_bus_write32(g, addr & ~3u, v);
+            gba_bus_write32(g, addr, v);
             c->seq = true;
             addr += 4;
             first = false;
@@ -735,7 +735,7 @@ static void thumb_execute(gba *g, uint32_t op)
     case THUMB_OP_LDSTREG: {
         uint32_t rd = op & 7u, addr = r[(op >> 3) & 7u] + r[(op >> 6) & 7u];
         switch ((op >> 10) & 3u) {
-        case 0: gba_bus_write32(g, addr & ~3u, r[rd]); break;
+        case 0: gba_bus_write32(g, addr, r[rd]); break;
         case 1: gba_bus_write8(g, addr, (uint8_t)r[rd]); break;
         case 2: r[rd] = arm_load32(g, addr); gba_bus_idle(g, 1); break;
         default: r[rd] = gba_bus_read8(g, addr); gba_bus_idle(g, 1); break;
@@ -745,7 +745,7 @@ static void thumb_execute(gba *g, uint32_t op)
     case THUMB_OP_LDSTSX: {
         uint32_t rd = op & 7u, addr = r[(op >> 3) & 7u] + r[(op >> 6) & 7u];
         switch ((op >> 10) & 3u) {
-        case 0: gba_bus_write16(g, addr & ~1u, (uint16_t)r[rd]); break;
+        case 0: gba_bus_write16(g, addr, (uint16_t)r[rd]); break;
         case 1: r[rd] = (uint32_t)(int32_t)(int8_t)gba_bus_read8(g, addr); gba_bus_idle(g, 1); break;
         case 2: r[rd] = arm_load16(g, addr); gba_bus_idle(g, 1); break;
         default: r[rd] = arm_load_s16(g, addr); gba_bus_idle(g, 1); break;
@@ -755,7 +755,7 @@ static void thumb_execute(gba *g, uint32_t op)
     case THUMB_OP_LDSTIMM: {
         uint32_t rd = op & 7u, base = r[(op >> 3) & 7u], imm = (op >> 6) & 31u;
         switch ((op >> 11) & 3u) {
-        case 0: gba_bus_write32(g, (base + imm * 4u) & ~3u, r[rd]); break;
+        case 0: gba_bus_write32(g, base + imm * 4u, r[rd]); break;
         case 1: r[rd] = arm_load32(g, base + imm * 4u); gba_bus_idle(g, 1); break;
         case 2: gba_bus_write8(g, base + imm, (uint8_t)r[rd]); break;
         default: r[rd] = gba_bus_read8(g, base + imm); gba_bus_idle(g, 1); break;
@@ -765,13 +765,13 @@ static void thumb_execute(gba *g, uint32_t op)
     case THUMB_OP_LDSTH: {
         uint32_t rd = op & 7u, addr = r[(op >> 3) & 7u] + ((op >> 6) & 31u) * 2u;
         if (op & (1u << 11)) { r[rd] = arm_load16(g, addr); gba_bus_idle(g, 1); }
-        else gba_bus_write16(g, addr & ~1u, (uint16_t)r[rd]);
+        else gba_bus_write16(g, addr, (uint16_t)r[rd]);
         break;
     }
     case THUMB_OP_LDSTSP: {
         uint32_t rd = (op >> 8) & 7u, addr = r[13] + ((op & 0xFFu) << 2);
         if (op & (1u << 11)) { r[rd] = arm_load32(g, addr); gba_bus_idle(g, 1); }
-        else gba_bus_write32(g, addr & ~3u, r[rd]);
+        else gba_bus_write32(g, addr, r[rd]);
         break;
     }
     case THUMB_OP_ADDR: {
@@ -809,7 +809,7 @@ static void thumb_execute(gba *g, uint32_t op)
         } else {                           /* PUSH */
             if (list == 0 && !extra) {
                 r[13] -= 0x40u;
-                gba_bus_write32(g, r[13] & ~3u, r[15] + 2u);
+                gba_bus_write32(g, r[13], r[15] + 2u);
                 break;
             }
             uint32_t n = (uint32_t)__builtin_popcount(list) + (extra ? 1u : 0u);
@@ -817,10 +817,10 @@ static void thumb_execute(gba *g, uint32_t op)
             r[13] = addr;
             for (uint32_t i = 0; i < 8; i++) {
                 if (!(list & (1u << i))) continue;
-                gba_bus_write32(g, addr & ~3u, r[i]);
+                gba_bus_write32(g, addr, r[i]);
                 addr += 4;
             }
-            if (extra) gba_bus_write32(g, addr & ~3u, r[14]);
+            if (extra) gba_bus_write32(g, addr, r[14]);
         }
         break;
     }
@@ -828,7 +828,7 @@ static void thumb_execute(gba *g, uint32_t op)
         uint32_t rb = (op >> 8) & 7u, list = op & 0xFFu, addr = r[rb];
         if (list == 0) {
             if (op & (1u << 11)) arm_write_pc(g, gba_bus_read32(g, addr & ~3u));
-            else gba_bus_write32(g, addr & ~3u, r[15] + 2u);
+            else gba_bus_write32(g, addr, r[15] + 2u);
             r[rb] = addr + 0x40u;
             break;
         }
@@ -846,7 +846,7 @@ static void thumb_execute(gba *g, uint32_t op)
             for (uint32_t i = 0; i < 8; i++) {
                 if (!(list & (1u << i))) continue;
                 uint32_t v = (i == rb && !first) ? new_base : r[i];
-                gba_bus_write32(g, addr & ~3u, v);
+                gba_bus_write32(g, addr, v);
                 addr += 4;
                 first = false;
             }

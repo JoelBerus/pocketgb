@@ -4,6 +4,7 @@
 Formato: hito|ruta|modo|max_frames|tipo[|referencia]
   ruta: relativa a gba/tests/roms/, o "hb:NOMBRE" para las ROMs homebrew de gba/build/hb/
   modo: unit | sst (archivo .json.bin de SingleStepTests) | jsmolka | ref (PNG en gba/tests/ref/)
+        | hb (resultado 0x600D en 0x03007E00) | hb-rtc (igual, con RTC forzado)
   tipo: requerido (bloquea) | known-fail | info
 Sale con 1 si falla un caso requerido de un hito <= --hito.
 """
@@ -75,6 +76,8 @@ def main():
                     sys.exit(f"{ref}: {w}x{h}, se esperaba 240x160")
                 open(raw, "wb").write(rgba)
             cmd = [a.bin, fn, "--mode", "ref", "--ref", raw, "--max-frames", str(frames)]
+        elif modo == "hb-rtc":
+            cmd = [a.bin, fn, "--mode", "hb", "--rtc", "--max-frames", str(frames)]
         else:
             cmd = [a.bin, fn, "--mode", modo, "--max-frames", str(frames)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)

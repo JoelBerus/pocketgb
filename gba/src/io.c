@@ -108,6 +108,7 @@ static void dma_run(gba *g, int ch)
     int32_t sinc = sctl == 0 ? step : sctl == 1 ? -step : 0;
     int32_t dinc = (dctl == 0 || dctl == 3) ? step : dctl == 1 ? -step : 0;
     if (d->src >= 0x08000000u && d->src < 0x0E000000u) sinc = step;   /* ROM: siempre incrementa */
+    if (gba_cart_is_eeprom(g, d->dst) || gba_cart_is_eeprom(g, d->src)) gba_eeprom_dma(g, count);
     bool prev = g->dma_active;
     uint8_t prev_ch = g->dma_cur;
     g->dma_active = true;
