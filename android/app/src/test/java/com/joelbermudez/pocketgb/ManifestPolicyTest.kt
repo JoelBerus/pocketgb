@@ -33,4 +33,45 @@ class ManifestPolicyTest {
         assertFalse(manifest.contains("android.permission.INTERNET"))
         assertFalse(manifest.contains("android.permission.ACCESS_NETWORK_STATE"))
     }
+
+    private fun rules(name: String): String =
+        File("src/main/res/xml/$name").readText().replace(Regex("(?s)<!--.*?-->"), "")
+
+    private fun section(xml: String, tag: String): String =
+        xml.substringAfter("<$tag>").substringBefore("</$tag>")
+
+    /** J3: la nube no sube los backups rotativos ni los estados; la transferencia entre teléfonos lleva todo. */
+    @Test
+    fun cloudBackupExcludesSaveBackupsAndStatesButTransferKeepsThem() {
+        val extraction = rules("data_extraction_rules.xml")
+        val cloud = section(extraction, "cloud-backup")
+        assertTrue(cloud.contains("""domain="file" path="saves/backups/""""))
+        assertTrue(cloud.contains("""domain="file" path="states/""""))
+        assertTrue(cloud.contains("""path="library_folder.xml""""))
+        val transfer = section(extraction, "device-transfer")
+        assertTrue(transfer.contains("""path="library_folder.xml""""))
+        assertFalse("la transferencia incluye partidas y estados", transfer.contains("saves"))
+        assertFalse("la transferencia incluye partidas y estados", transfer.contains("states"))
+        // Android 11 e inferior: solo existe una regla; se aplica la de la nube (la más conservadora).
+        val legacy = rules("backup_rules.xml")
+        assertTrue(legacy.contains("""domain="file" path="saves/backups/""""))
+        assertTrue(legacy.contains("""domain="file" path="states/""""))
+    }
+
+    /** Las partidas (los `.sav` de saves) nunca se excluyen enteras: perderlas en una restauración es el peor bug. */
+    @Test
+    fun savesDirectoryItselfIsNeverExcluded() {
+        for (name in listOf("backup_rules.xml", "data_extraction_rules.xml")) {
+            val excluded = Regex("""<exclude[^>]*path="([^"]*)"""").findAll(rules(name)).map { it.groupValues[1] }.toList()
+            assertFalse("$name excluye saves entero", excluded.any { it.trimEnd('/') == "saves" })
+        }
+    }
+
+    /** Un solo `<include>` convierte el backup en lista blanca y dejaría fuera todo lo demás. */
+    @Test
+    fun backupRulesNeverUseInclude() {
+        for (name in listOf("backup_rules.xml", "data_extraction_rules.xml")) {
+            assertFalse("$name no debe usar <include>", rules(name).contains("<include"))
+        }
+    }
 }

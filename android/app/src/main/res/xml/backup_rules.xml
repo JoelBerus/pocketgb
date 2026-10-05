@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Copia de seguridad automática (Android 11 e inferior).
+    Copia de seguridad automática (Android 11 e inferior; solo existe una regla para nube y transferencia,
+    así que se aplica la política de la nube, la más conservadora).
+    Política de partidas (A5, decisión J3):
+    - `saves/<huella>.sav` SÍ se respalda: perder la partida al cambiar de teléfono es el peor bug posible.
+    - `saves/backups/` NO: son copias rotativas de la propia partida (y la cuarentena de tamaños incorrectos);
+      duplicarlas gasta la cuota de 25 MiB sin aportar nada que la partida actual no cubra.
+    - `states/` NO: los save states son voluminosos y se regeneran jugando.
     - library_folder: guarda el URI de la carpeta de juegos. Es un permiso SAF ligado a este dispositivo;
       restaurarlo en otro sin su permiso persistente sería un puntero muerto, así que no se respalda.
     - files/library/preferences.json (favoritos, ocultos, huellas por ruta relativa) sí se respalda.
-    - TODO(A5): decidir qué hacer con `saves/` (partidas) antes de que existan; hasta entonces no hay nada que respaldar.
+    SOLO `<exclude>`: un único `<include>` convertiría el backup en lista blanca y dejaría fuera todo lo demás
+    (lo verifica ManifestPolicyTest). Riesgo conocido: al restaurar, la fecha de modificación del `.sav` será nueva
+    y podría ganar a una partida local más antigua; la que pierde queda en `saves/backups/` (se genera al abrir).
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="library_folder.xml" />
+    <exclude domain="file" path="saves/backups/" />
+    <exclude domain="file" path="states/" />
 </full-backup-content>
