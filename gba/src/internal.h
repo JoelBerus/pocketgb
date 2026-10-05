@@ -53,6 +53,7 @@ typedef struct gba_arm {
     uint8_t bank;                  /* banco cargado en r8..r14/spsr */
     bool flushed;                  /* la instrucción actual cambió el PC */
     bool halted;
+    bool seq;                      /* el próximo acceso de datos es secuencial (LDM/STM) */
 } gba_arm;
 
 /* Bus de prueba (solo con GBA_TEST_HOOKS): SingleStepTests ARM7TDMI. */
@@ -71,6 +72,20 @@ typedef struct gba_test_bus {
     bool missing_read;            /* una lectura de datos sin transacción */
     uint32_t nreads;              /* lecturas de datos hechas */
 } gba_test_bus;
+
+/* DMA (GBATEK §DMA Transfers): registros visibles y contadores internos. */
+typedef struct gba_dma {
+    uint32_t sad, dad;             /* registros escritos */
+    uint16_t cnt_l, cnt_h;
+    uint32_t src, dst, count;      /* internos, copiados al activar */
+    uint32_t latch;                /* último dato transferido (bus abierto de la DMA) */
+} gba_dma;
+
+/* Timers (GBATEK §Timers). */
+typedef struct gba_timer {
+    uint16_t reload, counter, cnt;
+    uint32_t sub;                  /* ciclos acumulados bajo el prescaler */
+} gba_timer;
 
 struct gba {
     gba_arm cpu;
@@ -93,10 +108,28 @@ struct gba {
     uint32_t bios_last;            /* última instrucción leída desde la BIOS */
 
     uint64_t cycles;               /* ciclos desde gba_load_rom */
-    uint32_t line_cycles;          /* posición dentro de la línea (G1: solo VCOUNT/DISPSTAT) */
+    uint32_t line_cycles;          /* posición dentro de la línea */
     uint16_t vcount;
+    uint16_t dispstat;             /* bits escribibles de DISPSTAT (3-5, 8-15) */
     uint16_t keys;                 /* máscara GBA_BTN_* pulsados */
+    uint16_t keycnt;
     bool frame_done;
+    bool hblank;                   /* bandera de HBlank de la línea actual */
+
+    /* Interrupciones */
+    uint16_t ie, if_, ime;
+    uint8_t postflg;
+
+    /* Bus: waitstates por región (addr >> 24 & 15) y tipo de acceso. */
+    uint16_t waitcnt;
+    uint8_t ws_n16[16], ws_s16[16], ws_n32[16], ws_s32[16];
+    uint32_t last_fetch_addr;      /* para decidir acceso secuencial */
+    bool last_was_fetch;
+    bool dma_active;               /* el bus lo usa la DMA (bus abierto de la DMA) */
+    uint32_t open_bus;             /* último dato del bus (lecturas no mapeadas) */
+
+    gba_dma dma[4];
+    gba_timer timer[4];
 
     gba_options opts;
     gba_save_type save_type;
@@ -115,10 +148,33 @@ void gba_arm_step(gba *g);
 void gba_arm_set_cpsr(gba *g, uint32_t value);   /* cambia de banco si cambia el modo */
 void gba_arm_flush(gba *g);                      /* rellena el pipeline desde r15 */
 void gba_arm_irq(gba *g);
+void gba_arm_branch(gba *g, uint32_t addr);      /* salto desde la HLE */
 
 /* arm_mulcarry.c (zlib, zaydlang): bandera C de las multiplicaciones. */
 enum { GBA_MUL_SHORT, GBA_MUL_LONG_SIGNED, GBA_MUL_LONG_UNSIGNED };
 bool gba_arm_mul_carry(int flavor, uint32_t rm, uint32_t rs, uint64_t acc);
+
+/* io.c: registros de E/S, interrupciones, DMA, timers y tiempos de vídeo */
+uint16_t gba_io_read16(gba *g, uint32_t off);
+void gba_io_write16(gba *g, uint32_t off, uint16_t v);
+void gba_io_write8(gba *g, uint32_t off, uint8_t v);
+void gba_io_reset(gba *g);
+void gba_tick(gba *g, uint32_t cycles);          /* avanza vídeo y timers */
+uint32_t gba_cycles_to_event(const gba *g);      /* para saltar mientras la CPU está parada */
+void gba_irq_raise(gba *g, uint16_t bits);
+bool gba_irq_pending(const gba *g);              /* IE & IF */
+void gba_dma_trigger(gba *g, int timing);        /* 1 VBlank, 2 HBlank, 3 especial */
+void gba_bus_update_waitstates(gba *g);
+
+enum {
+    GBA_IRQ_VBLANK = 1u << 0, GBA_IRQ_HBLANK = 1u << 1, GBA_IRQ_VCOUNT = 1u << 2,
+    GBA_IRQ_TIMER0 = 1u << 3, GBA_IRQ_SERIAL = 1u << 7, GBA_IRQ_DMA0 = 1u << 8,
+    GBA_IRQ_KEYPAD = 1u << 12, GBA_IRQ_GAMEPAK = 1u << 13
+};
+
+/* hle.c: BIOS en alto nivel (sin la BIOS de Nintendo) */
+void gba_hle_install(gba *g);                    /* manejador de IRQ propio en la zona de la BIOS */
+bool gba_hle_swi(gba *g, uint32_t number);       /* false = SWI no emulada (se ignora) */
 
 /* bus.c */
 uint32_t gba_bus_read32(gba *g, uint32_t addr);
@@ -130,7 +186,8 @@ void gba_bus_write8(gba *g, uint32_t addr, uint8_t v);
 uint32_t gba_bus_fetch32(gba *g, uint32_t addr);
 uint16_t gba_bus_fetch16(gba *g, uint32_t addr);
 void gba_bus_idle(gba *g, uint32_t n);
-void gba_video_tick(gba *g, uint32_t n);
+uint32_t gba_bus_fetch32_n(gba *g, uint32_t addr);   /* primer acceso tras un salto */
+uint16_t gba_bus_fetch16_n(gba *g, uint32_t addr);
 
 /* SHA-256 compartido con el núcleo GB (core/src/sha256.c, propio). */
 void sha256(const uint8_t *data, size_t len, uint8_t out[32]);

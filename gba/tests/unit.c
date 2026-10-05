@@ -66,10 +66,198 @@ static void test_banks(void)
     gba_destroy(g);
 }
 
+static gba *boot_rom(const uint32_t *words, size_t n, uint32_t at)
+{
+    static const size_t len = 0x400;
+    uint8_t *rom = malloc(len);
+    make_rom(rom, len);
+    /* 0x00: b 0x080000C0 */
+    rom[0] = 0x2E; rom[1] = 0x00; rom[2] = 0x00; rom[3] = 0xEA;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t w = words[i];
+        size_t o = at + i * 4;
+        rom[o] = (uint8_t)w; rom[o + 1] = (uint8_t)(w >> 8); rom[o + 2] = (uint8_t)(w >> 16); rom[o + 3] = (uint8_t)(w >> 24);
+    }
+    gba *g = gba_create();
+    CHECK(gba_load_rom(g, rom, len, NULL) == GBA_OK);
+    free(rom);
+    return g;
+}
+
+static void test_timers(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    gba_io_write16(g, 0x100, 0xFFF0);          /* TM0 recarga */
+    gba_io_write16(g, 0x102, 0x00C0);          /* activo, IRQ, prescaler 1 */
+    gba_io_write16(g, 0x104, 0xFFFE);          /* TM1 recarga */
+    gba_io_write16(g, 0x106, 0x00C4);          /* activo, IRQ, cascada */
+    CHECK(gba_io_read16(g, 0x100) == 0xFFF0);
+    gba_tick(g, 0x10);                         /* desborda TM0 una vez */
+    CHECK(g->if_ & GBA_IRQ_TIMER0);
+    CHECK(gba_io_read16(g, 0x104) == 0xFFFF);
+    gba_tick(g, 0x10);                         /* segundo desborde: TM1 desborda */
+    CHECK(g->if_ & (GBA_IRQ_TIMER0 << 1));
+    CHECK(gba_io_read16(g, 0x104) == 0xFFFE);
+    /* Prescaler 64 */
+    gba_io_write16(g, 0x108, 0);
+    gba_io_write16(g, 0x10A, 0x0081);
+    gba_tick(g, 64 * 10 + 5);
+    CHECK(gba_io_read16(g, 0x108) == 10);
+    gba_destroy(g);
+}
+
+static void test_dma(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    for (int i = 0; i < 16; i++) g->ewram[i] = (uint8_t)(i + 1);
+    gba_bus_write32(g, 0x040000D4, 0x02000000);   /* DMA3 SAD */
+    gba_bus_write32(g, 0x040000D8, 0x03000100);   /* DMA3 DAD */
+    gba_bus_write16(g, 0x040000DC, 4);            /* 4 unidades */
+    uint64_t before = g->cycles;
+    gba_bus_write16(g, 0x040000DE, 0xC400);       /* activa, 32 bits, IRQ, inmediata */
+    CHECK(memcmp(&g->iwram[0x100], g->ewram, 16) == 0);
+    CHECK(g->if_ & (GBA_IRQ_DMA0 << 3));
+    CHECK(!(g->dma[3].cnt_h & 0x8000u));
+    CHECK(g->cycles - before >= 4 * 6);           /* EWRAM: 6 ciclos por palabra */
+    /* HBlank con repetición: una media palabra por línea visible. */
+    gba_bus_write32(g, 0x040000B0, 0x02000000);
+    gba_bus_write32(g, 0x040000B4, 0x03000200);
+    gba_bus_write16(g, 0x040000B8, 1);
+    gba_bus_write16(g, 0x040000BA, 0xA000 | 0x0200 | 0x0040);   /* activa, HBlank, repetir, destino fijo */
+    CHECK(g->iwram[0x200] == 0);
+    gba_tick(g, g->hblank ? 1232 - g->line_cycles + 1006 : 1006 - g->line_cycles);   /* hasta el próximo HBlank */
+    CHECK(g->iwram[0x200] == 1 && g->iwram[0x201] == 2);
+    CHECK(g->dma[0].cnt_h & 0x8000u);
+    gba_destroy(g);
+}
+
+static void test_waitstates(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    uint64_t c0 = g->cycles;
+    gba_bus_read16(g, 0x08000100);
+    CHECK(g->cycles - c0 == 5);                  /* WAITCNT=0: N de WS0 = 4 esperas */
+    c0 = g->cycles;
+    gba_bus_read32(g, 0x08000100);
+    CHECK(g->cycles - c0 == 5 + 3);              /* N + S */
+    gba_io_write16(g, 0x204, 0x4317);            /* el valor que usan casi todos los juegos */
+    c0 = g->cycles;
+    gba_bus_read16(g, 0x08000100);
+    CHECK(g->cycles - c0 == 4);                  /* WS0 N = 3 esperas */
+    c0 = g->cycles;
+    gba_bus_read32(g, 0x03000000);
+    CHECK(g->cycles - c0 == 1);
+    gba_destroy(g);
+}
+
+static void test_hle_math(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    uint32_t *r = g->cpu.r;
+    r[0] = (uint32_t)-7; r[1] = 2; gba_hle_swi(g, 0x06);
+    CHECK((int32_t)r[0] == -3 && (int32_t)r[1] == -1 && r[3] == 3);
+    r[0] = 1000000; gba_hle_swi(g, 0x08);
+    CHECK(r[0] == 1000);
+    r[0] = 0xFFFFFFFFu; gba_hle_swi(g, 0x08);
+    CHECK(r[0] == 0xFFFF);
+    r[0] = 0x4000; r[1] = 0; gba_hle_swi(g, 0x0A); CHECK(r[0] == 0);
+    r[0] = 0; r[1] = 0x4000; gba_hle_swi(g, 0x0A); CHECK(r[0] == 0x4000);
+    r[0] = (uint32_t)-0x4000; r[1] = 0; gba_hle_swi(g, 0x0A); CHECK(r[0] == 0x8000);
+    r[0] = 0x4000; r[1] = 0x4000; gba_hle_swi(g, 0x0A);
+    CHECK(r[0] >= 0x1FF0 && r[0] <= 0x2010);
+    r[0] = (uint32_t)-0x4000; r[1] = (uint32_t)-0x4000; gba_hle_swi(g, 0x0A);
+    CHECK(r[0] >= 0x9FF0 && r[0] <= 0xA010);
+    r[0] = 0; r[1] = 1; gba_hle_swi(g, 0x06);      /* división por cero: sin cuelgue */
+    gba_destroy(g);
+}
+
+static void test_hle_decompress(void)
+{
+    uint32_t nop[] = {0xEAFFFFFEu};
+    gba *g = boot_rom(nop, 1, 0xC0);
+    /* LZ77 de "ABCABCABC": 3 literales y una referencia (longitud 6, distancia 3). */
+    static const uint8_t lz[] = {0x10, 9, 0, 0, 0x10, 'A', 'B', 'C', 0x30, 0x02};
+    memcpy(g->ewram, lz, sizeof lz);
+    uint32_t *r = g->cpu.r;
+    r[0] = 0x02000000; r[1] = 0x03000000; gba_hle_swi(g, 0x11);
+    CHECK(memcmp(g->iwram, "ABCABCABC", 9) == 0);
+    r[0] = 0x02000000; r[1] = 0x06000000; gba_hle_swi(g, 0x12);
+    CHECK(memcmp(g->vram, "ABCABCAB", 8) == 0);
+    /* RL: 4 copias de 'Z' y 2 bytes sin comprimir. */
+    static const uint8_t rl[] = {0x30, 6, 0, 0, 0x81, 'Z', 0x01, 'x', 'y'};
+    memcpy(g->ewram + 0x100, rl, sizeof rl);
+    r[0] = 0x02000100; r[1] = 0x03000040; gba_hle_swi(g, 0x14);
+    CHECK(memcmp(&g->iwram[0x40], "ZZZZxy", 6) == 0);
+    /* CpuSet de 16 bits con relleno y CpuFastSet de copia. */
+    g->ewram[0x200] = 0x34; g->ewram[0x201] = 0x12;
+    r[0] = 0x02000200; r[1] = 0x03000080; r[2] = (1u << 24) | 3; gba_hle_swi(g, 0x0B);
+    CHECK(g->iwram[0x80] == 0x34 && g->iwram[0x85] == 0x12 && g->iwram[0x86] == 0);
+    r[0] = 0x02000000; r[1] = 0x03000400; r[2] = 1; gba_hle_swi(g, 0x0C);   /* se redondea a 8 palabras */
+    CHECK(memcmp(&g->iwram[0x400], g->ewram, 32) == 0);
+    /* Huffman con un árbol que nunca llega a una hoja: termina igual. */
+    static const uint8_t hf[] = {0x28, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00};
+    memcpy(g->ewram + 0x300, hf, sizeof hf);
+    r[0] = 0x02000300; r[1] = 0x03000600; gba_hle_swi(g, 0x13);
+    /* La BIOS no copia desde su propia zona. */
+    g->iwram[0x500] = 0xAA;
+    r[0] = 0x00000000; r[1] = 0x03000500; r[2] = 1; gba_hle_swi(g, 0x0B);
+    CHECK(g->iwram[0x500] == 0xAA);
+    gba_destroy(g);
+}
+
+/* IntrWait(1, VBlank) desde un programa ARM: la CPU se para, el manejador del
+ * juego confirma la IRQ y marca 0x03007FF8, y la SWI vuelve. */
+static void test_intr_wait(void)
+{
+    static const uint32_t prog[] = {
+        0xE3A00001u, /* C0: mov r0, #1 */
+        0xE3A01001u, /* C4: mov r1, #1 */
+        0xEF040000u, /* C8: swi 0x04 (IntrWait) */
+        0xE2855001u, /* CC: add r5, r5, #1 */
+        0xEAFFFFFEu, /* D0: b . */
+    };
+    static const uint32_t isr[] = {
+        0xE3A00301u, 0xE2800C02u, 0xE3A01001u, 0xE1C010B2u,   /* IF = 1 */
+        0xE3A02403u, 0xE2822C7Fu, 0xE28220F8u, 0xE1C210B0u,   /* [0x03007FF8] = 1 */
+        0xE12FFF1Eu,                                          /* bx lr */
+    };
+    gba *g = boot_rom(prog, 5, 0xC0);
+    uint8_t *rom = g->rom;
+    for (size_t i = 0; i < 9; i++) {
+        size_t o = 0x100 + i * 4;
+        rom[o] = (uint8_t)isr[i]; rom[o + 1] = (uint8_t)(isr[i] >> 8);
+        rom[o + 2] = (uint8_t)(isr[i] >> 16); rom[o + 3] = (uint8_t)(isr[i] >> 24);
+    }
+    g->iwram[0x7FFC] = 0x00; g->iwram[0x7FFD] = 0x01; g->iwram[0x7FFE] = 0x00; g->iwram[0x7FFF] = 0x08;
+    gba_io_write16(g, 0x200, 1);       /* IE = VBlank */
+    gba_io_write16(g, 0x004, 0x0008);  /* DISPSTAT: IRQ de VBlank */
+    gba_run_cycles(g, 2000);
+    CHECK(g->cpu.halted);
+    CHECK(g->cpu.r[5] == 0);
+    gba_run_frame(g);
+    gba_run_cycles(g, 2000);
+    CHECK(!g->cpu.halted);
+    CHECK(g->cpu.r[5] == 1);
+    CHECK(g->iwram[0x7FF8] == 0);      /* IntrWait limpia el bit al volver */
+    CHECK(g->vcount >= 160);
+    CHECK((g->cpu.cpsr & 0x1Fu) == ARM_MODE_SYS);
+    gba_destroy(g);
+}
+
 int gba_unit_run(void)
 {
     test_load_rom();
     test_banks();
+    test_timers();
+    test_dma();
+    test_waitstates();
+    test_hle_math();
+    test_hle_decompress();
+    test_intr_wait();
     printf("%s unit: %d fallos\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }

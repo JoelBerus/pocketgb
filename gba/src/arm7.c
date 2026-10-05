@@ -56,15 +56,20 @@ static inline void arm_write_pc(gba *g, uint32_t v)
     g->cpu.flushed = true;
 }
 
+void gba_arm_branch(gba *g, uint32_t addr)
+{
+    arm_write_pc(g, addr);
+}
+
 void gba_arm_flush(gba *g)
 {
     gba_arm *c = &g->cpu;
     if (c->cpsr & ARM_T) {
-        c->pipe[0] = gba_bus_fetch16(g, c->r[15]);
+        c->pipe[0] = gba_bus_fetch16_n(g, c->r[15]);
         c->pipe[1] = gba_bus_fetch16(g, c->r[15] + 2);
         c->r[15] += 4;
     } else {
-        c->pipe[0] = gba_bus_fetch32(g, c->r[15]);
+        c->pipe[0] = gba_bus_fetch32_n(g, c->r[15]);
         c->pipe[1] = gba_bus_fetch32(g, c->r[15] + 4);
         c->r[15] += 8;
     }
@@ -89,9 +94,19 @@ static void arm_undefined(gba *g)
     arm_exception(g, ARM_MODE_UND, 0x04, next);
 }
 
-static void arm_swi(gba *g)
+static void arm_swi(gba *g, uint32_t op)
 {
     gba_arm *c = &g->cpu;
+    /* Sin BIOS real: HLE en el modo del llamador (no en las pruebas de CPU). */
+#ifdef GBA_TEST_HOOKS
+    if (!g->test.active)
+#endif
+    if (!g->bios_loaded) {
+        uint32_t number = (c->cpsr & ARM_T) ? (op & 0xFFu) : ((op >> 16) & 0xFFu);
+        gba_hle_swi(g, number);
+        g->bios_last = 0xE3A02004u;
+        return;
+    }
     uint32_t next = c->r[15] - ((c->cpsr & ARM_T) ? 2u : 4u);
     arm_exception(g, ARM_MODE_SVC, 0x08, next);
 }
@@ -575,6 +590,7 @@ static void arm_op_ldm(gba *g, uint32_t op)
         for (uint32_t i = 0; i < 16; i++) {
             if (!(list & (1u << i))) continue;
             uint32_t v = gba_bus_read32(g, addr & ~3u);
+            c->seq = true;
             addr += 4;
             if (i == 15) arm_write_pc(g, v);
             else c->r[i] = v;
@@ -587,11 +603,13 @@ static void arm_op_ldm(gba *g, uint32_t op)
             if (i == rn && !first && w) v = new_base;
             else if (i == 15) v += 4u;
             gba_bus_write32(g, addr & ~3u, v);
+            c->seq = true;
             addr += 4;
             first = false;
         }
         if (w) c->r[rn] = new_base;
     }
+    c->seq = false;
     if (user) arm_switch_bank(c, saved_bank);
     if (s && l && (list & 0x8000u) && c->bank != ARM_BANK_USR) gba_arm_set_cpsr(g, c->spsr);
     if (w && rn == 15) arm_write_pc(g, c->r[15]);
@@ -620,7 +638,7 @@ static void arm_execute(gba *g, uint32_t op)
     case ARM_OP_SDT: arm_op_sdt(g, op); break;
     case ARM_OP_LDM: arm_op_ldm(g, op); break;
     case ARM_OP_B: arm_op_b(g, op); break;
-    case ARM_OP_SWI: arm_swi(g); break;
+    case ARM_OP_SWI: arm_swi(g, op); break;
     default: arm_undefined(g); break;
     }
 }
@@ -840,7 +858,7 @@ static void thumb_execute(gba *g, uint32_t op)
         if (arm_cond((op >> 8) & 15u, c->cpsr))
             arm_write_pc(g, r[15] + (uint32_t)((int32_t)(int8_t)(op & 0xFFu) * 2));
         break;
-    case THUMB_OP_SWI: arm_swi(g); break;
+    case THUMB_OP_SWI: arm_swi(g, op); break;
     case THUMB_OP_B:
         arm_write_pc(g, r[15] + (uint32_t)(((int32_t)(op << 21)) >> 20));
         break;

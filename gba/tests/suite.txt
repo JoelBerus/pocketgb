@@ -5,3 +5,7 @@ G1|unit|unit|0|requerido
 G1|ARM7TDMI/v1/*.json.bin|sst|0|requerido
 G1|gba-tests/arm/arm.gba|jsmolka|120|requerido
 G1|gba-tests/thumb/thumb.gba|jsmolka|120|requerido
+# ---- G2: bus, E/S, DMA, timers, IRQ, HLE de la BIOS ----
+G2|gba-tests/memory/memory.gba|jsmolka|120|requerido
+G2|gba-tests/bios/bios.gba|jsmolka|120|requerido
+G2|gba-tests/nes/nes.gba|jsmolka|120|requerido
