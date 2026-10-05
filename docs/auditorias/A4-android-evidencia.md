@@ -106,3 +106,7 @@ Informes: `A4-android-codex-v2.md` (APROBAR CON CAMBIOS, 3 hallazgos) y `A4-andr
 | A4-V2-03 | Esta evidencia fija ahora el commit `5f62e05`. | — |
 
 Tras V2-01 solo se reejecutaron los tests JVM (73/73); los instrumentados no se repitieron (el cambio no toca SAF ni UI). `distributionSha256Sum` sigue pendiente.
+
+## Aceptación real
+
+Joel probó A4 en su teléfono Android el 2026-10-05 y confirmó que las pruebas fueron bien. A4 queda cerrado.
