@@ -55,11 +55,11 @@ final class GameArtworkStore {
         }
     }
 
-    /// Guarda un frame (RGBA8888, 160×144) como portada. Un frame de un solo color
+    /// Guarda un frame (RGBA8888, 160×144 o 240×160) como portada. Un frame de un solo color
     /// (pantalla en blanco o negro al arrancar) no es una captura válida y se descarta.
     @discardableResult
     func save(fingerprint: String, pixels: [UInt32]) -> Bool {
-        guard pixels.count == FrameBuffers.pixelCount, !Self.isBlank(pixels),
+        guard ScreenSize(pixelCount: pixels.count) != nil, !Self.isBlank(pixels),
               let cg = Self.makeImage(pixels) else { return false }
         images[fingerprint] = UIImage(cgImage: cg)
         missing.remove(fingerprint)
@@ -97,9 +97,10 @@ final class GameArtworkStore {
     }
 
     /// Los bytes del frame en memoria son R, G, B, A (el mismo formato `rgba8Unorm` del render).
+    /// El tamaño (Game Boy o Game Boy Advance) sale del número de píxeles.
     nonisolated static func makeImage(_ pixels: [UInt32]) -> CGImage? {
-        let width = FrameBuffers.width, height = FrameBuffers.height
-        guard pixels.count == width * height else { return nil }
+        guard let screen = ScreenSize(pixelCount: pixels.count) else { return nil }
+        let width = screen.width, height = screen.height
         let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
         guard let provider = CGDataProvider(data: data as CFData),
               let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }

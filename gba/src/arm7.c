@@ -10,7 +10,7 @@
  * + 4 en Thumb). Una instrucción que escribe r15 marca `flushed` y al final
  * del paso se rellenan las dos etapas desde el nuevo PC.
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 /* ---------------------------------------------------------------- modos */
 

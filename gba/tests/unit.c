@@ -1,7 +1,7 @@
 /*
  * unit.c — tests unitarios del núcleo GBA (se amplían en cada hito G).
  */
-#include "internal.h"
+#include "gba_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 

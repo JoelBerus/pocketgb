@@ -3,7 +3,7 @@
  * vídeo (GBATEK §LCD I/O Display Status, §Interrupt Control, §DMA Transfers,
  * §Timers, §Keypad Input, §System Control). Código propio.
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 static inline uint16_t io_raw(const gba *g, uint32_t off)
 {

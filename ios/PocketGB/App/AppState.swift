@@ -120,7 +120,9 @@ final class AppState {
     var alertTitle: String?
     var alertMessage: String?
 
-    private static let maxROMBytes = LibraryScanner.maxROMBytes
+    /// BIOS de Game Boy Advance en la carpeta de juegos (Ajustes › Emulación). `nil` hasta
+    /// que se comprueba.
+    private(set) var gbaBIOSStatus: BIOSFile.Status?
 
     init() {
         #if DEBUG
@@ -218,6 +220,8 @@ final class AppState {
         guard !opening else { return }
         opening = true
         let url = entry.url
+        let console = Console(fileName: entry.fileName)
+        let root = library.rootURL
         // Dos ROMs con el mismo nombre base (Juego.gb y Juego.gbc) compartirían el .sav
         // junto al ROM: en ese caso no se usa el espejo (auditoría D2, H5).
         let mirror = SaveMirror(romURL: url)
@@ -229,25 +233,44 @@ final class AppState {
         Task.detached(priority: .userInitiated) { [weak self] in
             // ROM y espejo se leen aquí, fuera del hilo principal: la lectura coordinada
             // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
-            let result = Result { try LibraryScanner.readROM(url) }
+            let result = Result { try LibraryScanner.readROM(url, limit: LibraryScanner.romLimit(for: console)) }
             let snapshot: SaveMirror.Snapshot = shared ? .absent : mirror.snapshot()
+            let bios: (data: Data?, status: BIOSFile.Status) =
+                console == .gameBoyAdvance ? BIOSFile.read(folder: root) : (data: nil, status: .absent)
             await self?.finishOpening(entry: entry, result: result, mirror: shared ? nil : mirror,
-                                      snapshot: snapshot, shared: shared)
+                                      snapshot: snapshot, shared: shared, console: console, bios: bios)
         }
     }
 
     private func finishOpening(entry: RomEntry, result: Result<Data, Error>, mirror: SaveMirror?,
-                               snapshot: SaveMirror.Snapshot, shared: Bool) {
+                               snapshot: SaveMirror.Snapshot, shared: Bool, console: Console,
+                               bios: (data: Data?, status: BIOSFile.Status)) {
         opening = false
+        if console == .gameBoyAdvance { gbaBIOSStatus = bios.status }
         switch result {
         case .success(let data):
             start(romData: data, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
-                  entryID: entry.id, extraWarning: shared ? .mirrorShared : nil)
+                  entryID: entry.id, extraWarning: shared ? .mirrorShared : nil,
+                  console: console, bios: bios.data)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
-            showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
+            showAlert("No se puede abrir “\(entry.fileName)”",
+                      (console == .gameBoyAdvance ? RomEntry.Problem.tooLargeGBA : .tooLarge).message)
         case .failure(let error):
             showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
         }
+    }
+
+    /// Vuelve a comprobar `gba_bios.bin` (al abrir Ajustes › Emulación).
+    func refreshBIOSStatus() {
+        let root = library.rootURL
+        Task.detached(priority: .utility) { [weak self] in
+            let status = BIOSFile.read(folder: root).status
+            await self?.setBIOSStatus(status)
+        }
+    }
+
+    private func setBIOSStatus(_ status: BIOSFile.Status) {
+        gbaBIOSStatus = status
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -257,13 +280,15 @@ final class AppState {
 
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
     private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
-                       fileName: String, entryID: String? = nil, extraWarning: SaveLoadWarning? = nil) {
+                       fileName: String, entryID: String? = nil, extraWarning: SaveLoadWarning? = nil,
+                       console: Console = .gameBoy, bios: Data? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
-                                              emulation: gameplay.data.emulation(for: entryID)) { [weak self] in
+                                              emulation: gameplay.data.emulation(for: entryID),
+                                              console: console, bios: bios) { [weak self] in
                 self?.enterBackground()
             }
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
@@ -300,11 +325,12 @@ final class AppState {
     #if DEBUG
     /// Solo pruebas en el simulador: abre un ROM por ruta, sin biblioteca ni espejo.
     func open(url: URL) {
-        guard let data = try? Data(contentsOf: url), data.count <= Self.maxROMBytes else {
+        let console = Console(fileName: url.lastPathComponent)
+        guard let data = try? Data(contentsOf: url), data.count <= LibraryScanner.romLimit(for: console) else {
             showAlert("No se puede abrir “\(url.lastPathComponent)”", "No se pudo leer el archivo.")
             return
         }
-        start(romData: data, mirror: nil, fileName: url.lastPathComponent)
+        start(romData: data, mirror: nil, fileName: url.lastPathComponent, console: console)
     }
     #endif
 
@@ -361,7 +387,7 @@ final class AppState {
     /// la codificación PNG va en la cola del almacén de portadas.
     private func saveArtwork(_ session: EmulatorSession) {
         let frame = session.frames.latest()
-        let pixels = Array(UnsafeBufferPointer(start: frame, count: FrameBuffers.pixelCount))
+        let pixels = Array(UnsafeBufferPointer(start: frame, count: session.frames.size.pixelCount))
         artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 

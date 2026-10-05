@@ -1,6 +1,6 @@
 import MetalKit
 
-/// Sube el último frame a una textura 160×144 y la dibuja con sampler nearest
+/// Sube el último frame a una textura del tamaño de la consola (160×144 o 240×160) y la dibuja con sampler nearest
 /// (docs/04 §Pantalla de juego).
 @MainActor
 final class Renderer: NSObject, MTKViewDelegate {
@@ -32,8 +32,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         guard let sampler = device.makeSamplerState(descriptor: sd) else { return nil }
 
         let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
-                                                          width: FrameBuffers.width,
-                                                          height: FrameBuffers.height,
+                                                          width: frames.size.width,
+                                                          height: frames.size.height,
                                                           mipmapped: false)
         td.usage = .shaderRead
         guard let texture = device.makeTexture(descriptor: td) else { return nil }
@@ -54,8 +54,9 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     private func render(in view: MTKView) {
         let pixels = frames.latest()
-        texture.replace(region: MTLRegionMake2D(0, 0, FrameBuffers.width, FrameBuffers.height),
-                        mipmapLevel: 0, withBytes: pixels, bytesPerRow: FrameBuffers.width * 4)
+        let screen = frames.size
+        texture.replace(region: MTLRegionMake2D(0, 0, screen.width, screen.height),
+                        mipmapLevel: 0, withBytes: pixels, bytesPerRow: screen.width * 4)
 
         guard let pass = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
@@ -63,10 +64,10 @@ final class Renderer: NSObject, MTKViewDelegate {
               let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
 
         let size = view.drawableSize
-        var scale = min(size.width / Double(FrameBuffers.width), size.height / Double(FrameBuffers.height))
+        var scale = min(size.width / Double(screen.width), size.height / Double(screen.height))
         if integerScale && scale >= 1 { scale = scale.rounded(.down) }
-        let w = Double(FrameBuffers.width) * scale
-        let h = Double(FrameBuffers.height) * scale
+        let w = Double(screen.width) * scale
+        let h = Double(screen.height) * scale
         encoder.setViewport(MTLViewport(originX: ((size.width - w) / 2).rounded(.down),
                                         originY: ((size.height - h) / 2).rounded(.down),
                                         width: w, height: h, znear: 0, zfar: 1))

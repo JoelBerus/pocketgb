@@ -85,7 +85,7 @@ struct LibraryPreferencesTests {
     }
 
     @Test func filtersAreAllGBGBCAndFavorites() {
-        #expect(LibraryFilter.allCases.map(\.title) == ["Todos", "GB", "GBC", "Favoritos"])
+        #expect(LibraryFilter.allCases.map(\.title) == ["Todos", "GB", "GBC", "GBA", "Favoritos"])
         let prefs = LibraryPreferences(fileURL: nil)
         prefs.toggleFavorite(entries[3])
         #expect(prefs.visible(entries, filter: .all, query: "").map(\.title) == ["Alfa", "Beta", "Canción", "Delta"])

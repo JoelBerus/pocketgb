@@ -7,6 +7,8 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
     case badRomSizeCode, badRamSizeCode, unsupportedMBC, cgbOnly, noROM
     case sramSize, stateMagic, stateVersion, stateROMMismatch, stateCorrupt
     case bufferTooSmall
+    /// Solo Game Boy Advance (`GBACoreBridge`).
+    case gbaRomTooLarge, gbaBadHeader, biosSize
     case unknown(UInt32)
 
     /// `nil` si `r == GB_OK`.
@@ -38,6 +40,9 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .romTooSmall, .romTruncated, .badRomSizeCode, .badRamSizeCode:
             return "El archivo no parece un ROM de Game Boy válido."
         case .romTooLarge: return "El ROM supera los 8 MiB."
+        case .gbaRomTooLarge: return "El ROM supera los 32 MiB."
+        case .gbaBadHeader: return "El archivo no parece un ROM de Game Boy Advance válido."
+        case .biosSize: return "La BIOS de Game Boy Advance no mide 16 KiB."
         case .unsupportedMBC: return "Tipo de cartucho no soportado todavía."
         case .cgbOnly: return "Este juego es solo de Game Boy Color (llega en M8)."
         case .sramSize: return "La partida guardada tiene un tamaño distinto al esperado."
@@ -54,6 +59,7 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
 
 /// Datos de la cabecera que necesita la app.
 struct RomInfo: Sendable {
+    var console: Console = .gameBoy
     let title: String
     let cartType: UInt8
     let sramBytes: Int
@@ -62,11 +68,16 @@ struct RomInfo: Sendable {
     let headerChecksumOK: Bool
     /// Primeros 32 caracteres hex del SHA-256 del ROM (docs/02 §Datos persistentes).
     let fingerprint: String
+    /// Game Boy Advance: medio EEPROM (el `.sav` puede ser de 512 B o de 8 KiB).
+    var eeprom = false
+    /// Game Boy Advance: se usó la BIOS del usuario (si no, HLE).
+    var biosLoaded = false
 }
 
 /// Dueño del puntero `gb*`. La instancia del núcleo no es thread-safe:
 /// tras `EmulatorSession.start` solo se usa desde el hilo de emulación.
-final class CoreBridge {
+final class CoreBridge: ConsoleCore {
+    let console = Console.gameBoy
     private let g: OpaquePointer
 
     init() throws(CoreError) {
@@ -114,7 +125,7 @@ final class CoreBridge {
     /// Copia el framebuffer RGBA8888 (160×144) a `dst`.
     func copyFramebuffer(to dst: UnsafeMutablePointer<UInt32>) {
         guard let src = gb_framebuffer(g) else { return }
-        dst.update(from: src, count: FrameBuffers.pixelCount)
+        dst.update(from: src, count: ScreenSize.gameBoy.pixelCount)
     }
 
     /// Drena frames estéreo intercalados al buffer que posee la sesión.

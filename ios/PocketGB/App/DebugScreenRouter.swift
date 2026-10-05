@@ -323,6 +323,7 @@ enum DebugScreenRouter {
         entry("rtc3test.gb", "RTC3TEST", color: false, sub: "Pruebas"),
         entry("homebrew-con-un-titulo-muy-largo.gbc", "Un homebrew con un título muy largo para probar el truncado",
               color: true, sub: "Pruebas"),
+        entry("arm.gba", "jsmolka ARM", color: false, sub: "Pruebas"),
     ]
 
     nonisolated private static let errors: [RomEntry] = [

@@ -5,9 +5,14 @@ import os
 /// intercambio con `middle` va bajo un unfair lock de pocas instrucciones.
 /// El lock protege tres índices relacionados; no participa en el callback de audio.
 final class FrameBuffers: Sendable {
-    static let width = 160
-    static let height = 144
-    static let pixelCount = width * height
+    /// Medidas del Game Boy (vistas previas y portadas de demostración). Los frames de una
+    /// sesión miden `size`.
+    static let width = ScreenSize.gameBoy.width
+    static let height = ScreenSize.gameBoy.height
+    static let pixelCount = ScreenSize.gameBoy.pixelCount
+
+    /// Tamaño de los frames de esta sesión (Game Boy o Game Boy Advance).
+    let size: ScreenSize
 
     private struct Slots: Sendable {
         var back = 0, middle = 1, front = 2
@@ -18,14 +23,15 @@ final class FrameBuffers: Sendable {
     nonisolated(unsafe) private let storage: UnsafeMutablePointer<UInt32>
     private let slots = OSAllocatedUnfairLock(initialState: Slots())
 
-    init() {
-        storage = .allocate(capacity: 3 * Self.pixelCount)
-        storage.initialize(repeating: 0xFF00_0000, count: 3 * Self.pixelCount)
+    init(size: ScreenSize = .gameBoy) {
+        self.size = size
+        storage = .allocate(capacity: 3 * size.pixelCount)
+        storage.initialize(repeating: 0xFF00_0000, count: 3 * size.pixelCount)
     }
 
     deinit { storage.deallocate() }
 
-    private func buffer(_ i: Int) -> UnsafeMutablePointer<UInt32> { storage + i * Self.pixelCount }
+    private func buffer(_ i: Int) -> UnsafeMutablePointer<UInt32> { storage + i * size.pixelCount }
 
     /// Solo el hilo de emulación: escribe en el buffer trasero y lo publica.
     func publish(_ write: (UnsafeMutablePointer<UInt32>) -> Void) {

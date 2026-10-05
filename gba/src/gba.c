@@ -1,7 +1,7 @@
 /*
  * gba.c — ciclo de vida, carga del ROM y bucle de ejecución del núcleo GBA.
  */
-#include "internal.h"
+#include "gba_internal.h"
 #include <stdlib.h>
 
 gba *gba_create(void)

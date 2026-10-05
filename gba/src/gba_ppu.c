@@ -7,7 +7,7 @@
  * momento (los cambios hechos en el HBlank anterior, por IRQ o DMA, ya
  * cuentan). No se emulan los cambios a mitad de línea.
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 #define TRANSPARENT 0x8000u
 

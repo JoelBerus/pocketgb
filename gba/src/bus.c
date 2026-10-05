@@ -10,7 +10,7 @@
  * (WAITCNT bit 14) una lectura S de código en el ROM cuesta 1 ciclo
  * (aproximación del búfer de prefetch, ver docs/10-gba-spec.md).
  */
-#include "internal.h"
+#include "gba_internal.h"
 
 #ifdef GBA_TEST_HOOKS
 /* SingleStepTests: las lecturas de datos se responden con las transacciones
