@@ -73,7 +73,12 @@ Rama `g0-gba-instrucciones`. Este documento aprobado; `docs/10-gba-spec.md` (equ
 
 ### G2 · Bus, DMA, timers, interrupciones, HLE de BIOS (☁️)
 Mapa de memoria completo (BIOS, EWRAM 256 KiB con waitstate 2, IWRAM, E/S, paleta, VRAM con espejo, OAM, ROM con 3 regiones de waitstate y prefetch, SRAM), `WAITCNT`, lecturas abiertas (open bus) y acceso desalineado, `IE/IF/IME`, `HALTCNT`, 4 DMA (inmediato, VBlank, HBlank, FIFO, especial del vídeo), 4 timers en cascada, `KEYINPUT`/`KEYCNT`. HLE de SWI: `SoftReset`, `RegisterRamReset`, `Halt`, `IntrWait`, `VBlankIntrWait`, `Div`, `Sqrt`, `ArcTan(2)`, `CpuSet`, `CpuFastSet`, `BgAffineSet`, `ObjAffineSet`, `LZ77`, `Huffman`, `RLUnComp`, `Diff*`, `MidiKey2Freq`, `SoundBias`; lo no cubierto se registra en una lista de "known-unimplemented" como hoy. Lectura de la BIOS protegida (devuelve la última instrucción leída desde la BIOS).
-**Pruebas:** `memory.gba`, `bios.gba`, `nes.gba` de jsmolka en PASS; tests unitarios de timers en cascada, de DMA con `IRQ`, y de `IntrWait`; la suite de mGBA `timing` ejecuta y se registra su puntuación (objetivo ≥ 90 % en G2, 100 % diferible).
+**Criterios:**
+- [x] `memory.gba`, `bios.gba` y `nes.gba` de jsmolka en PASS.
+- [x] Tests unitarios: timers en cascada y prescaler, DMA inmediata con IRQ y de HBlank con repetición, waitstates (por defecto y `0x4317`), `IntrWait` desde un programa ARM, Div/Sqrt/ArcTan2, LZ77 (WRAM y VRAM), RL, CpuSet/CpuFastSet, Huffman malformado sin cuelgue.
+- [x] ASan + UBSan limpios (encontró un desplazamiento de negativo en ArcTan2: corregido a 64 bits).
+- [ ] La suite de tiempos de mGBA no se ejecuta: no hay binario publicado y compilarla necesita devkitARM. Se mide con juegos reales en G8. El prefetch del cartucho es una aproximación (`docs/10-gba-spec.md` §Tiempos).
+- [x] Auditoría: Opus RECHAZAR (H1 recursión de DMA, H2 VBlankIntrWait) → H1–H8 corregidos → segunda vuelta APROBAR CON CAMBIOS → N1–N3 corregidos ([G2-opus](../auditorias/G2-opus.md), [v2](../auditorias/G2-opus-v2.md), [respuesta](../auditorias/G2-respuesta.md)).
 
 ### G3 · PPU (☁️)
 Scanline a scanline (como el GB): modos 0–2 (fondos de tiles, 2 afines en modo 1, 4 en modo 2), modos 3–5 (bitmap), objetos regulares y afines, ventanas 0/1/OBJ, mosaico, mezcla alfa y brillo, prioridades, `VCOUNT`/`DISPSTAT` con IRQ de HBlank/VBlank/VCount, DMA de HBlank disparado desde la PPU, pantalla apagada (forced blank). Salida RGBA8888 desde BGR555.

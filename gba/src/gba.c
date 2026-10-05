@@ -49,7 +49,7 @@ static void gba_power_on(gba *g)
 {
     memset(g->ewram, 0, sizeof g->ewram);
     memset(g->iwram, 0, sizeof g->iwram);
-    memset(g->io, 0, sizeof g->io);
+    gba_io_reset(g);
     memset(g->pal, 0, sizeof g->pal);
     memset(g->vram, 0, sizeof g->vram);
     memset(g->oam, 0, sizeof g->oam);
@@ -57,7 +57,13 @@ static void gba_power_on(gba *g)
     g->cycles = 0;
     g->line_cycles = 0;
     g->vcount = 0;
+    g->hblank = false;
     g->frame_done = false;
+    g->last_was_fetch = false;
+    g->dma_active = false;
+    g->hle_waiting = false;
+    if (!g->bios_loaded) gba_hle_install(g);
+    g->bios_last = 0xE129F000u;            /* lo que deja el arranque de la BIOS */
     gba_arm_reset(g, true);
 }
 
@@ -122,18 +128,41 @@ void gba_reset(gba *g)
 
 void gba_set_buttons(gba *g, uint16_t mask)
 {
-    if (g) g->keys = mask & 0x3FFu;
+    if (!g) return;
+    g->keys = mask & 0x3FFu;
+    if (g->keycnt & 0x4000u) {
+        uint16_t sel = g->keycnt & 0x3FFu, pressed = g->keys & sel;
+        bool hit = (g->keycnt & 0x8000u) ? (pressed == sel && sel) : pressed != 0;
+        if (hit) gba_irq_raise(g, GBA_IRQ_KEYPAD);
+    }
+}
+
+/* Un paso: IRQ pendiente, instrucción (o salto hasta el próximo evento si la
+ * CPU está parada) y avance de vídeo y timers. */
+static void gba_step(gba *g)
+{
+    gba_arm *c = &g->cpu;
+    if (c->halted) {
+        if (gba_irq_pending(g)) {
+            c->halted = false;
+        } else {
+            uint32_t n = gba_cycles_to_event(g);
+            g->cycles += n;
+            gba_tick(g, n);
+            return;
+        }
+    }
+    uint64_t before = g->cycles;
+    if ((g->ime & 1u) && gba_irq_pending(g) && !(c->cpsr & ARM_I)) gba_arm_irq(g);
+    else gba_arm_step(g);
+    gba_tick(g, (uint32_t)(g->cycles - before));
 }
 
 uint32_t gba_run_cycles(gba *g, uint32_t cycles)
 {
     if (!g || !g->rom) return 0;
     uint64_t start = g->cycles;
-    while (g->cycles - start < cycles) {
-        uint64_t before = g->cycles;
-        gba_arm_step(g);
-        gba_video_tick(g, (uint32_t)(g->cycles - before));
-    }
+    while (g->cycles - start < cycles) gba_step(g);
     return (uint32_t)(g->cycles - start);
 }
 
@@ -143,11 +172,7 @@ void gba_run_frame(gba *g)
     g->frame_done = false;
     uint64_t start = g->cycles;
     /* Tope de seguridad: dos frames (el VBlank llega siempre antes). */
-    while (!g->frame_done && g->cycles - start < 2u * GBA_CYCLES_PER_FRAME) {
-        uint64_t before = g->cycles;
-        gba_arm_step(g);
-        gba_video_tick(g, (uint32_t)(g->cycles - before));
-    }
+    while (!g->frame_done && g->cycles - start < 2u * GBA_CYCLES_PER_FRAME) gba_step(g);
 }
 
 uint64_t gba_cycle_count(const gba *g) { return g ? g->cycles : 0; }

@@ -31,9 +31,25 @@
 - Decodificación por tablas **dentro de la instancia** (`arm_lut[4096]`, `thumb_lut[1024]`, clases de instrucción) y despacho con `switch`: sin punteros a función globales.
 - Interrupciones: entrada en IRQ con `LR = siguiente + 4`; manejador de la BIOS (o el de la HLE) en `0x18`.
 
-## Tiempos (G1 provisional → G2)
-- G1 cuenta 1 ciclo por acceso al bus más los ciclos internos (`I`) de cada instrucción. G2 aplica `WAITCNT`, accesos secuenciales/no secuenciales y el prefetch del cartucho.
-- Frame: 228 líneas × 1232 ciclos = 280 896 ciclos; VBlank en las líneas 160–227; HBlank desde el ciclo 960 de cada línea.
+## Tiempos (G2)
+- Cada acceso cuesta los ciclos de su región según `WAITCNT` (tabla por instancia recalculada al escribirlo): BIOS, IWRAM, E/S y OAM 1; EWRAM 3 (16 bits) / 6 (32); paleta y VRAM 1 / 2; ROM 1 + espera N o S de su zona (WS0 4,3,2,8 / 2,1; WS1 … / 4,1; WS2 … / 8,1), y un acceso de 32 bits al ROM es N + S. SRAM: 1 + espera, a 8 bits.
+- Las lecturas de código son secuenciales si siguen a la anterior; tras un salto la primera es N. `LDM`/`STM`/`PUSH`/`POP` y la DMA hacen S a partir del segundo acceso.
+- **Prefetch del cartucho (aproximación):** con `WAITCNT` bit 14, una lectura S de código en el ROM cuesta 1 ciclo (2 si es de 32 bits). No se modela el búfer de 8 medias palabras ni su vaciado. Las pruebas de tiempos de mGBA quedan fuera del alcance de G2.
+- Frame: 228 líneas × 1232 ciclos = 280 896 ciclos. VBlank en las líneas 160–227 (la bandera de DISPSTAT se borra en la 227). HBlank (bandera, IRQ y DMA de HBlank en líneas 0–159) desde el ciclo 1006.
+- La CPU parada (`HALTCNT`, `Halt`, `IntrWait`) salta al próximo evento (HBlank, fin de línea o desborde de un timer) y despierta con `IE & IF`, aunque `IME` sea 0.
+
+## E/S, interrupciones, DMA y timers (G2)
+- `IE`, `IF` (escribir 1 borra), `IME`; la IRQ se toma entre instrucciones si `IME` y no está el bit I del CPSR. `KEYCNT` con modo OR/AND.
+- DMA 0–3: registros con sus máscaras de dirección (fuente 27/28 bits, destino 27/28), contador 0 = máximo, control de origen y destino (incluido incrementar y recargar), repetición, IRQ, inmediata/VBlank/HBlank/especial (FIFO de sonido en G5). Fuente en el ROM siempre incrementa. Leer de la BIOS o por debajo de `0x02000000` devuelve el último dato transferido. Una DMA bloquea a la CPU y se ejecuta entera.
+- Timers 0–3: prescaler 1/64/256/1024, cascada, IRQ y recarga al desbordar; escribir el contador fija la recarga y activar copia la recarga al contador.
+- Bus abierto: lecturas sin mapear devuelven lo último que leyó el pipeline (en Thumb, la media palabra repetida) y, durante una DMA, su último dato.
+- **BIOS protegida:** leerla con el PC fuera de ella devuelve la última instrucción que la CPU leyó de la BIOS.
+
+## BIOS en alto nivel (G2, `hle.c`)
+- Sin la BIOS de Joel, en la zona de la BIOS hay un manejador de IRQ propio en las direcciones que documenta GBATEK (`0x128`–`0x13C`: guarda r0–r3, r12, lr; llama a `[0x03007FFC]`; restaura y `subs pc, lr, #4`). Así la lectura protegida de la BIOS da los valores del hardware (`0xE129F000` tras el arranque, `0xE25EF004` durante una IRQ, `0xE55EC002` después y `0xE3A02004` tras una SWI).
+- Las SWI se ejecutan en C, en el modo del llamador: `SoftReset`, `RegisterRamReset`, `Halt`, `Stop` (como Halt), `IntrWait`, `VBlankIntrWait`, `Div`, `DivArm`, `Sqrt`, `ArcTan`, `ArcTan2`, `CpuSet`, `CpuFastSet`, `GetBiosChecksum`, `BgAffineSet`, `ObjAffineSet`, `BitUnPack`, `LZ77UnComp` (WRAM/VRAM), `HuffUnComp`, `RLUnComp` (WRAM/VRAM), `Diff8bitUnFilter` (WRAM/VRAM), `Diff16bitUnFilter`, `SoundBias`, `MidiKey2Freq`. El resto (driver de sonido de la BIOS, multiboot) se ignora.
+- `IntrWait` pone `IME = 1`, para la CPU y vuelve a ejecutar la SWI al salir de la IRQ hasta que el manejador del juego marca el bit en `0x03007FF8` (que la SWI borra al volver).
+- Diferencias conocidas con la BIOS real: la división por cero devuelve un valor estable en vez de colgarse; la tabla de senos de las funciones afines se calcula (puede diferir en el último bit); los tiempos de las SWI son aproximados. Las descompresiones acotan el tamaño de salida a 256 KiB y Huffman deja de leer si el árbol nunca llega a una hoja (ROM no confiable).
 
 ## Medio de guardado (G4)
 Detección por las cadenas de la biblioteca de Nintendo en el ROM (`EEPROM_V`, `SRAM_V`, `SRAM_F_V`, `FLASH_V`, `FLASH512_V`, `FLASH1M_V`), con ajuste manual por juego. `.sav` crudo compatible con mGBA/VBA: SRAM 32 KiB, Flash 64/128 KiB, EEPROM 512 B / 8 KiB. RTC (GPIO S-3511A) en 16 bytes aparte. Un `.sav` de tamaño distinto se rechaza con `GBA_ERR_SAVE_SIZE` y la app no lo sobrescribe.

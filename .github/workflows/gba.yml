@@ -31,6 +31,6 @@ jobs:
       - name: Contrato y reglas del núcleo
         run: make -C gba check-header check-globals check-symbols
       - name: Suite
-        run: make -C gba test HITO=G1
+        run: make -C gba test HITO=G2
       - name: ASan + UBSan
-        run: make -C gba asan HITO=G1
+        run: make -C gba asan HITO=G2
