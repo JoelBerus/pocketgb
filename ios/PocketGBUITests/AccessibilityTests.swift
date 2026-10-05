@@ -48,22 +48,25 @@ final class ShellAccessibilityTests: XCTestCase {
 
     @MainActor
     func testGridReflowsToOneColumnAtAX5() throws {
+        // El simulador conserva la orientación del test anterior (el catálogo termina en
+        // horizontal): en horizontal caben varias columnas incluso con AX5.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard",
                                "-contentSizeCategory", "accessibility5"]
         app.launch()
         let first = app.buttons["game-card-cgb-acid2.gbc"]
-        let second = app.buttons["game-card-dmg-acid2.gb"]
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
-        // Con AX5 cada card ocupa casi la pantalla: se desplaza en pasos cortos (un tercio
-        // de pantalla) hasta ver los dos; un swipe completo puede saltárselos.
+        // La lista es perezosa y con AX5 cada card casi llena la pantalla: se desplaza en
+        // pasos cortos (un tercio de pantalla) hasta que exista la primera card.
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
-        for _ in 0..<20 where !(first.exists && second.exists && second.isHittable) {
+        for _ in 0..<20 where !first.exists {
             from.press(forDuration: 0.05, thenDragTo: to)
         }
-        XCTAssertTrue(first.exists && second.exists)
-        // Una columna: el segundo juego está debajo del primero, no a su lado.
-        XCTAssertGreaterThanOrEqual(second.frame.minY, first.frame.maxY - 1)
+        XCTAssertTrue(first.exists, app.debugDescription)
+        // Una columna: con AX5 la card ocupa casi todo el ancho de la pantalla (con dos
+        // columnas mediría la mitad). No depende de cuánto se haya desplazado la lista.
+        XCTAssertGreaterThan(first.frame.width, app.frame.width * 0.7, first.debugDescription)
     }
 }
