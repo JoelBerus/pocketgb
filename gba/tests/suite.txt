@@ -45,3 +45,14 @@ G5|hb:audio_ds.gba|audio:1024:R|120|requerido
 G5|hb:audio_wave.gba|audio:128:L!|120|requerido
 G5|hb:audio_noise.gba|audio:0:R!|120|requerido
 G5|hb:audio_dsb.gba|audio:512:R!|120|requerido
+# ---- G6: save states y determinismo (estado a mitad de juego; IRQ, DMA, audio y saves activos) ----
+G6|hb:ppu_scene_11.gba|state|60|requerido
+G6|hb:ppu_scene_7.gba|state|60|requerido
+G6|hb:audio_ds.gba|state|45|requerido
+G6|hb:audio_psg.gba|state|45|requerido
+G6|hb:eeprom.gba|state|2|requerido
+G6|gba-tests/save/flash128.gba|state|30|requerido
+G6|gba-tests/bios/bios.gba|state|1|requerido
+G6|hb:ppu_scene_11.gba|det|1000|requerido
+G6|hb:audio_ds.gba|det|300|requerido
+G6|gba-tests/save/flash128.gba|det|200|requerido

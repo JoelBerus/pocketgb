@@ -197,26 +197,20 @@ uint32_t gba_fuzz_bus(gba *g, int op, uint32_t addr, uint32_t v)
     default: gba_bus_write32(g, addr, v); return 0;
     }
 }
+
+/* Solo para fuzz_io: escritura de 8, 16 o 32 bits en el bus como la haría la CPU. */
+void gba_fuzz_poke(gba *g, uint32_t addr, uint16_t v, int width);
+void gba_fuzz_poke(gba *g, uint32_t addr, uint16_t v, int width)
+{
+    if (width == 0) gba_bus_write8(g, addr, (uint8_t)v);
+    else if (width == 1) gba_bus_write16(g, addr, v);
+    else gba_bus_write32(g, addr, v * 0x10001u);
+}
 #endif
 
 uint64_t gba_cycle_count(const gba *g) { return g ? g->cycles : 0; }
 const uint32_t *gba_framebuffer(const gba *g) { return g ? g->framebuffer : NULL; }
 
-/* ---- Pendiente de G6 (estados) ---- */
-
-size_t gba_state_size(const gba *g) { (void)g; return 0; }
-gba_result gba_state_save(const gba *g, uint8_t *out, size_t cap)
-{
-    (void)cap;
-    if (!g || !out) return GBA_ERR_NULL_ARG;
-    return GBA_ERR_BUFFER_TOO_SMALL;
-}
-gba_result gba_state_load(gba *g, const uint8_t *data, size_t len)
-{
-    (void)len;
-    if (!g || !data) return GBA_ERR_NULL_ARG;
-    return GBA_ERR_STATE_MAGIC;
-}
 
 const char *gba_result_str(gba_result r)
 {

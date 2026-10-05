@@ -87,5 +87,11 @@
 - **Verificación:** ROMs propias `audio.c` (pulso PSG, DirectSound A y B, onda con dos bancos al 75 %, ruido; con paneo a un lado): frecuencia ±2 % en el lado pedido, silencio en el otro y niveles relativos próximos a mGBA (`tools/oracle-gba/shot.c --audio`). `sample_rate` se acota a 8000–192000. Tests unitarios de FIFO con recarga por DMA, apagado, bancos de onda, SOUNDBIAS y ritmo de muestras.
 - No se emula: el driver de sonido de la BIOS (SWI 1Ah–1Eh, 28h–2Ah; casi ningún juego lo usa, llevan su propia copia), la resolución de muestreo de SOUNDBIAS bits 14–15.
 
+## Save states (G6, `state.c`)
+- Formato: `"PGBA"` | u32 versión (1) | SHA-256 del ROM | u32 longitud de la carga | campos en orden fijo, little-endian | CRC-32 IEEE. Cada campo se serializa por separado (nunca un `memcpy` de structs); los `double` del pasa-altos se guardan por sus bits.
+- Contenido: CPU (registros, bancos, SPSR, pipeline), EWRAM, IWRAM, E/S, paleta, VRAM, OAM, última lectura de la BIOS, tiempos de vídeo, IRQ, WAITCNT, DMA, timers, referencias afines, APU (incluidos la fase del remuestreo y el condensador: el audio tras cargar es idéntico), medio de guardado completo (128 KiB) y su máquina de estados, RTC y el framebuffer. No: el ROM, la BIOS, los botones ni el anillo de audio (es del frontend).
+- Tamaño constante (≈ 666 KiB). La carga comprueba magia, versión, huella, longitud exacta y CRC; después lee **sobre una copia** de la instancia validando el rango de cada campo y la coherencia entre campos (banco de registros = modo del CPSR, tamaño del medio = tipo, banco de Flash solo en 128 KiB, EEPROM, RTC, canales con temporizador positivo…). Solo si todo es correcto se aplica; si no, `GBA_ERR_STATE_CORRUPT` y la instancia no cambia.
+- Determinismo: misma entrada → mismos frames y mismo audio en dos instancias (modo `det`), y guardar → seguir → cargar → seguir reproduce exactamente frames, audio y partida (modo `state`).
+
 ## Qué no se emula (por ahora)
 Cable link GBA, e-Reader, sensores (solar, giroscopio, vibración), Wireless Adapter, GB Player, juegos de GB/GBC dentro de la GBA (para eso está el núcleo GB), JIT.

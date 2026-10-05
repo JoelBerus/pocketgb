@@ -393,6 +393,63 @@ int main(int argc, char **argv)
                side ? 'R' : 'L', freq, want_freq, peak, silent >= 0 ? other : -1, n);
         if (!ok) rc = 1;
         free(pcm);
+    } else if (mode && !strcmp(mode, "det")) {
+        /* Dos instancias con la misma entrada: frame a frame, framebuffer y audio idénticos. */
+        size_t len2;
+        uint8_t *data2 = read_file(rom, &len2);
+        gba *h = gba_create();
+        long bad = -1;
+        if (data2 && h && gba_load_rom(h, data2, len2, &o) == GBA_OK) {
+            int16_t pa[4096], pb[4096];
+            for (long f = 0; f < max_frames && bad < 0; f++) {
+                uint16_t keys = (uint16_t)((f * 37) & 0x3FF);
+                gba_set_buttons(g, keys);
+                gba_set_buttons(h, keys);
+                gba_run_frame(g);
+                gba_run_frame(h);
+                size_t na = gba_audio_read(g, pa, 2048), nb = gba_audio_read(h, pb, 2048);
+                if (na != nb || memcmp(pa, pb, na * 4) != 0 ||
+                    memcmp(gba_framebuffer(g), gba_framebuffer(h), GBA_SCREEN_W * GBA_SCREEN_H * 4) != 0)
+                    bad = f;
+            }
+        } else {
+            bad = 0;
+        }
+        free(data2);
+        gba_destroy(h);
+        if (bad < 0) printf("PASS %s (%ld frames idénticos en dos instancias)\n", rom, max_frames);
+        else { printf("FAIL %s: divergen en el frame %ld\n", rom, bad); rc = 1; }
+    } else if (mode && !strcmp(mode, "state")) {
+        /* Determinismo con estados: N frames, guardar, M frames (A); cargar,
+         * M frames (B). Framebuffer, audio y partida de A y B idénticos. */
+        long m = 120;
+        for (long f = 0; f < max_frames; f++) gba_run_frame(g);
+        int16_t pcm[8192];
+        while (gba_audio_read(g, pcm, 4096)) {}
+        size_t sz = gba_state_size(g);
+        uint8_t *st = malloc(sz);
+        uint32_t *fa = malloc(GBA_SCREEN_W * GBA_SCREEN_H * 4);
+        uint64_t ha = 1469598103934665603ull, hb = ha;
+        if (!st || !fa || gba_state_save(g, st, sz) != GBA_OK) { printf("FAIL %s: no se pudo guardar\n", rom); rc = 1; }
+        else {
+            for (long f = 0; f < m; f++) {
+                gba_run_frame(g);
+                size_t n = gba_audio_read(g, pcm, 4096);
+                for (size_t i = 0; i < n * 2; i++) ha = (ha ^ (uint16_t)pcm[i]) * 1099511628211ull;
+            }
+            memcpy(fa, gba_framebuffer(g), GBA_SCREEN_W * GBA_SCREEN_H * 4);
+            gba_result lr = gba_state_load(g, st, sz);
+            for (long f = 0; f < m; f++) {
+                gba_run_frame(g);
+                size_t n = gba_audio_read(g, pcm, 4096);
+                for (size_t i = 0; i < n * 2; i++) hb = (hb ^ (uint16_t)pcm[i]) * 1099511628211ull;
+            }
+            bool same_fb = memcmp(fa, gba_framebuffer(g), GBA_SCREEN_W * GBA_SCREEN_H * 4) == 0;
+            if (lr == GBA_OK && same_fb && ha == hb) printf("PASS %s (estado de %zu bytes, %ld+%ld frames)\n", rom, sz, max_frames, m);
+            else { printf("FAIL %s: carga=%s, framebuffer %s, audio %s\n", rom, gba_result_str(lr), same_fb ? "igual" : "distinto", ha == hb ? "igual" : "distinto"); rc = 1; }
+        }
+        free(st);
+        free(fa);
     } else if (mode && !strcmp(mode, "hb")) {
         /* ROM homebrew que escribe su resultado en 0x03007E00 (0x600D = bien). */
         uint32_t res = 0;
