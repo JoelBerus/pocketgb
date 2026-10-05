@@ -17,7 +17,7 @@ ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 SST_LIMIT ?= 0
 
-.PHONY: all lib test asan check-roms check-header check-globals check-symbols clean
+.PHONY: all lib test asan oracle homebrew check-roms check-header check-globals check-symbols clean
 
 all: lib
 
@@ -41,11 +41,42 @@ $(BUILD)/gbatest: $(SRCS) $(TEST_SRCS) include/pocketgba.h $(wildcard src/*.h)
 check-roms:
 	@[ -d $(ROMS) ] || { echo "Faltan ROMs de prueba GBA: ejecuta tools/fetch-gba-test-roms.sh"; exit 1; }
 
-test: check-roms $(BUILD)/gbatest
-	python3 tests/run_suite.py --bin $(BUILD)/gbatest --roms $(ROMS) --suite tests/suite.txt --hito $(HITO) --sst-limit $(SST_LIMIT)
+test: check-roms $(BUILD)/gbatest homebrew
+	python3 tests/run_suite.py --bin $(BUILD)/gbatest --roms $(ROMS) --suite tests/suite.txt --hito $(HITO) --sst-limit $(SST_LIMIT) --hb $(BUILD)/hb
 
 asan: check-roms
 	$(MAKE) BUILD=$(BUILD)/asan EXTRA="$(SAN)" CFLAGS="-O1 -g" SST_LIMIT=$(if $(filter 0,$(SST_LIMIT)),5000,$(SST_LIMIT)) test
+
+# Oráculo de la PPU (dev-only, nunca en la app): mGBA compilado sin frontends.
+MGBA_TAG ?= 0.10.5
+MGBA := ../tools/oracle/mgba
+oracle: $(BUILD)/gbatest
+	@[ -d $(MGBA) ] || git clone -q --depth 1 --branch $(MGBA_TAG) https://github.com/mgba-emu/mgba.git $(MGBA)
+	cmake -S $(MGBA) -B $(MGBA)/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_QT=OFF -DBUILD_SDL=OFF \
+	  -DBUILD_GL=OFF -DBUILD_GLES2=OFF -DBUILD_GLES3=OFF -DUSE_FFMPEG=OFF -DUSE_SQLITE3=OFF -DUSE_ELF=OFF \
+	  -DUSE_LUA=OFF -DUSE_EDITLINE=OFF -DUSE_MINIZIP=OFF -DUSE_LIBZIP=OFF -DUSE_DISCORD_RPC=OFF -DUSE_EPOXY=OFF \
+	  -DM_CORE_GB=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON -DUSE_LZMA=OFF -DBUILD_LTO=OFF -DCMAKE_C_FLAGS=-DCOLOR_16_BIT > $(BUILD)/mgba-cmake.log
+	ninja -C $(MGBA)/build > $(BUILD)/mgba-build.log
+	$(CC) -O2 -DCOLOR_16_BIT -I$(MGBA)/include -I$(MGBA)/build/include ../tools/oracle-gba/shot.c $(MGBA)/build/libmgba.a \
+	  -lpng -lz -lm -lpthread -o $(BUILD)/mgba-shot
+	@echo "Oráculo listo: $(BUILD)/mgba-shot (compara con tools/gba-compare.py)"
+
+# ROMs homebrew propias (MIT) para la PPU: clang --target=armv4t + ld.lld.
+HB := tests/homebrew
+HB_CFLAGS := --target=armv4t-none-eabi -mthumb -O2 -ffreestanding -nostdlib -fno-builtin -Wall -Werror -Wno-unused-command-line-argument
+SCENES := 0 1 2 3 4 5 6 7 8 9 10 11 12 13
+homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba)
+
+$(BUILD)/hb/rt.o: $(HB)/crt0.s $(HB)/support.c
+	@mkdir -p $(BUILD)/hb
+	clang $(HB_CFLAGS) -c $(HB)/crt0.s -o $(BUILD)/hb/crt0.o
+	clang $(HB_CFLAGS) -c $(HB)/support.c -o $(BUILD)/hb/support.o
+	@touch $@
+
+$(BUILD)/hb/ppu_scene_%.gba: $(HB)/ppu_scenes.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DSCENE=$* -c $< -o $(BUILD)/hb/ppu_scene_$*.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/ppu_scene_$*.o $(BUILD)/hb/support.o -o $(BUILD)/hb/ppu_scene_$*.elf
+	llvm-objcopy -O binary $(BUILD)/hb/ppu_scene_$*.elf $@
 
 check-header:
 	@mkdir -p $(BUILD)

@@ -237,6 +237,7 @@ void gba_tick(gba *g, uint32_t n)
     for (;;) {
         if (!g->hblank && g->line_cycles >= GBA_HBLANK_CYCLE) {
             g->hblank = true;
+            if (g->vcount < 160) gba_ppu_render_line(g, g->vcount);
             if (g->dispstat & 0x10u) gba_irq_raise(g, GBA_IRQ_HBLANK);
             if (g->vcount < 160) gba_dma_trigger(g, 2);
             continue;
@@ -248,6 +249,7 @@ void gba_tick(gba *g, uint32_t n)
             if (g->vcount >= 228) g->vcount = 0;
             if (g->vcount == 160) {
                 g->frame_done = true;
+                gba_ppu_vblank(g);
                 if (g->dispstat & 0x08u) gba_irq_raise(g, GBA_IRQ_VBLANK);
                 gba_dma_trigger(g, 1);
             }
@@ -371,6 +373,8 @@ void gba_io_write16(gba *g, uint32_t off, uint16_t v)
     default: break;
     }
     io_set(g, off, v);
+    if (off >= 0x028 && off < 0x030) gba_ppu_reload_ref(g, 2);
+    else if (off >= 0x038 && off < 0x040) gba_ppu_reload_ref(g, 3);
 }
 
 void gba_io_write8(gba *g, uint32_t off, uint8_t v)

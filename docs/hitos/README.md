@@ -24,7 +24,8 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G0 · Instrucciones y andamiaje | ☁️ | ✅ cerrado 2026-10-05 (auditoría Opus: APROBAR CON CAMBIOS → corregido) |
 | G1 · CPU ARM7TDMI | ☁️ | ✅ cerrado 2026-10-05 (SingleStepTests 100 %, arm/thumb/memory.gba PASS; auditoría Opus: APROBAR CON CAMBIOS → corregido) |
 | G2 · Bus, DMA, timers, IRQ, HLE | ☁️ | ✅ cerrado 2026-10-05 (bios/nes/memory.gba PASS; Opus: RECHAZAR → APROBAR CON CAMBIOS → corregido) |
-| G3–G9 | ☁️ / 🍎 | pendientes |
+| G3 · PPU | ☁️ | ✅ cerrado 2026-10-05 (12/14 escenas idénticas a mGBA; Opus: APROBAR CON CAMBIOS → corregido) |
+| G4–G9 | ☁️ / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.

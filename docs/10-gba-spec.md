@@ -51,6 +51,25 @@
 - `IntrWait` pone `IME = 1`, para la CPU y vuelve a ejecutar la SWI al salir de la IRQ hasta que el manejador del juego marca el bit en `0x03007FF8` (que la SWI borra al volver).
 - Diferencias conocidas con la BIOS real: la división por cero devuelve un valor estable en vez de colgarse; la tabla de senos de las funciones afines se calcula (puede diferir en el último bit); los tiempos de las SWI son aproximados. Las descompresiones acotan el tamaño de salida a 256 KiB y Huffman deja de leer si el árbol nunca llega a una hoja (ROM no confiable).
 
+## PPU (G3, `ppu.c`)
+- Por scanline: cada línea visible se dibuja al empezar su HBlank (ciclo 1006) con los registros de ese momento, antes de la IRQ y la DMA de HBlank (que preparan la línea siguiente). No hay cambios a mitad de línea.
+- Modos 0–5: fondos de texto (4/8 bpp, 4 tamaños, volteos, desplazamiento), afines (modos 1 y 2, con y sin envolvimiento), bitmaps (modo 3 de 15 bits, modo 4 con paleta y página, modo 5 de 160×128 y página), todos con la transformación de BG2 en los bitmaps. Las referencias afines internas se recargan en el VBlank y al escribir BGxX/BGxY, y avanzan PB/PD por línea.
+- Objetos: 128, normales y afines (doble tamaño), 1D/2D, 4/8 bpp (en 8 bpp el bit 0 de la tesela solo se ignora en 2D), volteos, envolvimiento en X (9 bits) e Y (8 bits), teselas < 512 invisibles en modos bitmap, semitransparentes y ventana de objeto. Entre objetos gana el de menor prioridad y, a igualdad, el de menor índice. **Peculiaridad del hardware:** un píxel transparente de un objeto también rebaja la prioridad (y la marca de semitransparencia) del búfer de objetos si ya había color de otro objeto.
+- Ventanas 0, 1 y de objeto con sus reglas de valores fuera de rango; WININ/WINOUT por capa y efecto.
+- Efectos: mezcla alfa (EVA/EVB ≤ 16, saturación a 31), aclarar y oscurecer por canal de 5 bits según GBATEK. Un objeto semitransparente es siempre primer objetivo: mezcla alfa si debajo hay un segundo objetivo; si no, el efecto activo.
+- Mosaico: fondos (texto, afines y bitmaps; en afines y bitmaps la fila de la primera línea del bloque se repite restando `k·PB`/`k·PD` a la referencia) y objetos. En objetos, vertical alineado a la pantalla y acotado al objeto; horizontal alineado a la pantalla, con el último bloque extendido hasta el límite del mosaico; en afines, coordenadas tomadas al inicio de cada bloque.
+- Color: BGR555 → RGBA8888 con `(c << 3) | (c >> 2)`; forced blank = blanco.
+
+### Verificación de la PPU
+- **Oráculo de desarrollo:** mGBA 0.10.5 (MPL-2.0) compilado aparte con `COLOR_16_BIT` (`make -C gba oracle`; nunca entra en la app) y `tools/gba-compare.py`, que compara frame a frame y avisa si un frame es uniforme (una prueba en blanco no dice nada).
+- **ROMs homebrew propias** (`gba/tests/homebrew/`, MIT, compiladas con `clang --target=armv4t` y `ld.lld`): 14 escenas que cubren los modos 0–5, afines, objetos 1D/2D/afines/doble tamaño/envolvimiento, ventanas con mezcla, aclarar/oscurecer con semitransparentes y mosaico, efectos por línea con IRQ de HBlank/VCount y DMA de HBlank, mosaico en afín y bitmap, y objetos de 256 colores con tesela impar en 1D.
+- Resultado: 12 de 14 escenas y las 3 pruebas de PPU de jsmolka idénticas píxel a píxel a mGBA. Sus imágenes son las referencias de `gba/tests/ref/` y la suite las comprueba sin mGBA.
+- **Diferencias con mGBA (se mantiene GBATEK):** escena 10, oscurecer: mGBA en 16 bits redondea hacia abajo los canales verde y azul (diferencia de 1 en el 58 % de los píxeles; ninguna mayor). Escena 8: en una ventana de objeto con efectos, mGBA no mezcla con el fondo los píxeles cuya prioridad rebajó un objeto transparente, porque calcula la marca de mezcla del objeto según la ventana que dibuja (559 píxeles); PocketGB decide por píxel. Para estas dos escenas la referencia es nuestra salida (regresión).
+- No verificado contra mGBA: bitmap **rotado** con mosaico (mGBA muestrea distinto que en su propio fondo afín con mosaico, que sí coincide); la escena 13 lo prueba sin rotación.
+- Los primeros frames no son comparables entre emuladores (arranque distinto): se compara a partir del frame 60.
+- Las referencias afines internas se acumulan en aritmética sin signo; al restaurar un estado (G6) se aplicará `sext28`.
+- mGBA 0.10.5 no pasa `arm.gba` (prueba 235), `thumb.gba` (230) ni `bios.gba` (001); PocketGB sí.
+
 ## Medio de guardado (G4)
 Detección por las cadenas de la biblioteca de Nintendo en el ROM (`EEPROM_V`, `SRAM_V`, `SRAM_F_V`, `FLASH_V`, `FLASH512_V`, `FLASH1M_V`), con ajuste manual por juego. `.sav` crudo compatible con mGBA/VBA: SRAM 32 KiB, Flash 64/128 KiB, EEPROM 512 B / 8 KiB. RTC (GPIO S-3511A) en 16 bytes aparte. Un `.sav` de tamaño distinto se rechaza con `GBA_ERR_SAVE_SIZE` y la app no lo sobrescribe.
 

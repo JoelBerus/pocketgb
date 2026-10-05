@@ -84,4 +84,5 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - **Runner `gbatest`** (`gba/tests/runner.c`): `--sst ARCHIVO` (una instrucción por caso: registros de todos los bancos, CPSR/SPSR, pipeline y escrituras al bus en orden), `ROM --mode jsmolka` (termina en un bucle `b .` con el resultado en r12; 0 = todo bien), `ROM --bench N`, `--unit`.
 - **Suite:** `gba/tests/suite.txt`, formato `hito|ruta|modo|max_frames|tipo`. `make -C gba test HITO=Gn` ejecuta los casos de los hitos ≤ Gn; `make -C gba asan` repite con ASan + UBSan (SingleStepTests limitado a 5 000 casos por archivo).
 - **Reglas:** `make -C gba check-header check-globals check-symbols`.
+- **PPU:** modo `ref` (frame idéntico a un PNG de `gba/tests/ref/`). ROMs homebrew propias en `gba/tests/homebrew/` (`make -C gba homebrew`, necesita `clang`, `ld.lld` y `llvm-objcopy`). Oráculo opcional: `make -C gba oracle` compila mGBA 0.10.5 en `tools/oracle/mgba` (ignorado por git) y `tools/gba-compare.py ROM FRAMES --out DIR` compara con PNG de diferencias.
 - **CI:** `.github/workflows/gba.yml` (Linux, runners de GitHub) con caché de las pruebas.

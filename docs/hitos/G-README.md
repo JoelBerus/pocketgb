@@ -82,7 +82,12 @@ Mapa de memoria completo (BIOS, EWRAM 256 KiB con waitstate 2, IWRAM, E/S, palet
 
 ### G3 · PPU (☁️)
 Scanline a scanline (como el GB): modos 0–2 (fondos de tiles, 2 afines en modo 1, 4 en modo 2), modos 3–5 (bitmap), objetos regulares y afines, ventanas 0/1/OBJ, mosaico, mezcla alfa y brillo, prioridades, `VCOUNT`/`DISPSTAT` con IRQ de HBlank/VBlank/VCount, DMA de HBlank disparado desde la PPU, pantalla apagada (forced blank). Salida RGBA8888 desde BGR555.
-**Pruebas:** `hello.gba`, `shades.gba`, `stripes.gba` de jsmolka; demos de tonc (libres) como regresión visual con `png2rgba` igual que acid2; comparación píxel a píxel con el oráculo mGBA en 20 capturas fijas de homebrew (`make -C gba oracle`); `--bench` ≥ 5× tiempo real con render en Linux (−O2).
+**Criterios:**
+- [x] `hello.gba`, `shades.gba` y `stripes.gba` de jsmolka idénticos a mGBA.
+- [x] Oráculo mGBA (`make -C gba oracle`) y 14 escenas homebrew propias (las demos de tonc no tienen binarios publicados ni se pueden compilar sin devkitARM; se sustituyen por ROMs propias compiladas con clang). 12 de 14 idénticas píxel a píxel; las 2 restantes difieren por detalles de mGBA documentados en `docs/10-gba-spec.md` §PPU.
+- [x] Referencias en `gba/tests/ref/` comprobadas por la suite sin mGBA (68/68), ASan + UBSan limpios, determinismo (dos ejecuciones idénticas).
+- [x] `--bench` con vídeo: 6,3–7,9× tiempo real según la escena.
+- [x] Auditoría Opus: APROBAR CON CAMBIOS → A1–A4 corregidos ([G3-opus](../auditorias/G3-opus.md), [respuesta](../auditorias/G3-respuesta.md), [evidencia](../auditorias/G3-evidencia.md)).
 
 ### G4 · Cartucho y saves (☁️)
 Detección del tipo de save, SRAM 32 KiB, Flash 64 KiB (SST/Panasonic) y 128 KiB con bancos (Sanyo/Macronix) incluyendo máquina de estados de comandos y IDs de fabricante, EEPROM 512 B / 8 KiB vía DMA con detección automática de tamaño, RTC S-3511A por GPIO (`0x80C4–0x80C8`) para Pokémon Rubí/Zafiro/Esmeralda, flag `dirty`. Todo con bounds-check; tamaños contra la cabecera y el archivo real (regla dura 3).
