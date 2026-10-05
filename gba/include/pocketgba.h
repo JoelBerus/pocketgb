@@ -75,7 +75,7 @@ enum {
 };
 
 typedef struct gba_options {
-    uint32_t sample_rate;       /* p. ej. 48000; 0 = sin audio */
+    uint32_t sample_rate;       /* p. ej. 48000; 0 = sin audio; se acota a 8000..192000 */
     gba_save_type save_type;    /* GBA_SAVE_AUTO salvo ajuste por juego */
     int64_t unix_time;          /* hora LOCAL inicial del RTC (segundos desde 1970 en la zona del usuario) */
     uint8_t rtc;                /* GBA_RTC_AUTO (por código de juego), GBA_RTC_ON u GBA_RTC_OFF */

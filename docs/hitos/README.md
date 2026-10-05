@@ -26,7 +26,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G2 · Bus, DMA, timers, IRQ, HLE | ☁️ | ✅ cerrado 2026-10-05 (bios/nes/memory.gba PASS; Opus: RECHAZAR → APROBAR CON CAMBIOS → corregido) |
 | G3 · PPU | ☁️ | ✅ cerrado 2026-10-05 (12/14 escenas idénticas a mGBA; Opus: APROBAR CON CAMBIOS → corregido) |
 | G4 · Cartucho y saves | ☁️ | implementado 2026-10-05 en `g4-gba-saves` (SRAM, Flash, EEPROM, RTC); auditoría en curso |
-| G5 · APU | ☁️ | implementado 2026-10-05 en `g5-gba-apu` (PSG + DirectSound); auditoría en curso |
+| G5 · APU | ☁️ | ✅ cerrado 2026-10-05 (núcleo; Opus: APROBAR CON CAMBIOS → corregido); 🍎 escucha en G8 |
 | G6–G9 | ☁️ / 🍎 | pendientes |
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.

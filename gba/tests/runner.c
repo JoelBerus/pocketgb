@@ -253,6 +253,7 @@ int main(int argc, char **argv)
 {
     const char *rom = NULL, *mode = NULL, *sst = NULL, *dump = NULL, *frames = NULL, *keys = NULL, *ref = NULL, *wav = NULL;
     double want_freq = 0;
+    int side = 0, silent = -1;             /* 0 izquierda, 1 derecha; silent = lado que no debe sonar */
     long max_frames = 600, limit = 0, bench = 0;
     bool force_rtc = false;
     int show = 5;
@@ -272,6 +273,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--rtc")) force_rtc = true;
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
         else if (!strcmp(argv[i], "--freq") && i + 1 < argc) want_freq = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--side") && i + 1 < argc) { i++; side = argv[i][0] == 'R'; silent = argv[i][1] == '!' ? !side : -1; }
         else if (argv[i][0] != '-') rom = argv[i];
         else { fprintf(stderr, "opción desconocida: %s\n", argv[i]); return 2; }
     }
@@ -373,10 +375,11 @@ int main(int argc, char **argv)
         }
         size_t win = n > 48000 ? 48000 : n, start = n - win;
         long crossings = 0;
-        int peak = 0;
+        int peak = 0, other = 0;
         size_t first = 0, last = 0;
         for (size_t i = start + 1; i < n; i++) {
-            int a = pcm[2 * (i - 1)], b = pcm[2 * i];
+            int a = pcm[2 * (i - 1) + side], b = pcm[2 * i + side];
+            if (silent >= 0 && abs(pcm[2 * i + silent]) > other) other = abs(pcm[2 * i + silent]);
             if (abs(b) > peak) peak = abs(b);
             if (a < 0 && b >= 0) {
                 if (!crossings) first = i;
@@ -385,8 +388,9 @@ int main(int argc, char **argv)
             }
         }
         double freq = (crossings > 1) ? (double)(crossings - 1) * 48000.0 / (double)(last - first) : 0;
-        bool ok = peak > 1500 && (want_freq <= 0 || (freq > want_freq * 0.98 && freq < want_freq * 1.02));
-        printf("%s %s: %.1f Hz (esperado %.1f), pico %d, %zu muestras\n", ok ? "PASS" : "FAIL", rom, freq, want_freq, peak, n);
+        bool ok = peak > 1500 && other < 64 && (want_freq <= 0 || (freq > want_freq * 0.98 && freq < want_freq * 1.02));
+        printf("%s %s: lado %c, %.1f Hz (esperado %.1f), pico %d, otro lado %d, %zu muestras\n", ok ? "PASS" : "FAIL", rom,
+               side ? 'R' : 'L', freq, want_freq, peak, silent >= 0 ? other : -1, n);
         if (!ok) rc = 1;
         free(pcm);
     } else if (mode && !strcmp(mode, "hb")) {

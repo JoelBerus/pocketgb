@@ -178,7 +178,8 @@ static void power_off(gba_apu *a)
 static uint8_t wave_nibble(const gba_apu *a, unsigned pos)
 {
     /* 32 muestras por banco; con "dimensión 2" se recorren los dos bancos. */
-    unsigned bank = a->wave_bank_play;
+    /* GBATEK: el bit 6 elige el banco que suena (con efecto inmediato). */
+    unsigned bank = (a->regs[NR30] >> 6) & 1u;
     if (a->regs[NR30] & 0x20) bank = (bank + (pos >> 5)) & 1u;
     uint8_t byte = a->wave[bank][(pos & 31u) >> 1];
     return (pos & 1u) ? (byte & 0x0F) : (byte >> 4);
@@ -430,6 +431,7 @@ static void psg_write8(gba *g, uint8_t i, uint8_t v)
     case NR34: control_write(a, 2, v); break;
     case NR44: control_write(a, 3, v); break;
     case NR30:
+        a->wave_bank_play = (v >> 6) & 1u;
         a->ch[2].dac = (v & 0x80) != 0;
         if (!a->ch[2].dac) a->ch[2].enabled = false;
         break;

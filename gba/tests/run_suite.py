@@ -78,7 +78,10 @@ def main():
                 open(raw, "wb").write(rgba)
             cmd = [a.bin, fn, "--mode", "ref", "--ref", raw, "--max-frames", str(frames)]
         elif modo.startswith("audio:"):
-            cmd = [a.bin, fn, "--mode", "audio", "--freq", modo[6:], "--max-frames", str(frames)]
+            parts = modo.split(":")             # audio:HZ[:L|R|L!|R!]  (! = el otro lado en silencio)
+            cmd = [a.bin, fn, "--mode", "audio", "--freq", parts[1], "--max-frames", str(frames)]
+            if len(parts) > 2:
+                cmd += ["--side", parts[2]]
         elif modo == "hb-rtc":
             cmd = [a.bin, fn, "--mode", "hb", "--rtc", "--max-frames", str(frames)]
         else:

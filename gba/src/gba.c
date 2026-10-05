@@ -85,6 +85,9 @@ gba_result gba_load_rom(gba *g, const uint8_t *data, size_t len, const gba_optio
     g->rom_mask = mask - 1u;
     if (opts) g->opts = *opts;
     else gba_options_default(&g->opts);
+    /* Frecuencia de salida acotada (0 = sin audio): fuera de rango, la más cercana. */
+    if (g->opts.sample_rate && g->opts.sample_rate < 8000) g->opts.sample_rate = 8000;
+    if (g->opts.sample_rate > 192000) g->opts.sample_rate = 192000;
     sha256(rom, len, g->fingerprint);
     gba_cart_init(g);
     gba_power_on(g);

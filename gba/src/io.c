@@ -244,8 +244,8 @@ static void timer_write_cnt(gba *g, int i, uint16_t v)
 void gba_tick(gba *g, uint32_t n)
 {
     if (g->dma_pending && !g->dma_active) gba_dma_service(g);
-    g->apu.pending += n;
     timers_tick(g, n);
+    g->apu.pending += n;           /* después: un desborde sincroniza la APU hasta la instrucción anterior */
     g->line_cycles += n;
     for (;;) {
         if (!g->hblank && g->line_cycles >= GBA_HBLANK_CYCLE) {

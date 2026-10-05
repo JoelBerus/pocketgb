@@ -104,7 +104,9 @@ static void hle_register_ram_reset(gba *g, uint32_t flags)
     if (flags & 0x10) memset(g->oam, 0, sizeof g->oam);
     if (flags & 0x20) memset(&g->io[0x120], 0, 0x40);
     if (flags & 0x40) {
-        for (uint32_t off = 0x060; off < 0x0A8; off += 2) if (off != 0x084) gba_io_write16(g, off, 0);
+        for (uint32_t off = 0x060; off < 0x0A0; off += 2) if (off != 0x084 && off != 0x082) gba_io_write16(g, off, 0);
+        gba_io_write16(g, 0x082, 0x8800);       /* SOUNDCNT_H = 0 y vaciar las dos FIFO */
+        gba_io_write16(g, 0x082, 0);
         gba_io_write16(g, 0x084, 0);
     }
     if (flags & 0x80) {

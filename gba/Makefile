@@ -75,7 +75,7 @@ oracle: $(BUILD)/gbatest
 HB := tests/homebrew
 HB_CFLAGS := --target=armv4t-none-eabi -mthumb -O2 -ffreestanding -nostdlib -fno-builtin -Wall -Werror -Wno-unused-command-line-argument
 SCENES := 0 1 2 3 4 5 6 7 8 9 10 11 12 13
-HB_TESTS := eeprom eeprom8k rtc audio_psg audio_ds
+HB_TESTS := eeprom eeprom8k rtc audio_psg audio_ds audio_wave audio_noise audio_dsb
 homebrew: $(foreach s,$(SCENES),$(BUILD)/hb/ppu_scene_$(s).gba) $(foreach t,$(HB_TESTS),$(BUILD)/hb/$(t).gba)
 
 $(BUILD)/hb/eeprom8k.gba: $(HB)/eeprom.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
@@ -87,6 +87,21 @@ $(BUILD)/hb/audio_psg.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/r
 	clang $(HB_CFLAGS) -DPSG -c $< -o $(BUILD)/hb/audio_psg.o
 	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_psg.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_psg.elf
 	llvm-objcopy -O binary $(BUILD)/hb/audio_psg.elf $@
+
+$(BUILD)/hb/audio_wave.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DWAVE -c $< -o $(BUILD)/hb/audio_wave.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_wave.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_wave.elf
+	llvm-objcopy -O binary $(BUILD)/hb/audio_wave.elf $@
+
+$(BUILD)/hb/audio_noise.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DNOISE -c $< -o $(BUILD)/hb/audio_noise.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_noise.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_noise.elf
+	llvm-objcopy -O binary $(BUILD)/hb/audio_noise.elf $@
+
+$(BUILD)/hb/audio_dsb.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
+	clang $(HB_CFLAGS) -DDSB -c $< -o $(BUILD)/hb/audio_dsb.o
+	ld.lld -T $(HB)/link.ld $(BUILD)/hb/crt0.o $(BUILD)/hb/audio_dsb.o $(BUILD)/hb/support.o -o $(BUILD)/hb/audio_dsb.elf
+	llvm-objcopy -O binary $(BUILD)/hb/audio_dsb.elf $@
 
 $(BUILD)/hb/audio_ds.gba: $(HB)/audio.c $(HB)/gba.h $(HB)/link.ld $(BUILD)/hb/rt.o
 	clang $(HB_CFLAGS) -c $< -o $(BUILD)/hb/audio_ds.o
