@@ -50,8 +50,9 @@ object GamepadRouter {
         if (!hasFocus) sink?.onFocusLost()
     }
 
-    private fun isPadSource(source: Int) =
-        (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-            (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK ||
-            (source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD
+    /**
+     * Solo `SOURCE_GAMEPAD` o `SOURCE_JOYSTICK`. `SOURCE_DPAD` solo (teclados con flechas, mandos a distancia) no cuenta:
+     * un mando real con cruceta ya trae también `SOURCE_GAMEPAD` (A7-H1).
+     */
+    private fun isPadSource(source: Int) = isGamepadSources(source)
 }

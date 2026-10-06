@@ -98,7 +98,7 @@ fun GameplayHost(
     ImmersiveMode()
     val padConnection = rememberGamepadConnection(gamepad)
     val padConnected by padConnection.connected.collectAsStateWithLifecycle()
-    // El primer evento de mando también oculta los controles aunque el sistema no haya avisado (R5).
+    // La conexión viene de GamepadMonitor (dispositivos SOURCE_GAMEPAD); la primera tecla asignada de un mando real también oculta los controles aunque el sistema no haya avisado (R5).
     var padSeen by remember { mutableStateOf(false) }
     LaunchedEffect(padConnected) { if (!padConnected) padSeen = false }
     val speedRequests = remember(game) { MutableSharedFlow<Unit>(extraBufferCapacity = 4) }
@@ -116,6 +116,8 @@ fun GameplayHost(
         }
         val unregister = GamepadRouter.register(object : GamepadSink {
             override fun onKey(keyCode: Int, down: Boolean): Boolean {
+                // Solo lo asignado se consume; el resto (BUTTON_MODE sin asignar, THUMBL…) sigue al sistema (A7-H1).
+                if (!state.handles(keyCode)) return false
                 padSeen = true
                 apply(state.onKey(keyCode, down))
                 return true

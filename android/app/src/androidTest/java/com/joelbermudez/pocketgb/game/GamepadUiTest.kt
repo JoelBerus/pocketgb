@@ -18,6 +18,7 @@ import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.testing.waitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -45,15 +46,22 @@ class GamepadUiTest {
 
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
-    private fun key(code: Int, down: Boolean) {
+    private fun key(code: Int, down: Boolean, source: Int = InputDevice.SOURCE_GAMEPAD) {
         val now = SystemClock.uptimeMillis()
         instrumentation.sendKeySync(
-            KeyEvent(
-                now, now, if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code, 0, 0,
-                -1, 0, 0, InputDevice.SOURCE_GAMEPAD,
-            ),
+            KeyEvent(now, now, if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code, 0, 0, -1, 0, 0, source),
         )
         instrumentation.waitForIdleSync()
+    }
+
+    /** Entrega la tecla directamente a la actividad y devuelve si alguien la consumió. */
+    private fun dispatchKey(code: Int, source: Int): Boolean {
+        val now = SystemClock.uptimeMillis()
+        val event = KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, 0, -1, 0, 0, source)
+        var consumed = false
+        compose.runOnUiThread { consumed = compose.activity.dispatchKeyEvent(event) }
+        instrumentation.waitForIdleSync()
+        return consumed
     }
 
     private fun hat(x: Float, y: Float) {
@@ -174,5 +182,33 @@ class GamepadUiTest {
         pad.set(false)
         assertTrue(waitIdle { visibility() == ControlsVisibility.ALWAYS })
         assertTrue(waitUntil { mask(game) == 0 })
+    }
+
+    // ---- A7-H1: solo lo que el mando maneja se consume y oculta los controles
+
+    @Test
+    fun unassignedPadKeyIsNotConsumedAndKeepsTouchControls() {
+        harness.openGame()
+        assertFalse("BUTTON_THUMBL no está asignado: no se consume", dispatchKey(KeyEvent.KEYCODE_BUTTON_THUMBL, InputDevice.SOURCE_GAMEPAD))
+        compose.waitForIdle()
+        assertEquals(ControlsVisibility.ALWAYS, visibility())
+    }
+
+    @Test
+    fun keyboardArrowWithOnlyDpadSourceDoesNotHideTouchControls() {
+        val game = harness.openGame()
+        val source = InputDevice.SOURCE_KEYBOARD or InputDevice.SOURCE_DPAD
+        assertFalse("una flecha de teclado no se consume", dispatchKey(KeyEvent.KEYCODE_DPAD_RIGHT, source))
+        compose.waitForIdle()
+        assertEquals(ControlsVisibility.ALWAYS, visibility())
+        assertEquals(0, mask(game))
+    }
+
+    @Test
+    fun assignedPadKeyIsConsumedAndHidesTouchControls() {
+        harness.openGame()
+        assertTrue(dispatchKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD))
+        assertTrue(waitIdle { visibility() == ControlsVisibility.HIDDEN })
+        key(KeyEvent.KEYCODE_BUTTON_A, false)
     }
 }

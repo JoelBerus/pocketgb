@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.input
 
+import android.view.InputDevice
 import android.view.KeyEvent
 import com.joelbermudez.pocketgb.settings.ControllerMappingData
 import org.junit.Assert.assertEquals
@@ -151,6 +152,16 @@ class GamepadMappingTest {
         assertTrue(pad.handles(KeyEvent.KEYCODE_DPAD_LEFT))
         assertTrue(pad.handles(KeyEvent.KEYCODE_BUTTON_B))
         assertFalse(pad.handles(KeyEvent.KEYCODE_BACK))
+        assertFalse("sin asignar: no se consume (A7-H1)", pad.handles(KeyEvent.KEYCODE_BUTTON_THUMBL))
+        assertFalse(pad.handles(KeyEvent.KEYCODE_A))
+    }
+
+    @Test
+    fun onlyGamepadOrJoystickSourcesCountAsPads() {
+        assertTrue(isGamepadSources(InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD))
+        assertTrue(isGamepadSources(InputDevice.SOURCE_JOYSTICK))
+        assertFalse("teclado con flechas", isGamepadSources(InputDevice.SOURCE_KEYBOARD or InputDevice.SOURCE_DPAD))
+        assertFalse("mando a distancia", isGamepadSources(InputDevice.SOURCE_DPAD))
     }
 
     @Test
