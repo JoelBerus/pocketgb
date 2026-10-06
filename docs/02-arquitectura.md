@@ -2,12 +2,12 @@
 
 ## Capas
 ```
-┌──────────── iOS (Swift) ────────────┐   ┌──────── Android (Kotlin, futuro) ────────┐
+┌──────────── iOS (Swift) ────────────┐   ┌──────── Android (Kotlin) ────────────────┐
 │ SwiftUI: Biblioteca, Ajustes, Menú  │   │ Compose: Biblioteca, Ajustes, Menú        │
-│ GameView: MTKView + ControlsOverlay │   │ SurfaceView + ControlsOverlay             │
-│ EmulatorSession (hilo emulación)    │   │ EmulatorSession (hilo emulación)          │
+│ GameView: MTKView + ControlsOverlay │   │ SurfaceView + GameControlsView            │
+│ EmulatorSession (hilo emulación)    │   │ EmulatorSession + GameSession (nativo)    │
 │ AudioOutput (AVAudioSourceNode)     │   │ AudioOutput (AAudio)                      │
-│ SaveStore / Library (bookmarks)     │   │ SaveStore / Library (SAF tree URI)        │
+│ SaveStore / Library (bookmarks)     │   │ SaveCoordinator / Library (SAF tree URI)  │
 └──────────────┬──────────────────────┘   └──────────────┬────────────────────────────┘
                │ C ABI (pocketgb.h)                       │ JNI → C ABI
         ┌──────┴──────────────────────────────────────────┴──────┐
@@ -37,7 +37,7 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 
 **Una instancia no es thread-safe.** Todo se llama desde un único hilo de emulación. El resto de hilos se comunica con colas o atómicos.
 
-## Hilos y sincronía (iOS; Android es análogo)
+## Hilos y sincronía (iOS)
 - **Hilo de emulación** (`Thread` dedicado, QoS `.userInteractive`). Bucle:
   1. Leer la máscara de botones (atómico).
   2. Si el ring buffer de audio tiene menos de `target` (≈ 2 frames = 1 600 muestras a 48 kHz), `gb_run_frame` + `gb_audio_read` → ring buffer.
@@ -48,8 +48,21 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 - **Callback de audio** (tiempo real): solo lee del ring buffer SPSC lock-free. Sin locks, sin alloc, sin Swift runtime pesado. Si hay underrun, rellena con la última muestra (sin clic) y cuenta el underrun para diagnóstico.
 - **Render** (`MTKView`, `preferredFramesPerSecond = 60`): sube el último buffer listo a una `MTLTexture` de 160×144 y la dibuja con sampler `nearest`.
 
+## Hilos de Android
+| Hilo | Función |
+|---|---|
+| Principal | Compose, `SurfaceView`, entrada táctil y de mando, lifecycle |
+| Nativo (`native_session.c`) | Bucle de emulación con pacing por audio (fallback a reloj); es el único que toca `gb_*` |
+| AAudio (callback) | Solo lee del ring SPSC; sin locks ni alloc |
+| `pocketgb-saves` | Un hilo por `SaveCoordinator`: todo el I/O de partidas y estados, serializado |
+| `pocketgb-save-reaper` / `pocketgb-save-repair` | Cierre de sesiones con el hilo de guardado bloqueado y reparación de la partida tras un rollback fallido |
+| `pocketgb-orphans` / `pocketgb-rescue` | Registro de sesiones huérfanas y recuperación de partidas |
+| `pocketgb-artwork` | Captura y decodificación de portadas |
+
+**Propiedad del handle nativo.** `EmulatorSession` posee el handle; un candado impide usarlo durante `close` y solo se destruye una vez. `GameSession` posee la sesión y su `SaveCoordinator`; `FingerprintOwnership` garantiza un único dueño por huella de ROM, y `OrphanSessionRegistry` mantiene vivas las sesiones que no pudieron cerrarse hasta que terminan, para no liberar la huella (ni el handle) con un hilo de guardado aún vivo.
+
 ## Datos persistentes
-| Qué | Dónde (iOS) | Formato |
+| Qué | Dónde (iOS; en Android `filesDir/saves`, `states` y `artwork`, más el espejo SAF) | Formato |
 |---|---|---|
 | ROMs | Carpeta de iCloud Drive elegida por Joel (bookmark) | `.gb` / `.gbc` sin tocar |
 | Partida (SRAM) | `Application Support/Saves/<huella>.sav` + espejo `<rom>.sav` junto al ROM | Bytes crudos de la RAM del cartucho (compatible con otros emuladores) |

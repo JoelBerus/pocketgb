@@ -17,13 +17,15 @@ Una app iOS nativa, construida y firmada por Joel, que:
 - Cable link entre dispositivos. El **cable virtual local** (dos instancias en la misma app) queda en M9.
 - Shaders, filtros, rewind, trucos, RetroAchievements.
 - App Store o TestFlight (requieren cuenta de pago; ver [07](07-instalacion-iphone.md)).
-- Android en v1: solo se documenta ([05](05-android-spec.md)).
 
 ## Criterio de éxito final
 En el iPhone de Joel: Rojo y Amarillo arrancan, se juega 1 h con audio estable a 59,73 fps, se guarda en el PC del Centro Pokémon, se fuerza el cierre de la app, se reinstala desde Xcode y la partida sigue ahí. En horizontal, los botones son translúcidos y responden a multitoque (A+B, deslizar entre direcciones).
+
+## Android
+La app Android nativa (Kotlin + Compose + el mismo núcleo vía NDK) está implementada (A1–A7) y en cierre (A8): [05](05-android-spec.md), [07](07-instalacion-android.md). Mismos principios: sin red, nunca perder una partida. Quedan fuera de Android v1 la UI del cable virtual y la distribución en tienda.
 
 ## Plataformas
 | | Mínimo | UI | Núcleo |
 |---|---|---|---|
 | iOS | 17.0 | SwiftUI + UIKit (vista de controles) + Metal | `core/` como target C en Xcode |
-| Android (futuro) | API 26 | Kotlin + Jetpack Compose | `core/` vía NDK/CMake + JNI |
+| Android | API 26 | Kotlin + Jetpack Compose | `core/` vía NDK/CMake + JNI |

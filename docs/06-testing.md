@@ -70,7 +70,17 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - Licencia: SameBoy es Expat/MIT **salvo sus directorios `iOS/` y `HexFiend/`**. El oráculo solo usa `Core/`, y la app **nunca** lo enlaza.
 - Uso principal: depurar diferencias en Pokémon (A9 audio de Pikachu, glitches gráficos) con **volcados propios que nunca salen de la máquina local**.
 
-## Prueba de aceptación manual en iPhone (checklist por release)
+## Pruebas de Android
+Comandos en [android/README.md](../android/README.md). Última cifra registrada (A7, `docs/auditorias/A7-android-evidencia.md`): JVM 372/372, instrumentados 333/333, kill-test 50/50, lint sin errores.
+- **JVM** (`./gradlew :app:testDebugUnitTest`, `app/src/test`): lógica pura sin dispositivo (mapeo de mando, geometría de controles, `SaveResolution`, `SramFlushPolicy`, `SaveStore`, `AtomicFile`, columnas por fuente, esquemas de contraste, preferencias).
+- **Instrumentadas** (`./gradlew :app:connectedDebugAndroidTest`, `app/src/androidTest`): emulador o teléfono; núcleo nativo real, `SaveCoordinator`, SAF, interfaz Compose, ciclo de vida, TalkBack (nodos virtuales), tamaños táctiles, rotación sin pausa y `CatalogCoverageTest` (el catálogo cubre `tools/android-screens.txt`).
+- **`ProcessKillTest`**: mata un proceso hijo en mitad de escrituras de partida y verifica la recuperación.
+- **Kill-test** (`tools/android-save-kill-test.sh [N]`): N iteraciones de `save-stress` + cierre forzado + `save-verify` en el emulador (50/50 en A6 y A7). No combina rotación y cierre.
+- **Catálogo** (`tools/android-screenshots.sh`): capturas Debug en claro/oscuro, color dinámico, fuente grande, contraste, ventana ancha y recorte; revisadas a ojo, no se versionan ([diseno-android/VERIFICACION.md](diseno-android/VERIFICACION.md)).
+- **Emulador:** `Small_Phone_API_35`, sin ventana, animaciones a 0 y `hide_error_dialogs` (ver el README). Las instrumentadas y el catálogo no pueden ejecutarse a la vez en el mismo emulador.
+- **Limitaciones:** el emulador no prueba mando físico real, TalkBack con gestos, audio real ni rendimiento a 60 fps; el recorte y la tablet se simulan; el backup en la nube de Android no se ejercita. Esa parte es manual: [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md). Con poca RAM conviene `--no-daemon --max-workers=1` y no encadenar el emulador y Gradle en paralelo.
+
+## Prueba de aceptación manual en iPhone (checklist por release; la lista ampliada de Android e iPhone está en [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md))
 - [ ] Rojo y Amarillo arrancan y muestran la intro con música.
 - [ ] 10 min de juego sin cortes de audio (el contador de underruns en el menú de depuración es 0).
 - [ ] Guardar en el juego → forzar cierre desde el multitarea → reabrir: la partida está.
