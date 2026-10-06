@@ -121,3 +121,5 @@ customize-controls-gba-portrait  portrait  dark -screen customize-controls-gba-p
 customize-controls-gba-landscape landscape dark -screen customize-controls-gba-landscape -rom $FIXTURES/arm.gba
 game-settings-gba   portrait  dark  -screen game-settings-gba -demoLibrary standard
 game-settings-gba   portrait  light -screen game-settings-gba -demoLibrary standard
+game-settings-gba-ax5 portrait light -screen game-settings-gba-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+customize-controls-gba-portrait-ax5 portrait dark -screen customize-controls-gba-portrait-ax5 -rom $FIXTURES/arm.gba -contentSizeCategory accessibility5

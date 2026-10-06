@@ -140,6 +140,9 @@ struct ControlsEditorBar: View {
                 .padding(.vertical, PocketSpacing.xxs)
                 .background(PocketColor.controlScrim.opacity(0.55), in: Capsule())
         }
+        // Barra de herramientas sobre el lienzo del juego: con tipos accesibles se desbordaba
+        // (el texto se partía letra a letra), así que su texto se limita al mayor tamaño no accesible.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         // Horizontal: en el centro (sobre la imagen, entre D-pad y A/B). Vertical: arriba,
         // sobre la imagen, lejos de los controles.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: orientation == .landscape ? .center : .top)
