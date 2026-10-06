@@ -133,6 +133,14 @@ final class AppState {
     var debugOpensControlsEditor = false
 
     private(set) var session: EmulatorSession?
+    /// Cable link virtual (M9): con un cable abierto, `session` es la de `link` y no hay estados.
+    private(set) var link: LinkSession?
+    /// Juego desde cuyo detalle se pide conectar (sheet del selector de pareja).
+    var linkPartnerSource: RomEntry?
+    /// Cable pedido en el selector: se abre al cerrarse la sheet (`startPendingLink`).
+    var pendingLinkRequest: LinkRequest?
+    /// Alerta de continuación: algún juego tiene estado automático válido que el cable no carga.
+    var linkContinueRequest: LinkRequest?
     /// Pausa por ciclo de vida: se sale solo con "Continuar" (docs/04 §Ciclo de vida).
     private(set) var paused = false
     /// Abriendo un juego (lectura coordinada, quizá esperando a iCloud).
@@ -304,6 +312,145 @@ final class AppState {
         }
     }
 
+    // MARK: - Cable link (M9)
+
+    /// Al cerrarse la sheet del selector: abre el cable elegido (no antes, para no chocar con
+    /// las alertas ni con otras presentaciones).
+    func startPendingLink() {
+        guard let request = pendingLinkRequest else { return }
+        pendingLinkRequest = nil
+        openLink(request)
+    }
+
+    /// Abre dos juegos unidos por el cable virtual. Mismo patrón que `open(entry:)`: las dos
+    /// lecturas coordinadas y los espejos van fuera del hilo principal.
+    /// - Parameter confirmedContinuation: ya se avisó de que algún juego tiene continuación.
+    func openLink(_ request: LinkRequest, confirmedContinuation: Bool = false) {
+        let entries = [request.first, request.second]
+        for entry in entries {
+            guard entry.problem == nil else {
+                showAlert("No se puede abrir “\(entry.fileName)”", entry.problem?.message ?? "")
+                return
+            }
+            guard entry.console == .gameBoy else {
+                let refusal = LinkSession.Refusal.notGameBoy(title: libraryPrefs.displayTitle(entry))
+                showAlert(refusal.title, refusal.message)
+                return
+            }
+            guard entry.cloud == .current else {
+                library.download(entry)
+                return
+            }
+        }
+        guard !opening else { return }
+        if !confirmedContinuation && entries.contains(where: { canResume($0) }) {
+            linkContinueRequest = request
+            return
+        }
+        opening = true
+        let sources = entries.map { entry in
+            // Igual que `open(entry:)`: con otro ROM de la carpeta con el mismo nombre base el .sav
+            // junto al ROM no se usa como espejo (auditoría D2, H5).
+            let mirror = SaveMirror(romURL: entry.url)
+            let key = mirror.url.path.lowercased()
+            let shared = library.entries.contains {
+                $0.id != entry.id && SaveMirror(romURL: $0.url).url.path.lowercased() == key
+            }
+            return (entry: entry, mirror: shared ? nil : mirror, shared: shared)
+        }
+        let games = sources.map {
+            LinkSession.Game(fileName: $0.entry.fileName, title: libraryPrefs.displayTitle($0.entry), rom: Data(),
+                             console: .gameBoy, mirror: $0.mirror,
+                             emulation: gameplay.data.emulation(for: $0.entry.id))
+        }
+        let ids = entries.map(\.id)
+        let urls = entries.map(\.url)
+        let shared = sources.map(\.shared)
+        let metadata = entries.map { (id: $0.id, fileName: $0.fileName) }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var loaded = games
+            var failure: (index: Int, error: Error)?
+            for i in loaded.indices {
+                do {
+                    loaded[i].rom = try LibraryScanner.readROM(urls[i], limit: LibraryScanner.romLimit(for: .gameBoy))
+                    loaded[i].mirrorSnapshot = loaded[i].mirror?.snapshot() ?? .absent
+                } catch {
+                    failure = (i, error)
+                    break
+                }
+            }
+            let result: Result<[LinkSession.Game], Error> =
+                failure.map { .failure($0.error) } ?? .success(loaded)
+            let failedIndex = failure?.index ?? 0
+            await self?.finishOpeningLink(result: result, ids: ids, fileNames: metadata.map(\.fileName),
+                                          shared: shared, failedIndex: failedIndex)
+        }
+    }
+
+    private func finishOpeningLink(result: Result<[LinkSession.Game], Error>, ids: [String], fileNames: [String],
+                                   shared: [Bool], failedIndex: Int) {
+        opening = false
+        switch result {
+        case .success(let games):
+            startLink(games: games, entryIDs: ids, sharedMirrors: shared)
+        case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
+            showAlert("No se puede abrir “\(fileNames[failedIndex])”", RomEntry.Problem.tooLarge.message)
+        case .failure(let error):
+            showAlert("No se puede abrir “\(fileNames[failedIndex])”", error.localizedDescription)
+        }
+    }
+
+    /// Crea el cable y arranca la emulación (patrón de `start`).
+    private func startLink(games: [LinkSession.Game], entryIDs: [String?], sharedMirrors: [Bool] = [false, false]) {
+        closeGame()
+        do {
+            let savesDirectory = try SaveStore.defaultDirectory()
+            let link = try LinkSession(games: games, savesDirectory: savesDirectory) { [weak self] in
+                self?.enterBackground()
+            }
+            link.session.applyAudioPreferences(audioPreferences)
+            link.session.start()
+            for (i, info) in link.infos.enumerated() {
+                SavesIndex(directory: savesDirectory).record(fingerprint: info.fingerprint,
+                                                            title: link.titles[i], fileName: games[i].fileName)
+                if let id = entryIDs[i] {
+                    libraryPrefs.recordPlayed(id: id, fingerprint: info.fingerprint, at: Date())
+                }
+            }
+            self.link = link
+            session = link.session
+            gamepad.target = link.session.padButtons
+            gameSpeed = 1
+            stateStore = nil   // sin estados con el cable (M9 §1.6)
+            stateEntries = [:]
+            paused = false
+            var notices = link.notice.map { [$0] } ?? []
+            if let i = sharedMirrors.firstIndex(of: true), link.infos[i].hasBattery {
+                let warning = SaveLoadWarning.mirrorShared
+                notices.append(.init(title: warning.title, message: "“\(link.titles[i])”: \(warning.message)"))
+            }
+            if notices.count == 1 {
+                showAlert(notices[0].title, notices[0].message)
+            } else if notices.count > 1 {
+                showAlert("Avisos al conectar", notices.map(\.message).joined(separator: "\n\n"))
+            }
+        } catch let refusal as LinkSession.Refusal {
+            showAlert(refusal.title, refusal.message)
+        } catch let e as CoreError {
+            showAlert("No se puede conectar el cable", e.description)
+        } catch {
+            showAlert("No se puede conectar el cable", error.localizedDescription)
+        }
+    }
+
+    /// Cambia el juego activo del cable (botón del HUD o de la pausa).
+    func switchLinkSide() {
+        guard let link else { return }
+        link.switchSide()
+        if gameplay.data.haptics { UISelectionFeedbackGenerator().selectionChanged() }
+        showGameToast("Ahora juegas con \(link.activeTitle)")
+    }
+
     /// Vuelve a comprobar `gba_bios.bin` (al abrir Ajustes › Emulación).
     func refreshBIOSStatus() {
         let root = library.rootURL
@@ -420,11 +567,31 @@ final class AppState {
     #endif
 
     #if DEBUG
+    /// Solo pruebas en el simulador: abre dos ROMs unidos por el cable, sin biblioteca ni espejo.
+    func openLink(romURL: URL, linkURL: URL) {
+        var games: [LinkSession.Game] = []
+        for url in [romURL, linkURL] {
+            guard let data = try? Data(contentsOf: url), data.count <= LibraryScanner.romLimit(for: .gameBoy) else {
+                showAlert("No se puede abrir “\(url.lastPathComponent)”", "No se pudo leer el archivo.")
+                return
+            }
+            games.append(.init(fileName: url.lastPathComponent, title: nil, rom: data,
+                               console: Console(fileName: url.lastPathComponent)))
+        }
+        startLink(games: games, entryIDs: [nil, nil])
+    }
+    #endif
+
+    #if DEBUG
     /// Solo pruebas en el simulador: `-rom <ruta>` abre ese archivo al arrancar.
     func openFromLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-rom"), i + 1 < args.count else { return }
-        open(url: URL(fileURLWithPath: args[i + 1]))
+        if let link = DebugArguments.linkROM {
+            openLink(romURL: URL(fileURLWithPath: args[i + 1]), linkURL: URL(fileURLWithPath: link))
+        } else {
+            open(url: URL(fileURLWithPath: args[i + 1]))
+        }
         if debugOpensControlsEditor { editingControls = true }
         DebugScreenRouter.afterGameOpened(self)
         // `-paused`: abre el juego ya en pausa (captura del estado de pausa).
@@ -446,7 +613,15 @@ final class AppState {
 
     /// Guarda de forma síncrona y vuelve a la pantalla inicial.
     func closeGame() {
-        if let session {
+        if let session, let link {
+            // Cable link: pausa (flush de las dos SRAM) → stop (último flush y desconexión) →
+            // portadas de los dos juegos → continuaciones invalidadas. Sin estado automático.
+            if !paused && !editingControls { session.pause() }
+            session.stop()
+            saveArtwork(link)
+            for info in link.infos { didRestoreSave(fingerprint: info.fingerprint) }
+            self.link = nil
+        } else if let session {
             // Estado automático al salir (SPEC §12). La pausa hace antes el flush síncrono
             // de la SRAM; un fallo del estado nunca impide salir ni guardar la partida.
             if !paused && !editingControls { session.pause() }
@@ -510,6 +685,17 @@ final class AppState {
         let frame = session.frames.latest()
         let pixels = Array(UnsafeBufferPointer(start: frame, count: session.frames.size.pixelCount))
         artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
+    }
+
+    /// Cable link: la portada de cada juego es su último frame (el activo en `session.frames`, el otro
+    /// en `peerFrames`). Con el hilo de emulación ya parado.
+    private func saveArtwork(_ link: LinkSession) {
+        let frames = [link.session.frames, link.peerFrames]
+        let sides = [link.activeSide, link.activeSide.other]
+        for (buffers, side) in zip(frames, sides) {
+            let pixels = Array(UnsafeBufferPointer(start: buffers.latest(), count: buffers.size.pixelCount))
+            artwork.save(fingerprint: link.infos[side.rawValue].fingerprint, pixels: pixels)
+        }
     }
 
     /// `.inactive`/`.background`: pausar, flush síncrono de la SRAM y después el estado

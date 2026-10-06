@@ -113,7 +113,7 @@ private struct UnknownScreenView: View {
 
 #if DEBUG
 /// `-contentSizeCategory accessibility5`: Dynamic Type fijo para la captura `library-ax5`.
-private struct DebugDynamicType: ViewModifier {
+struct DebugDynamicType: ViewModifier {
     func body(content: Content) -> some View {
         if DebugArguments.value("-contentSizeCategory") == "accessibility5" {
             content.dynamicTypeSize(.accessibility5)

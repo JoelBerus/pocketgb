@@ -3,6 +3,8 @@ import XCTest
 /// Recorre `screens.txt`, abre la app en cada pantalla/estado y guarda una captura.
 /// - `SCREENSHOT_DIR` (vía `TEST_RUNNER_SCREENSHOT_DIR`): carpeta de salida de los PNG.
 /// - `FIXTURE_DIR` (vía `TEST_RUNNER_FIXTURE_DIR`): ROMs de prueba libres.
+/// - `SCREEN_FILTER` (vía `TEST_RUNNER_SCREEN_FILTER`): solo las capturas cuyo nombre lo contiene
+///   (para iterar; el CI no lo define).
 /// Las capturas también quedan como adjuntos en el .xcresult.
 final class ScreenshotTests: XCTestCase {
     @MainActor
@@ -10,6 +12,7 @@ final class ScreenshotTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         let outDir = env["SCREENSHOT_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let fixtures = env["FIXTURE_DIR"] ?? ""
+        let filter = env["SCREEN_FILTER"].flatMap { $0.isEmpty ? nil : $0 }
         let listURL = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "screens", withExtension: "txt"))
         let lines = try String(contentsOf: listURL, encoding: .utf8).split(separator: "\n")
 
@@ -19,6 +22,7 @@ final class ScreenshotTests: XCTestCase {
             let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
             guard parts.count >= 3 else { XCTFail("Línea inválida: \(line)"); continue }
             let (name, orientation, style) = (parts[0], parts[1], parts[2])
+            if let filter, !name.contains(filter) { continue }
             let args = parts.dropFirst(3).map { $0.replacingOccurrences(of: "$FIXTURES", with: fixtures) }
             // El nombre de la captura es el id de SPEC §9 que abre `-screen` (auditoría D1, H3).
             if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
