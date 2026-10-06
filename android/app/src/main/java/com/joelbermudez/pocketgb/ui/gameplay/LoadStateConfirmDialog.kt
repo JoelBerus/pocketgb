@@ -34,7 +34,17 @@ fun LoadStateConfirmDialog(
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.gameplay_load_title, slotLabel)) },
-        text = { Text(stringResource(if (isAuto) R.string.gameplay_load_body_auto else R.string.gameplay_load_body)) },
+        text = {
+            Text(
+                stringResource(
+                    when (slot) {
+                        StateSlot.AUTO -> R.string.gameplay_load_body_auto
+                        StateSlot.RESCUE -> R.string.state_load_body_rescue
+                        else -> R.string.gameplay_load_body
+                    },
+                ),
+            )
+        },
         confirmButton = {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!isAuto) {
