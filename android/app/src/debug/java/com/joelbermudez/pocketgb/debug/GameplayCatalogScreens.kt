@@ -8,7 +8,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Text
+import androidx.compose.ui.unit.dp
+import com.joelbermudez.pocketgb.game.GameNotice
 import com.joelbermudez.pocketgb.game.StatesUi
+import com.joelbermudez.pocketgb.ui.gameplay.SaveProblemBanner
+import com.joelbermudez.pocketgb.ui.gameplay.noticeText
 import com.joelbermudez.pocketgb.saves.FramePng
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.SaveStore
@@ -20,6 +30,7 @@ import com.joelbermudez.pocketgb.ui.gameplay.ExitSaveFailedDialog
 import com.joelbermudez.pocketgb.ui.gameplay.OpenErrorDialog
 import com.joelbermudez.pocketgb.ui.gameplay.PauseSheet
 import com.joelbermudez.pocketgb.ui.gameplay.SaveLoadWarningDialog
+import com.joelbermudez.pocketgb.ui.gameplay.StatesContent
 import com.joelbermudez.pocketgb.ui.gameplay.StatesSheet
 import com.joelbermudez.pocketgb.ui.settings.SavesSettingsContent
 import java.io.IOException
@@ -72,6 +83,49 @@ internal fun ExitSaveFailedCatalog(risk: Boolean) = GameBackdrop {
         onConfirmLeave = {},
         onCancelLeave = {},
     )
+}
+
+/** Juego con el indicador persistente de guardado pendiente y el aviso breve que lo acompaña. */
+@Composable
+internal fun SaveProblemCatalog() = GameBackdrop {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Box(Modifier.fillMaxSize()) {
+        SaveProblemBanner(
+            IOException("disco lleno"),
+            Modifier.align(androidx.compose.ui.Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp, start = 16.dp, end = 16.dp),
+        )
+        Snackbar(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)) {
+            Text(noticeText(context, GameNotice.SavePending))
+        }
+    }
+}
+
+/** Estados con la ranura de rescate (J6) y el aviso que se muestra al abrir el juego. */
+@Composable
+internal fun StatesRescueCatalog() = GameBackdrop {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val states = remember {
+        StatesUi(
+            entries = demoStates().entries + (StateSlot.RESCUE to StateStore.Entry(StateSlot.RESCUE, 1_759_710_000_000, demoThumbnail(3), false)),
+        )
+    }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(300)
+        scroll.scrollTo(scroll.maxValue) // la ranura de rescate es la última de la lista
+    }
+    Box(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.layout.Column(
+            Modifier.fillMaxSize().statusBarsPadding().padding(top = 72.dp)
+                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow)
+                .verticalScroll(scroll),
+        ) {
+            StatesContent(states, remember { SnackbarHostState() }, {}, {}, {}, {})
+        }
+        Snackbar(Modifier.align(androidx.compose.ui.Alignment.TopCenter).statusBarsPadding().padding(16.dp)) {
+            Text(noticeText(context, GameNotice.RescueStateExists))
+        }
+    }
 }
 
 @Composable

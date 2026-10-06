@@ -13,7 +13,12 @@ import kotlinx.serialization.json.Json
  */
 class SavesIndex(private val directory: File, private val ops: SaveFileOps = PosixSaveFileOps) {
     @Serializable
-    data class Record(val title: String, val fileName: String)
+    data class Record(
+        val title: String,
+        val fileName: String,
+        /** Tamaños de `.sav` válidos del cartucho (para validar una restauración); `null` en entradas antiguas. */
+        val validSizes: List<Int>? = null,
+    )
 
     class SavedGame(val fingerprint: String, val record: Record?)
 
@@ -28,9 +33,9 @@ class SavesIndex(private val directory: File, private val ops: SaveFileOps = Pos
     }
 
     /** Mejor esfuerzo: un fallo aquí nunca afecta a las partidas. */
-    fun record(fingerprint: String, title: String, fileName: String) {
+    fun record(fingerprint: String, title: String, fileName: String, validSizes: Set<Int>? = null) {
         val records = load().toMutableMap()
-        val new = Record(title, fileName)
+        val new = Record(title, fileName, validSizes?.sorted())
         if (records[fingerprint] == new) return
         records[fingerprint] = new
         try {
@@ -40,6 +45,11 @@ class SavesIndex(private val directory: File, private val ops: SaveFileOps = Pos
             ops.atomicReplace(tmp, file)
         } catch (_: IOException) {
         }
+    }
+
+    /** Borra el temporal huérfano del índice (`index.json.tmp`) de una escritura interrumpida. */
+    fun recoverOrphans() {
+        try { ops.delete(File(file.path + ".tmp")) } catch (_: IOException) {}
     }
 
     /** Huellas con partida local (`<huella>.sav`), con su título si se conoce, ordenadas por título. */

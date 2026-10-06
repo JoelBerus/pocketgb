@@ -70,6 +70,15 @@ class DebugCatalogTest {
         launch("saves-settings").use { compose.onNodeWithText("POKÉMON RED").assertIsDisplayed() }
         launch("library-detail-played").use { compose.onNodeWithText("Continuar").assertIsDisplayed() }
         launch("save-warning").use { compose.onNodeWithTag("warning-ok").assertIsDisplayed() }
+        launch("save-problem").use {
+            compose.onNodeWithTag("save-problem-indicator").assertIsDisplayed()
+            compose.onNodeWithText("Guardado pendiente", substring = true).assertExists()
+        }
+        launch("states-rescue").use {
+            compose.onNodeWithTag("state-row-rescue").assertExists()
+            compose.onNodeWithTag("state-load-rescue").assertExists()
+            compose.onNodeWithText("estado de rescate", substring = true).assertExists()
+        }
         launch("open-error").use { compose.onNodeWithTag("open-error-ok").assertIsDisplayed() }
     }
 

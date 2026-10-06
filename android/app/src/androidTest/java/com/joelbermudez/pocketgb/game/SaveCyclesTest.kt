@@ -29,6 +29,11 @@ class SaveCyclesTest {
     @Before fun setUp() { root = tempDir("cycles") }
     @After fun tearDown() { root.deleteRecursively() }
 
+    private companion object {
+        /** Plazos de 3 s agotados tolerados en 200 operaciones (pause + exit por ciclo): solo por presión del emulador. */
+        const val TIMEOUT_BUDGET = 5
+    }
+
     private fun saveThreads() = Thread.getAllStackTraces().keys.count { it.name == SaveCoordinator.THREAD_NAME && it.isAlive }
 
     private fun percentile(sorted: List<Long>, p: Double): Long = sorted[((sorted.size - 1) * p).toInt()]
@@ -42,7 +47,6 @@ class SaveCyclesTest {
         var previousDisk: ByteArray? = null
         var savedCycles = 0
         var timeouts = 0
-        var exitRetries = 0
         repeat(100) { cycle ->
             val opened = launcher.openBlocking(GameplayTestHost.entry) as OpenResult.Opened
             val game = opened.game
@@ -59,12 +63,19 @@ class SaveCyclesTest {
             val t0 = System.nanoTime()
             var result = game.pause()
             pauseNs += System.nanoTime() - t0
-            // Un plazo de 3 s agotado (anfitrión congelado) es el comportamiento previsto (J5): queda pendiente y
-            // el siguiente vaciado lo resuelve. Se cuenta, y solo falla si no se resuelve.
-            var attempts = 0
-            while (result == FlushResult.TimedOut && attempts++ < 20) {
+            // Sin reintentos que escondan fallos (auditoría A5, Opus H9): un Failed falla el ciclo siempre, y
+            // `pause()` NO se repite. ÚNICA excepción, acotada y medida: un `TimedOut` (el plazo de 3 s agotado por
+            // un emulador sin CPU/memoria, comportamiento previsto por J5). Se cuenta, se comprueba que el problema
+            // de guardado es visible y que el guardado en segundo plano acaba confirmándose por sí solo (no con una
+            // segunda pausa), y el presupuesto total de plazos agotados es [TIMEOUT_BUDGET].
+            if (result == FlushResult.TimedOut) {
                 timeouts++
-                result = game.pause()
+                assertTrue("ciclo $cycle: plazo agotado sin problema visible", game.saveProblem.value != null)
+                game.retryPendingSave()
+                assertTrue("ciclo $cycle: el guardado pendiente no se confirmó solo", waitUntil(90_000) {
+                    game.saveProblem.value == null && sav.exists() && sav.readBytes().contentEquals(game.session.copySram())
+                })
+                result = FlushResult.Unchanged
             }
             assertTrue("ciclo $cycle: $result", result == FlushResult.Saved || result == FlushResult.Unchanged)
             if (result == FlushResult.Saved) savedCycles++
@@ -72,13 +83,16 @@ class SaveCyclesTest {
             assertArrayEquals("ciclo $cycle: disco == núcleo", core, sav.readBytes())
 
             game.saveState(StateSlot.MANUAL1)
-            var exit = game.exit()
-            var exitAttempts = 0
-            while (exit is ExitResult.LocalSaveFailed && exitAttempts++ < 20) {
-                exitRetries++ // nunca se cierra limpio con un guardado pendiente: se reintenta, como el diálogo
-                exit = game.exit()
+            val exit = game.exit()
+            if (exit is ExitResult.LocalSaveFailed && exit.error is java.util.concurrent.TimeoutException) {
+                timeouts++ // mismo caso acotado: solo un plazo agotado, nunca un Failed
+                assertTrue("ciclo $cycle: el guardado pendiente de la salida no se confirmó", waitUntil(90_000) {
+                    game.saveProblem.value == null
+                })
+                assertEquals("ciclo $cycle", ExitResult.Clean, game.exit())
+            } else {
+                assertEquals("ciclo $cycle", ExitResult.Clean, exit)
             }
-            assertEquals("ciclo $cycle", ExitResult.Clean, exit)
             flushNs += game.flushDurationsNanos()
             previousDisk = sav.readBytes()
             assertArrayEquals("ciclo $cycle: tras salir, disco == núcleo", core, previousDisk)
@@ -92,13 +106,14 @@ class SaveCyclesTest {
             assertEquals("ciclo $cycle: hilos de guardado", baselineThreads, saveThreads())
         }
         assertTrue("al menos casi todos los ciclos escribieron", savedCycles >= 90)
+        assertTrue("más plazos agotados de los tolerados ($timeouts > $TIMEOUT_BUDGET)", timeouts <= TIMEOUT_BUDGET)
         flushNs.sort()
         pauseNs.sort()
-        val summary = "ciclos=100 guardados=$savedCycles plazos-agotados=$timeouts reintentos-de-salida=$exitRetries flushSync n=${flushNs.size} " +
+        val summary = "ciclos=100 guardados=$savedCycles plazos-agotados=$timeouts/$TIMEOUT_BUDGET flushSync n=${flushNs.size} " +
             "p50=${percentile(flushNs, 0.5) / 1_000_000.0} ms p99=${percentile(flushNs, 0.99) / 1_000_000.0} ms " +
             "max=${flushNs.last() / 1_000_000.0} ms | game.pause() p50=${percentile(pauseNs, 0.5) / 1_000_000.0} ms " +
             "p99=${percentile(pauseNs, 0.99) / 1_000_000.0} ms max=${pauseNs.last() / 1_000_000.0} ms"
         Log.i("A5Metrics", summary)
-        assertTrue("el vaciado síncrono cabe en el plazo de 3 s: $summary", flushNs.last() < 3_000_000_000L)
+        assertTrue("el vaciado síncrono cabe en el plazo de 3 s salvo los $timeouts plazos agotados contados: $summary", flushNs.count { it >= 3_000_000_000L } <= timeouts)
     }
 }

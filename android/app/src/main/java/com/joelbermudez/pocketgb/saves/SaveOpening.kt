@@ -33,6 +33,15 @@ object SaveOpening {
         Shared,
     }
 
+    /**
+     * Snapshot del espejo SOLO cuando el canal de esa huella ya no tiene una escritura en vuelo, esperando
+     * como mucho [waitMs]. Una escritura SAF a medias (`wt` trunca primero) dejaría un `.sav` vacío o parcial y,
+     * con RTC, un prefijo de tamaño válido se importaría sin reloj. Si el canal no se vacía a tiempo el espejo
+     * es [SaveMirror.Snapshot.Unavailable]: nunca se lee parcial. Se llama fuera del hilo principal.
+     */
+    fun snapshotWhenIdle(mirror: SaveMirror, channel: MirrorChannel, waitMs: Long = 5_000): SaveMirror.Snapshot =
+        if (channel.awaitIdle(waitMs)) mirror.snapshot() else SaveMirror.Snapshot.Unavailable
+
     fun prepare(
         store: SaveStore,
         mirror: SaveMirror?,
@@ -50,7 +59,15 @@ object SaveOpening {
         fun makeTarget(mirror: SaveMirror?, pending: Boolean = false) =
             SaveTarget(store, mirror, pending, mirrorWriter, registry)
 
-        val local = store.load()?.let { SaveResolution.Candidate(it, store.modificationDateMs) }
+        // Una local demasiado grande (> tope de lectura) o ilegible NO falla la apertura para siempre: cuenta como
+        // "tamaño incorrecto" (candidata vacía, nunca válida) y se aparta en streaming si hay que sustituirla.
+        val localState = store.inspectLocal()
+        val local = when (localState) {
+            SaveStore.LocalSave.Absent -> null
+            is SaveStore.LocalSave.Present -> SaveResolution.Candidate(localState.data, store.modificationDateMs)
+            is SaveStore.LocalSave.Oversize, is SaveStore.LocalSave.Unreadable ->
+                SaveResolution.Candidate(ByteArray(0), store.modificationDateMs)
+        }
         var usableMirror = writableMirror
         var mirrorCandidate: SaveResolution.Candidate? = null
         var unavailable = false
@@ -87,8 +104,16 @@ object SaveOpening {
                 }
                 Outcome(r.data, target, warning)
             }
-            is SaveResolution.WrongSize ->
-                Outcome(null, null, if (r.fromMirror) SaveLoadWarning.MirrorWrongSizeOnly else SaveLoadWarning.LocalWrongSize)
+            is SaveResolution.WrongSize -> Outcome(
+                null,
+                null,
+                when {
+                    r.fromMirror -> SaveLoadWarning.MirrorWrongSizeOnly
+                    localState is SaveStore.LocalSave.Unreadable ->
+                        SaveLoadWarning.Unreadable(localState.error.message ?: localState.error.javaClass.simpleName)
+                    else -> SaveLoadWarning.LocalWrongSize
+                },
+            )
         }
     }
 }

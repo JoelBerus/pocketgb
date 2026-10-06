@@ -20,11 +20,11 @@ class StateStoreTest {
     private fun store(root: File = File(tmp.root, "states")) = StateStore(root, "abc")
     private fun state(extra: Int = 100) = "PGBS".toByteArray() + ByteArray(extra) { 7 }
 
-    @Test fun fourManualSlotsAndOneAuto() {
+    @Test fun fourManualSlotsOneAutoAndOneRescue() {
         assertEquals(4, StateSlot.MANUAL.size)
         assertEquals(1, StateSlot.entries.count { it == StateSlot.AUTO })
-        assertEquals(5, StateSlot.entries.map { it.fileStem }.toSet().size)
-        assertEquals(listOf("auto", "slot1", "slot2", "slot3", "slot4"), StateSlot.entries.map { it.fileStem })
+        assertEquals(6, StateSlot.entries.map { it.fileStem }.toSet().size)
+        assertEquals(listOf("auto", "slot1", "slot2", "slot3", "slot4", "rescue"), StateSlot.entries.map { it.fileStem })
     }
 
     @Test fun saveListLoadAndDelete() {

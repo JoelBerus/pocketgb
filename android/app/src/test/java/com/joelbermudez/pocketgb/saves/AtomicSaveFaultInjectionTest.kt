@@ -55,12 +55,13 @@ class AtomicSaveFaultInjectionTest {
         assertTrue(log.contains("atomicReplace:$TEST_FP.sav.tmp->$TEST_FP.sav"))
         assertTrue(log.contains("syncDirectory:saves"))
         if (prior >= 1) {
-            assertTrue(log.contains("writeSynced:$TEST_FP.1.tmp"))
-            assertTrue(log.contains("atomicReplace:$TEST_FP.1.tmp->$TEST_FP.1.sav"))
+            // El temporal del backup es único (`<huella>.1.<rand8>.tmp`): nunca lo comparten dos escritores.
+            assertTrue(log.any { Regex("writeSynced:$TEST_FP\\.1\\.[0-9a-f]{8}\\.tmp").matches(it) })
+            assertTrue(log.any { Regex("atomicReplace:$TEST_FP\\.1\\.[0-9a-f]{8}\\.tmp->$TEST_FP\\.1\\.sav").matches(it) })
             if (prior == 1) assertTrue(log.contains("mkdirs:backups")) // la primera rotación crea la carpeta
         }
         if (prior >= 6) { // cinco backups llenos: cuatro renames de rotación
-            assertEquals(4, log.count { it.startsWith("atomicReplace:") && it.contains(".sav->") && !it.contains(".sav.tmp") && !it.contains(".1.tmp") })
+            assertEquals(4, log.count { it.startsWith("atomicReplace:") && it.contains(".sav->") && !it.contains(".sav.tmp") && !it.contains(".tmp->") })
         }
         // 2) Fallo en cada una de las operaciones.
         for (k in 1..total) {

@@ -7,7 +7,9 @@ import com.joelbermudez.pocketgb.library.ContentResolverRomSource
 import com.joelbermudez.pocketgb.library.LibraryFolderStore
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
+import com.joelbermudez.pocketgb.saves.isSafe
 import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
@@ -53,6 +55,23 @@ sealed interface GameNotice {
     data class StateDeleted(val slot: StateSlot) : GameNotice
     data class StateFailed(val error: StateError) : GameNotice
     data object SavePending : GameNotice
+
+    /** Hay un estado de rescate de una salida anterior con fallo de guardado (J6). */
+    data object RescueStateExists : GameNotice
+}
+
+/**
+ * Hilo de rescate de la app: sobrevive al ViewModel. Cuando el ViewModel se destruye con una partida abierta, el
+ * cierre (que puede bloquear con un disco que falla) corre aquí, nunca en el hilo principal.
+ */
+internal object GameRescue {
+    private val executor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "pocketgb-rescue").apply { isDaemon = true }
+    }
+
+    fun run(task: () -> Unit) {
+        executor.execute(task)
+    }
 }
 
 data class StatesUi(
@@ -71,6 +90,10 @@ class GameplayViewModel(
     private val now: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    /** Dónde corre el rescate al destruirse el ViewModel (fuera del hilo principal). Se inyecta en los tests. */
+    private val rescue: (() -> Unit) -> Unit = GameRescue::run,
+    private val rescueAttempts: Int = 10,
+    private val rescueRetryDelayMs: Long = 1_000,
 ) : ViewModel(scope) {
     private val _game = MutableStateFlow<GameSession?>(null)
     val game: StateFlow<GameSession?> = _game.asStateFlow()
@@ -130,12 +153,18 @@ class GameplayViewModel(
                         _game.value = game
                         watch(game)
                         result.warning?.let { _dialog.value = GameDialog.LoadWarning(it) }
+                        if (game.hasRescueState) _notices.tryEmit(GameNotice.RescueStateExists)
                     }
                 }
             } finally {
                 _opening.value = false
             }
         }
+    }
+
+    /** Solo pruebas: toma una partida ya abierta (sin pasar por el lanzador). */
+    internal fun adopt(game: GameSession) {
+        _game.value = game
     }
 
     private fun watch(game: GameSession) {
@@ -177,15 +206,24 @@ class GameplayViewModel(
         game.resume()
     }
 
-    /** `ON_PAUSE`, `ON_STOP` o pérdida del foco de audio: pausa y vacía; el menú se abre al ver la pausa. */
+    /**
+     * `ON_PAUSE`, `ON_STOP` o pérdida del foco de audio: pausa y vacía; el menú se abre al ver la pausa. Nunca
+     * lanza: una sesión que ya estaba en pausa (o que se cierra a la vez) no puede tumbar la app.
+     */
     fun onBackground() {
         val game = _game.value ?: return
-        val result = game.pause()
-        if (!result.isSafeForUi()) _notices.tryEmit(GameNotice.SavePending)
+        val result = try {
+            game.pause()
+        } catch (_: Exception) {
+            return
+        }
+        onFlushResult(result)
     }
 
-    private fun com.joelbermudez.pocketgb.saves.FlushResult.isSafeForUi() =
-        this == com.joelbermudez.pocketgb.saves.FlushResult.Saved || this == com.joelbermudez.pocketgb.saves.FlushResult.Unchanged
+    /** Resultado de un vaciado hecho por el ciclo de vida: si no quedó a salvo, aviso (el indicador persiste solo). */
+    fun onFlushResult(result: FlushResult) {
+        if (!result.isSafe) _notices.tryEmit(GameNotice.SavePending)
+    }
 
     // ------------------------------------------------------------------ estados
 
@@ -302,9 +340,27 @@ class GameplayViewModel(
         continueGame()
     }
 
+    /**
+     * El ViewModel se destruye (la actividad termina de verdad, no una rotación). No hay UI que confirme un riesgo,
+     * así que NUNCA se fuerza una salida: se pausa lo que corre (rápido, aquí) y el vaciado, el estado AUTO y el
+     * cierre pasan a [rescue], fuera del hilo principal, bajo el mismo Mutex que las operaciones (espera a la que
+     * esté en curso). Si el guardado no se confirma tras reintentar, la sesión queda abierta con su guardado
+     * pendiente y un estado de rescate escrito ([GameSession.rescueExit]).
+     */
     override fun onCleared() {
-        _game.value?.closeBestEffort()
+        val game = _game.value ?: return
         _game.value = null
+        if (game.isClosed) return
+        try {
+            if (game.session.state.value == com.joelbermudez.pocketgb.emulator.SessionState.Running) game.session.pause()
+        } catch (_: Exception) {
+        }
+        rescue {
+            try {
+                kotlinx.coroutines.runBlocking { operations.withLock { game.rescueExit(rescueAttempts, rescueRetryDelayMs) } }
+            } catch (_: Throwable) {
+            }
+        }
     }
 }
 

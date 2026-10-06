@@ -8,8 +8,11 @@
 # 1500 ms al azar, mata el proceso
 # (alternando `am force-stop` y `run-as <pkg> kill -9 <pid>`) y lanza `save-verify`, que tras `recoverOrphans`
 # comprueba: `.sav` presente y completo, ningún `.tmp`, ≤5 backups y que el núcleo acepta la partida y el
-# estado. `save-verify` escribe `SAVE-VERIFY OK|FAIL <detalle>` en logcat. El script falla si hay un solo FAIL,
-# si alguna verificación no llegó a ejecutarse o si ninguna se ejecutó.
+# estado. `save-verify` exige además que el contador de 16 bits del `.sav` no retroceda respecto al último
+# confirmado por un vaciado correcto (`SAVE-STRESS CONFIRMED n`) y que tras la recuperación no quede ningún
+# temporal de estados (`stateTmpOrphans=0`). Escribe `SAVE-VERIFY OK|FAIL <detalle>` en logcat. El script falla
+# si hay un solo FAIL, si alguna verificación no llegó a ejecutarse, si ninguna se ejecutó, si algún stress no
+# llegó a escribir antes de matarlo (ready < iteraciones) o si algún detalle trae `stateTmpOrphans` distinto de 0.
 set -euo pipefail
 
 iterations="${1:-50}"
@@ -91,7 +94,7 @@ for ((i = 1; i <= iterations; i++)); do
   start_mode save-verify
   if result="$(wait_log 'SAVE-VERIFY (OK|FAIL)' 40)"; then
     detail="${result#*SAVE-VERIFY }"
-    if [[ "$detail" == OK* ]]; then
+    if [[ "$detail" == OK* && "$detail" == *"stateTmpOrphans=0"* ]]; then
       ok=$((ok + 1))
     else
       fail=$((fail + 1))
@@ -106,8 +109,8 @@ done
 
 echo
 echo "Resultado: OK=$ok FAIL=$fail sin-verificación=$missing de $iterations (stress listo antes de matar: $ready)"
-if (( fail > 0 || missing > 0 || ok == 0 )); then
-  echo "FALLO de la prueba de cierre forzado" >&2
+if (( fail > 0 || missing > 0 || ok == 0 || ready < iterations )); then
+  echo "FALLO de la prueba de cierre forzado (fallos=$fail, sin-verificación=$missing, stress listo=$ready/$iterations)" >&2
   exit 1
 fi
 echo "OK: $ok/$iterations iteraciones con el invariante intacto"

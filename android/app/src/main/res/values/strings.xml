@@ -14,6 +14,8 @@
     <string name="states_title">Estados guardados</string>
     <string name="states_back">Volver al menú de pausa</string>
     <string name="state_auto">Automático</string>
+    <string name="state_rescue">Rescate</string>
+    <string name="state_load_body_rescue">Es el estado que se guardó al salir sin poder guardar la partida. Antes se guardará el estado actual en Automático.</string>
     <string name="state_slot">Ranura %1$d</string>
     <string name="state_slot_empty">Vacía</string>
     <string name="state_corrupt">Dañado</string>
@@ -41,6 +43,8 @@
     <string name="notice_mirror_trouble">No se pudo actualizar el .sav junto al juego. La partida está a salvo en el teléfono y se reintentará.</string>
     <string name="notice_mirror_external">El .sav junto al juego cambió por fuera: se conservó una copia y ya no se actualizará en esta partida.</string>
     <string name="notice_mirror_name">La carpeta cambió el nombre del .sav: ya no se copia junto al juego.</string>
+    <string name="notice_rescue_state">Hay un estado de rescate de una salida en la que no se pudo guardar la partida (Estados › Rescate).</string>
+    <string name="save_problem_indicator">Guardado pendiente: tu progreso aún no está a salvo en el teléfono</string>
     <string name="notice_save_pending">El guardado en el teléfono quedó pendiente; se reintentará.</string>
 
     <!-- Fallo de guardado local al salir -->
@@ -51,7 +55,7 @@
     <string name="exit_failed_keep">Seguir jugando</string>
     <string name="exit_failed_leave">Salir sin guardar…</string>
     <string name="exit_risk_title">¿Salir sin guardar?</string>
-    <string name="exit_risk_body">Se perderá el progreso desde el último guardado. Antes se intentará dejar un estado Automático como rescate.</string>
+    <string name="exit_risk_body">Se perderá el progreso desde el último guardado. Antes se intentará dejar un estado de rescate (Estados › Rescate); nunca pisa a los demás.</string>
     <string name="exit_risk_confirm">Salir sin guardar</string>
 
     <!-- Avisos al abrir (SaveLoadWarning) -->

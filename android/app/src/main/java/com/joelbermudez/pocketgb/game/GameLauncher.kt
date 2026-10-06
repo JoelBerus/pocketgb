@@ -124,6 +124,8 @@ class GameLauncher(
     private val newSession: () -> EmulatorSession = ::EmulatorSession,
     private val policy: () -> SramFlushPolicy = { SramFlushPolicy({ System.nanoTime() / 1_000_000 }) },
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Cuánto espera la apertura a que se vacíe el canal del espejo de esta huella antes de darlo por no disponible. */
+    private val mirrorIdleWaitMs: Long = 5_000,
 ) {
     suspend fun open(entry: RomEntry): OpenResult = withContext(io + NonCancellable) { openBlocking(entry) }
 
@@ -167,12 +169,18 @@ class GameLauncher(
             val fingerprint = info.fingerprintHex
             val states = StateStore(statesRoot, fingerprint, fileOps)
             val events = GameEvents()
+            // Temporales huérfanos de una escritura interrumpida (estados, capturas, índice): mejor esfuerzo.
+            try { states.recoverOrphans() } catch (_: IOException) {}
+            val index = SavesIndex(savesDirectory, fileOps)
+            index.recoverOrphans()
 
             var target: com.joelbermudez.pocketgb.saves.SaveTarget? = null
             var warning: SaveLoadWarning? = null
             var baseline: ByteArray? = null
+            var validSizesForIndex: Set<Int>? = null
             if (info.hasBattery && session.sramSaveSize > 0) {
                 val validSizes = SaveSizes.validSizes(info.hasRtc, info.sramBytes)
+                validSizesForIndex = validSizes
                 val store = SaveStore(savesDirectory, fingerprint, fileOps)
                 val outcome = try {
                     store.recoverOrphans(validSizes)
@@ -180,7 +188,9 @@ class GameLauncher(
                     val snapshot = if (setup == null || setup.mode == SaveOpening.MirrorMode.Shared) {
                         SaveMirror.Snapshot.Absent
                     } else {
-                        setup.mirror.snapshot()
+                        // Solo con el canal de esta huella en reposo (una escritura SAF en vuelo dejaría un .sav
+                        // parcial); si no se vacía a tiempo, el espejo es Unavailable: nunca se lee parcial.
+                        SaveOpening.snapshotWhenIdle(setup.mirror, registry.channel(fingerprint), mirrorIdleWaitMs)
                     }
                     SaveOpening.prepare(
                         store = store,
@@ -211,7 +221,7 @@ class GameLauncher(
                 // Lo que hay ahora en el núcleo es lo que está en disco: punto de partida de los guardados.
                 if (target != null) baseline = session.copySram()
             }
-            SavesIndex(savesDirectory, fileOps).record(fingerprint, info.title, entry.fileName)
+            index.record(fingerprint, info.title, entry.fileName, validSizesForIndex)
 
             val game = GameSession(
                 session = session,

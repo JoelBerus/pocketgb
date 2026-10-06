@@ -41,6 +41,15 @@ class FaultInjectingFileOps(
         delegate.writeSynced(file, data)
     }
 
+    override fun copySynced(from: File, to: File) {
+        val op = "copySynced:${to.name}"
+        if (tick(op)) {
+            to.writeBytes(from.readBytes().let { it.copyOf(it.size / 2) })
+            throw Injected(op)
+        }
+        delegate.copySynced(from, to)
+    }
+
     override fun atomicReplace(from: File, to: File) {
         val op = "atomicReplace:${from.name}->${to.name}"
         if (tick(op)) throw Injected(op)

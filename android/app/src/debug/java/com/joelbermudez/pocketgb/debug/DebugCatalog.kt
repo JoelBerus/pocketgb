@@ -148,6 +148,8 @@ internal fun DebugCatalog(intent: DebugIntent) {
                 "states-dialog" -> StatesSheetCatalog(landscape = true)
                 "exit-save-failed" -> ExitSaveFailedCatalog(risk = false)
                 "exit-risk" -> ExitSaveFailedCatalog(risk = true)
+                "save-problem" -> SaveProblemCatalog()
+                "states-rescue" -> StatesRescueCatalog()
                 "save-warning" -> SaveWarningCatalog()
                 "open-error" -> OpenErrorCatalog()
                 "saves-settings" -> SavesSettingsCatalog()

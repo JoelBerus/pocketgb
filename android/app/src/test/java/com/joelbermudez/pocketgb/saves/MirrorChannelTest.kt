@@ -197,3 +197,73 @@ class MirrorChannelTest {
         assertTrue(mirror.writes.isEmpty())
     }
 }
+
+/** A5 auditoría Opus H3/H12 sobre el canal del espejo. */
+class MirrorChannelRobustnessTest {
+    @get:Rule val tmp = TemporaryFolder()
+
+    private fun store() = SaveStore(File(tmp.newFolder(), "saves"), java.util.UUID.randomUUID().toString().take(12))
+
+    private class BoomError : Error("fallo fatal del proveedor")
+
+    @Test fun anErrorInTheWriterDoesNotLeaveTheChannelBusyForever() {
+        val registry = MirrorChannelRegistry()
+        val s = store()
+        val channel = registry.channel(s.fingerprint)
+        val seen = CountDownLatch(1)
+        val oldHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> if (e is BoomError) seen.countDown() }
+        try {
+            channel.enqueue(MirrorChannel.Request(bytes(1, 1, 1, 1), s) { throw BoomError() })
+            assertTrue(seen.await(3, TimeUnit.SECONDS))
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(oldHandler)
+        }
+        val idle = CountDownLatch(1)
+        channel.whenIdle { idle.countDown() }
+        assertTrue("whenIdle se libera tras un Error (workerRunning ya no es true)", idle.await(3, TimeUnit.SECONDS))
+        assertTrue("el contenido queda pendiente de reintento", channel.pending)
+        // Y el canal sigue siendo utilizable.
+        val ok = CountDownLatch(1)
+        channel.enqueue(MirrorChannel.Request(bytes(2, 2, 2, 2), s) { ok.countDown(); 5L })
+        assertTrue(ok.await(3, TimeUnit.SECONDS))
+        assertTrue(waitUntil { !channel.pending })
+    }
+
+    @Test fun awaitIdleTimesOutWhileAWriteIsInFlightAndCleansItsCallback() {
+        val registry = MirrorChannelRegistry()
+        val s = store()
+        val mirror = FakeSaveMirror()
+        val blocked = BlockingWriter(mirror)
+        val channel = registry.channel(s.fingerprint)
+        channel.enqueue(MirrorChannel.Request(bytes(3, 3, 3, 3), s, blocked::write))
+        assertTrue(blocked.started.tryAcquireWithin())
+        assertFalse(channel.awaitIdle(100))
+        assertEquals("no deja un callback muerto", 0, channel.idleCallbackCount)
+        blocked.unblock.release()
+        assertTrue(channel.awaitIdle(3_000))
+    }
+
+    @Test fun openingNeverReadsAMirrorWithAWriteInFlight() {
+        val registry = MirrorChannelRegistry()
+        val s = store()
+        val mirror = FakeSaveMirror(SaveMirror.Snapshot.Read(bytes(0, 0, 0, 0), 1L))
+        val blocked = BlockingWriter(mirror)
+        val channel = registry.channel(s.fingerprint)
+        channel.enqueue(MirrorChannel.Request(bytes(7, 7, 7, 7), s, blocked::write))
+        assertTrue(blocked.started.tryAcquireWithin())
+
+        var snapshotCalls = 0
+        val spy = object : SaveMirror by mirror {
+            override fun snapshot(): SaveMirror.Snapshot { snapshotCalls++; return mirror.snapshot() }
+        }
+        assertEquals(SaveMirror.Snapshot.Unavailable, SaveOpening.snapshotWhenIdle(spy, channel, waitMs = 100))
+        assertEquals("nunca se lee un espejo con escritura en vuelo", 0, snapshotCalls)
+
+        blocked.unblock.release()
+        assertTrue(blocked.finished.tryAcquireWithin())
+        val snapshot = SaveOpening.snapshotWhenIdle(spy, channel, waitMs = 3_000)
+        assertTrue(snapshot is SaveMirror.Snapshot.Read)
+        assertEquals(1, snapshotCalls)
+    }
+}

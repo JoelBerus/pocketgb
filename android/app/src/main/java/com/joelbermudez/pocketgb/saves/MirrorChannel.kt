@@ -77,6 +77,27 @@ class MirrorChannel internal constructor(fingerprint: String) {
         callback()
     }
 
+    /**
+     * Espera (como mucho [timeoutMs]) a que no haya escritura en vuelo. `false` si sigue ocupado. El callback
+     * que deja registrado se descarta al vencer el plazo (no se acumulan esperas muertas).
+     */
+    fun awaitIdle(timeoutMs: Long): Boolean {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val callback: () -> Unit = { latch.countDown() }
+        whenIdle(callback)
+        val idle = try {
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!idle) synchronized(lock) { idleCallbacks.remove(callback) }
+        return idle
+    }
+
+    /** Callbacks en espera (tests y diagnóstico). */
+    internal val idleCallbackCount: Int get() = synchronized(lock) { idleCallbacks.size }
+
     private fun runAll(callbacks: List<() -> Unit>) {
         for (cb in callbacks) try { cb() } catch (_: Exception) {}
     }
@@ -110,19 +131,26 @@ class MirrorChannel internal constructor(fingerprint: String) {
                 val observedDate = request.writer(request.data)
                 request.store.recordSuccessfulMirror(request.data, observedDate)
                 synchronized(lock) { inFlight = null }
-            } catch (_: Exception) {
+            } catch (error: Throwable) {
+                // Throwable, no solo Exception: un Error (p. ej. OutOfMemoryError o un fallo del proveedor) no puede
+                // dejar `workerRunning = true` para siempre ni a nadie esperando en `whenIdle`.
                 val callbacks: List<() -> Unit>
+                // Con un Error el hilo no sigue: se libera el canal aunque haya una petición más nueva (queda
+                // pendiente y la siguiente `enqueue`/`retryIfNeeded` arrancará otro trabajador).
+                val fatal = error !is Exception
                 val newerRequestExists: Boolean
                 synchronized(lock) {
                     inFlight = null
                     newerRequestExists = pendingRequest != null
                     if (!newerRequestExists) pendingRequest = request
                     needsRetry = true
-                    if (!newerRequestExists) workerRunning = false
-                    callbacks = if (newerRequestExists) emptyList() else idleCallbacks.toList()
-                    if (!newerRequestExists) idleCallbacks.clear()
+                    val stop = fatal || !newerRequestExists
+                    if (stop) workerRunning = false
+                    callbacks = if (stop) idleCallbacks.toList() else emptyList()
+                    if (stop) idleCallbacks.clear()
                 }
                 runAll(callbacks)
+                if (fatal) throw error
                 if (!newerRequestExists) return
             }
         }

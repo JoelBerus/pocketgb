@@ -31,10 +31,20 @@ interface SaveFileOps {
     /** Escribe todo, trunca y sincroniza el descriptor (fsync) antes de cerrar. */
     fun writeSynced(file: File, data: ByteArray)
 
+    /**
+     * Copia [from] en [to] en streaming (sin cargarlo entero: puede ser un archivo enorme que no es una
+     * partida), trunca y sincroniza el descriptor. Lanza [IOException] ante cualquier error.
+     */
+    fun copySynced(from: File, to: File)
+
     /** Renombra de forma atómica; si [to] existe, lo reemplaza. */
     fun atomicReplace(from: File, to: File)
 
-    /** Sincroniza el directorio para que el renombrado sobreviva a un corte. Puede ser un no-op si el sistema no lo permite. */
+    /**
+     * Sincroniza el directorio para que el renombrado sobreviva a un corte. Es un no-op SOLO si el sistema de
+     * archivos documenta que no lo soporta (EINVAL, EROFS, ENOTSUP…); cualquier otro fallo de E/S se propaga
+     * como [IOException] (fallo de durabilidad: el llamador no debe dar el guardado por confirmado).
+     */
     fun syncDirectory(dir: File)
 
     /** Borra si existe; idempotente. */
@@ -96,18 +106,22 @@ object PosixSaveFileOps : SaveFileOps {
         Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
-    /**
-     * Mejor esfuerzo: abrir un directorio de solo lectura y hacer `force` es lo que hace `fsync(dirfd)` en
-     * Linux/Android, pero algunos sistemas de archivos (o Windows en los tests) lo rechazan con `EINVAL`/
-     * `EACCES`. El renombrado ya es atómico frente a la muerte del proceso; el fsync del directorio solo
-     * añade durabilidad ante un corte de corriente, así que su fallo se tolera.
-     */
-    override fun syncDirectory(dir: File) {
-        try {
-            FileChannel.open(dir.toPath(), StandardOpenOption.READ).use { it.force(true) }
-        } catch (_: IOException) {
+    override fun copySynced(from: File, to: File) {
+        from.inputStream().use { input ->
+            FileOutputStream(to).use { out ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    out.write(buffer, 0, n)
+                }
+                out.flush()
+                out.fd.sync()
+            }
         }
     }
+
+    override fun syncDirectory(dir: File) = DirectorySync.sync(dir)
 
     override fun delete(file: File) {
         Files.deleteIfExists(file.toPath())
@@ -118,4 +132,52 @@ object PosixSaveFileOps : SaveFileOps {
     }
 
     override fun list(dir: File): List<String> = dir.list()?.toList() ?: emptyList()
+}
+
+/**
+ * `fsync(dirfd)` de un directorio. Abrir un directorio de solo lectura y hacer `force` es lo que hace
+ * `fsync(dirfd)` en Linux/Android. Algunos sistemas de archivos (o Windows en los tests) lo rechazan como no
+ * soportado: eso se tolera y se registra a nivel informativo. Un error de E/S de verdad (EIO, ENOSPC, el
+ * directorio no existe…) NO se oculta: se registra como aviso y se propaga, porque el renombrado ya se hizo
+ * pero su durabilidad ante un corte de corriente no está garantizada (A5 auditoría, Codex H5).
+ */
+internal object DirectorySync {
+    private val log = java.util.logging.Logger.getLogger("PocketGB.Saves")
+
+    /** Fragmentos (en minúscula) de los mensajes del errno que significan "no se puede sincronizar un directorio". */
+    private val UNSUPPORTED = listOf(
+        "invalid argument", // EINVAL
+        "read-only file system", // EROFS
+        "operation not supported", // ENOTSUP / EOPNOTSUPP
+        "not supported",
+        "function not implemented", // ENOSYS
+        "is a directory", // EISDIR (abrir para escribir en Windows)
+        "permission denied", // EACCES al abrir un directorio en algunos sistemas
+    )
+
+    fun sync(dir: File, force: (File) -> Unit = ::forceDirectory) {
+        try {
+            force(dir)
+        } catch (error: UnsupportedOperationException) {
+            log.info("fsync de directorio no soportado en ${dir.path}: ${error.message}")
+        } catch (error: java.nio.file.AccessDeniedException) {
+            log.info("fsync de directorio sin acceso en ${dir.path}: ${error.message}")
+        } catch (error: IOException) {
+            if (isUnsupported(error)) {
+                log.info("fsync de directorio no soportado en ${dir.path}: ${error.message}")
+            } else {
+                log.warning("fsync de directorio FALLÓ en ${dir.path}: $error")
+                throw error
+            }
+        }
+    }
+
+    fun isUnsupported(error: IOException): Boolean {
+        val message = error.message?.lowercase() ?: return false
+        return UNSUPPORTED.any { it in message }
+    }
+
+    private fun forceDirectory(dir: File) {
+        FileChannel.open(dir.toPath(), StandardOpenOption.READ).use { it.force(true) }
+    }
 }

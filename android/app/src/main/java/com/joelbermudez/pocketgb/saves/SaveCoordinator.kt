@@ -24,6 +24,23 @@ sealed interface FlushResult {
     data object TimedOut : FlushResult
 }
 
+/** Resultado de cerrar el guardado de una sesión (I3). */
+sealed interface CloseResult {
+    /** El hilo de guardado terminó de verdad: ya no puede tocar nada y el handle nativo se puede liberar. */
+    data object Closed : CloseResult
+
+    /**
+     * El hilo de guardado SIGUE VIVO (una operación de archivo o del proveedor que no responde): el handle
+     * nativo NO debe liberarse todavía. Quien posee el handle espera a [SaveCoordinator.awaitThreadExit].
+     */
+    class SaveThreadStuck(val threadName: String) : CloseResult {
+        override fun toString() = "SaveThreadStuck($threadName)"
+    }
+}
+
+/** El guardado ya está cerrado: ninguna copia nativa nueva puede empezar (I3). */
+class SaveClosedException : IllegalStateException("El guardado ya está cerrado")
+
 val FlushResult.isSafe: Boolean get() = this == FlushResult.Saved || this == FlushResult.Unchanged
 
 /**
@@ -45,6 +62,10 @@ val FlushResult.isSafe: Boolean get() = this == FlushResult.Saved || this == Flu
  *   para las operaciones de estados.
  * @param autoTick con `false` no se programa el ciclo (los tests lo disparan con [tickNow]).
  * @param onStatus `null` = la copia local está al día; con error, hay un guardado pendiente o fallido.
+ * - **I3 (cierre)**: [shutdown] marca la cola cerrada BAJO la misma compuerta que protege cada copia nativa
+ *   (`source.copy()`/`dirtySeq()`): tras volver, ninguna copia nueva puede empezar aunque el hilo siga ocupado
+ *   en un archivo que no responde. Solo si el hilo terminó de verdad devuelve [CloseResult.Closed].
+ *
  * @param onMirrorTrouble el espejo quedó pendiente tras un intento (aviso no bloqueante, una vez por racha).
  */
 class SaveCoordinator(
@@ -74,13 +95,35 @@ class SaveCoordinator(
     private var lastDirtySeq: Long = if (target != null) safeDirtySeq() else 0L
     @Volatile private var forceFlush = false
     @Volatile private var mirrorTroubleReported = false
+    /** Compuerta de las llamadas a [SramSource]: `closed` solo cambia (y se lee antes de copiar) bajo ella. */
+    private val sourceGate = Any()
     @Volatile private var closed = false
+    @Volatile private var persistenceEnabled = true
+    private val mirrorWatchPending = java.util.concurrent.atomic.AtomicBoolean(false)
     private var failed: Throwable? = null
 
     /** Duraciones (ns) de los [flushSync] medidos, para p50/p99 (solo se leen tras la sesión o en tests). */
     private val durations = ArrayList<Long>()
 
-    val hasTarget: Boolean get() = target != null
+    /** Hay destino y la persistencia no se ha desactivado ([disablePersistence]). */
+    val hasTarget: Boolean get() = target != null && persistenceEnabled
+
+    /** El hilo de guardado existe y sigue vivo. */
+    val isSaveThreadAlive: Boolean get() = saveThread?.isAlive == true
+
+    private fun <T> withSource(block: () -> T): T = synchronized(sourceGate) {
+        if (closed) throw SaveClosedException()
+        block()
+    }
+
+    /**
+     * Deja de persistir para siempre (el núcleo está en un estado que no se debe escribir: el rollback de un
+     * estado cargado falló). No toca el disco; el error queda como problema de guardado visible.
+     */
+    fun disablePersistence(reason: Throwable) {
+        persistenceEnabled = false
+        setFailed(reason)
+    }
 
     /** Último error de guardado sin resolver, o `null`. Seguro desde cualquier hilo. */
     val pendingError: Throwable? get() = synchronized(lock) { failed }
@@ -105,8 +148,8 @@ class SaveCoordinator(
     }
 
     private fun tick() {
-        if (closed || target == null) return
-        val seq = try { source.dirtySeq() } catch (_: Throwable) { return }
+        if (closed || target == null || !persistenceEnabled) return
+        val seq = try { withSource { source.dirtySeq() } } catch (_: Throwable) { return }
         val dirty = seq != lastDirtySeq || forceFlush
         lastDirtySeq = seq
         forceFlush = false
@@ -132,8 +175,8 @@ class SaveCoordinator(
      * Se encola en el MISMO hilo que las escrituras periódicas (I4). Un plazo agotado no cancela nada: la
      * tarea sigue en cola y el siguiente vaciado la sucede; el llamador debe tratarlo como "pendiente".
      */
-    fun flushSync(): FlushResult {
-        if (target == null) return FlushResult.Unchanged
+    fun flushSync(timeoutMs: Long = flushTimeoutMs): FlushResult {
+        if (target == null || !persistenceEnabled) return FlushResult.Unchanged
         val started = System.nanoTime()
         val future = try {
             executor.submit(Callable { flushLocked(sync = true) })
@@ -141,7 +184,7 @@ class SaveCoordinator(
             return FlushResult.Failed(IllegalStateException("El guardado ya está cerrado"))
         }
         val result = try {
-            future.get(flushTimeoutMs, TimeUnit.MILLISECONDS)
+            future.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             FlushResult.TimedOut
         } catch (error: ExecutionException) {
@@ -152,7 +195,7 @@ class SaveCoordinator(
         }
         synchronized(durations) { durations += System.nanoTime() - started }
         if (result == FlushResult.TimedOut) {
-            setFailed(TimeoutException("El guardado no terminó en ${flushTimeoutMs / 1000} s"))
+            setFailed(TimeoutException("El guardado no terminó en ${timeoutMs / 1000.0} s"))
         }
         return result
     }
@@ -160,8 +203,11 @@ class SaveCoordinator(
     /** Siempre en el hilo de guardado. */
     private fun flushLocked(sync: Boolean): FlushResult {
         val target = target ?: return FlushResult.Unchanged
+        if (!persistenceEnabled) return FlushResult.Unchanged
         val data = try {
-            source.copy()
+            withSource { source.copy() }
+        } catch (error: SaveClosedException) {
+            return FlushResult.Failed(error) // cerrado: no es un fallo de disco y no se reintenta
         } catch (error: Throwable) {
             policy.onFlushFailed()
             setFailed(error)
@@ -177,6 +223,7 @@ class SaveCoordinator(
             }
             return FlushResult.Unchanged
         }
+        if (!persistenceEnabled) return FlushResult.Unchanged
         synchronized(lock) { lastQueued = data }
         return try {
             target.persistLocal(data)
@@ -194,7 +241,10 @@ class SaveCoordinator(
     }
 
     private fun watchMirror(target: SaveTarget) {
+        // Una sola espera a la vez: con un proveedor bloqueado no se apilan callbacks en el canal (A5 Opus H12).
+        if (!mirrorWatchPending.compareAndSet(false, true)) return
         target.whenMirrorIdle {
+            mirrorWatchPending.set(false)
             val pending = target.mirrorPending
             if (pending && !mirrorTroubleReported) {
                 mirrorTroubleReported = true
@@ -245,19 +295,43 @@ class SaveCoordinator(
     }
 
     /**
-     * Para el hilo y lo une (I3): debe llamarse ANTES de liberar el handle nativo. Las tareas en cola que
-     * no han empezado se descartan; la que está en vuelo termina.
+     * Cierra el guardado (I3) y comprueba que el hilo terminó de verdad. Orden: 1) marca cerrado bajo la
+     * compuerta (ninguna copia nativa nueva); 2) deja que lo ya encolado termine (las tareas nuevas ven el
+     * cierre y salen sin tocar nada); 3) pasado [graceMs], interrumpe; 4) une el hilo [killWaitMs]. Si sigue
+     * vivo devuelve [CloseResult.SaveThreadStuck] y quien posee el handle NO debe liberarlo.
      */
-    override fun close() {
-        closed = true
+    fun shutdown(graceMs: Long = 10_000, killWaitMs: Long = 5_000): CloseResult {
+        synchronized(sourceGate) { closed = true }
         executor.shutdown()
-        if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        if (!awaitQuietly(graceMs)) {
             executor.shutdownNow()
-            executor.awaitTermination(5, TimeUnit.SECONDS)
+            awaitQuietly(killWaitMs)
         }
         // `awaitTermination` vuelve cuando el ejecutor termina, no cuando el hilo ha salido de `run()`: se une
-        // el propio hilo para que, al volver, ya no exista y nadie pueda tocar el handle (I3).
-        saveThread?.takeIf { it !== Thread.currentThread() }?.join(5_000)
+        // el propio hilo para que, al volver, ya no exista.
+        val thread = saveThread?.takeIf { it !== Thread.currentThread() }
+        if (thread != null) {
+            try { thread.join(killWaitMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
+        return if (thread != null && thread.isAlive) CloseResult.SaveThreadStuck(thread.name) else CloseResult.Closed
+    }
+
+    private fun awaitQuietly(ms: Long): Boolean = try {
+        executor.awaitTermination(ms, TimeUnit.MILLISECONDS)
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+        false
+    }
+
+    /** Bloquea hasta que el hilo de guardado haya salido (sin plazo): lo usa el "reaper" que libera el handle tarde. */
+    fun awaitThreadExit() {
+        val thread = saveThread?.takeIf { it !== Thread.currentThread() } ?: return
+        thread.join()
+    }
+
+    /** Equivale a [shutdown] con los plazos por defecto; el resultado se ignora (usar [shutdown] para saberlo). */
+    override fun close() {
+        shutdown()
     }
 
     companion object {

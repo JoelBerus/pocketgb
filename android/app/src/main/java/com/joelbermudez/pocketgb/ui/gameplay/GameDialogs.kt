@@ -73,6 +73,7 @@ fun noticeText(context: Context, notice: GameNotice): String {
         com.joelbermudez.pocketgb.saves.StateSlot.MANUAL2 -> context.getString(R.string.state_slot, 2)
         com.joelbermudez.pocketgb.saves.StateSlot.MANUAL3 -> context.getString(R.string.state_slot, 3)
         com.joelbermudez.pocketgb.saves.StateSlot.MANUAL4 -> context.getString(R.string.state_slot, 4)
+        com.joelbermudez.pocketgb.saves.StateSlot.RESCUE -> context.getString(R.string.state_rescue)
     }
     return when (notice) {
         GameNotice.MirrorTrouble -> context.getString(R.string.notice_mirror_trouble)
@@ -84,6 +85,7 @@ fun noticeText(context: Context, notice: GameNotice): String {
         is GameNotice.StateDeleted -> context.getString(R.string.notice_state_deleted, slot(notice.slot))
         is GameNotice.StateFailed -> context.getString(R.string.notice_state_failed, causeText(notice.error))
         GameNotice.SavePending -> context.getString(R.string.notice_save_pending)
+        GameNotice.RescueStateExists -> context.getString(R.string.notice_rescue_state)
     }
 }
 
@@ -228,6 +230,27 @@ fun GameDialogs(viewModel: GameplayViewModel) {
             onRequestLeave = viewModel::requestRiskyExit,
             onConfirmLeave = { viewModel.exit(force = true) },
             onCancelLeave = viewModel::cancelRiskyExit,
+        )
+    }
+}
+
+/**
+ * Indicador PERSISTENTE de guardado pendiente o fallido: se ve mientras exista el problema (a diferencia de un
+ * snackbar, que desaparece). Se oculta solo cuando el guardado local vuelve a estar confirmado.
+ */
+@Composable
+fun SaveProblemBanner(problem: Throwable?, modifier: Modifier = Modifier) {
+    if (problem == null) return
+    androidx.compose.material3.Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = modifier.testTag("save-problem-indicator"),
+    ) {
+        Text(
+            stringResource(R.string.save_problem_indicator),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }

@@ -197,7 +197,7 @@ class OpenFromLibraryTest {
             assertTrue(File(root, "states/${game.fingerprint}/${StateSlot.AUTO.fileStem}.state").exists())
             assertNotNull(File(root, "saves/${game.fingerprint}.sav").takeIf { it.exists() })
         } finally {
-            vm.game.value?.closeBestEffort()
+            vm.game.value?.close()
         }
     }
 }

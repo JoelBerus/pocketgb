@@ -144,7 +144,7 @@ class SaveOpeningTest {
         s.saveFile.writeBytes(bytes(7, 7, 7))
         val mirror = FakeSaveMirror(read(version(4), old))
         SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
-        val quarantine = rec.log.indexOfFirst { it.startsWith("writeSynced:e6.wrong-size-") }
+        val quarantine = rec.log.indexOfFirst { it.startsWith("copySynced:e6.wrong-size-") }
         val install = rec.log.indexOf("atomicReplace:e6.sav.tmp->e6.sav")
         assertTrue("sin cuarentena ni instalación: ${rec.log}", quarantine >= 0 && install >= 0)
         assertTrue("la cuarentena va antes de instalar", quarantine < install)

@@ -60,6 +60,7 @@ fun slotLabel(slot: StateSlot): String = when (slot) {
     StateSlot.MANUAL2 -> stringResource(R.string.state_slot, 2)
     StateSlot.MANUAL3 -> stringResource(R.string.state_slot, 3)
     StateSlot.MANUAL4 -> stringResource(R.string.state_slot, 4)
+    StateSlot.RESCUE -> stringResource(R.string.state_rescue)
 }
 
 private sealed interface PendingAction {
@@ -113,6 +114,8 @@ fun StatesContent(
         }
         StateSlot.entries.forEach { slot ->
             val entry = ui.entries[slot]
+            // La ranura de rescate solo aparece si existe (J6): no se puede guardar manualmente en ella.
+            if (slot == StateSlot.RESCUE && entry == null) return@forEach
             val label = slotLabel(slot)
             val tag = slot.fileStem
             Card(
@@ -143,7 +146,7 @@ fun StatesContent(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        if (slot != StateSlot.AUTO) {
+                        if (slot != StateSlot.AUTO && slot != StateSlot.RESCUE) {
                             FilledTonalButton(
                                 onClick = { if (entry == null) onSave(slot) else pending = PendingAction.Replace(slot) },
                                 enabled = !ui.busy,
@@ -186,7 +189,11 @@ fun StatesContent(
             is PendingAction.Load -> Quad(
                 stringResource(R.string.state_load_title, label),
                 stringResource(
-                    if (action.slot == StateSlot.AUTO) R.string.state_load_body_auto else R.string.state_load_body,
+                    when (action.slot) {
+                        StateSlot.AUTO -> R.string.state_load_body_auto
+                        StateSlot.RESCUE -> R.string.state_load_body_rescue
+                        else -> R.string.state_load_body
+                    },
                 ),
                 stringResource(R.string.state_load_confirm),
                 true,

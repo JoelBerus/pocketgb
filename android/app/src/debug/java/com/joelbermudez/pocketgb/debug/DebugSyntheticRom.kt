@@ -65,6 +65,26 @@ internal object DebugSyntheticRom {
         ),
     )
 
+    /**
+     * Como [sramCounter] pero con un contador de 16 bits (little endian en `$A000`/`$A001`): da la vuelta cada 65 536
+     * frames (~18 min), no cada 4 s, así que la prueba de cierre forzado puede exigir que el contador del disco no
+     * retroceda respecto al último confirmado.
+     */
+    fun sramCounter16(): ByteArray = batteryProgram(
+        "A5 CONTADOR16",
+        byteArrayOf(
+            0x3E, 0x01, 0xE0.toByte(), 0xFF.toByte(), 0xFB.toByte(), // IE = VBlank; EI
+            0x76, 0x00,                                              // $0155: HALT; NOP
+            0x3E, 0x0A, 0xEA.toByte(), 0x00, 0x00,                   // habilitar RAM
+            0x21, 0x00, 0xA0.toByte(),                               // LD HL,$A000
+            0x34,                                                    // INC (HL): byte bajo
+            0x20, 0x02,                                              // JR NZ,+2 (sin acarreo)
+            0x23, 0x34,                                              // INC HL; INC (HL): byte alto
+            0x3E, 0x00, 0xEA.toByte(), 0x00, 0x00,                   // deshabilitar RAM: "el juego guardó"
+            0x18, 0xEA.toByte(),                                     // JR $0155
+        ),
+    )
+
     /** MBC1 + RAM + batería que escribe [value] en `$A000`, cierra la RAM y se queda en bucle. */
     fun sramWriter(value: Int): ByteArray = batteryProgram(
         "A5 ESCRITOR",

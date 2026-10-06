@@ -183,7 +183,7 @@ class GameSessionTest {
     }
 
     @Test
-    fun forcedExitAfterLocalFailureTriesAnAutoStateAsRescue() {
+    fun forcedExitAfterLocalFailureWritesARescueStateInItsOwnSlot() {
         val ops = FailableOps()
         openGame(SyntheticRom.sramCounter(), ops = ops).use { g ->
             val game = g.game
@@ -193,7 +193,8 @@ class GameSessionTest {
             assertTrue(game.exit() is ExitResult.LocalSaveFailed)
             assertEquals(ExitResult.Clean, game.exit(force = true))
             assertTrue(game.isClosed)
-            assertTrue("el estado AUTO de rescate se escribió", g.states.entries().containsKey(StateSlot.AUTO))
+            assertTrue("el estado de rescate se escribió en SU ranura", g.states.entries().containsKey(StateSlot.RESCUE))
+            assertFalse("y no pisó el AUTO", g.states.entries().containsKey(StateSlot.AUTO))
         }
     }
 

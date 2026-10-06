@@ -13,10 +13,12 @@ import com.joelbermudez.pocketgb.game.GameLauncher
 import com.joelbermudez.pocketgb.game.OpenResult
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomSource
+import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.SaveSizes
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.SramFlushPolicy
 import com.joelbermudez.pocketgb.saves.StateSlot
+import com.joelbermudez.pocketgb.saves.StateStore
 import java.io.File
 import java.util.Random
 import kotlinx.coroutines.Dispatchers
@@ -34,13 +36,13 @@ import kotlinx.coroutines.withContext
 object SaveStress {
     const val TAG = "PocketGBStress"
 
-    private val rom: ByteArray = DebugSyntheticRom.sramCounter()
+    private val rom: ByteArray = DebugSyntheticRom.sramCounter16()
 
     private val entry = RomEntry(
-        id = "Contador.gb",
-        uri = "content://stress/Contador.gb",
-        fileName = "Contador.gb",
-        title = "A5 CONTADOR",
+        id = "Contador16.gb",
+        uri = "content://stress/Contador16.gb",
+        fileName = "Contador16.gb",
+        title = "A5 CONTADOR16",
         isColor = false,
         sizeBytes = rom.size.toLong(),
         headerChecksumOk = true,
@@ -49,6 +51,12 @@ object SaveStress {
 
     private fun savesDir(context: Context) = File(context.filesDir, "saves")
     private fun statesRoot(context: Context) = File(context.filesDir, "states")
+
+    /** Último contador confirmado en disco por un vaciado correcto (lo escribe `stress`, lo exige `verify`). */
+    private fun confirmedFile(context: Context) = File(context.filesDir, "stress-confirmed.txt")
+
+    /** Contador de 16 bits (little endian) de un `.sav` de la ROM [rom]. */
+    private fun counterOf(data: ByteArray): Int = (data[0].toInt() and 0xFF) or ((data[1].toInt() and 0xFF) shl 8)
 
     private fun fingerprint(): String = CoreBridge().use { it.loadRom(rom).fingerprintHex }
 
@@ -59,7 +67,10 @@ object SaveStress {
         val valid = SaveSizes.validSizes(hasRtc = false, sramBytes = 8192)
         store.recoverOrphans(valid)
         // Una partida previa de verdad: el invariante ".sav presente" vale desde antes de la primera escritura.
-        if (store.load() == null) store.save(ByteArray(8192))
+        if (store.load() == null) {
+            store.save(ByteArray(8192))
+            confirmedFile(context).delete() // partida nueva: el contador vuelve a 0 y lo anotado ya no vale
+        }
 
         val launcher = GameLauncher(
             roms = RomSource { _, _ -> rom },
@@ -79,7 +90,15 @@ object SaveStress {
         var rounds = 0
         while (true) {
             Thread.sleep(30L + random.nextInt(220))
-            game.pause()
+            val flush = game.pause()
+            if (flush == FlushResult.Saved || flush == FlushResult.Unchanged) {
+                // Confirmado: el disco ya tiene al menos este contador. Se anota ANTES de seguir y se registra en logcat.
+                store.load()?.let { disk ->
+                    val counter = counterOf(disk)
+                    confirmedFile(context).writeText(counter.toString())
+                    Log.i(TAG, "SAVE-STRESS CONFIRMED $counter")
+                }
+            }
             if (rounds % 3 == 0) runCatching { game.saveState(StateSlot.MANUAL1) }
             Thread.sleep(random.nextInt(15).toLong())
             game.resume()
@@ -100,7 +119,16 @@ object SaveStress {
         val data = if (sav.exists()) sav.readBytes() else null
         if (data == null) problems += ".sav ausente"
         else if (data.size !in valid) problems += ".sav de ${data.size} bytes (válidos: $valid)"
-        else if (data.drop(1).any { it != 0.toByte() }) problems += ".sav con contenido incoherente (la ROM contador solo escribe \$A000)"
+        else if (data.drop(2).any { it != 0.toByte() }) problems += ".sav con contenido incoherente (la ROM contador solo escribe \$A000-\$A001)"
+        else {
+            // El contador del disco no puede estar por detrás del último confirmado (aritmética módulo 65 536 con
+            // ventana de media vuelta: tolera la vuelta, rechaza el retroceso).
+            val confirmed = confirmedFile(context).takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
+            if (confirmed != null) {
+                val ahead = (counterOf(data) - confirmed) and 0xFFFF
+                if (ahead >= 0x8000) problems += "el contador del disco (${counterOf(data)}) retrocedió respecto al último confirmado ($confirmed)"
+            }
+        }
 
         val tmps = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".tmp") }.map { it.name }.toList()
         if (tmps.isNotEmpty()) problems += "temporales tras recoverOrphans: $tmps"
@@ -129,8 +157,14 @@ object SaveStress {
                 problems += "el núcleo rechazó la partida o el estado: ${error.message}"
             }
         }
-        val stateTmps = File(statesRoot(context), fp).walkTopDown().count { it.name.endsWith(".tmp") }
-        val summary = "bytes=${data?.size} backups=${backups.size} stateTmpOrphans=$stateTmps"
+        val statesDir = File(statesRoot(context), fp)
+        val stateTmpFound = statesDir.walkTopDown().count { it.name.endsWith(".tmp") }
+        // Como al abrir un juego: la recuperación borra los temporales huérfanos de los estados; después no puede quedar ninguno.
+        StateStore(statesRoot(context), fp).recoverOrphans()
+        val stateTmps = statesDir.walkTopDown().count { it.name.endsWith(".tmp") }
+        val confirmedNow = confirmedFile(context).takeIf { it.exists() }?.readText()?.trim()
+        val summary = "bytes=${data?.size} counter=${data?.takeIf { it.size >= 2 }?.let(::counterOf)} confirmed=$confirmedNow " +
+            "backups=${backups.size} stateTmpFound=$stateTmpFound stateTmpOrphans=$stateTmps"
         return if (problems.isEmpty()) "OK $summary" else "FAIL ${problems.joinToString("; ")} | $summary"
     }
 }

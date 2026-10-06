@@ -4,6 +4,8 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -32,7 +34,25 @@ class SaveStore(
         const val MAX_SAVE_BYTES = 1 shl 20
 
         private const val HISTORY_LIMIT = 8
+
+        /** Temporal único de un backup: `<huella>.1.<rand8>.tmp` (nunca dos escritores sobre el mismo archivo). */
+        fun uniqueBackupTmpName(backupName: String): String =
+            backupName.removeSuffix(".sav") + "." + UUID.randomUUID().toString().replace("-", "").take(8) + ".tmp"
     }
+
+    /** La partida local tal y como está en disco (sin lanzar): la apertura decide qué hacer con cada caso. */
+    sealed interface LocalSave {
+        data object Absent : LocalSave
+        class Present(val data: ByteArray) : LocalSave
+        /** Supera el tope de lectura: no es una partida (tamaño incorrecto), no se lee entero. */
+        data class Oversize(val bytes: Long) : LocalSave
+        /** Existe, cabe en el tope, pero no se pudo leer. */
+        class Unreadable(val error: IOException) : LocalSave
+    }
+
+    /** El backup pedido tiene un tamaño que el cartucho no acepta: restaurarlo sería restaurar basura. */
+    class InvalidBackupException(val size: Int, val validSizes: Set<Int>) :
+        IOException("La copia de $size bytes no es una partida válida de este juego (válidos: $validSizes)")
 
     val saveFile: File get() = File(directory, "$fingerprint.sav")
     val mirrorHistoryFile: File get() = File(directory, "$fingerprint.mirror-history.json")
@@ -41,11 +61,32 @@ class SaveStore(
 
     private val writer = AtomicSaveWriter(ops, KEEP_BACKUPS)
 
+    /** Lock por partida compartido entre instancias y hilos (ver [SaveLocks]). Toda mutación pasa por él. */
+    private val lock: ReentrantLock = SaveLocks.forSave(directory, fingerprint)
+
+    /** Tamaños válidos conocidos (los fija [recoverOrphans] al abrir o [restore]): no se rota a `.1` lo que no lo es. */
+    @Volatile private var knownSizes: Set<Int>? = null
+
     /** `null` si no hay partida. Lanza [IOException] si no se puede leer o supera el tope (no se toca). */
     fun load(): ByteArray? = if (ops.exists(saveFile)) ops.readBytes(saveFile, MAX_SAVE_BYTES) else null
 
+    /** Como [load] pero sin lanzar: distingue ausente, presente, demasiado grande e ilegible. */
+    fun inspectLocal(): LocalSave {
+        if (!ops.exists(saveFile)) return LocalSave.Absent
+        val length = ops.length(saveFile)
+        if (length > MAX_SAVE_BYTES) return LocalSave.Oversize(length)
+        return try {
+            LocalSave.Present(ops.readBytes(saveFile, MAX_SAVE_BYTES))
+        } catch (error: IOException) {
+            LocalSave.Unreadable(error)
+        }
+    }
+
     /** @return `false` si era idéntica a la actual y no se escribió. */
-    fun save(data: ByteArray): Boolean = writer.write(data, saveFile, ::backupFile)
+    fun save(data: ByteArray): Boolean = lock.withLock {
+        val sizes = knownSizes
+        writer.write(data, saveFile, ::backupFile, backupCurrent = { sizes == null || it.size in sizes })
+    }
 
     val modificationDateMs: Long? get() = ops.lastModified(saveFile)
 
@@ -62,18 +103,18 @@ class SaveStore(
      * espejo pierde frente a la local. Si ese contenido ya está entre los backups no se añade otra vez:
      * así un espejo que no se puede actualizar no desplaza el historial en cada apertura.
      */
-    fun addBackup(data: ByteArray) {
+    fun addBackup(data: ByteArray) = lock.withLock {
         for (n in 1..KEEP_BACKUPS) {
             val f = backupFile(n)
             if (!ops.exists(f)) continue
             val same = try { ops.readBytes(f, MAX_SAVE_BYTES).contentEquals(data) } catch (_: IOException) { false }
-            if (same) return
+            if (same) return@withLock
         }
         if (!ops.exists(backupsDirectory)) ops.mkdirs(backupsDirectory)
         for (n in KEEP_BACKUPS - 1 downTo 1) {
             if (ops.exists(backupFile(n))) ops.atomicReplace(backupFile(n), backupFile(n + 1))
         }
-        val tmp = File(backupsDirectory, "$fingerprint.1.tmp")
+        val tmp = File(backupsDirectory, uniqueBackupTmpName(backupFile(1).name))
         ops.writeSynced(tmp, data)
         ops.atomicReplace(tmp, backupFile(1))
         ops.syncDirectory(backupsDirectory)
@@ -88,30 +129,41 @@ class SaveStore(
     fun quarantineCurrent(
         unixSeconds: Long = System.currentTimeMillis() / 1000,
         rand8: String = UUID.randomUUID().toString().replace("-", "").take(8),
-    ) {
-        val data = load() ?: return
+    ) = lock.withLock {
+        if (!ops.exists(saveFile)) return@withLock
         if (!ops.exists(backupsDirectory)) ops.mkdirs(backupsDirectory)
         val target = File(backupsDirectory, "$fingerprint.wrong-size-$unixSeconds-$rand8.sav")
         val tmp = File(target.path + ".tmp")
-        ops.writeSynced(tmp, data)
+        // En streaming: una partida "demasiado grande" no se carga entera en memoria para apartarla.
+        ops.copySynced(saveFile, tmp)
         ops.atomicReplace(tmp, target)
         ops.syncDirectory(backupsDirectory)
     }
 
     /**
      * Restaura el backup [n]: la partida actual pasa antes a ser el backup `.1` (lo hace la escritura
-     * atómica), así que restaurar nunca pierde nada.
+     * atómica), así que restaurar nunca pierde nada. Si se conocen los [validSizes] del cartucho y el backup
+     * no es uno de ellos, se rechaza con [InvalidBackupException] sin tocar nada. Una partida actual de tamaño
+     * inválido ya está apartada en cuarentena y no se rota a `.1`.
      */
-    fun restore(n: Int) {
+    fun restore(n: Int, validSizes: Set<Int>? = null): Unit = lock.withLock {
         val data = ops.readBytes(backupFile(n), MAX_SAVE_BYTES)
+        if (validSizes != null) {
+            if (data.size !in validSizes) throw InvalidBackupException(data.size, validSizes)
+            knownSizes = validSizes
+        }
         save(data)
+        Unit
     }
 
     /**
      * Paso 6 de SPEC §5.2: un `.sav.tmp` huérfano se instala si no hay `.sav` y su tamaño es uno de
-     * [validSizes]; si no, se borra. Los `.1.tmp` y el temporal del historial se borran.
+     * [validSizes]; si no, se borra. Se borran también todos los temporales huérfanos de esta partida:
+     * `.1.tmp` (formato antiguo) y `.1.<rand>.tmp` de los backups, `wrong-size-*.sav.tmp` de la cuarentena y el
+     * temporal del historial. Fija [validSizes] como los tamaños conocidos de esta partida.
      */
-    fun recoverOrphans(validSizes: Set<Int>) {
+    fun recoverOrphans(validSizes: Set<Int>) = lock.withLock {
+        knownSizes = validSizes
         val tmp = File(saveFile.path + ".tmp")
         if (ops.exists(tmp)) {
             val size = ops.length(tmp)
@@ -122,7 +174,11 @@ class SaveStore(
                 ops.delete(tmp)
             }
         }
-        ops.delete(File(backupsDirectory, "$fingerprint.1.tmp"))
+        for (name in ops.list(backupsDirectory)) {
+            val orphanBackup = name.startsWith("$fingerprint.1.") && name.endsWith(".tmp")
+            val orphanQuarantine = name.startsWith("$fingerprint.wrong-size-") && name.endsWith(".sav.tmp")
+            if (orphanBackup || orphanQuarantine) ops.delete(File(backupsDirectory, name))
+        }
         ops.delete(File(mirrorHistoryFile.path + ".tmp"))
     }
 
@@ -150,14 +206,14 @@ class SaveStore(
     }
 
     /** Write-ahead: se anota ANTES de escribir el espejo. */
-    fun recordMirrorAttempt(data: ByteArray) {
+    fun recordMirrorAttempt(data: ByteArray) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
         writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT)))
     }
 
     /** @param observedDateMs fecha de modificación del espejo leída justo después de escribirlo. */
-    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?) {
+    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
         writeHistory(

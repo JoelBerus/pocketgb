@@ -3,9 +3,13 @@ package com.joelbermudez.pocketgb.saves
 import java.io.File
 import java.io.IOException
 
-/** Ranura de save state (SPEC §5.4): una automática y cuatro manuales. */
+/**
+ * Ranura de save state (SPEC §5.4): una automática, cuatro manuales y la de rescate. [RESCUE] solo la escribe la
+ * salida "sin guardar" tras un fallo local (J6): nunca la pisa un guardado normal y [StateStore.saveRescue] aparta
+ * la anterior en vez de sobrescribirla.
+ */
 enum class StateSlot(val fileStem: String) {
-    AUTO("auto"), MANUAL1("slot1"), MANUAL2("slot2"), MANUAL3("slot3"), MANUAL4("slot4");
+    AUTO("auto"), MANUAL1("slot1"), MANUAL2("slot2"), MANUAL3("slot3"), MANUAL4("slot4"), RESCUE("rescue");
 
     companion object {
         val MANUAL: List<StateSlot> = listOf(MANUAL1, MANUAL2, MANUAL3, MANUAL4)
@@ -64,6 +68,34 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
             try { replace(thumbnailFile(slot), thumbnail) } catch (_: IOException) {}
         } else {
             try { ops.delete(thumbnailFile(slot)) } catch (_: IOException) {}
+        }
+    }
+
+    /** ¿Hay un estado de rescate de una salida con fallo de guardado? (se avisa al abrir el juego). */
+    fun hasRescue(): Boolean = ops.exists(stateFile(StateSlot.RESCUE))
+
+    /**
+     * Guarda el estado de rescate (J6) sin pisar uno anterior: si ya existía, se aparta como
+     * `rescue-<fecha>-<rand>.state` (y su captura) y no se borra jamás.
+     */
+    fun saveRescue(state: ByteArray, thumbnail: ByteArray?) {
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val current = stateFile(StateSlot.RESCUE)
+        if (ops.exists(current)) {
+            val stamp = "${ops.lastModified(current) ?: System.currentTimeMillis()}-" +
+                java.util.UUID.randomUUID().toString().replace("-", "").take(6)
+            ops.atomicReplace(current, File(directory, "rescue-$stamp.state"))
+            if (ops.exists(thumbnailFile(StateSlot.RESCUE))) {
+                try { ops.atomicReplace(thumbnailFile(StateSlot.RESCUE), File(directory, "rescue-$stamp.png")) } catch (_: IOException) {}
+            }
+        }
+        save(state, thumbnail, StateSlot.RESCUE)
+    }
+
+    /** Borra los temporales huérfanos (`*.state.tmp`, `*.png.tmp`) de una escritura interrumpida. */
+    fun recoverOrphans() {
+        for (name in ops.list(directory)) {
+            if (name.endsWith(".state.tmp") || name.endsWith(".png.tmp")) ops.delete(File(directory, name))
         }
     }
 

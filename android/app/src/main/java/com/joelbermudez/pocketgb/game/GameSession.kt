@@ -5,6 +5,7 @@ import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import com.joelbermudez.pocketgb.emulator.SessionError
 import com.joelbermudez.pocketgb.emulator.SessionState
+import com.joelbermudez.pocketgb.saves.CloseResult
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.FramePng
 import com.joelbermudez.pocketgb.saves.SaveCoordinator
@@ -16,9 +17,11 @@ import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.saves.isSafe
 import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
+import android.util.Log
 import java.io.IOException
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.withLock
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +47,25 @@ sealed class StateError(message: String, cause: Throwable? = null) : Exception(m
      */
     class SaveFailed(cause: Throwable?) :
         StateError("La partida actual no ha cambiado: no se pudo guardar la del estado cargado.", cause)
+
+    /**
+     * Cargar el estado no se pudo completar y el núcleo volvió a como estaba, pero NO se pudo confirmar en disco
+     * que la partida vuelve a ser la de antes (una escritura rezagada puede haber dejado la del estado
+     * rechazado): el guardado queda pendiente y se reintenta. No se afirma que "no ha cambiado".
+     */
+    class SavePending(cause: Throwable?) : StateError(
+        "El estado no se cargó. El juego volvió a como estaba, pero el guardado de la partida quedó pendiente de confirmar; se reintentará.",
+        cause,
+    )
+
+    /**
+     * Ni siquiera se pudo devolver el núcleo a como estaba: lo que hay en memoria ya no es de fiar y NO se
+     * escribe nunca en disco. La sesión deja de guardar (se avisa); salir y volver a abrir recupera la partida.
+     */
+    class RollbackFailed(cause: Throwable?) : StateError(
+        "No se pudo volver a la partida anterior: este juego ya no guardará su progreso. Sal del juego y ábrelo de nuevo (la partida guardada sigue intacta).",
+        cause,
+    )
 }
 
 sealed interface ExitResult {
@@ -52,6 +74,15 @@ sealed interface ExitResult {
 
     /** No se pudo guardar la partida local: la sesión sigue abierta y en pausa. */
     class LocalSaveFailed(val error: Throwable) : ExitResult
+}
+
+/** Qué pasó al rescatar la sesión de un ViewModel destruido ([GameSession.rescueExit]). */
+sealed interface RescueOutcome {
+    /** Se guardó (o no había nada que guardar) y la sesión se cerró. */
+    data object Closed : RescueOutcome
+
+    /** No se pudo guardar tras reintentar: la sesión queda abierta y en pausa y el estado de rescate escrito. */
+    data object KeptOpen : RescueOutcome
 }
 
 /** Avisos no bloqueantes durante la partida (el juego sigue: la copia local ya está segura). */
@@ -96,6 +127,11 @@ class GameSession(
     tickMs: Long = 100,
     flushTimeoutMs: Long = 3_000,
     autoTick: Boolean = true,
+    /** Plazo de gracia del cierre del hilo de guardado antes de interrumpirlo (I3). */
+    private val closeGraceMs: Long = 10_000,
+    private val closeKillWaitMs: Long = 5_000,
+    /** Plazo corto de los vaciados del hilo principal tras un [FlushResult.TimedOut] reciente (anti-ANR). */
+    private val shortFlushMs: Long = 500,
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -105,10 +141,18 @@ class GameSession(
     private val closedFlag = AtomicBoolean(false)
     val isClosed: Boolean get() = closedFlag.get()
 
+    @Volatile private var closeResult: CloseResult? = null
+
+    /** Último plazo agotado de un vaciado del hilo principal (ns), o 0. */
+    @Volatile private var lastTimeoutNs = 0L
+
     val fingerprint: String get() = info.fingerprintHex
 
+    /** Hay un estado de rescate de una salida anterior con fallo de guardado (se avisa al abrir). */
+    val hasRescueState: Boolean get() = try { states.hasRescue() } catch (_: Exception) { false }
+
     /** `true` si la SRAM de esta sesión se persiste. */
-    val persists: Boolean get() = target != null
+    val persists: Boolean get() = coordinator.hasTarget
 
     private val coordinator = SaveCoordinator(
         source = object : SramSource {
@@ -142,14 +186,37 @@ class GameSession(
      */
     fun pause(): FlushResult {
         if (isClosed) return FlushResult.Unchanged
-        if (session.state.value == SessionState.Running) session.pause()
-        return flushNow()
+        try {
+            pauseIfRunning()
+        } catch (_: CoreError.Closed) {
+            return FlushResult.Unchanged // se cerró justo ahora (salida en curso): nada que pausar ni vaciar
+        }
+        return flushNow(mainThread = true)
     }
 
-    private fun flushNow(): FlushResult {
+    /** Serializa "mirar el estado y pausar": `ON_PAUSE` (principal) y una salida (E/S) no pueden pisarse. */
+    private val transitions = java.util.concurrent.locks.ReentrantLock()
+
+    private fun pauseIfRunning() = transitions.withLock {
+        if (session.state.value == SessionState.Running) session.pause()
+    }
+
+    private fun resumeIfPaused() = transitions.withLock {
+        if (session.state.value == SessionState.Paused) session.resume()
+    }
+
+    /**
+     * Vaciado síncrono. Desde el hilo principal ([mainThread]) el plazo se acorta (500 ms) mientras haya un
+     * plazo agotado reciente (10 s): `ON_PAUSE` y `ON_STOP` seguidos con un disco bloqueado no suman 6 s de
+     * hilo principal (ANR); el guardado sigue pendiente y reintentándose en su hilo.
+     */
+    private fun flushNow(mainThread: Boolean = false): FlushResult {
         val current = session.state.value
         if (isClosed || current == SessionState.Closed || current == SessionState.New) return FlushResult.Unchanged
-        return coordinator.flushSync()
+        val recentTimeout = lastTimeoutNs != 0L && System.nanoTime() - lastTimeoutNs < RECENT_TIMEOUT_NS
+        val result = if (mainThread && recentTimeout) coordinator.flushSync(shortFlushMs) else coordinator.flushSync()
+        lastTimeoutNs = if (result == FlushResult.TimedOut) System.nanoTime() else 0L
+        return result
     }
 
     /**
@@ -162,7 +229,7 @@ class GameSession(
 
     fun resume() {
         if (isClosed) return
-        if (session.state.value == SessionState.Paused) session.resume()
+        resumeIfPaused()
         if (coordinator.pendingError != null) coordinator.requestFlush()
     }
 
@@ -221,14 +288,27 @@ class GameSession(
         if (coordinator.hasTarget) {
             val result = coordinator.flushSync()
             if (!result.isSafe) {
-                try {
+                val cause = (result as? FlushResult.Failed)?.error ?: coordinator.pendingError
+                val restored = try {
                     session.loadStateRaw(previous.bytes)
+                    true
                 } catch (_: Exception) {
-                    // Sin más remedio: el estado previo salió del propio núcleo hace un instante.
+                    false
                 }
-                // Una escritura rezagada pudo dejar en disco la SRAM del estado rechazado: se corrige luego.
+                if (!restored) {
+                    // Lo que hay en el núcleo ya no es de fiar: no se escribe NUNCA más. Se drena lo que hubiera
+                    // en vuelo (que pudo escribir la SRAM del estado rechazado; la anterior sigue en backups).
+                    coordinator.disablePersistence(StateError.RollbackFailed(cause))
+                    try { coordinator.runOnSaveThread(timeoutMs = 3_000) { } } catch (_: Exception) {}
+                    throw StateError.RollbackFailed(cause)
+                }
+                // Transaccional: una escritura rezagada (plazo agotado) pudo dejar en disco la SRAM del estado
+                // rechazado. Se encola una BARRERA en el MISMO hilo, detrás de ella: copia la SRAM ya revertida y
+                // la escribe si hace falta. Solo tras confirmarla se puede decir "la partida no ha cambiado".
+                val barrier = coordinator.flushSync()
+                if (barrier.isSafe) throw StateError.SaveFailed(cause)
                 coordinator.requestFlush()
-                throw StateError.SaveFailed((result as? FlushResult.Failed)?.error)
+                throw StateError.SavePending(cause)
             }
         }
     }
@@ -253,22 +333,58 @@ class GameSession(
      */
     fun exit(force: Boolean = false): ExitResult {
         if (isClosed) return ExitResult.Clean
-        if (session.state.value == SessionState.Running) session.pause()
+        pauseIfRunning()
+        var flushSafe = true
         if (coordinator.hasTarget) {
             val result = flushNow()
-            if (!result.isSafe && !force) {
+            flushSafe = result.isSafe
+            if (!flushSafe && !force) {
                 return ExitResult.LocalSaveFailed(errorOf(result))
             }
         }
-        // AUTO al salir: tras un flush correcto es la continuación exacta; con `force` es el rescate (J6).
         if (session.state.value == SessionState.Paused) {
-            try {
-                saveState(StateSlot.AUTO)
-            } catch (_: Exception) {
+            if (flushSafe) {
+                // AUTO al salir: la continuación exacta (su fallo no impide salir).
+                try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
+            } else {
+                saveRescueState() // J6: ranura de rescate aparte, que nunca pisa nada en silencio
             }
         }
-        close()
+        tryClose()
         return ExitResult.Clean
+    }
+
+    /** Estado de rescate (J6) en su ranura propia, directo (no depende del hilo de guardado, que pudo atascarse). */
+    private fun saveRescueState() {
+        try {
+            val saved = session.saveState()
+            states.saveRescue(saved.bytes, FramePng.encode(saved.pixels))
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Cierre de una sesión cuyo ViewModel se destruyó (no hay UI que confirme nada). NUNCA fuerza una salida con
+     * riesgo en silencio: reintenta el vaciado [attempts] veces; si logra confirmar, guarda AUTO y cierra. Si no,
+     * escribe el estado de rescate y deja la sesión abierta en pausa (su hilo de guardado sigue reintentando).
+     * Bloquea: llamar fuera del hilo principal.
+     */
+    fun rescueExit(attempts: Int = 10, retryDelayMs: Long = 1_000): RescueOutcome {
+        repeat(attempts) { attempt ->
+            if (isClosed) return RescueOutcome.Closed
+            val safe = !coordinator.hasTarget || flushNow().isSafe
+            if (safe) {
+                if (session.state.value == SessionState.Paused) {
+                    try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
+                }
+                tryClose()
+                return RescueOutcome.Closed
+            }
+            coordinator.requestFlush()
+            if (attempt < attempts - 1) Thread.sleep(retryDelayMs)
+        }
+        if (session.state.value == SessionState.Paused) saveRescueState()
+        return RescueOutcome.KeptOpen
     }
 
     private fun errorOf(result: FlushResult): Throwable = when (result) {
@@ -277,23 +393,40 @@ class GameSession(
         else -> IllegalStateException("Sin error")
     }
 
-    /** Cierra sin guardar nada más (best-effort, p. ej. `onCleared`). Idempotente; une el hilo de guardado antes (I3). */
-    override fun close() {
-        if (!closedFlag.compareAndSet(false, true)) return
-        coordinator.close()
-        session.close()
-    }
-}
-
-/** Mejor esfuerzo al destruirse el ViewModel: pausa, intenta vaciar y cierra. Nunca lanza. */
-fun GameSession.closeBestEffort() {
-    try {
-        if (!isClosed) {
-            if (session.state.value == SessionState.Running) session.pause()
-            exit(force = true)
+    /**
+     * Cierra sin guardar nada más (I3): marca cerrado el guardado (ninguna copia nativa nueva), confirma que el hilo
+     * de guardado terminó de verdad y solo entonces libera el handle nativo. Si el hilo sigue vivo (operación de
+     * archivo que no responde) devuelve [CloseResult.SaveThreadStuck] y NO libera: un "reaper" lo hará cuando el
+     * hilo salga. Idempotente.
+     */
+    fun tryClose(): CloseResult {
+        if (!closedFlag.compareAndSet(false, true)) return closeResult ?: CloseResult.Closed
+        val result = coordinator.shutdown(closeGraceMs, closeKillWaitMs)
+        closeResult = result
+        when (result) {
+            CloseResult.Closed -> session.close()
+            is CloseResult.SaveThreadStuck -> {
+                Log.w(TAG, "El hilo de guardado no terminó (${result.threadName}); el handle nativo se libera cuando salga")
+                Thread({
+                    try {
+                        coordinator.awaitThreadExit()
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
+                    session.close()
+                }, "pocketgb-save-reaper").apply { isDaemon = true }.start()
+            }
         }
-    } catch (_: Throwable) {
-    } finally {
-        close()
+        return result
+    }
+
+    /** Cierra sin guardar nada más. Idempotente; ver [tryClose]. */
+    override fun close() {
+        tryClose()
+    }
+
+    private companion object {
+        const val TAG = "GameSession"
+        const val RECENT_TIMEOUT_NS = 10_000_000_000L
     }
 }

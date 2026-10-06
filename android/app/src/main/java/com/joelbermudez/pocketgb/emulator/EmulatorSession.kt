@@ -21,43 +21,46 @@ class SavedState(val bytes: ByteArray, val pixels: IntArray)
  *   [sramDirtySequence] y [copySram]. Ambas están protegidas por el mutex nativo y, aquí, por un lock de
  *   lectura que [close] toma en escritura: nunca se usa el handle tras liberarlo.
  * - **I3**: quien posee el hilo de guardado lo une **antes** de llamar a [close]; `handle` es `@Volatile`.
+ * - **Handle**: TODA llamada nativa que usa el handle ocurre bajo `handleLock.read` (la lectura es compartida,
+ *   así que no se estorban); [close] toma el lock de escritura y espera a que acaben. Comprobar `handle == 0`
+ *   fuera del lock y llamar después deja una ventana de uso tras liberar (A5 auditoría, DeepSeek H1 / Opus H2).
  * - **I4**: copiar la SRAM ([copySram]) y escribirla en disco ocurren en el mismo hilo de guardado, en ese
  *   orden, para que una copia vieja nunca pise a otra más nueva.
  *
  * Con la sesión corriendo solo el hilo nativo toca el core: [copySram] le pide una instantánea (espera como
  * mucho 1 s) y el estado, el framebuffer y la carga de SRAM solo se permiten aparcada.
  */
-class EmulatorSession : AutoCloseable {
+open class EmulatorSession : AutoCloseable {
     @Volatile
     private var handle = NativeLibrary.nativeSessionCreate().also {
         if (it == 0L) throw CoreError.OutOfMemory()
     }
-    private val handleLock = ReentrantReadWriteLock()
+    internal val handleLock = ReentrantReadWriteLock()
     @Volatile
     private var loadedInfo: RomInfo? = null
     private val mutableState = MutableStateFlow<SessionState>(SessionState.New)
     val state: StateFlow<SessionState> = mutableState.asStateFlow()
 
     val frameCount: Long
-        get() = NativeLibrary.nativeSessionFrameCount(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionFrameCount(it) }
 
     val requestedButtons: Int
-        get() = NativeLibrary.nativeSessionRequestedButtons(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionRequestedButtons(it) }
 
     val appliedButtons: Int
-        get() = NativeLibrary.nativeSessionAppliedButtons(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionAppliedButtons(it) }
 
     val speed: Int
-        get() = NativeLibrary.nativeSessionSpeed(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionSpeed(it) }
 
     val audioState: AudioState
-        get() = AudioState.fromNative(NativeLibrary.nativeSessionAudioState(requireHandle()))
+        get() = AudioState.fromNative(withHandle { NativeLibrary.nativeSessionAudioState(it) })
 
     val audioFramesProduced: Long
-        get() = NativeLibrary.nativeSessionAudioFramesProduced(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionAudioFramesProduced(it) }
 
     val audioFramesConsumed: Long
-        get() = NativeLibrary.nativeSessionAudioFramesConsumed(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionAudioFramesConsumed(it) }
 
     /** Información del cartucho cargado; solo existe tras [load]. */
     val info: RomInfo
@@ -65,7 +68,7 @@ class EmulatorSession : AutoCloseable {
 
     /** Tamaño del `.sav` de esta sesión: RAM [+48 con RTC]. */
     val sramSaveSize: Int
-        get() = NativeLibrary.nativeSessionSramSize(requireHandle())
+        get() = withHandle { NativeLibrary.nativeSessionSramSize(it) }
 
     /**
      * Carga el ROM y devuelve su información. [unixTimeSeconds] inicializa el reloj del MBC3: el llamador
@@ -75,12 +78,13 @@ class EmulatorSession : AutoCloseable {
         requireState("cargar", SessionState.New)
         if (rom.size < CoreBridge.MIN_ROM_BYTES) throw CoreError.RomTooSmall()
         if (rom.size > CoreBridge.MAX_ROM_BYTES) throw CoreError.RomTooLarge()
-        val nativeHandle = requireHandle()
-        checkNative("cargar", NativeLibrary.nativeSessionLoad(nativeHandle, rom, unixTimeSeconds))
         val ints = IntArray(10)
         val fingerprint = ByteArray(32)
         val title = ByteArray(17)
-        checkNative("leer la cabecera", NativeLibrary.nativeSessionRomInfo(nativeHandle, ints, fingerprint, title))
+        withHandle { nativeHandle ->
+            checkNative("cargar", NativeLibrary.nativeSessionLoad(nativeHandle, rom, unixTimeSeconds))
+            checkNative("leer la cabecera", NativeLibrary.nativeSessionRomInfo(nativeHandle, ints, fingerprint, title))
+        }
         val read = romInfoFromNative(ints, fingerprint, title)
         loadedInfo = read
         mutableState.value = SessionState.Ready
@@ -90,59 +94,59 @@ class EmulatorSession : AutoCloseable {
     /** Carga la partida del cartucho. Solo con la sesión sin arrancar o en pausa (I1). */
     fun loadSram(data: ByteArray) {
         requireParkedForSram("cargar la partida")
-        checkNative("cargar la partida", NativeLibrary.nativeSessionSramLoad(requireHandle(), data))
+        withHandle { checkNative("cargar la partida", NativeLibrary.nativeSessionSramLoad(it, data)) }
     }
 
     /** Crece cada vez que el juego guarda. Puede llamarse desde el hilo de guardado (I2). */
-    fun sramDirtySequence(): Long = handleLock.read { NativeLibrary.nativeSessionSramDirtySeq(requireHandle()) }
+    fun sramDirtySequence(): Long = withHandle { NativeLibrary.nativeSessionSramDirtySeq(it) }
 
     /**
      * Copia consistente de la SRAM [+RTC]. Con la sesión corriendo la entrega el hilo nativo (espera como
      * mucho 1 s: [SessionError.SnapshotTimeout]); aparcada, se copia directo. Hilo de guardado (I2, I4).
      */
-    fun copySram(): ByteArray = handleLock.read {
-        val nativeHandle = requireHandle()
+    fun copySram(): ByteArray = withHandle { nativeHandle ->
         val out = ByteArray(NativeLibrary.nativeSessionSramSize(nativeHandle))
         checkNative("copiar la partida", NativeLibrary.nativeSessionSramCopy(nativeHandle, out))
         out
     }
 
     /** Estado del núcleo y captura de pantalla. Exige la sesión en pausa. */
-    fun saveState(): SavedState {
+    open fun saveState(): SavedState {
         requirePaused("guardar el estado")
-        val nativeHandle = requireHandle()
-        val holder = arrayOfNulls<ByteArray>(1)
-        checkNative("guardar el estado", NativeLibrary.nativeSessionStateSave(nativeHandle, holder))
-        val bytes = holder[0] ?: throw CoreError.StateCorrupt()
-        val pixels = IntArray(CoreBridge.FRAME_PIXELS)
-        checkNative("copiar la pantalla", NativeLibrary.nativeSessionCopyFrame(nativeHandle, pixels))
-        return SavedState(bytes, pixels)
+        return withHandle { nativeHandle ->
+            val holder = arrayOfNulls<ByteArray>(1)
+            checkNative("guardar el estado", NativeLibrary.nativeSessionStateSave(nativeHandle, holder))
+            val bytes = holder[0] ?: throw CoreError.StateCorrupt()
+            val pixels = IntArray(CoreBridge.FRAME_PIXELS)
+            checkNative("copiar la pantalla", NativeLibrary.nativeSessionCopyFrame(nativeHandle, pixels))
+            SavedState(bytes, pixels)
+        }
     }
 
     /**
      * Aplica un estado sin más: un estado dañado o de otro ROM se rechaza antes de tocar nada, y nunca
      * sustituye la SRAM por su cuenta (la persistencia la decide `GameSession`). Exige la sesión en pausa.
      */
-    fun loadStateRaw(data: ByteArray) {
+    open fun loadStateRaw(data: ByteArray) {
         requirePaused("cargar el estado")
-        checkNative("cargar el estado", NativeLibrary.nativeSessionStateLoad(requireHandle(), data))
+        withHandle { checkNative("cargar el estado", NativeLibrary.nativeSessionStateLoad(it, data)) }
     }
 
     fun start() {
         requireState("iniciar", SessionState.Ready)
-        checkNativeControl("iniciar", NativeLibrary.nativeSessionStart(requireHandle()))
+        withHandle { checkNativeControl("iniciar", NativeLibrary.nativeSessionStart(it)) }
         mutableState.value = SessionState.Running
     }
 
-    fun pause() {
+    open fun pause() {
         requireState("pausar", SessionState.Running)
-        checkNativeControl("pausar", NativeLibrary.nativeSessionPause(requireHandle()))
+        withHandle { checkNativeControl("pausar", NativeLibrary.nativeSessionPause(it)) }
         mutableState.value = SessionState.Paused
     }
 
     fun resume() {
         requireState("reanudar", SessionState.Paused)
-        checkNativeControl("reanudar", NativeLibrary.nativeSessionResume(requireHandle()))
+        withHandle { checkNativeControl("reanudar", NativeLibrary.nativeSessionResume(it)) }
         mutableState.value = SessionState.Running
     }
 
@@ -152,18 +156,16 @@ class EmulatorSession : AutoCloseable {
         if (current !in listOf(SessionState.Ready, SessionState.Running, SessionState.Paused)) {
             throw SessionError.InvalidTransition("detener", current)
         }
-        checkNativeControl("detener", NativeLibrary.nativeSessionStop(requireHandle()))
+        withHandle { checkNativeControl("detener", NativeLibrary.nativeSessionStop(it)) }
         mutableState.value = SessionState.Stopped
     }
 
     fun attachSurface(surface: Surface) {
-        NativeLibrary.nativeSessionAttachSurface(requireHandle(), surface)
+        withHandle { NativeLibrary.nativeSessionAttachSurface(it, surface) }
     }
 
     fun detachSurface() {
-        val nativeHandle = handle
-        if (nativeHandle == 0L) return
-        NativeLibrary.nativeSessionDetachSurface(nativeHandle)
+        withHandleOrNull { NativeLibrary.nativeSessionDetachSurface(it) }
     }
 
     /**
@@ -171,19 +173,15 @@ class EmulatorSession : AutoCloseable {
      * un toque tardío se ignora en vez de lanzar: no puede tumbar la app.
      */
     fun setTouchButtons(mask: Int) {
-        val nativeHandle = handle
-        if (nativeHandle == 0L) return
-        NativeLibrary.nativeSessionSetTouchButtons(nativeHandle, mask and 0xFF)
+        withHandleOrNull { NativeLibrary.nativeSessionSetTouchButtons(it, mask and 0xFF) }
     }
 
     fun setPhysicalButtons(mask: Int) {
-        val nativeHandle = handle
-        if (nativeHandle == 0L) return
-        NativeLibrary.nativeSessionSetPhysicalButtons(nativeHandle, mask and 0xFF)
+        withHandleOrNull { NativeLibrary.nativeSessionSetPhysicalButtons(it, mask and 0xFF) }
     }
 
     fun setSpeed(factor: Int) {
-        NativeLibrary.nativeSessionSetSpeed(requireHandle(), factor)
+        withHandle { NativeLibrary.nativeSessionSetSpeed(it, factor) }
     }
 
     override fun close() {
@@ -230,7 +228,18 @@ class EmulatorSession : AutoCloseable {
         }
     }
 
-    private fun requireHandle(): Long = handle.takeIf { it != 0L } ?: throw CoreError.Closed()
+    /** Ejecuta [block] con el handle vivo y el lock de lectura tomado: [close] espera a que acabe. */
+    private inline fun <T> withHandle(block: (Long) -> T): T = handleLock.read {
+        block(handle.takeIf { it != 0L } ?: throw CoreError.Closed())
+    }
+
+    /** Como [withHandle] pero un no-op si la sesión ya se cerró (entrada tardía de la UI). */
+    private inline fun withHandleOrNull(block: (Long) -> Unit) {
+        handleLock.read {
+            val nativeHandle = handle
+            if (nativeHandle != 0L) block(nativeHandle)
+        }
+    }
 
     private companion object {
         /** Códigos de `native_session.h`: sesión no aparcada y espera de instantánea agotada. */

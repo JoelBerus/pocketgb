@@ -20,6 +20,7 @@ import com.joelbermudez.pocketgb.testing.FailableOps
 import com.joelbermudez.pocketgb.testing.tempDir
 import com.joelbermudez.pocketgb.testing.waitUntil
 import java.io.File
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,7 +63,7 @@ class GameplayUiTest {
 
     @After
     fun tearDown() {
-        compose.activity.viewModel.game.value?.closeBestEffort()
+        compose.activity.viewModel.game.value?.close()
     }
 
     private val vm get() = compose.activity.viewModel
@@ -184,7 +185,7 @@ class GameplayUiTest {
         compose.waitUntil(10_000) { vm.game.value == null }
         waitTag("no-game")
         assertTrue(game.isClosed)
-        assertTrue("rescate: se intentó el estado AUTO", File(root, "states/${game.fingerprint}/auto.state").exists())
+        assertTrue("rescate: se escribió el estado de rescate", File(root, "states/${game.fingerprint}/rescue.state").exists())
     }
 
     @Test
@@ -230,5 +231,47 @@ class GameplayUiTest {
         compose.onNodeWithTag("warning-ok").performClick()
         waitGone("save-warning-dialog")
         assertNull(vm.dialog.value)
+    }
+
+    @Test
+    fun theSaveProblemIndicatorStaysVisibleWhileTheProblemExistsAndGoesAwayWhenConfirmed() {
+        val game = openGame()
+        // Sin fallos de disco no hay indicador (un fallo transitorio del emulador lo mostraría y se resolvería solo).
+        compose.waitUntil(30_000) { compose.onAllNodes(hasTestTag("save-problem-indicator")).fetchSemanticsNodes().isEmpty() }
+        ops.failSav = true
+        pressBackViaDispatcher() // pausa: el vaciado falla
+        waitTag("pause-sheet")
+        waitTag("save-problem-indicator")
+        compose.onNodeWithTag("save-problem-indicator").assertIsDisplayed()
+        compose.onNode(hasText("Guardado pendiente", substring = true)).assertIsDisplayed()
+        assertNotNull(game.saveProblem.value)
+
+        // Sigue visible mientras no se confirme (a diferencia de un snackbar).
+        Thread.sleep(2_500)
+        compose.onNodeWithTag("save-problem-indicator").assertIsDisplayed()
+
+        ops.failSav = false
+        compose.onNodeWithTag("pause-continue").performClick()
+        waitGone("pause-sheet")
+        pressBackViaDispatcher() // nueva pausa: el vaciado ahora sí funciona
+        waitTag("pause-sheet")
+        waitGone("save-problem-indicator")
+        assertNull(game.saveProblem.value)
+    }
+
+    @Test
+    fun aFailedFlushOnBackgroundingRaisesTheSavePendingNotice() {
+        val game = openGame()
+        val notices = java.util.concurrent.CopyOnWriteArrayList<GameNotice>()
+        val collector = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch(
+            start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED,
+        ) { vm.notices.collect { notices += it } }
+        ops.failSav = true
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED) // ON_PAUSE
+        assertTrue("el observador avisa del guardado pendiente", waitUntil(10_000) { notices.contains(GameNotice.SavePending) })
+        assertNotNull(game.saveProblem.value)
+        collector.cancel()
+        ops.failSav = false
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
     }
 }

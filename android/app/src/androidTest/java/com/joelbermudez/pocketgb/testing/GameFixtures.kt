@@ -40,6 +40,40 @@ class FailableOps(private val delegate: SaveFileOps = PosixSaveFileOps) : SaveFi
     }
 }
 
+/**
+ * Atasca la próxima escritura de un `.sav.tmp` (sin responder a interrupciones) hasta que el test la suelte:
+ * un disco o proveedor que no contesta. [arm] la prepara y [awaitEntered] confirma que ya está dentro.
+ */
+class StallingOps(private val delegate: SaveFileOps = PosixSaveFileOps) : SaveFileOps by delegate {
+    @Volatile private var armed = false
+    @Volatile private var entered = java.util.concurrent.CountDownLatch(1)
+    private val release = java.util.concurrent.atomic.AtomicReference(java.util.concurrent.CountDownLatch(1))
+
+    fun arm() {
+        entered = java.util.concurrent.CountDownLatch(1)
+        release.set(java.util.concurrent.CountDownLatch(1))
+        armed = true
+    }
+
+    fun awaitEntered(timeoutMs: Long = 10_000) = entered.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+
+    fun release() = release.get().countDown()
+
+    override fun writeSynced(file: File, data: ByteArray) {
+        if (armed && file.name.endsWith(".sav.tmp")) {
+            armed = false
+            val latch = release.get()
+            entered.countDown()
+            var interrupted = false
+            while (latch.count > 0) {
+                try { latch.await() } catch (_: InterruptedException) { interrupted = true }
+            }
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+        delegate.writeSynced(file, data)
+    }
+}
+
 /** Una partida abierta sobre directorios temporales, con todo lo que un test necesita comprobar. */
 class OpenedGame(
     val game: GameSession,
@@ -65,8 +99,12 @@ fun openGame(
     mirror: SaveMirror? = null,
     persist: Boolean = true,
     root: File = tempDir("game"),
+    session: EmulatorSession = EmulatorSession(),
+    autoTick: Boolean = true,
+    flushTimeoutMs: Long = 3_000,
+    closeGraceMs: Long = 10_000,
+    closeKillWaitMs: Long = 5_000,
 ): OpenedGame {
-    val session = EmulatorSession()
     val info = session.load(rom, 1_700_000_000)
     val fingerprint = info.fingerprintHex
     val states = StateStore(File(root, "states"), fingerprint, ops)
@@ -81,6 +119,10 @@ fun openGame(
         target = SaveTarget(saveStore, mirror, registry = MirrorChannelRegistry())
         baseline = session.copySram()
     }
-    val game = GameSession(session, info, states, target, baseline)
+    val game = GameSession(
+        session, info, states, target, baseline,
+        autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
+        closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
+    )
     return OpenedGame(game, store, states, root)
 }

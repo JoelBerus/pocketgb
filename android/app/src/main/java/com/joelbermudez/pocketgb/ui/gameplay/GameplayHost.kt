@@ -5,6 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -51,10 +54,11 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val states by viewModel.states.collectAsStateWithLifecycle()
     val sessionState by game.state.collectAsStateWithLifecycle()
+    val saveProblem by game.saveProblem.collectAsStateWithLifecycle()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val snackbar = remember { SnackbarHostState() }
 
-    val observer = remember(game) { SessionLifecycleObserver(game) }
+    val observer = remember(game) { SessionLifecycleObserver(game, viewModel::onFlushResult) }
     DisposableEffect(game, lifecycle) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -78,6 +82,10 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
 
     Box(modifier.fillMaxSize()) {
         GameplayScreen(game.session, onMenu = viewModel::showPauseMenu, showPausedOverlay = false)
+        SaveProblemBanner(
+            saveProblem,
+            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp, start = 16.dp, end = 16.dp),
+        )
         if (menu != GameMenu.States) {
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
         }
