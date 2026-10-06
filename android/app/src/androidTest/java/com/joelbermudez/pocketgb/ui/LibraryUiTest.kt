@@ -416,11 +416,13 @@ class LibraryUiTest {
             }
         }
         compose.onNodeWithText("Juegos · 4 juegos").assertIsDisplayed()
-        compose.onNodeWithTag("unhide-Alpha.gb").performClick()
-        assertEquals("Alpha.gb", unhidden)
         compose.onNodeWithTag("settings-forget").performClick()
         compose.onNodeWithText("¿Olvidar la carpeta?").assertIsDisplayed()
         compose.onNodeWithText("Olvidar").performClick()
+        // Vista y Orden empujan los ocultos más abajo: se desplaza hasta el botón.
+        compose.onNodeWithTag("library-settings").performScrollToNode(hasTestTag("unhide-Alpha.gb"))
+        compose.onNodeWithTag("unhide-Alpha.gb").performClick()
+        assertEquals("Alpha.gb", unhidden)
         assertEquals(true, forgotten)
     }
 
