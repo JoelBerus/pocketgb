@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Rechaza ROMs, partidas y binarios con cabecera de cartucho Game Boy.
+# Rechaza ROMs, partidas y binarios con cabecera de cartucho Game Boy o Game Boy Advance.
 # Activar una vez: git config core.hooksPath .githooks
 # Las rutas se procesan delimitadas por NUL (soporta espacios y saltos de línea).
 fail=0
 while IFS= read -r -d '' f; do
   lower="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
-    *.gb|*.gbc|*.sgb|*.sav|*.rtc|*.state|*.zip|*.7z)
+    *.gb|*.gbc|*.sgb|*.gba|*.agb|*.srl|*.sav|*.rtc|*.state|*.zip|*.7z)
       printf 'pre-commit: bloqueado %q (ROM/partida/archivo comprimido)\n' "$f"; fail=1; continue;;
   esac
   # Logo de Nintendo en 0x104: firma de cualquier ROM de Game Boy, sin importar la extensión.
@@ -15,6 +15,24 @@ while IFS= read -r -d '' f; do
     sig=$(git cat-file blob ":$f" | dd bs=1 skip=260 count=4 2>/dev/null | xxd -p)
     if [ "$sig" = "ceed6666" ]; then
       printf 'pre-commit: bloqueado %q (contiene cabecera de cartucho Game Boy)\n' "$f"; fail=1
+    fi
+  fi
+  # GBA: inicio del logo de Nintendo en 0x04 (sin importar la extensión). BIOS: 16 KiB con nombre de BIOS o .bin.
+  if [ "$sz" -ge 192 ]; then
+    sig=$(git cat-file blob ":$f" | dd bs=1 skip=4 count=4 2>/dev/null | xxd -p)
+    if [ "$sig" = "24ffae51" ]; then
+      printf 'pre-commit: bloqueado %q (contiene cabecera de cartucho Game Boy Advance)\n' "$f"; fail=1
+    fi
+  fi
+  # BIOS de GBA (16 KiB): por nombre, por su SHA-1 publicado o por el salto de reset
+  # con que empieza (b 0x68 = 18 00 00 EA), sin importar el nombre.
+  if [ "$sz" -eq 16384 ]; then
+    head4=$(git cat-file blob ":$f" | dd bs=1 count=4 2>/dev/null | xxd -p)
+    if command -v sha1sum >/dev/null; then h=$(git cat-file blob ":$f" | sha1sum | cut -d' ' -f1)
+    else h=$(git cat-file blob ":$f" | shasum -a 1 | cut -d' ' -f1); fi
+    case "$lower" in *bios*|*.bin) bios=1;; *) bios=0;; esac
+    if [ "$bios" = 1 ] || [ "$head4" = "180000ea" ] || [ "$h" = "300c20df6731a33952ded8c436f7f186d25d3492" ]; then
+      printf 'pre-commit: bloqueado %q (posible BIOS de GBA)\n' "$f"; fail=1
     fi
   fi
 done < <(git diff --cached --name-only -z --diff-filter=ACMR)

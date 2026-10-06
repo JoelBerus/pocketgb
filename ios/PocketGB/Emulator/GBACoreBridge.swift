@@ -1,0 +1,215 @@
+import Foundation
+import PocketGBACore
+
+extension CoreError {
+    /// `nil` si `r == GBA_OK`. Los errores comunes usan los mismos casos que el núcleo GB.
+    init?(gba r: gba_result) {
+        switch r {
+        case GBA_OK: return nil
+        case GBA_ERR_NULL_ARG: self = .nullArgument
+        case GBA_ERR_OUT_OF_MEMORY: self = .outOfMemory
+        case GBA_ERR_ROM_TOO_SMALL: self = .gbaBadHeader
+        case GBA_ERR_ROM_TOO_LARGE: self = .gbaRomTooLarge
+        case GBA_ERR_BAD_HEADER: self = .gbaBadHeader
+        case GBA_ERR_NO_ROM: self = .noROM
+        case GBA_ERR_BIOS_SIZE: self = .biosSize
+        case GBA_ERR_SAVE_SIZE: self = .sramSize
+        case GBA_ERR_STATE_MAGIC: self = .stateMagic
+        case GBA_ERR_STATE_VERSION: self = .stateVersion
+        case GBA_ERR_STATE_ROM_MISMATCH: self = .stateROMMismatch
+        case GBA_ERR_STATE_CORRUPT: self = .stateCorrupt
+        case GBA_ERR_BUFFER_TOO_SMALL: self = .bufferTooSmall
+        case GBA_ERR_STATE_CONFIG: self = .stateConfig
+        default: self = .unknown(r.rawValue)
+        }
+    }
+}
+
+/// Dueño del puntero `gba*` (núcleo `gba/`, docs/10-gba-spec.md).
+///
+/// La partida es un único bloque: los bytes del medio (SRAM, Flash o EEPROM, compatibles
+/// con mGBA/VBA) y, si el cartucho tiene RTC, sus 16 bytes al final. Así el `.sav` sigue
+/// una sola ruta atómica con backups y un solo espejo junto al ROM (regla dura 6).
+final class GBACoreBridge: ConsoleCore {
+    let console = Console.gameBoyAdvance
+    private let g: OpaquePointer
+    private var hasRTC = false
+    private var eeprom = false
+    /// EEPROM con tamaño fijado por un ajuste (`save_type` forzado): solo vale ese tamaño.
+    private var eepromSizeFixed = false
+
+    /// SHA-256 de la BIOS oficial (GBA, GBA SP, Micro y Game Boy Player).
+    static let knownBIOSSHA256 = "fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570"
+    static let biosBytes = Int(GBA_BIOS_BYTES)
+    static let rtcBytes = Int(GBA_RTC_BYTES)
+    static let maxROMBytes = 32 * 1024 * 1024   // GBA_ROM_MAX_BYTES
+
+    init() throws(CoreError) {
+        guard let g = gba_create() else { throw .outOfMemory }
+        self.g = g
+    }
+
+    deinit { gba_destroy(g) }
+
+    /// - Parameters:
+    ///   - bios: volcado propio del usuario ya validado (`BIOSFile`); `nil` = BIOS HLE.
+    ///   - saveType: `GBA_SAVE_*` forzado por juego (0 = automático); `rtc`: `GBA_RTC_*`.
+    ///   - unixTime: hora UTC; el RTC del GBA cuenta hora local.
+    func loadROM(_ data: Data, bios: Data?, unixTime: Int64, sampleRate: UInt32 = 0,
+                 saveType: UInt8 = 0, rtc: UInt8 = 0) throws(CoreError) -> RomInfo {
+        if let bios {
+            let r = bios.withUnsafeBytes { raw in
+                gba_load_bios(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+            }
+            if let e = CoreError(gba: r) { throw e }
+        }
+        var opts = gba_options()
+        gba_options_default(&opts)
+        opts.sample_rate = sampleRate
+        opts.save_type = gba_save_type(UInt32(saveType))
+        opts.rtc = rtc
+        opts.unix_time = Self.localTime(unixTime)
+        let r = data.withUnsafeBytes { raw in
+            gba_load_rom(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &opts)
+        }
+        if let e = CoreError(gba: r) { throw e }
+
+        var info = gba_rom_info()
+        if let e = CoreError(gba: gba_rom_info_get(g, &info)) { throw e }
+        let title = withUnsafeBytes(of: info.title) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let fingerprint = withUnsafeBytes(of: info.fingerprint) { raw in
+            raw.prefix(16).map { String(format: "%02x", $0) }.joined()
+        }
+        hasRTC = info.has_rtc
+        let eeprom = info.save_type == GBA_SAVE_EEPROM512 || info.save_type == GBA_SAVE_EEPROM8K
+        self.eeprom = eeprom
+        let sizeFixed = eeprom && opts.save_type != GBA_SAVE_AUTO
+        eepromSizeFixed = sizeFixed
+        var rom = RomInfo(title: title, cartType: 0, sramBytes: Int(info.save_bytes),
+                          hasBattery: info.save_bytes > 0 || info.has_rtc, hasRTC: info.has_rtc,
+                          headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
+        rom.console = .gameBoyAdvance
+        rom.eeprom = eeprom
+        rom.eepromSizeFixed = sizeFixed
+        rom.biosLoaded = info.bios_loaded
+        return rom
+    }
+
+    /// Tamaños de `.sav` que acepta `sramLoad`: el medio (EEPROM sin ajuste: 512 B u 8 KiB; con
+    /// el tamaño fijado por un ajuste, solo ese) y, con RTC, también con sus 16 bytes al final.
+    /// Con un medio de 0 bytes ("Sin partida") y RTC, solo los 16 bytes del reloj.
+    static func validSaveSizes(_ info: RomInfo) -> Set<Int> {
+        let media: Set<Int> = info.eeprom && !info.eepromSizeFixed ? [512, 8192]
+            : info.sramBytes > 0 ? [info.sramBytes] : []
+        guard info.hasRTC else { return media }
+        return media.isEmpty ? [rtcBytes] : media.union(media.map { $0 + rtcBytes })
+    }
+
+    func setButtons(_ mask: UInt16) { gba_set_buttons(g, mask) }
+    func runFrame() { gba_run_frame(g) }
+    /// El ARM7TDMI no tiene un estado de bloqueo como el `STOP`/opcode ilegal del LR35902.
+    var cpuLocked: Bool { false }
+
+    func copyFramebuffer(to dst: UnsafeMutablePointer<UInt32>) {
+        guard let src = gba_framebuffer(g) else { return }
+        dst.update(from: src, count: ScreenSize.gameBoyAdvance.pixelCount)
+    }
+
+    func readAudio(into dst: UnsafeMutablePointer<Int16>, maxFrames: Int) -> Int {
+        Int(gba_audio_read(g, dst, maxFrames))
+    }
+
+    // MARK: Partida
+
+    var sramSaveSize: Int { gba_save_size(g) + (hasRTC ? Self.rtcBytes : 0) }
+    var sramDirty: Bool { gba_save_dirty(g) }
+    func clearSRAMDirty() { gba_save_clear_dirty(g) }
+
+    /// Acepta el medio solo o el medio + RTC (con un medio de 0 bytes, solo el RTC). Ante un
+    /// tamaño inesperado no cambia nada.
+    func sramLoad(_ data: Data) throws(CoreError) {
+        var media = data
+        var rtc: Data?
+        if hasRTC, data.count >= Self.rtcBytes, isMediaSize(data.count - Self.rtcBytes) {
+            media = data.prefix(data.count - Self.rtcBytes)
+            rtc = data.suffix(Self.rtcBytes)
+        }
+        guard isMediaSize(media.count), !media.isEmpty || rtc != nil else { throw .sramSize }
+        if let rtc {
+            // El RTC primero: si no es válido no se toca la partida.
+            let r = rtc.withUnsafeBytes { raw in
+                gba_rtc_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+            }
+            if let e = CoreError(gba: r) { throw e }
+        }
+        guard !media.isEmpty else { return }
+        let r = media.withUnsafeBytes { raw in
+            gba_save_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+        }
+        if let e = CoreError(gba: r) { throw e }
+    }
+
+    /// Solo el tamaño del medio de este cartucho (EEPROM sin ajuste: 512 B u 8 KiB mientras
+    /// no se sepa cuál; con el tamaño fijado, solo el del núcleo, como `gba_save_load`).
+    private func isMediaSize(_ n: Int) -> Bool {
+        eeprom && !eepromSizeFixed ? n == 512 || n == 8192 : n == gba_save_size(g)
+    }
+
+    func sramSave() throws(CoreError) -> Data {
+        let mediaBytes = gba_save_size(g)
+        var out = Data(count: mediaBytes + (hasRTC ? Self.rtcBytes : 0))
+        let r = out.withUnsafeMutableBytes { raw in
+            gba_save_write(g, raw.bindMemory(to: UInt8.self).baseAddress, mediaBytes)
+        }
+        if let e = CoreError(gba: r) { throw e }
+        if hasRTC {
+            let r2 = out.withUnsafeMutableBytes { raw in
+                gba_rtc_save(g, raw.bindMemory(to: UInt8.self).baseAddress! + mediaBytes, Self.rtcBytes)
+            }
+            if let e = CoreError(gba: r2) { throw e }
+        }
+        return out
+    }
+
+    func setRTCTime(_ unixTime: Int64) { gba_rtc_set_time(g, Self.localTime(unixTime)) }
+
+    private static func localTime(_ unixTime: Int64) -> Int64 {
+        unixTime + Int64(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(unixTime))))
+    }
+
+    // MARK: Save states
+
+    func stateSave() throws(CoreError) -> Data {
+        var out = Data(count: gba_state_size(g))
+        let count = out.count
+        let r = out.withUnsafeMutableBytes { raw in
+            gba_state_save(g, raw.bindMemory(to: UInt8.self).baseAddress, count)
+        }
+        if let e = CoreError(gba: r) { throw e }
+        return out
+    }
+
+    /// Validado sobre una copia: si falla, el núcleo queda como estaba, partida incluida.
+    func stateLoad(_ data: Data) throws(CoreError) {
+        let r = data.withUnsafeBytes { raw in
+            gba_state_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+        }
+        if let e = CoreError(gba: r) { throw e }
+    }
+}
+
+extension RomInfo {
+    /// Medio de guardado del cartucho GBA en texto ("SRAM 32 KiB", "Flash 64 KiB", "EEPROM"…).
+    var gbaMediaDescription: String {
+        if eeprom { return eepromSizeFixed ? (sramBytes >= 8192 ? "EEPROM 8 KiB" : "EEPROM 512 B") : "EEPROM" }
+        switch sramBytes {
+        case 0: return "sin partida"
+        case 32 * 1024: return "SRAM 32 KiB"
+        case 64 * 1024: return "Flash 64 KiB"
+        case 128 * 1024: return "Flash 128 KiB"
+        default: return "\(sramBytes) B"
+        }
+    }
+}

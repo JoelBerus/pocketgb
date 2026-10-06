@@ -25,3 +25,10 @@ Con un lector USB de cartuchos, por ejemplo **GBxCart RW** (insideGadgets) o **G
 
 ## ROMs de prueba (sí permitidas localmente)
 Blargg, Mooneye, acid2 y el resto del paquete c-sp son homebrew de libre distribución. Aun así, **no** se versionan: se descargan con hash verificado ([06](06-testing.md)).
+
+## Game Boy Advance
+- Mismas reglas: solo volcados de cartuchos propios. El `.gitignore` y el hook bloquean `*.gba`, `*.agb`, `*.srl` y cualquier archivo con el logo de la cabecera GBA en `0x04`, aunque se renombre.
+- **BIOS:** la BIOS de Nintendo está **prohibida** en el repo, en la app y en los tests (regla dura 1). Nunca entra al repo (el hook bloquea archivos de 16 KiB llamados `*bios*` o `*.bin`). El núcleo funciona sin ella (HLE propia). Si Joel quiere más compatibilidad, puede volcar la de su propia GBA y dejarla como `gba_bios.bin` en su carpeta privada de iCloud, junto a los ROMs.
+- Pruebas libres del núcleo GBA: jsmolka/gba-tests y SingleStepTests/ARM7TDMI (MIT), descargadas por `tools/fetch-gba-test-roms.sh`, nunca versionadas.
+- **Licencias (GBA):** del código de otros proyectos solo se copia lo MIT/BSD/zlib citando el origen; en la práctica, solo SkyEmu (MIT) y el algoritmo de acarreo de multiplicación (zlib). mGBA (MPL-2.0, oráculo), NanoBoyAdvance, Hades y FuzzARM: leer sí, copiar no ([09](09-referencias.md)).
+- `gba_bios.bin` propio de Joel es opcional, vive solo en su carpeta privada y la app solo lo valida por SHA-256 (no lo copia ni lo sube a ningún sitio).

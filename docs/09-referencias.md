@@ -12,3 +12,16 @@
 | **Delta**: https://github.com/rileytestut/Delta | AGPLv3 | UX de controles superpuestos, solo mirar. **No copiar.** |
 | **Suites de test**: https://github.com/c-sp/game-boy-test-roms (v7.0) | Varias libres | Descarga verificada por hash ([06](06-testing.md)). |
 | **pret/pokered**, **pret/pokeyellow** | — | Solo los archivos `.sym` para depurar (direcciones de rutinas y SRAM). No se construyen ROMs a partir de ellos. |
+
+## Game Boy Advance
+| Referencia | Licencia | Uso permitido |
+|---|---|---|
+| **GBATEK** (Martin Korth) | docs | Especificación principal; se cita por sección. |
+| **tonc** (Jasper Vijn) | docs | Demos y explicación de los modos de vídeo. |
+| **ARM7TDMI Technical Reference Manual** (ARM DDI 0029) | docs | Instrucciones, modos, excepciones. |
+| **SkyEmu**: https://github.com/skylersaleh/SkyEmu | MIT | Única fuente de la que se puede copiar código, citando el origen en el archivo. |
+| **zaydlang/multiplication-algorithm** | zlib | Acarreo de las multiplicaciones (`gba/src/arm_mulcarry.c`, portado y marcado como modificado). |
+| **jsmolka/gba-tests** | MIT | ROMs de prueba (`arm`, `thumb`, `memory`, `bios`, `nes`, `save`, `ppu`); descarga fijada a commit. |
+| **SingleStepTests/ARM7TDMI** | MIT | Casos de un solo paso de la CPU (45 × 50 000); descarga fijada. |
+| **mGBA** 0.10.5 (MPL-2.0) | — | Solo lectura y **oráculo de desarrollo** de la PPU y de los niveles de audio (`make -C gba oracle`, nunca enlazado en la app). No copiar. |
+| **NanoBoyAdvance** (GPLv3), **Hades** (GPLv2), **FuzzARM** (GPLv3) | — | Solo lectura. No copiar. |

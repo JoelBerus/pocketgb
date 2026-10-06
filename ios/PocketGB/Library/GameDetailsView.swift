@@ -24,7 +24,7 @@ struct GameDetailsView: View {
                     .accessibilityIdentifier("game-details-artwork")
                 VStack(alignment: .leading, spacing: PocketSpacing.xs) {
                     HStack(spacing: PocketSpacing.xs) {
-                        ConsoleChip(isColor: entry.isColor)
+                        ConsoleChip(badge: entry.badge)
                         Text(entry.subfolder.isEmpty ? entry.fileName : "\(entry.subfolder) · \(entry.fileName)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

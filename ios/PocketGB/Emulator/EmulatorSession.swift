@@ -7,15 +7,17 @@ import Synchronization
 /// se comunica con `control` (NSCondition), `buttons` y `frames`.
 final class EmulatorSession: @unchecked Sendable {
     let info: RomInfo
-    let frames = FrameBuffers()
+    let frames: FrameBuffers
     let buttons = ButtonMask()
     /// Máscara del mando físico: se combina por OR con la táctil (`buttons`).
     let padButtons = ButtonMask()
     let audioRing = AudioRingBuffer()
     /// Aviso para mostrar al abrir (p. ej. .sav con tamaño inesperado).
     let loadWarning: SaveLoadWarning?
+    /// Game Boy Advance: el `.sav` existente no coincide con el tipo o el reloj forzados por juego.
+    let gameSettingsWarning: GameSettingsSaveWarning?
 
-    private let core: CoreBridge
+    private let core: any ConsoleCore
     private let audioOutput: AudioOutput
     private let audioConsumed = AudioWakeSignal()
     private let audioMode = Atomic<Int>(0)
@@ -52,7 +54,8 @@ final class EmulatorSession: @unchecked Sendable {
 
     private static let debounceSeconds = 1.0
     private static let safetyNetSeconds = 60.0
-    private static let frameSeconds = Double(70224) / Double(4_194_304) // 59,7275 Hz
+    // 59,7275 Hz en las dos consolas: 70 224 / 4 194 304 = 280 896 / 16 777 216.
+    private static let frameSeconds = Double(70224) / Double(4_194_304)
     // 2 frames son 1 607 muestras; 2 048 deja margen para un callback grande
     // sin elevar la latencia objetivo por encima de ≈43 ms.
     private static let audioTargetFrames = 2_048
@@ -67,30 +70,59 @@ final class EmulatorSession: @unchecked Sendable {
     ///   - mirror: `<rom>.sav` junto al ROM en la carpeta de la biblioteca (nil para un
     ///     ROM suelto). La copia local sigue siendo la autoritativa.
     ///   - mirrorSnapshot: el espejo ya leído fuera del hilo principal (`SaveMirror.snapshot()`).
+    ///   - console: núcleo que ejecuta el ROM (por la extensión del archivo).
+    ///   - bios: Game Boy Advance, BIOS del usuario ya validada; `nil` = BIOS HLE.
     /// - Throws: `SaveOpening.Refusal` si la única partida está en iCloud sin descargar.
     @MainActor
     init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
          mirrorSnapshot: SaveMirror.Snapshot = .absent,
          mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
          emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
+         console: Console = .gameBoy, bios: Data? = nil,
          onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
-        let core = try CoreBridge()
         let now = Int64(Date().timeIntervalSince1970)
-        info = try core.loadROM(romData, unixTime: now, sampleRate: 48_000,
-                                colorForGameBoy: emulation.colorForGameBoy,
-                                compatPalette: emulation.compatPalette)
+        let core: any ConsoleCore
+        switch console {
+        case .gameBoy:
+            let gb = try CoreBridge()
+            info = try gb.loadROM(romData, unixTime: now, sampleRate: 48_000,
+                                  colorForGameBoy: emulation.colorForGameBoy,
+                                  compatPalette: emulation.compatPalette)
+            core = gb
+        case .gameBoyAdvance:
+            let gba = try GBACoreBridge()
+            info = try gba.loadROM(romData, bios: emulation.gbaUseBIOS ? bios : nil, unixTime: now, sampleRate: 48_000,
+                                   saveType: emulation.gbaSaveType, rtc: emulation.gbaRTC)
+            core = gba
+        }
         self.core = core
+        frames = FrameBuffers(size: console.screen)
         audioScratch = .allocate(capacity: Self.audioScratchFrames * 2)
         audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
                                   onPause: onAudioInterrupted)
 
+        var forcedWarning: GameSettingsSaveWarning?
+        if console == .gameBoyAdvance {
+            var sizes: [Int] = []
+            if let local = try? SaveStore(directory: savesDirectory, fingerprint: info.fingerprint).load() {
+                sizes.append(local.count)
+            }
+            if case let .read(data, _) = mirrorSnapshot, mirror != nil { sizes.append(data.count) }
+            forcedWarning = GameSettingsSaveWarning.check(
+                forced: emulation.gbaSaveType != 0 || emulation.gbaRTC != 0,
+                validSizes: Self.validSaveSizes(info), existingSizes: sizes)
+        }
         var warning: SaveLoadWarning?
         var saves: SaveTarget?
         var initialSRAM: Data?
         if info.hasBattery, core.sramSaveSize > 0 {
             let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
             do {
-                try store.recoverOrphans(expectedSize: core.sramSaveSize)
+                if console == .gameBoyAdvance {
+                    try store.recoverOrphans(validSizes: Self.validSaveSizes(info))
+                } else {
+                    try store.recoverOrphans(expectedSize: core.sramSaveSize)
+                }
                 let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirrorSnapshot,
                                                       validSizes: Self.validSaveSizes(info),
                                                       mirrorWriter: mirrorWriter)
@@ -116,13 +148,16 @@ final class EmulatorSession: @unchecked Sendable {
         loadWarning = warning
         confirmed = initialSRAM
         lastQueued = initialSRAM
+        gameSettingsWarning = forcedWarning
     }
 
     deinit { audioScratch.deallocate() }
 
     /// Tamaños que acepta `gb_sram_load`: la RAM, y con RTC también +48 o +44 bytes.
+    /// Game Boy Advance: `GBACoreBridge.validSaveSizes`.
     static func validSaveSizes(_ info: RomInfo) -> Set<Int> {
-        info.hasRTC ? [info.sramBytes, info.sramBytes + 48, info.sramBytes + 44] : [info.sramBytes]
+        if info.console == .gameBoyAdvance { return GBACoreBridge.validSaveSizes(info) }
+        return info.hasRTC ? [info.sramBytes, info.sramBytes + 48, info.sramBytes + 44] : [info.sramBytes]
     }
 
     @MainActor
@@ -323,12 +358,12 @@ final class EmulatorSession: @unchecked Sendable {
     }
 
     /// Guarda un estado con la sesión en pausa. Devuelve el estado y el frame actual
-    /// (RGBA, 160×144) para la captura de la ranura.
+    /// (RGBA, 160×144 o 240×160) para la captura de la ranura.
     @MainActor
     func saveState() throws -> (state: Data, pixels: [UInt32]) {
         try withParkedCore { core in
             let state = try core.stateSave()
-            var pixels = [UInt32](repeating: 0, count: FrameBuffers.pixelCount)
+            var pixels = [UInt32](repeating: 0, count: frames.size.pixelCount)
             pixels.withUnsafeMutableBufferPointer { core.copyFramebuffer(to: $0.baseAddress!) }
             return (state: state, pixels: pixels)
         }
@@ -359,7 +394,7 @@ final class EmulatorSession: @unchecked Sendable {
     /// aparcado en `control.wait()`: nadie más lo toca hasta que el propio hilo principal
     /// llame a `resume()` o `stop()`. El lock da la visibilidad de memoria entre hilos.
     @MainActor
-    private func withParkedCore<T>(_ body: (CoreBridge) throws -> T) throws -> T {
+    private func withParkedCore<T>(_ body: (any ConsoleCore) throws -> T) throws -> T {
         control.lock()
         let isParked = parked && !finished
         control.unlock()

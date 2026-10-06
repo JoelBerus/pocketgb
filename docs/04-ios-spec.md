@@ -42,7 +42,14 @@ Resources/  Assets.xcassets, Info.plist
   - Los controles van **superpuestos** en los laterales, encima de la imagen si se solapan.
 - **Vertical:** imagen arriba (ancho completo, 10:9), controles debajo sobre fondo sólido y con opacidad 1.0.
 - `prefersHomeIndicatorAutoHidden = true` y `preferredScreenEdgesDeferringSystemGestures = .all` mientras se juega, para que un toque en el borde no abra el Centro de Control.
-- El renderizado usa `MTLSamplerState` con `minFilter = magFilter = .nearest` y una textura `.rgba8Unorm` de 160×144, actualizada con `replace(region:)` desde el último buffer listo.
+- El renderizado usa `MTLSamplerState` con `minFilter = magFilter = .nearest` y una textura `.rgba8Unorm` **del tamaño del frame de la consola** (160×144 en GB/GBC, 240×160 en GBA; el shader no depende del tamaño), actualizada con `replace(region:)` desde el último buffer listo.
+
+### Game Boy Advance (G7–G8)
+- La imagen es 3:2 (240×160). Escalado entero, «Llenar» y la vista vertical siguen las mismas reglas con relación 3:2 en vez de 10:9.
+- **L y R**: píldoras táctiles (92×40 pt, área táctil ≥ 44 pt) con posiciones por defecto propias por orientación (arriba a los lados; en vertical sin pisar el menú ni A/B/cruceta); arrastrables y redimensionables en el editor. El mando físico los mapea a los hombros izquierdo/derecho. La máscara de botones es de 16 bits; el núcleo GB descarta los bits de L/R.
+- **Ajustes por juego (solo GBA):** tipo de partida (detectado / sin partida / SRAM 32 KiB / Flash 64 / Flash 128 / EEPROM 512 B / 8 KiB), reloj (detectado / con / sin) y BIOS (Global —la tuya si existe— / Emulada). Se validan contra la partida guardada: si el tipo forzado no coincide con el `.sav`, no se sobrescribe (regla dura 6) y se avisa. Un save state de otra configuración se rechaza como «estado de otra configuración», no como dañado.
+- **BIOS opcional:** `gba_bios.bin` (16 KiB, volcado propio de Joel) en la raíz de la carpeta de la biblioteca; se valida por SHA-256 y se informa en Ajustes › Emulación. Sin ella se usa la HLE del núcleo. Nunca se incluye una BIOS en el repo ni en la app ([08](08-roms-legal.md)).
+- Audio: `sample_rate` 48 kHz, mismo anillo SPSC y pacing guiado por audio que GB.
 
 ## Controles translúcidos (requisito explícito de Joel)
 Una sola `UIView` (`ControlsOverlayView`) con `isMultipleTouchEnabled = true` gestiona **todos** los toques. No se usan `UIButton` ni gestos de SwiftUI, porque no permiten deslizar entre botones ni pulsar A y B a la vez de forma fiable.

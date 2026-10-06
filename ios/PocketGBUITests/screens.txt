@@ -109,3 +109,18 @@ game-settings          portrait  dark  -screen game-settings -demoLibrary standa
 # ---- D7 · Accesibilidad ----
 library-reduce-transparency portrait dark  -screen library-reduce-transparency -demoLibrary standard -reduceTransparency
 library-ax5                 portrait light -screen library-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+
+# ---- G7 · Game Boy Advance (arm.gba de jsmolka/gba-tests, MIT) ----
+game-gba            portrait  dark   -rom $FIXTURES/arm.gba
+game-gba            landscape dark   -rom $FIXTURES/arm.gba
+
+# ---- G8 · Game Boy Advance: pantalla 3:2, L/R y ajustes por juego ----
+gameplay-gba-landscape-clear landscape dark -rom $FIXTURES/arm.gba -controlOpacity 30
+gameplay-gba-reduce-transparency landscape dark -rom $FIXTURES/arm.gba -controlOpacity 30 -reduceTransparency
+gameplay-gba-hidden landscape dark -rom $FIXTURES/arm.gba -controlsVisibility hidden
+customize-controls-gba-portrait  portrait  dark -screen customize-controls-gba-portrait -rom $FIXTURES/arm.gba
+customize-controls-gba-landscape landscape dark -screen customize-controls-gba-landscape -rom $FIXTURES/arm.gba
+game-settings-gba   portrait  dark  -screen game-settings-gba -demoLibrary standard
+game-settings-gba   portrait  light -screen game-settings-gba -demoLibrary standard
+game-settings-gba-ax5 portrait light -screen game-settings-gba-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+customize-controls-gba-portrait-ax5 portrait dark -screen customize-controls-gba-portrait-ax5 -rom $FIXTURES/arm.gba -contentSizeCategory accessibility5

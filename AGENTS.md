@@ -17,7 +17,7 @@ Flujo completo: [docs/auditorias/README.md](docs/auditorias/README.md). Ningún 
 1. **Nunca** agregar ROMs comerciales, boot ROMs de Nintendo, partidas (`.sav`) ni estados al repo. El hook `.githooks/pre-commit` lo refuerza; no lo desactives. Ver [docs/08-roms-legal.md](docs/08-roms-legal.md).
 2. **Licencias:** solo se puede copiar código de proyectos MIT/BSD/zlib, citando origen en el archivo. Gambatte (GPLv2), Delta (AGPLv3), el directorio `iOS/` de SameBoy y cualquier GPL/AGPL: **leer sí, copiar no**, ni "adaptado".
 3. **El ROM es entrada no confiable.** Todo acceso a memoria del cartucho pasa por funciones con bounds-check. Tamaños de ROM/RAM se validan contra la cabecera *y* contra el tamaño real del archivo.
-4. **Núcleo (`core/`)**: C11 puro, sin I/O, sin `malloc` dentro de `gb_run_frame`, sin variables globales ni estáticas mutables (debe poder haber 2 instancias para el cable link), determinista (misma entrada → mismo framebuffer).
+4. **Núcleos (`core/` y `gba/`)**: C11 puro, sin I/O, sin `malloc` dentro de `gb_run_frame`, sin variables globales ni estáticas mutables (debe poder haber 2 instancias para el cable link), determinista (misma entrada → mismo framebuffer).
 5. **App iOS** (iOS 26+, Liquid Glass nativo; diseño en [docs/diseno/](docs/diseno/)): sin red. No se añaden claves ATS, ni `URLSession`, ni SDKs, ni paquetes SPM de terceros en runtime.
 6. **Partidas:** cualquier cambio en la ruta de guardado debe mantener escritura atómica + backups (ver [docs/04-ios-spec.md](docs/04-ios-spec.md) §Saves). Perder una partida es el peor bug posible.
 7. No marcar un criterio de aceptación como cumplido sin haber ejecutado el comando que lo verifica y pegado la salida relevante en la PR/commit.
@@ -32,12 +32,17 @@ make -C core fuzz FUZZ_SECONDS=600         # libFuzzer sobre el parser/MBC
 make -C core oracle                        # opcional: compila SameBoy para comparación
 xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -destination 'generic/platform=iOS' build
 tools/ios-screenshots.sh                   # tests de la app + capturas (también en CI)
+# Núcleo GBA (docs/10-gba-spec.md)
+tools/fetch-gba-test-roms.sh               # una vez, ~1 GB (jsmolka + SingleStepTests)
+make -C gba test HITO=G1                   # suite GBA
+make -C gba asan HITO=G1                   # ASan + UBSan
+make -C gba check-header check-globals check-symbols
 ```
 
 ## Mapa de documentos
 - [00-vision](docs/00-vision.md) · [01-auditoria](docs/01-auditoria.md) · [02-arquitectura](docs/02-arquitectura.md)
 - [03-core-spec](docs/03-core-spec.md) · [04-ios-spec](docs/04-ios-spec.md) · [05-android-spec](docs/05-android-spec.md)
-- [06-testing](docs/06-testing.md) · [07-instalacion-iphone](docs/07-instalacion-iphone.md) · [08-roms-legal](docs/08-roms-legal.md) · [09-referencias](docs/09-referencias.md)
+- [06-testing](docs/06-testing.md) · [07-instalacion-iphone](docs/07-instalacion-iphone.md) · [08-roms-legal](docs/08-roms-legal.md) · [09-referencias](docs/09-referencias.md) · [10-gba-spec](docs/10-gba-spec.md)
 - **Estado actual y siguiente paso: [docs/ESTADO.md](docs/ESTADO.md)**. Léelo primero y actualízalo al cerrar cada hito.
 - Diseño de la app: [docs/diseno/](docs/diseno/) (propuesta, SPEC, verificación visual con CI).
 - Hitos: [docs/hitos/](docs/hitos/). Trabajar **un hito a la vez**, en orden.

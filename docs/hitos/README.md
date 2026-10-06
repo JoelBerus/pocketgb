@@ -17,5 +17,20 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 **Hitos de diseño D1–D8:** fusionados en `main` el 2026-09-30. **D8.1** es el lote correctivo posterior (continuación exacta, alias, identidad y ajustes visuales); está implementado con Codex y requiere auditoría Opus independiente antes de cerrarse. App basada en la propuesta Liquid Glass de Joel: ☁️ nube + CI de macOS con capturas · 🍎 validación final en el iPhone. Plan: [D-README](D-README.md) · Spec: [../diseno/SPEC.md](../diseno/SPEC.md).
 
+**Game Boy Advance (G0–G9)**: plan en [G-README](G-README.md), spec en [10-gba-spec](../10-gba-spec.md).
+
+| Hito | Dónde | Estado |
+|---|---|---|
+| G0 · Instrucciones y andamiaje | ☁️ | ✅ cerrado 2026-10-05 (auditoría Opus: APROBAR CON CAMBIOS → corregido) |
+| G1 · CPU ARM7TDMI | ☁️ | ✅ cerrado 2026-10-05 (SingleStepTests 100 %, arm/thumb/memory.gba PASS; auditoría Opus: APROBAR CON CAMBIOS → corregido) |
+| G2 · Bus, DMA, timers, IRQ, HLE | ☁️ | ✅ cerrado 2026-10-05 (bios/nes/memory.gba PASS; Opus: RECHAZAR → APROBAR CON CAMBIOS → corregido) |
+| G3 · PPU | ☁️ | ✅ cerrado 2026-10-05 (12/14 escenas idénticas a mGBA; Opus: APROBAR CON CAMBIOS → corregido) |
+| G4 · Cartucho y saves | ☁️ | ✅ cerrado 2026-10-05 (SRAM, Flash, EEPROM, RTC; Opus: APROBAR CON CAMBIOS → corregido) |
+| G5 · APU | ☁️ | ✅ cerrado 2026-10-05 (núcleo; Opus: APROBAR CON CAMBIOS → corregido); 🍎 escucha en G8 |
+| G6 · Save states y determinismo | ☁️ | ✅ cerrado 2026-10-05 (estados validados, determinismo, fuzzers; auditoría de núcleo Opus: APROBAR CON CAMBIOS → corregido) |
+| G7 · App: biblioteca y sesión | ☁️ + CI macOS | ✅ implementado y auditado 2026-10-05 (Codex: RECHAZAR → G7-4 corregido; G7-1 y G7-2 descartados con evidencia, G7-3 documentado; **pendiente la aprobación de Joel del descarte de G7-1 y su decisión sobre G7-3**) |
+| G8 · App: pantalla, controles y audio | ☁️ + CI macOS · 🍎 | ✅ implementado y auditado (Opus: APROBAR CON CAMBIOS → corregido, H11 en G9); 🍎 pendiente de Joel: 60 fps, Kirby ≥ 30 min con cierre forzado, audio y L/R |
+| G9 · Cierre | ☁️ + 🍎 | ☁️ regresión y documentación hechas ([G9-evidencia](../auditorias/G9-evidencia.md)); faltan la prueba de Joel, la auditoría final Codex y la PR a `main` con su aprobación |
+
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.

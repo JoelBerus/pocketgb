@@ -40,11 +40,11 @@ enum PlaceholderSeed {
 }
 
 /// Portada generada (SPEC §11): color y glifo derivados de la huella, título abreviado y
-/// chip GB/GBC. No imita arte comercial. Es contenido (L1): sin vidrio.
+/// chip GB/GBC/GBA. No imita arte comercial. Es contenido (L1): sin vidrio.
 struct GamePlaceholderView: View {
     let seed: String
     let title: String
-    let isColor: Bool
+    let badge: ConsoleBadge
     var compact = false
 
     var body: some View {
@@ -73,7 +73,7 @@ struct GamePlaceholderView: View {
                         Text(PlaceholderSeed.initials(title))
                             .font(.headline.monospaced())
                         Spacer()
-                        Text(isColor ? "GBC" : "GB")
+                        Text(badge.label)
                             .font(.caption2.monospaced().weight(.semibold))
                             .padding(.horizontal, PocketSpacing.xs)
                             .padding(.vertical, 2)
@@ -108,7 +108,7 @@ struct GameArtworkView: View {
                     .accessibilityLabel("Captura de \(title)")
             } else {
                 GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
-                                    isColor: entry.isColor, compact: compact)
+                                    badge: entry.badge, compact: compact)
             }
         }
         .aspectRatio(10.0 / 9.0, contentMode: .fit)

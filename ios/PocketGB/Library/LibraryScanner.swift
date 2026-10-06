@@ -1,11 +1,16 @@
 import Foundation
 
 /// Enumera los ROMs de la carpeta de la biblioteca (docs/04 §Biblioteca, D-README §4):
-/// solo `.gb`/`.gbc`, en la carpeta y en sus subcarpetas directas (profundidad 1),
+/// solo `.gb`/`.gbc`/`.gba`, en la carpeta y en sus subcarpetas directas (profundidad 1),
 /// sin abrir ni ejecutar los ROMs y sin modificarlos. Se llama fuera del hilo principal.
 enum LibraryScanner {
     static let maxROMBytes = 8 * 1024 * 1024
-    static let extensions: Set<String> = ["gb", "gbc"]
+    static let extensions: Set<String> = ["gb", "gbc", "gba"]
+
+    /// Límite por consola: 8 MiB en Game Boy y 32 MiB en Game Boy Advance.
+    static func romLimit(for console: Console) -> Int {
+        console == .gameBoyAdvance ? GBACoreBridge.maxROMBytes : maxROMBytes
+    }
 
     private static let keys: [URLResourceKey] = [
         .isRegularFileKey, .isDirectoryKey, .fileSizeKey,
@@ -77,6 +82,8 @@ enum LibraryScanner {
         let fileName = url.lastPathComponent
         let fallbackTitle = (fileName as NSString).deletingPathExtension
         let isColorByName = url.pathExtension.lowercased() == "gbc"
+        let console = Console(fileName: fileName)
+        let isGBA = console == .gameBoyAdvance
         let values = try? url.resourceValues(forKeys: Set(keys))
         let mirrorDate = SaveStore.modificationDate(SaveMirror(romURL: url).url)
 
@@ -97,14 +104,16 @@ enum LibraryScanner {
                         cloud: downloading ? .downloading : .notDownloaded, problem: nil)
         }
         let size = values?.fileSize ?? 0
-        if size > maxROMBytes {
-            return make(title: nil, isColor: nil, size: size, checksumOK: true, cloud: .current, problem: .tooLarge)
+        if size > romLimit(for: console) {
+            return make(title: nil, isColor: nil, size: size, checksumOK: true, cloud: .current,
+                        problem: isGBA ? .tooLargeGBA : .tooLarge)
         }
         guard let head = try? readHeader(url) else {
             return make(title: nil, isColor: nil, size: size, checksumOK: true, cloud: .current, problem: .unreadable)
         }
-        guard let info = RomHeader.parse(head) else {
-            return make(title: nil, isColor: nil, size: size, checksumOK: true, cloud: .current, problem: .invalidHeader)
+        guard let info = isGBA ? RomHeader.parseGBA(head) : RomHeader.parse(head) else {
+            return make(title: nil, isColor: nil, size: size, checksumOK: true, cloud: .current,
+                        problem: isGBA ? .invalidHeaderGBA : .invalidHeader)
         }
         return make(title: info.title, isColor: info.isColor, size: size, checksumOK: info.checksumOK,
                     cloud: .current, problem: nil)
@@ -119,15 +128,16 @@ enum LibraryScanner {
         }
     }
 
-    /// Lee el ROM completo con lectura coordinada (al abrir un juego). Rechaza > 8 MiB.
-    static func readROM(_ url: URL) throws -> Data {
+    /// Lee el ROM completo con lectura coordinada (al abrir un juego). Rechaza más de
+    /// `limit` (8 MiB por defecto; 32 MiB en GBA).
+    static func readROM(_ url: URL, limit: Int = maxROMBytes) throws -> Data {
         try coordinatedRead(url) { u in
             // Lectura acotada: aunque el archivo crezca tras mirar su tamaño, nunca se
-            // cargan más de 8 MiB + 1 bytes en memoria (auditoría D2, H13).
+            // cargan más de `limit` + 1 bytes en memoria (auditoría D2, H13).
             let handle = try FileHandle(forReadingFrom: u)
             defer { try? handle.close() }
-            let data = try handle.read(upToCount: maxROMBytes + 1) ?? Data()
-            guard data.count <= maxROMBytes else { throw CocoaError(.fileReadTooLarge) }
+            let data = try handle.read(upToCount: limit + 1) ?? Data()
+            guard data.count <= limit else { throw CocoaError(.fileReadTooLarge) }
             return data
         }
     }

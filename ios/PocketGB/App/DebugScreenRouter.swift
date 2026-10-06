@@ -55,6 +55,12 @@ enum DebugScreen: String, CaseIterable {
     case settingsStorage = "settings-storage"
     case settingsSaves = "settings-saves"
     case gameSettings = "game-settings"
+    case gameSettingsGBA = "game-settings-gba"
+    case customizeControlsGBAPortrait = "customize-controls-gba-portrait"
+    case customizeControlsGBALandscape = "customize-controls-gba-landscape"
+    // G8-H4: las mismas pantallas con Dynamic Type accessibility5.
+    case gameSettingsGBAAX5 = "game-settings-gba-ax5"
+    case customizeControlsGBAPortraitAX5 = "customize-controls-gba-portrait-ax5"
     case gameplayController = "gameplay-controller"
     case gameplayFastForward = "gameplay-fast-forward"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
@@ -136,6 +142,13 @@ enum DebugScreenRouter {
                 state.libraryPath = [.details(id: dmg.id, source: dmg.id)]
                 state.gameSettingsEntry = dmg
             }
+        case .gameSettingsGBA, .gameSettingsGBAAX5:
+            // Un juego de Game Boy Advance con el tipo de partida forzado.
+            if let gba = standard.first(where: { $0.badge == .gba }) {
+                state.gameplay.setOverrides(GameOverrides(gbaSaveType: 3), for: gba.id)
+                state.libraryPath = [.details(id: gba.id, source: gba.id)]
+                state.gameSettingsEntry = gba
+            }
         case .settingsControls:
             state.selectedTab = .settings
             state.settingsPath = [.controls]
@@ -146,7 +159,8 @@ enum DebugScreenRouter {
             break
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
-        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize:
+        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
+             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:
@@ -324,6 +338,7 @@ enum DebugScreenRouter {
         entry("rtc3test.gb", "RTC3TEST", color: false, sub: "Pruebas"),
         entry("homebrew-con-un-titulo-muy-largo.gbc", "Un homebrew con un título muy largo para probar el truncado",
               color: true, sub: "Pruebas"),
+        entry("arm.gba", "jsmolka ARM", color: false, sub: "Pruebas"),
     ]
 
     nonisolated private static let errors: [RomEntry] = [

@@ -21,8 +21,6 @@ PocketGB es un emulador local para ROMs `.gb` y `.gbc` volcados por Joel desde s
 
 Fuera de alcance:
 
-- Game Boy Advance.
-- Botones L/R.
 - Cheats.
 - Descarga o búsqueda de portadas.
 - Importación de ROMs como copias administradas por la app.
@@ -491,7 +489,8 @@ La pantalla real del launch de iOS termina antes de que el UI test pueda captura
 - Los controles ocupan el área inferior sobre `GameplayBackground`.
 - D-pad, A, B, Start y Select tienen superficie visual opaca o regular; no necesitan clear glass sobre un fondo uniforme.
 - Si falta altura, se reduce primero el viewport. Los touch targets nunca bajan de 44 pt.
-- No existen L/R.
+- En Game Boy Advance (G8) la imagen es 3:2 en vez de 10:9 y aparecen L y R: píldoras de 92×40 pt (táctil ≥ 44 pt) arriba a los lados, sin pisar el menú ni A/B/cruceta, arrastrables en el editor. En GB/GBC no existen L/R.
+- La hoja «Ajustes del juego» de GBA añade tipo de partida, reloj y BIOS (Global —la tuya si existe— / Emulada); el aviso de ajustes forzados que no coinciden con la partida usa el estilo de las demás alertas.
 - El botón de menú queda entre viewport y controles, fuera del área del D-pad.
 - El HUD se superpone sin detener la emulación; la sheet de pausa sí pausa antes de mostrarse.
 
@@ -651,7 +650,7 @@ Leer `accessibilityReduceMotion`.
 
 Antes de aceptar una pantalla:
 
-- No aparece GBA, `.gba`, L/R ni cheats.
+- GBA, `.gba` y L/R solo aparecen donde este documento los describe (§GBA, G7–G8); no aparecen cheats.
 - No aparece ninguna promesa de descargar artwork.
 - La biblioteca se refiere a una carpeta, no a importar copias.
 - Tab bar, toolbar, search, sheets y alerts se ven nativos de iOS 26.

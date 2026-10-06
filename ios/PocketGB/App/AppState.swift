@@ -143,7 +143,9 @@ final class AppState {
     var resumeFallbackEntry: RomEntry?
     private(set) var resumableFingerprints: Set<String> = []
 
-    private static let maxROMBytes = LibraryScanner.maxROMBytes
+    /// BIOS de Game Boy Advance en la carpeta de juegos (Ajustes › Emulación). `nil` hasta
+    /// que se comprueba.
+    private(set) var gbaBIOSStatus: BIOSFile.Status?
 
     init() {
         #if DEBUG
@@ -242,6 +244,8 @@ final class AppState {
         guard !opening else { return }
         opening = true
         let url = entry.url
+        let console = Console(fileName: entry.fileName)
+        let root = library.rootURL
         // Dos ROMs con el mismo nombre base (Juego.gb y Juego.gbc) compartirían el .sav
         // junto al ROM: en ese caso no se usa el espejo (auditoría D2, H5).
         let mirror = SaveMirror(romURL: url)
@@ -255,7 +259,7 @@ final class AppState {
             // ROM y espejo se leen aquí, fuera del hilo principal: la lectura coordinada
             // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
             let result = Result<GameOpeningPayload, Error> {
-                let rom = try LibraryScanner.readROM(url)
+                let rom = try LibraryScanner.readROM(url, limit: LibraryScanner.romLimit(for: console))
                 guard mode == .resumeAutomatic else {
                     return GameOpeningPayload(rom: rom, automaticState: nil)
                 }
@@ -268,22 +272,29 @@ final class AppState {
                 return GameOpeningPayload(rom: rom, automaticState: try states.load(.auto))
             }
             let snapshot: SaveMirror.Snapshot = shared ? .absent : mirror.snapshot()
+            let bios: (data: Data?, status: BIOSFile.Status) =
+                console == .gameBoyAdvance ? BIOSFile.read(folder: root) : (data: nil, status: .absent)
             await self?.finishOpening(entry: entry, result: result, mirror: shared ? nil : mirror,
-                                      snapshot: snapshot, shared: shared, mode: mode)
+                                      snapshot: snapshot, shared: shared, mode: mode,
+                                      console: console, bios: bios)
         }
     }
 
     private func finishOpening(entry: RomEntry, result: Result<GameOpeningPayload, Error>, mirror: SaveMirror?,
-                               snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode) {
+                               snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode,
+                               console: Console, bios: (data: Data?, status: BIOSFile.Status)) {
         opening = false
+        if console == .gameBoyAdvance { gbaBIOSStatus = bios.status }
         switch result {
         case .success(let payload):
             start(romData: payload.rom, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
                   entryID: entry.id, restoring: payload.automaticState,
                   resumeFallback: mode == .resumeAutomatic ? entry : nil,
-                  extraWarning: shared ? .mirrorShared : nil)
+                  extraWarning: shared ? .mirrorShared : nil,
+                  console: console, bios: bios.data)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
-            showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
+            showAlert("No se puede abrir “\(entry.fileName)”",
+                      (console == .gameBoyAdvance ? RomEntry.Problem.tooLargeGBA : .tooLarge).message)
         case .failure(let error):
             if mode == .resumeAutomatic {
                 showResumeFailure(entry, message: error.localizedDescription)
@@ -291,6 +302,19 @@ final class AppState {
                 showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
             }
         }
+    }
+
+    /// Vuelve a comprobar `gba_bios.bin` (al abrir Ajustes › Emulación).
+    func refreshBIOSStatus() {
+        let root = library.rootURL
+        Task.detached(priority: .utility) { [weak self] in
+            let status = BIOSFile.read(folder: root).status
+            await self?.setBIOSStatus(status)
+        }
+    }
+
+    private func setBIOSStatus(_ status: BIOSFile.Status) {
+        gbaBIOSStatus = status
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -322,19 +346,27 @@ final class AppState {
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
     private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
                        fileName: String, entryID: String? = nil, restoring automaticState: Data? = nil,
-                       resumeFallback: RomEntry? = nil, extraWarning: SaveLoadWarning? = nil) {
+                       resumeFallback: RomEntry? = nil, extraWarning: SaveLoadWarning? = nil,
+                       console: Console = .gameBoy, bios: Data? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
+            let emulation = gameplay.data.emulation(for: entryID)
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
-                                              emulation: gameplay.data.emulation(for: entryID)) { [weak self] in
+                                              emulation: emulation,
+                                              console: console, bios: bios) { [weak self] in
                 self?.enterBackground()
             }
             session.applyAudioPreferences(audioPreferences)
             try session.start(restoring: automaticState)
+            // Game Boy Advance sin tipo ni reloj forzados: lo detectado se recuerda para los ajustes.
+            let forced = emulation.gbaSaveType != 0 || emulation.gbaRTC != 0
+            let detected = console == .gameBoyAdvance && !forced
+                ? (media: session.info.gbaMediaDescription, hasRTC: session.info.hasRTC) : nil
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
-                                                        title: session.info.title, fileName: fileName)
+                                                        title: session.info.title, fileName: fileName,
+                                                        detected: detected)
             if let entryID {
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
@@ -347,7 +379,9 @@ final class AppState {
             #endif
             reloadStates()
             paused = false
-            if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
+            if let forced = session.gameSettingsWarning {
+                showAlert(forced.title, forced.message)
+            } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
                 showAlert(warning.title, warning.message)
             } else if !session.info.headerChecksumOK {
                 showAlert("Cabecera dañada", "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado.")
@@ -376,11 +410,12 @@ final class AppState {
     #if DEBUG
     /// Solo pruebas en el simulador: abre un ROM por ruta, sin biblioteca ni espejo.
     func open(url: URL) {
-        guard let data = try? Data(contentsOf: url), data.count <= Self.maxROMBytes else {
+        let console = Console(fileName: url.lastPathComponent)
+        guard let data = try? Data(contentsOf: url), data.count <= LibraryScanner.romLimit(for: console) else {
             showAlert("No se puede abrir “\(url.lastPathComponent)”", "No se pudo leer el archivo.")
             return
         }
-        start(romData: data, mirror: nil, fileName: url.lastPathComponent)
+        start(romData: data, mirror: nil, fileName: url.lastPathComponent, console: console)
     }
     #endif
 
@@ -473,7 +508,7 @@ final class AppState {
     /// la codificación PNG va en la cola del almacén de portadas.
     private func saveArtwork(_ session: EmulatorSession) {
         let frame = session.frames.latest()
-        let pixels = Array(UnsafeBufferPointer(start: frame, count: FrameBuffers.pixelCount))
+        let pixels = Array(UnsafeBufferPointer(start: frame, count: session.frames.size.pixelCount))
         artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 
