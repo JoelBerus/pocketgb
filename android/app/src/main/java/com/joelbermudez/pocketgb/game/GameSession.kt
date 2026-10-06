@@ -373,6 +373,9 @@ class GameSession(
         Thread({
             var future: java.util.concurrent.Future<Unit>? = first
             var delay = REPAIR_BACKOFF_START_MS
+            // Una interrupción NO confirma que la reparación terminó ni que B dejó de escribir (A5V5-H1): se ignora,
+            // se sigue esperando y la marca de interrupción se restaura al final.
+            var interrupted = false
             try {
                 while (true) {
                     try {
@@ -395,18 +398,25 @@ class GameSession(
                             return@Thread
                         }
                     } catch (_: InterruptedException) {
-                        return@Thread
+                        interrupted = true
                     } catch (error: Throwable) {
                         Log.w(TAG, "Reparación de la partida anterior fallida; se reintenta", error)
-                        try { Thread.sleep(delay) } catch (_: InterruptedException) { return@Thread }
+                        val end = System.nanoTime() + delay * 1_000_000L
+                        while (true) {
+                            val left = (end - System.nanoTime()) / 1_000_000L
+                            if (left <= 0) break
+                            try { Thread.sleep(left) } catch (_: InterruptedException) { interrupted = true }
+                        }
                         delay = minOf(delay * 2, REPAIR_BACKOFF_MAX_MS)
                         future = try { coordinator.submitOnSaveThread { target.persistLocal(sram) } } catch (_: IOException) { null }
                     }
                 }
             } finally {
-                // Solo se suelta la huella cuando la reparación terminó (éxito) o el hilo murió interrumpido (y la sesión
-                // ya está cerrada).
-                try { dropLease() } finally { done.countDown() }
+                // Solo se suelta la huella cuando la reparación terminó con éxito.
+                try { dropLease() } finally {
+                    done.countDown()
+                    if (interrupted) Thread.currentThread().interrupt()
+                }
             }
         }, "pocketgb-save-repair").apply { isDaemon = true }.start()
         return try { done.await(repairWaitMs, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {

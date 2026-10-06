@@ -328,6 +328,43 @@ class GameSessionHardeningTest {
         }
     }
 
+    /**
+     * A5V5-H1: interrumpir `pocketgb-save-repair` con B todavía bloqueada NO libera la huella ni cancela la reparación:
+     * al liberar B, A debe quedar como partida principal y solo entonces se permite reabrir.
+     */
+    @Test
+    fun interruptingTheRepairThreadNeverReleasesTheLeaseNorCancelsTheRepair() {
+        val ops = StallingOps()
+        val session = RollbackFailsSession()
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
+            closeGraceMs = 200, closeKillWaitMs = 200, ownership = ownership, repairWaitMs = 300,
+        ).use { g ->
+            val game = g.game
+            val store = g.store!!
+            assertEquals(FlushResult.Saved, playAndPause(game))
+            game.saveState(StateSlot.MANUAL1)
+            assertEquals(FlushResult.Saved, playAndPause(game, 300))
+            val a = store.load()!!
+            ops.arm()
+            assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+            assertTrue(ops.awaitEntered())
+            game.tryClose()
+
+            val repair = Thread.getAllStackTraces().keys.first { it.name == "pocketgb-save-repair" && it.isAlive }
+            repair.interrupt()
+            Thread.sleep(500) // margen para que una liberación indebida ocurriera
+            assertTrue("el hilo de reparación sigue vivo tras la interrupción", repair.isAlive)
+            assertTrue("la huella sigue con dueño", ownership.isOwned(game.fingerprint))
+            assertNull("nadie puede abrir ni restaurar", ownership.tryAcquire(game.fingerprint, "intruso"))
+
+            ops.release()
+            assertTrue("al terminar todo se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            assertArrayEquals("y la reparación no se canceló: el principal es A", a, store.load())
+        }
+    }
+
     // ---- DeepSeek H1 / A5V3: el reaper suelta el lease también ante interrupción
 
     @Test
