@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-05
 
-**Rama:** `codex/android-port`. **Commits de A5:** `b8b91bb` (etapas 1–8, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta), `acfe806` (correcciones de la 1ª vuelta), `ffd6d97` (correcciones de la 2ª vuelta, auditadas en la 3ª) y el commit que sigue a `ffd6d97` (correcciones de la 3ª vuelta, sección «Correcciones de la 3ª vuelta»). El texto de las etapas 6–8 describe `b8b91bb`; donde una afirmación original quedó matizada por las correcciones posteriores se marca con «(corregido: …)».
+**Rama:** `codex/android-port`. **Commits de A5:** `b8b91bb` (etapas 1–8, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta), `acfe806` (correcciones de la 1ª vuelta), `ffd6d97` (correcciones de la 2ª vuelta, auditadas en la 3ª) y `9b4e5b1` (correcciones de la 3ª vuelta, sección «Correcciones de la 3ª vuelta»). El texto de las etapas 6–8 describe `b8b91bb`; donde una afirmación original quedó matizada por las correcciones posteriores se marca con «(corregido: …)».
 
 **Alcance (etapas 6–8):** `SaveCoordinator` y `GameSession` (6); `GameLauncher`, `GameplayViewModel`, `GameplayHost` con menú de pausa, estados, diálogo de fallo local y avisos de espejo, Ajustes › Partidas con restauración de backups, **Jugar/Continuar habilitado** y catálogo debug (7); `tools/android-save-kill-test.sh`, medición de `flushSync` y esta evidencia (8). Las etapas 1–5 ya tienen su evidencia en commits previos; aquí se reejecutan sus pruebas dentro de la batería completa.
 
@@ -242,7 +242,7 @@ Release: `aapt dump permissions` solo `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
 
 ## Correcciones de la 3ª vuelta de auditoría
 
-Informes: `A5-android-codex-v3.md` (RECHAZAR: A5V3-H1 bloqueante, A5V3-H2 baja) y `A5-android-deepseek-v3.md` (APROBAR CON CAMBIOS: H1 media, el reaper). Árbol auditado: **`ffd6d97`**; las correcciones están en el commit que sigue a `ffd6d97` (corrida del 2026-10-06). Cada prueba clave se comprobó **revirtiendo temporalmente la corrección**.
+Informes: `A5-android-codex-v3.md` (RECHAZAR: A5V3-H1 bloqueante, A5V3-H2 baja) y `A5-android-deepseek-v3.md` (APROBAR CON CAMBIOS: H1 media, el reaper). Árbol auditado: **`ffd6d97`**; las correcciones están en `9b4e5b1` (corrida del 2026-10-06). Cada prueba clave se comprobó **revirtiendo temporalmente la corrección**.
 
 ### Diseño: propiedad exclusiva atómica por huella
 
@@ -354,3 +354,14 @@ Durante la jornada el Mac estuvo bajo fuerte presión de memoria (carga media 10
 ## Archivos principales
 
 Nuevos: `game/{GameSession,GameLauncher,GameplayViewModel}.kt`, `saves/{SaveCoordinator,SavesBrowser,FramePng}.kt`, `ui/gameplay/{GameplayHost,PauseSheet,StatesSheet,GameDialogs}.kt`, `ui/settings/SavesScreen.kt`, `debug/{SaveStress,GameplayCatalogScreens,GameplayTestActivity}.kt`, `src/debug/AndroidManifest.xml`, `tools/android-save-kill-test.sh`; pruebas `SaveCoordinatorTest`, `SavesBrowserTest` (JVM) y `game/{GameSessionTest,OpenFromLibraryTest,GameplayLifecycleTest,GameplayUiTest,SaveCyclesTest,GameplayTestHost}.kt`, `testing/GameFixtures.kt`, `ui/SavesSettingsUiTest.kt`. Modificados: `MainActivity`, `PocketGBApp`, `AppDestination`, `SessionLifecycleObserver`, `EmulatorSession` (entrada tras cerrar), `GameplayScreen`, `GameDetailsScreen`, `LibraryContent/Screen`, `LibraryViewModel.recordPlayed`, `SettingsScreen`, `strings.xml`, catálogo debug, `tools/android-screenshots.sh`, `docs/ESTADO.md`.
+
+## Correcciones de la 4ª vuelta
+
+Auditado: `9b4e5b12b9fc43131bb206965aa08ad75a8a7604` (correcciones de la 3ª vuelta). Informes: `A5-android-codex-v4.md` (RECHAZAR, 1 bloqueante y 1 baja) y `A5-android-deepseek-v4.md` (APROBAR). Correcciones: commit que sigue a `9b4e5b1` en `codex/android-port` (`git log --oneline -3` para el SHA).
+
+| ID | Corrección | Test |
+|---|---|---|
+| A5V4-H1 (bloqueante) | `pocketgb-save-reaper` ya NO libera el lease al ser interrumpido: una interrupción no confirma que la escritura antigua terminó. Sigue esperando `awaitThreadExit()`, restaura la marca de interrupción al final y solo suelta el lease tras la salida real del hilo y el cierre del handle. (La liberación ante interrupción la había sugerido el hallazgo H1 de la auditoría DeepSeek de la 3ª vuelta; era incorrecta y reabría la ventana del lease.) | `GameSessionHardeningTest.theSaveReaperKeepsTheLeaseWhenInterruptedUntilTheSaveThreadReallyExits` (interrumpe el reaper con el hilo atascado; la huella sigue con dueño, `tryAcquire` falla y el reaper sigue vivo; al liberar la operación antigua, el lease se libera). Sustituye al test anterior, que validaba el comportamiento inseguro. |
+| A5V4-H2 (baja) | Evidencia con SHAs explícitos. | — |
+
+Verificación tras el cambio (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 188/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50. No se revirtió la corrección para comprobar que el test falla sin ella; sí se cubre por construcción (el test anterior afirmaba lo contrario). No verificado: escritura antigua tardía de extremo a extremo con una restauración o sesión nueva concurrentes, y la prueba manual J11 en teléfono.

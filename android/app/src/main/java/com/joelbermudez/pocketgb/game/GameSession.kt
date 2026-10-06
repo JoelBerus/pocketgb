@@ -517,13 +517,22 @@ class GameSession(
             is CloseResult.SaveThreadStuck -> {
                 Log.w(TAG, "El hilo de guardado no terminó (${result.threadName}); el handle nativo se libera cuando salga")
                 Thread({
-                    // La propiedad de la huella se suelta SIEMPRE al acabar este hilo (también interrumpido o con error).
+                    // La propiedad de la huella NUNCA se suelta mientras el hilo de guardado siga vivo: una
+                    // interrupción no es una confirmación de que la escritura antigua terminó (A5V4-H1). Se sigue
+                    // esperando y se restaura la marca de interrupción al final.
+                    var interrupted = false
                     try {
-                        coordinator.awaitThreadExit()
-                        session.close()
-                    } catch (_: InterruptedException) {
+                        while (true) {
+                            try {
+                                coordinator.awaitThreadExit()
+                                break
+                            } catch (_: InterruptedException) {
+                                interrupted = true
+                            }
+                        }
+                        try { session.close() } finally { dropLease() }
                     } finally {
-                        dropLease()
+                        if (interrupted) Thread.currentThread().interrupt()
                     }
                 }, "pocketgb-save-reaper").apply { isDaemon = true }.start()
             }

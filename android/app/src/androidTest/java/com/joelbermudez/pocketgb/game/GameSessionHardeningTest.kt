@@ -331,7 +331,7 @@ class GameSessionHardeningTest {
     // ---- DeepSeek H1 / A5V3: el reaper suelta el lease también ante interrupción
 
     @Test
-    fun theSaveReaperReleasesTheLeaseEvenIfItIsInterrupted() {
+    fun theSaveReaperKeepsTheLeaseWhenInterruptedUntilTheSaveThreadReallyExits() {
         val ops = StallingOps()
         val ownership = FingerprintOwnership()
         openGame(
@@ -349,12 +349,14 @@ class GameSessionHardeningTest {
 
             val reaper = Thread.getAllStackTraces().keys.first { it.name == "pocketgb-save-reaper" && it.isAlive }
             reaper.interrupt()
-            assertTrue("interrumpido, el reaper suelta el lease", waitUntil(10_000) { !ownership.isOwned(game.fingerprint) })
-            assertFalse(game.holdsLease)
+            Thread.sleep(500) // margen para que una liberación indebida ocurriera
+            assertTrue("interrumpido, con el hilo vivo la huella SIGUE con dueño", ownership.isOwned(game.fingerprint))
+            assertNull("nadie puede abrir ni restaurar durante la ventana", ownership.tryAcquire(game.fingerprint, "intruso"))
+            assertTrue("el reaper sigue esperando", reaper.isAlive)
 
             ops.release()
-            game.awaitSaveThreadExit()
-            try { game.session.close() } catch (_: Exception) {}
+            assertTrue("solo al terminar de verdad el hilo se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            assertFalse(game.holdsLease)
         }
     }
 
