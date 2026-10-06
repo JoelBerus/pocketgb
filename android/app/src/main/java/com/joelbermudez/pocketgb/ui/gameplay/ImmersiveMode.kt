@@ -51,7 +51,10 @@ fun ImmersiveMode() {
             controller.isAppearanceLightStatusBars = lightStatus
             controller.isAppearanceLightNavigationBars = lightNavigation
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = cutout }
+                window.attributes = window.attributes.apply {
+                    @android.annotation.SuppressLint("WrongConstant")
+                    layoutInDisplayCutoutMode = cutout
+                }
             }
         }
     }
