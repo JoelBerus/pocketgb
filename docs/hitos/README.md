@@ -13,7 +13,7 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | [M6 · Biblioteca + saves](M6-biblioteca-saves.md) | — | ➡️ sustituido por D2 + D3 ([D-README](D-README.md)) |
 | [M7 · Controles + extras](M7-controles.md) | — | ➡️ sustituido por D4 + D5 + D6 ([D-README](D-README.md)) |
 | [M8 · CGB](M8-cgb.md) | ☁️ núcleo · 🍎 prueba en iPhone | ✅ cerrado 2026-09-29 (auditoría Opus: APROBAR CON CAMBIOS → H1–H5 corregidos; Amarillo en color en el iPhone; paleta de Rojo → D5/D6) |
-| [M9 · Cable virtual](M9-link-virtual.md) | ☁️ núcleo · 🍎 UI | ☁️ núcleo cerrado 2026-09-29 (auditorías Opus y Codex; fuzz-link 600 s); 🍎 falta UI e intercambio en el iPhone |
+| [M9 · Cable virtual](M9-link-virtual.md) | ☁️ núcleo · 🍎 UI | ☁️ núcleo cerrado 2026-09-29 (auditorías Opus y Codex; fuzz-link 600 s); 🍎 UI implementada 2026-10-06 en `m9-link-ui` (lotes 1–5; [evidencia](../auditorias/M9-ios-evidencia.md)); faltan la prueba del intercambio en el iPhone y la auditoría de los lotes 3–5 |
 
 **Hitos de diseño D1–D8:** fusionados en `main` el 2026-09-30. **D8.1** es el lote correctivo posterior (continuación exacta, alias, identidad y ajustes visuales); está implementado con Codex y requiere auditoría Opus independiente antes de cerrarse. App basada en la propuesta Liquid Glass de Joel: ☁️ nube + CI de macOS con capturas · 🍎 validación final en el iPhone. Plan: [D-README](D-README.md) · Spec: [../diseno/SPEC.md](../diseno/SPEC.md).
 

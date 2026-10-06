@@ -477,6 +477,15 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 41 | `library-reduce-transparency` | Biblioteca sin transparencia | portrait | dark | Misma jerarquía con superficies sólidas | Vidrio manual persistente |
 | 42 | `gameplay-reduce-transparency` | Gameplay sin transparencia | landscape | dark | Controles sólidos ≥90 %, borde y labels completos | Controles al 30 % ilegibles |
 | 43 | `library-ax5` | Biblioteca Dynamic Type AX5 | portrait | light | Reflow, títulos completos y targets accesibles | Solapamientos o texto recortado |
+| 44 | `gameplay-link-portrait` | Cable link, vertical | portrait | dark | Juego activo, miniatura del otro juego arriba a la derecha de los controles y tercer botón (⇄) en el HUD | Miniatura bajo la Dynamic Island, sobre el D-pad o con vidrio |
+| 45 | `gameplay-link-landscape` | Cable link, horizontal | landscape | dark | Miniatura arriba a la izquierda dentro del área segura, sin pisar el recorte ni los controles | Miniatura bajo el recorte o tapando el HUD |
+| 46 | `gameplay-link-switched` | Tras cambiar de juego | portrait | dark | Toast «Ahora juegas con …» y los dos juegos intercambiados (principal y miniatura) | Toast ausente o miniatura sin cambiar |
+| 47 | `gameplay-link-pause` | Pausa con cable | portrait | dark | «Continuar», «Cambiar a … y continuar», «Personalizar controles», sin «Estados guardados» y «Salir del cable» | «Estados guardados» o «Salir del juego» |
+| 48 | `gameplay-link-reduce-transparency` | Cable sin transparencia | landscape | dark | Controles y botones del HUD sólidos con la miniatura legible | Vidrio persistente |
+| 49 | `link-partner-picker` | Selector de pareja | portrait | ambos | Sheet con los juegos de Game Boy (sin el mismo juego ni GBA), jugados primero y el pie explicativo | GBA, el juego elegido o ocultos en la lista |
+| 50 | `link-partner-picker-ax5` | Selector con AX5 | portrait | light | Filas y pie con reflow, títulos completos | Texto recortado |
+| 51 | `link-open-refused` | Cable rechazado | portrait | ambos | Alerta con el motivo («Elige otro juego…») | Abrir igualmente o error genérico |
+| 52 | `link-continue-warning` | Aviso de continuación | portrait | light | Alerta «¿Conectar sin continuar?» con «Conectar igualmente» y «Cancelar» | Perder el punto de continuación sin avisar |
 
 La pantalla real del launch de iOS termina antes de que el UI test pueda capturarla de forma fiable. `launch` es una ruta DEBUG que renderiza la misma composición para revisión; el launch asset real se valida en dispositivo.
 
@@ -555,6 +564,19 @@ El efecto visual nunca decide qué control está pulsado; solo representa el est
 - Entran las posiciones guardadas para la nueva orientación.
 - No se interpolan posiciones táctiles activas; al iniciar la transición se publicará máscara cero.
 - Con Reduce Motion se usa crossfade de 200 ms.
+
+### 10.6 Cable link virtual (M9)
+
+Dos juegos de Game Boy en el mismo iPhone unidos por el cable virtual (`docs/hitos/M9-link-virtual.md`). Se **alterna** entre ellos; no hay pantalla dividida (en vertical no caben dos juegos y los controles).
+
+- **Entrada.** «Conectar con otro juego…» (`cable.connector`, id `game-details-link`) en el detalle de un juego de Game Boy o Game Boy Color que se puede jugar, y «Conectar con…» en su menú contextual. Ese juego es el primer lado y arranca activo. La sheet del selector (`.medium`/`.large`) lista con `GameListItem` los demás juegos de Game Boy descargados, sin ocultos ni con problema: jugados primero (el más reciente arriba), luego los que tienen `.sav` junto al ROM, luego por título. Tocar una fila cierra la sheet y abre el cable al terminar de cerrarse.
+- **HUD.** Tercer botón de vidrio en el mismo contenedor: `arrow.left.arrow.right`, 44×44 pt, `accessibilityLabel` «Cambiar a <otro título>», id `hud-link-switch`. Cambiar muestra el toast «Ahora juegas con <título>» y una háptica de selección. El avance rápido se hereda.
+- **Miniatura.** Contenido L1 sin vidrio, borde fino, sin recibir toques y con la etiqueta «Otro juego del cable: <título>». Va en los huecos de L/R, que Game Boy no usa: en vertical, arriba a la derecha de la zona de controles (72 pt); en horizontal, arriba a la izquierda dentro del área segura (96 pt). Con el editor de controles abierto se oculta con opacidad 0, no con `if`, para no recrear la `MTKView`.
+- **Pausa.** Título del juego activo; «Continuar»; «Cambiar a <otro> y continuar» (`pause-link-switch`); «Personalizar controles»; **sin** «Estados guardados» (pie que explica por qué); «Salir del cable» (destructivo, `pause-link-exit`) con el pie «Al salir se guardan las dos partidas.».
+- **Sin estados.** Con el cable no hay save states, tampoco el automático al salir: cargar un estado reescribe la SRAM de un lado y rompe el protocolo con el otro.
+- **Rechazos** (alerta, antes de arrancar nada): un `.gba`; el mismo ROM con batería dos veces; un juego con batería que no puede guardar (partida de tamaño inesperado, ilegible); una partida de iCloud sin descargar y sin copia local. Los demás avisos de apertura se juntan en una sola alerta con el título de cada juego.
+- **Continuación (D8.1).** Si algún juego tiene un estado automático válido, antes de abrir se avisa («¿Conectar sin continuar?»: «Conectar igualmente» o «Cancelar»). Al salir, `didRestoreSave` invalida el estado automático de los dos.
+- **Pendiente de Joel en el iPhone** (no se marca cumplido): audio que sigue al juego visible, rendimiento con los dos núcleos, Rojo ↔ Amarillo con la evolución de Kadabra y el cierre forzado durante el cable.
 
 ## 11. Portadas y capturas
 
