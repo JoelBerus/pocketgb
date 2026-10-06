@@ -5,6 +5,7 @@
       partida) ni `states/` (voluminosos y regenerables), para no agotar la cuota de 25 MiB.
     - Transferencia entre teléfonos: se lleva todo (partidas, backups y estados), porque es un cable o una
       red local sin cuota y es el momento en que más se agradece conservar el historial.
+    - Las portadas (`artwork/`, A6 K9) son capturas derivadas y regenerables jugando: tampoco suben a la nube.
     - El URI de la carpeta (library_folder) no viaja en ningún caso: es un permiso SAF ligado al dispositivo.
     SOLO `<exclude>`, jamás `<include>` (volvería lista blanca; lo verifica ManifestPolicyTest).
     Riesgo documentado: tras restaurar, la mtime nueva del `.sav` puede hacer ganar a una local antigua en la
@@ -15,6 +16,7 @@
         <exclude domain="sharedpref" path="library_folder.xml" />
         <exclude domain="file" path="saves/backups/" />
         <exclude domain="file" path="states/" />
+        <exclude domain="file" path="artwork/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="library_folder.xml" />

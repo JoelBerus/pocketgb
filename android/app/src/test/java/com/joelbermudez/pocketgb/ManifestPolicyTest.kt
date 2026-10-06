@@ -58,6 +58,14 @@ class ManifestPolicyTest {
         assertTrue(legacy.contains("""domain="file" path="states/""""))
     }
 
+    /** A6 K9: las portadas capturadas son derivadas y regenerables: fuera de la copia en la nube (solo `<exclude>`). */
+    @Test
+    fun artworkIsExcludedFromCloudBackupAndLegacyBackup() {
+        val cloud = section(rules("data_extraction_rules.xml"), "cloud-backup")
+        assertTrue(cloud.contains("""<exclude domain="file" path="artwork/" />"""))
+        assertTrue(rules("backup_rules.xml").contains("""<exclude domain="file" path="artwork/" />"""))
+    }
+
     /** Las partidas (los `.sav` de saves) nunca se excluyen enteras: perderlas en una restauración es el peor bug. */
     @Test
     fun savesDirectoryItselfIsNeverExcluded() {
