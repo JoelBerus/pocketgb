@@ -17,5 +17,18 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 **Hitos de diseño D1–D8** (D1 ✅ cerrado 2026-09-29; D2–D7 ☁️ implementados en `d2-a1-wip`, CI verde y probados por Joel en el iPhone (D2–D6); D8 ☁️ evidencia consolidada, falta la auditoría Codex final y el merge) (app con la propuesta Liquid Glass de Joel): ☁️ nube + CI de macOS con capturas · 🍎 validación final en el iPhone. Plan: [D-README](D-README.md) · Spec: [../diseno/SPEC.md](../diseno/SPEC.md).
 
+**Hitos Android A1–A8** (app nativa Kotlin/Compose, plan en [../diseno-android/SPEC.md](../diseno-android/SPEC.md) §7):
+
+| Hito | Estado |
+|---|---|
+| A1 · Fundamentos | ✅ cerrado ([evidencia](../auditorias/A1-android-evidencia.md)) |
+| A2 · Core y vídeo | ✅ cerrado ([evidencia](../auditorias/A2-android-evidencia.md)) |
+| A3 · Audio, input y ciclo de vida | ✅ cerrado, probado por Joel ([evidencia](../auditorias/A3-android-evidencia.md)) |
+| A4 · Biblioteca | ✅ cerrado, probado por Joel ([evidencia](../auditorias/A4-android-evidencia.md)) |
+| A5 · Partidas y estados | ✅ implementado y auditado en 7 vueltas; pendiente la prueba manual de Joel ([evidencia](../auditorias/A5-android-evidencia.md)) |
+| A6 · Paridad visual | ✅ cerrado y auditado (Opus y DeepSeek, respuesta A6-R; kill-test 50/50) ([evidencia](../auditorias/A6-android-evidencia.md)) |
+| A7 · Robustez | 🟡 implementado (L1 a L4), pendiente de auditoría y de pruebas reales ([evidencia](../auditorias/A7-android-evidencia.md)) |
+| A8 · Cierre | ⏳ pendiente (regresión, Release, icono, prueba real y auditoría conjunta; cerrar A5V6-H1, A5V6-H3 y A5V7-H1 si siguen abiertos) |
+
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.
