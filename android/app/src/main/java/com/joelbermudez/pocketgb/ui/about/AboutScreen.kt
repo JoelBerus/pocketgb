@@ -1,45 +1,61 @@
 package com.joelbermudez.pocketgb.ui.about
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Text
 import androidx.compose.ui.unit.dp
+import com.joelbermudez.pocketgb.BuildConfig
+import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
+import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
+import com.joelbermudez.pocketgb.ui.settings.components.ValueRow
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Acerca de: versión, núcleo, privacidad sin red, juegos propios y licencias de terceros. */
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Acerca de") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
-                    }
-                },
+fun AboutScreen(onBack: () -> Unit, onLicenses: () -> Unit = {}) {
+    SettingsPage(stringResource(R.string.settings_about), onBack) {
+        SettingsGroup {
+            ValueRow(
+                stringResource(R.string.about_version),
+                "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                Modifier.testTag("about-version"),
             )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("PocketGB", style = MaterialTheme.typography.headlineMedium)
-            Text("Emulador nativo de Game Boy y Game Boy Color.")
-            Text("Sin red. Tus ROMs, partidas y preferencias permanecen en el dispositivo y en la carpeta que elijas.")
-            Text("Núcleo propio C11. Consulta el repositorio para licencias y atribuciones.")
+            ValueRow(stringResource(R.string.about_core), stringResource(R.string.about_core_value))
+            ValueRow(stringResource(R.string.about_consoles), stringResource(R.string.about_consoles_value))
+        }
+        SettingsGroup(header = stringResource(R.string.about_privacy_header)) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.about_privacy_body)) },
+                leadingContent = { Icon(Icons.Outlined.WifiOff, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
+        SettingsGroup(header = stringResource(R.string.about_games_header)) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.about_games_body)) },
+                leadingContent = { Icon(Icons.Outlined.SportsEsports, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
+        SettingsGroup {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.about_licenses)) },
+                leadingContent = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = Modifier.heightIn(min = 56.dp).clickable(onClick = onLicenses).testTag("about-licenses"),
+            )
         }
     }
 }

@@ -57,4 +57,22 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object About : SettingsRoute
+
+    @Serializable
+    data object SettingsControls : SettingsRoute
+
+    @Serializable
+    data object SettingsDisplay : SettingsRoute
+
+    @Serializable
+    data object SettingsEmulation : SettingsRoute
+
+    @Serializable
+    data object SettingsAudio : SettingsRoute
+
+    @Serializable
+    data object SettingsStorage : SettingsRoute
+
+    @Serializable
+    data object SettingsLicenses : SettingsRoute
 }

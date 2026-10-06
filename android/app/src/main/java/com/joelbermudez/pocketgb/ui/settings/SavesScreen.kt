@@ -48,6 +48,7 @@ import com.joelbermudez.pocketgb.saves.SavedGameUi
 import com.joelbermudez.pocketgb.saves.SavesBrowser
 import com.joelbermudez.pocketgb.ui.components.EmptyState
 import com.joelbermudez.pocketgb.ui.gameplay.causeText
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
@@ -59,8 +60,19 @@ import kotlinx.coroutines.withContext
 fun SavesScreen(browser: SavesBrowser, gameplay: GameplayViewModel, onBack: () -> Unit) {
     val openFingerprint by gameplay.openFingerprint.collectAsStateWithLifecycle()
     var refresh by remember { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val games by produceState<List<SavedGameUi>?>(null, refresh) {
         value = withContext(Dispatchers.IO) { runCatching { browser.list() }.getOrDefault(emptyList()) }
+    }
+    // Fecha de la partida actual: la `.sav` local de cada huella (lectura barata de la fecha, fuera del hilo principal).
+    val currentDates by produceState<Map<String, Long>>(emptyMap(), games) {
+        val list = games ?: return@produceState
+        value = withContext(Dispatchers.IO) {
+            list.mapNotNull { game ->
+                File(File(context.filesDir, "saves"), "${game.fingerprint}.sav").takeIf { it.isFile }
+                    ?.lastModified()?.takeIf { it > 0 }?.let { game.fingerprint to it }
+            }.toMap()
+        }
     }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -82,6 +94,7 @@ fun SavesScreen(browser: SavesBrowser, gameplay: GameplayViewModel, onBack: () -
             }
         },
         onBack = onBack,
+        currentDates = currentDates,
     )
 }
 
@@ -95,6 +108,8 @@ fun SavesSettingsContent(
     onRestore: (fingerprint: String, backup: Int) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Fecha (ms) de la partida actual por huella; ausente = no se conoce. */
+    currentDates: Map<String, Long> = emptyMap(),
 ) {
     var pending by remember { mutableStateOf<Pair<String, Int>?>(null) }
     Scaffold(
@@ -124,7 +139,7 @@ fun SavesSettingsContent(
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("saves-list"),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 16.dp,
+                    start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 24.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -142,6 +157,13 @@ fun SavesSettingsContent(
                             game.fileName?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            currentDates[game.fingerprint]?.let { date ->
+                                Text(
+                                    stringResource(R.string.saves_current_saved, formatDate(date)),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.testTag("saved-current-${game.fingerprint.take(8)}"),
+                                )
+                            }
                             Text(stringResource(R.string.saves_backups), style = MaterialTheme.typography.labelLarge)
                             if (game.backups.isEmpty()) {
                                 Text(stringResource(R.string.saves_no_backups), style = MaterialTheme.typography.bodyMedium)
@@ -152,14 +174,14 @@ fun SavesSettingsContent(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                                 ) {
+                                    val dateText = backup.dateMs?.let(::formatDate)
+                                        ?: stringResource(R.string.saves_backup_unknown_date)
                                     Text(
-                                        stringResource(
-                                            R.string.saves_backup_item,
-                                            backup.index,
-                                            backup.dateMs?.let {
-                                                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
-                                            } ?: stringResource(R.string.saves_backup_unknown_date),
-                                        ),
+                                        if (backup.index == 1) {
+                                            stringResource(R.string.saves_backup_latest, dateText)
+                                        } else {
+                                            stringResource(R.string.saves_backup_item, backup.index, dateText)
+                                        },
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -171,6 +193,13 @@ fun SavesSettingsContent(
                                     ) { Text(stringResource(R.string.saves_restore)) }
                                 }
                             }
+                            if (game.backups.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.saves_restore_footer),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             if (open) {
                                 Text(
                                     stringResource(R.string.saves_restore_disabled_open),
@@ -180,6 +209,13 @@ fun SavesSettingsContent(
                             }
                         }
                     }
+                }
+                item(key = "saves-footer") {
+                    Text(
+                        stringResource(R.string.saves_footer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -206,3 +242,6 @@ fun SavesSettingsContent(
         )
     }
 }
+
+private fun formatDate(ms: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(ms))

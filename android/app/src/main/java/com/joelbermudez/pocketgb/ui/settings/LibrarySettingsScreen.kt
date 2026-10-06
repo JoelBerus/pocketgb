@@ -2,6 +2,8 @@ package com.joelbermudez.pocketgb.ui.settings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -29,14 +31,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.LibraryError
+import com.joelbermudez.pocketgb.library.LibraryLayout
+import com.joelbermudez.pocketgb.library.LibrarySort
 import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.library.rememberFolderPicker
+import com.joelbermudez.pocketgb.ui.settings.components.ChoiceRow
+import com.joelbermudez.pocketgb.ui.settings.components.DropdownRow
+import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 
 @Composable
 fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit) {
@@ -58,6 +70,10 @@ fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit) {
         onForget = viewModel::forgetFolder,
         onUnhide = viewModel::unhide,
         onBack = onBack,
+        layout = prefs.layout,
+        sort = prefs.sort,
+        onLayout = viewModel::setLayout,
+        onSort = viewModel::setSort,
     )
 }
 
@@ -91,6 +107,10 @@ fun LibrarySettingsContent(
     onUnhide: (RomEntry) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    layout: LibraryLayout = LibraryLayout.GRID,
+    sort: LibrarySort = LibrarySort.TITLE,
+    onLayout: (LibraryLayout) -> Unit = {},
+    onSort: (LibrarySort) -> Unit = {},
 ) {
     var confirmForget by remember { mutableStateOf(false) }
     val hasFolder = state != LibraryState.NoFolder && state != LibraryState.Loading
@@ -98,10 +118,10 @@ fun LibrarySettingsContent(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Biblioteca") },
+                title = { Text(stringResource(R.string.settings_library)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 },
             )
@@ -109,6 +129,12 @@ fun LibrarySettingsContent(
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().testTag("library-settings"), contentPadding = padding) {
             item {
+                Text(
+                    stringResource(R.string.library_settings_folder_header),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).semantics { heading() },
+                )
                 ListItem(
                     headlineContent = { Text("Carpeta actual") },
                     supportingContent = {
@@ -149,6 +175,31 @@ fun LibrarySettingsContent(
                 }
             }
             item {
+                Text(
+                    stringResource(R.string.library_settings_folder_footer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                SettingsGroup(
+                    header = stringResource(R.string.library_settings_view_header),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    ChoiceRow(
+                        title = stringResource(R.string.library_settings_layout),
+                        options = LibraryLayout.entries.map { it to it.title },
+                        selected = layout,
+                        onSelect = onLayout,
+                        tag = "library-layout",
+                    )
+                    DropdownRow(
+                        title = stringResource(R.string.library_settings_sort),
+                        options = LibrarySort.entries.map { it to it.title },
+                        selected = sort,
+                        onSelect = onSort,
+                        tag = "library-sort",
+                    )
+                }
                 HorizontalDivider()
                 ListItem(
                     headlineContent = {
@@ -168,15 +219,30 @@ fun LibrarySettingsContent(
                 items(hidden, key = { it.id }) { entry ->
                     ListItem(
                         headlineContent = { Text(entry.title) },
-                        supportingContent = { Text(entry.id) },
+                        supportingContent = { Text(entry.fileName, maxLines = 1) },
                         trailingContent = {
-                            TextButton(onClick = { onUnhide(entry) }, modifier = Modifier.testTag("unhide-${entry.id}")) {
-                                Text("Mostrar de nuevo")
+                            val showDescription = stringResource(R.string.library_settings_show_description, entry.title)
+                            TextButton(
+                                onClick = { onUnhide(entry) },
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .semantics { contentDescription = showDescription }
+                                    .testTag("unhide-${entry.id}"),
+                            ) {
+                                Text(stringResource(R.string.library_settings_show))
                             }
                         },
                     )
                     HorizontalDivider()
                 }
+            }
+            item {
+                Text(
+                    stringResource(R.string.library_settings_hidden_footer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
             }
         }
     }
