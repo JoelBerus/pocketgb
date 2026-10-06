@@ -37,7 +37,7 @@ object GamepadRouter {
 
     fun dispatchMotion(event: MotionEvent): Boolean {
         val current = sink ?: return false
-        if (!event.isFromSource(InputDevice.SOURCE_JOYSTICK) || event.actionMasked != MotionEvent.ACTION_MOVE) return false
+        if (!isPadMotion(event.source, event.device?.sources ?: 0) || event.actionMasked != MotionEvent.ACTION_MOVE) return false
         return current.onAxes(
             event.getAxisValue(MotionEvent.AXIS_HAT_X),
             event.getAxisValue(MotionEvent.AXIS_HAT_Y),
