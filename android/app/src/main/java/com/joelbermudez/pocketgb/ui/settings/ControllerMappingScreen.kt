@@ -54,8 +54,10 @@ fun ControllerMappingContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     warning: String? = null,
+    /** Acción cuyo diálogo de asignación está abierto al empezar; solo lo usa el catálogo de capturas. */
+    initialAssigning: PadAction? = null,
 ) {
-    var assigning by remember { mutableStateOf<PadAction?>(null) }
+    var assigning by remember { mutableStateOf(initialAssigning) }
     val resolved = (data.controllerMapping ?: ControllerMappingData.DEFAULT).resolved()
     SettingsPage(stringResource(R.string.controller_mapping_title), onBack, modifier, warning) {
         SettingsGroup(

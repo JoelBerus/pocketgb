@@ -83,6 +83,25 @@ class CatalogCoverageTest {
     }
 
     @Test
+    fun everyA7IdOfThePlanIsPresentWithItsArguments() {
+        val byId = manifest().groupBy { it.id }
+        val missing = A7_IDS.keys.filterNot { it in byId }
+        assertTrue("faltan ids de A7: $missing", missing.isEmpty())
+        A7_IDS.forEach { (id, args) ->
+            val actual = byId.getValue(id).first().args
+            args.forEach { (key, value) -> assertEquals("«$id» argumento $key", value, actual[key]) }
+        }
+        assertEquals("los 14 ids del catálogo A7", 14, A7_IDS.size)
+    }
+
+    @Test
+    fun scriptOnlyArgumentsNeverReachTheApp() {
+        // `window` y `cutout` los consume tools/android-screenshots.sh; `DebugIntent` no los conoce.
+        val ids = manifest().filter { "window" in it.args || "cutout" in it.args }.map { it.id }.toSet()
+        assertEquals(setOf("library-wide-rail", "library-list-detail", "gameplay-cutout-landscape"), ids)
+    }
+
+    @Test
     fun gameScreensAreDarkOnlyAndLandscapeIdsRotate() {
         val byId = manifest().groupBy { it.id }
         GAME_IDS.forEach { id -> assertEquals("«$id» solo en oscuro", setOf("dark"), byId.getValue(id).map { it.theme }.toSet()) }
@@ -102,7 +121,7 @@ class CatalogCoverageTest {
                 .putExtra("screen", line.id)
                 .putExtra("theme", if (line.theme == "dark") "dark" else "light")
                 .putExtra("dynamicColor", false)
-            line.args.filterKeys { it != "wait" && it != "swipe" }.forEach { (key, value) -> intent.putExtra(key, value) }
+            line.args.filterKeys { it !in SCRIPT_ONLY }.forEach { (key, value) -> intent.putExtra(key, value) }
             ActivityScenario.launch<MainActivity>(intent).use {
                 compose.onNodeWithTag("debug-screen-${line.id}").assertIsDisplayed()
                 compose.onAllNodesWithTag("unknown-screen-id").fetchSemanticsNodes().let { nodes ->
@@ -113,6 +132,25 @@ class CatalogCoverageTest {
     }
 
     private companion object {
+        val SCRIPT_ONLY = setOf("wait", "swipe", "window", "cutout")
+
+        /** Los 14 IDs de la tabla «Catálogo A7» de `docs/diseno-android/A7-plan.md` con los argumentos que fijan su variante. */
+        val A7_IDS: Map<String, Map<String, String>> = mapOf(
+            "gameplay-controller" to mapOf("controller" to "1"),
+            "gameplay-controller-touch" to mapOf("controller" to "1", "showTouch" to "1"),
+            "settings-controller-mapping" to mapOf("controller" to "1"),
+            "controller-assign-dialog" to emptyMap(),
+            "library-ax5" to mapOf("fontScale" to "2.0"),
+            "library-detail-ax5" to mapOf("fontScale" to "2.0"),
+            "settings-ax5" to mapOf("fontScale" to "2.0"),
+            "library-high-contrast" to mapOf("contrast" to "high"),
+            "gameplay-high-contrast" to mapOf("contrast" to "high", "opacity" to "30"),
+            "gameplay-landscape-high-contrast" to mapOf("contrast" to "high", "opacity" to "30"),
+            "pause-sheet-ax5" to mapOf("fontScale" to "2.0"),
+            "library-wide-rail" to mapOf("window" to "wide"),
+            "library-list-detail" to mapOf("window" to "wide"),
+            "gameplay-cutout-landscape" to mapOf("cutout" to "tall"),
+        )
         /** Ids que A6 añade o amplía (tabla «Catálogo (L5)» de `docs/diseno-android/A6-plan.md`). */
         val A6_IDS = listOf(
             "launch", "library-folder-empty", "library-cloud-pending", "library-cloud-downloading",
@@ -131,11 +169,14 @@ class CatalogCoverageTest {
             "customize-controls-portrait", "customize-controls-landscape", "customize-controls-size", "pause-sheet",
             "pause-dialog", "states-sheet", "states-dialog", "load-state-confirm", "replace-state-confirm",
             "exit-save-failed", "exit-risk", "save-warning", "open-error", "save-problem", "states-rescue",
-            "gameplay-header-damaged",
+            "gameplay-header-damaged", "gameplay-controller", "gameplay-controller-touch", "gameplay-high-contrast",
+            "gameplay-landscape-high-contrast", "pause-sheet-ax5", "gameplay-cutout-landscape",
         )
         val LANDSCAPE_IDS = listOf(
             "gameplay-landscape", "gameplay-landscape-clear", "gameplay-landscape-hidden",
             "gameplay-landscape-arrows", "gameplay-fill", "customize-controls-landscape", "pause-dialog", "states-dialog",
+            "gameplay-controller", "gameplay-landscape-high-contrast", "gameplay-cutout-landscape", "library-wide-rail",
+            "library-list-detail",
         )
     }
 }

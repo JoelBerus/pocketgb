@@ -8,11 +8,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.Density
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
 import com.joelbermudez.pocketgb.library.LibraryError
@@ -21,6 +18,9 @@ import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.debug.catalog.CatalogArtwork
+import com.joelbermudez.pocketgb.debug.catalog.a7Aliases
+import com.joelbermudez.pocketgb.debug.catalog.a7CatalogScreens
+import com.joelbermudez.pocketgb.debug.catalog.a7ComposedScreens
 import com.joelbermudez.pocketgb.debug.catalog.GameplayCatalogScreen
 import com.joelbermudez.pocketgb.debug.catalog.GameplayFrame
 import com.joelbermudez.pocketgb.debug.catalog.gameplayCatalogScreens
@@ -158,20 +158,20 @@ private val legacyScreens: Map<String, @Composable (DebugIntent) -> Unit> = buil
 }
 
 /** Registro único de pantallas del catálogo: el test de cobertura lo cruza con `tools/android-screens.txt`. */
-internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
+private val a6CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
     legacyScreens + libraryCatalogScreens + settingsCatalogScreens + gameplayCatalogScreens
+
+internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
+    a6CatalogScreens + a7CatalogScreens + a7Aliases.mapValues { (_, target) -> a6CatalogScreens.getValue(target) } +
+        a7ComposedScreens(a6CatalogScreens)
 
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {
-    val density = LocalDensity.current
-    CompositionLocalProvider(
-        LocalDensity provides Density(density.density, intent.fontScale),
-    ) {
-        Box(Modifier.fillMaxSize().testTag("debug-screen-${intent.screen}")) {
-            CatalogArtwork {
-                val screen = catalogScreens[intent.screen]
-                if (screen != null) screen(intent) else UnknownScreen(intent.screen)
-            }
+    // La escala de fuente y las señales de accesibilidad se aplican en `buildVariantContent`, fuera de `PocketGBTheme`.
+    Box(Modifier.fillMaxSize().testTag("debug-screen-${intent.screen}")) {
+        CatalogArtwork {
+            val screen = catalogScreens[intent.screen]
+            if (screen != null) screen(intent) else UnknownScreen(intent.screen)
         }
     }
 }

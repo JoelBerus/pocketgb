@@ -6,6 +6,8 @@ import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.settings.ThemeMode
+import com.joelbermudez.pocketgb.ui.a11y.AccessibilityOverrides
+import com.joelbermudez.pocketgb.ui.a11y.ContrastLevel
 
 /**
  * Argumentos del catálogo (`adb shell am start --es <clave> <valor>`); los mismos nombres que `tools/android-screens.txt`.
@@ -36,7 +38,21 @@ internal data class DebugIntent(
     /** Control seleccionado en el editor (`a`, `b`, `dpad`…) y su escala. */
     val selected: String? = null,
     val scale: Float? = null,
+    /** A7 L1: simula un mando conectado (oculta los controles táctiles salvo `showTouch`). */
+    val controller: Boolean = false,
+    /** A7 L1: ajuste «Mostrar controles táctiles con mando». */
+    val showTouch: Boolean = false,
+    /** A7 L2: contraste del sistema forzado (`medium` o `high`); `null` lo lee del sistema. */
+    val contrast: ContrastLevel? = null,
+    /** A7 L2: reducir movimiento forzado; `null` lo lee del sistema. */
+    val reduceMotion: Boolean? = null,
 ) {
+    /** Señales de accesibilidad forzadas por los argumentos (fuente grande sale de [fontScale] en `LocalDensity`). */
+    fun accessibilityOverrides(): AccessibilityOverrides = AccessibilityOverrides(
+        reduceMotion = reduceMotion,
+        contrast = contrast,
+    )
+
     /** Ajustes de juego equivalentes a los argumentos. */
     fun gameplaySettings(): GameplaySettingsData = GameplaySettingsData(
         opacity = opacity,
@@ -46,9 +62,12 @@ internal data class DebugIntent(
         volume = volume,
         colorForGameBoy = color,
         compatPalette = palette,
+        showTouchControlsWithController = showTouch,
     ).sanitized()
 
     companion object {
+        private fun flag(value: String?): Boolean = value == "1" || value == "true"
+
         fun from(intent: Intent): DebugIntent? {
             val screen = intent.getStringExtra("screen") ?: return null
             fun text(key: String): String? = intent.extras?.get(key)?.toString()?.takeIf { it.isNotBlank() }
@@ -63,7 +82,8 @@ internal data class DebugIntent(
                     themeMode = mode,
                     dynamicColor = intent.getBooleanExtra("dynamicColor", true),
                 ),
-                fontScale = intent.getFloatExtra("fontScale", 1f).coerceIn(0.85f, 2f),
+                // El script lo manda como `--ef` (Float) y los tests instrumentados como texto: se aceptan ambos.
+                fontScale = (text("fontScale")?.toFloatOrNull() ?: 1f).coerceIn(0.85f, 2f),
                 opacity = text("opacity")?.toIntOrNull() ?: 70,
                 visibility = when (text("visibility")) {
                     "on_touch" -> ControlsVisibility.ON_TOUCH
@@ -72,7 +92,7 @@ internal data class DebugIntent(
                 },
                 dpad = if (text("dpad") == "arrows") DpadStyle.ARROWS else DpadStyle.CROSS,
                 scaleMode = text("scaleMode") ?: "integer",
-                color = text("color") == "1" || text("color") == "true",
+                color = flag(text("color")),
                 palette = text("palette")?.toIntOrNull() ?: 0,
                 volume = text("volume")?.toFloatOrNull() ?: 1f,
                 orientation = text("orientation") ?: "portrait",
@@ -81,6 +101,14 @@ internal data class DebugIntent(
                 rom = text("rom") ?: "stripes",
                 selected = text("selected"),
                 scale = text("scale")?.toFloatOrNull(),
+                controller = flag(text("controller")),
+                showTouch = flag(text("showTouch")),
+                contrast = when (text("contrast")) {
+                    "high" -> ContrastLevel.HIGH
+                    "medium" -> ContrastLevel.MEDIUM
+                    else -> null
+                },
+                reduceMotion = text("reduceMotion")?.let { flag(it) },
             )
         }
     }

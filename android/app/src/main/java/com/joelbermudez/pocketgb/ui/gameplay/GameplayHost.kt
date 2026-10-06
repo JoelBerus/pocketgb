@@ -35,6 +35,7 @@ import com.joelbermudez.pocketgb.input.GamepadState
 import com.joelbermudez.pocketgb.input.PadAction
 import com.joelbermudez.pocketgb.input.PadOutput
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.settings.compatPaletteChanges
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -173,7 +174,7 @@ fun GameplayHost(
             game.session,
             onMenu = viewModel::showPauseMenu,
             showPausedOverlay = false,
-            settings = if (hideTouch) prefs.copy(visibility = ControlsVisibility.HIDDEN) else prefs,
+            settings = touchSettingsFor(prefs, hideTouch),
             speedCycleRequests = speedRequests,
             editing = menu == GameMenu.Editor,
             onEditingDone = viewModel::closeControlsEditor,
@@ -213,6 +214,10 @@ fun GameplayHost(
         }
     }
 }
+
+/** Con mando (R5) los controles táctiles se ocultan salvo que el ajuste los mantenga; el catálogo Debug usa lo mismo. */
+internal fun touchSettingsFor(prefs: GameplaySettingsData, hideTouch: Boolean): GameplaySettingsData =
+    if (hideTouch) prefs.copy(visibility = ControlsVisibility.HIDDEN) else prefs
 
 /** La conexión inyectada, o un [GamepadMonitor] real mientras el juego está compuesto. */
 @Composable

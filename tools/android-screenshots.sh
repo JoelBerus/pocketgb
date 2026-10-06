@@ -4,6 +4,10 @@
 # Salida: <dir>/<id>-<orientación>-<tema>.png (por defecto android/build/screenshots).
 #   SCREENS="id1 id2"  limita a esos ids.   THEMES="light dark"  limita a esos temas.
 #   swipe=up (argumento solo del script) desplaza el contenido antes de capturar.
+#   window=wide (solo del script, A7): `wm size 1280x800` + `wm density 240` (853 dp, anchura expanded) sin girar la pantalla;
+#     al terminar se restauran con `wm size reset` y `wm density reset`.
+#   cutout=tall (solo del script, A7): activa el overlay de recorte simulado del sistema; si el AVD no lo trae, se omite el ID
+#     con un aviso («requiere AVD con recorte») y se sigue.
 #   RESUME=1  salta las capturas que ya existen (para retomar una corrida interrumpida).
 set -euo pipefail
 
@@ -60,7 +64,45 @@ wait_for_rotation() {
   done
   echo "Aviso: la pantalla no giró a $want" >&2
 }
+# Ventana ancha (A7): se activa al llegar a un `window=wide` y se restaura al salir y al terminar (trap).
+window_mode=""
+set_window() {
+  if [[ "$window_mode" == "$1" ]]; then return; fi
+  if [[ "$1" == wide ]]; then
+    "$adb_bin" shell wm size 1280x800
+    "$adb_bin" shell wm density 240
+    window_mode=wide
+    # Con el AVD en 1280x800 la rotación 0 ya es horizontal: no se gira más.
+    "$adb_bin" shell settings put system accelerometer_rotation 0
+    "$adb_bin" shell settings put system user_rotation 0
+    rotation=0
+  else
+    "$adb_bin" shell wm size reset
+    "$adb_bin" shell wm density reset
+    window_mode=""
+    rotation=0
+  fi
+  sleep 3
+}
+# Recorte simulado (A7): overlay de emulación de AOSP; devuelve 1 si el AVD no lo trae.
+cutout_overlay="com.android.internal.display.cutout.emulation.tall"
+cutout_on=""
+set_cutout() {
+  if [[ "$cutout_on" == "$1" ]]; then return 0; fi
+  if [[ "$1" == tall ]]; then
+    if ! "$adb_bin" shell cmd overlay list --user 0 2>/dev/null | grep -q "$cutout_overlay"; then return 1; fi
+    "$adb_bin" shell cmd overlay enable --user 0 "$cutout_overlay" >/dev/null
+    cutout_on=tall
+  else
+    "$adb_bin" shell cmd overlay disable --user 0 "$cutout_overlay" >/dev/null 2>&1 || true
+    cutout_on=""
+  fi
+  sleep 3
+}
 cleanup() {
+  "$adb_bin" shell wm size reset >/dev/null 2>&1 || true
+  "$adb_bin" shell wm density reset >/dev/null 2>&1 || true
+  "$adb_bin" shell cmd overlay disable --user 0 "$cutout_overlay" >/dev/null 2>&1 || true
   "$adb_bin" shell settings put system user_rotation 0 || true
   "$adb_bin" shell settings delete secure theme_customization_overlay_packages >/dev/null 2>&1 || true
   if [[ "$previous_ime" == "null" || -z "$previous_ime" ]]; then
@@ -118,14 +160,29 @@ for theme in ${THEMES:-light dark dyn-green dyn-violet}; do
     target="$out_dir/${id}-${orientation}-${theme}.png"
     if [[ -n "${RESUME:-}" && -s "$target" ]]; then continue; fi
 
-    if [[ "$orientation" == landscape ]]; then set_rotation 1; else set_rotation 0; fi
+    # Argumentos solo del script, leídos antes de tocar la pantalla.
+    want_window=""; want_cutout=""
+    for arg in ${args:-}; do
+      case "${arg%%=*}" in
+        window) want_window="${arg#*=}" ;;
+        cutout) want_cutout="${arg#*=}" ;;
+      esac
+    done
+    set_window "$want_window"
+    if ! set_cutout "$want_cutout"; then
+      echo "Aviso: $id requiere AVD con recorte (sin overlay $cutout_overlay): se omite" >&2
+      continue
+    fi
+    if [[ "$window_mode" == wide ]]; then
+      : # sin girar: 1280x800 ya es horizontal
+    elif [[ "$orientation" == landscape ]]; then set_rotation 1; else set_rotation 0; fi
     extras=(--es screen "$id" --es orientation "$orientation")
     if [[ "$theme" == dyn-* ]]; then
       extras+=(--es theme light --ez dynamicColor true --es dynamicSeed "${theme#dyn-}")
     else
       extras+=(--es theme "$theme" --ez dynamicColor false)
     fi
-    extras+=(--ef fontScale 1.0)
+    font_scale=1.0
     wait_seconds=4
     swipe=""
     for arg in ${args:-}; do
@@ -134,9 +191,13 @@ for theme in ${THEMES:-light dark dyn-green dyn-violet}; do
       case "$key" in
         wait) wait_seconds="$value" ;;
         swipe) swipe="$value" ;; # solo del script: desplaza el contenido antes de capturar
+        window|cutout) ;; # solo del script: ya aplicados arriba
+        fontScale) font_scale="$value" ;; # Float en el intent (A7)
         *) extras+=(--es "$key" "$value") ;;
       esac
     done
+
+    extras+=(--ef fontScale "$font_scale")
 
     captured=0
     for attempt in 1 2 3; do
