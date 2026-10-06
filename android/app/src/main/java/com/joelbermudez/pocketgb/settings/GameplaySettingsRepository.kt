@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.settings
 
 import android.content.Context
+import com.joelbermudez.pocketgb.emulator.EmulationOptions
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,6 +39,10 @@ class GameplaySettingsRepository(
     init {
         scope.launch { mutex.withLock { ensureLoaded() } }
     }
+
+    /** Proveedor para `GameLauncher.emulationFor`: global + por juego (huella) a opciones del núcleo al abrir (A6-H1). */
+    fun emulationProvider(): (String, Boolean) -> EmulationOptions =
+        { fingerprint, isCgbRom -> _state.value.emulation(fingerprint, isCgbRom).toOptions() }
 
     /** Aplica [change] sobre el valor actual (ya sanitizado) y lo guarda. */
     fun update(change: (GameplaySettingsData) -> GameplaySettingsData): Job = scope.launch {

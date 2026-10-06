@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.settings
 
+import com.joelbermudez.pocketgb.emulator.EmulationOptions
+import com.joelbermudez.pocketgb.emulator.GbModel
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsOrientation
@@ -108,8 +110,17 @@ data class GameOverrides(
 
 enum class SelectedModel { AUTO, DMG, CGB }
 
-/** Resultado de resolver global + por juego. L2 lo traduce a su `EmulationOptions` (GbModel + paleta). */
-data class EmulationSelection(val model: SelectedModel, val compatPalette: Int)
+/** Resultado de resolver global + por juego; [toOptions] lo traduce a las opciones del núcleo (GbModel + paleta). */
+data class EmulationSelection(val model: SelectedModel, val compatPalette: Int) {
+    fun toOptions(): EmulationOptions = EmulationOptions(
+        model = when (model) {
+            SelectedModel.AUTO -> GbModel.AUTO
+            SelectedModel.DMG -> GbModel.DMG
+            SelectedModel.CGB -> GbModel.CGB
+        },
+        compatPalette = compatPalette.coerceIn(0, MAX_COMPAT_PALETTE),
+    )
+}
 
 @Serializable
 data class GameplaySettingsData(

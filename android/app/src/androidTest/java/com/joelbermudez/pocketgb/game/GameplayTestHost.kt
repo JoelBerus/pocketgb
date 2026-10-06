@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.game
 
+import com.joelbermudez.pocketgb.emulator.EmulationOptions
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomSource
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
@@ -28,6 +29,7 @@ object GameplayTestHost {
         rom: ByteArray = SyntheticRom.sramCounter(),
         mirrors: MirrorLocator = MirrorLocator { _, _, _, _ -> null },
         ownership: FingerprintOwnership = FingerprintOwnership(),
+        emulationFor: (String, Boolean) -> EmulationOptions = { _, _ -> EmulationOptions() },
     ) = GameLauncher(
         roms = RomSource { _, _ -> rom },
         savesDirectory = File(root, "saves"),
@@ -36,5 +38,6 @@ object GameplayTestHost {
         fileOps = ops,
         registry = MirrorChannelRegistry(),
         ownership = ownership,
+        emulationFor = emulationFor,
     )
 }

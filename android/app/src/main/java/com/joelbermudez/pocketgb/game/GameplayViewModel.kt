@@ -8,6 +8,7 @@ import com.joelbermudez.pocketgb.library.LibraryFolderStore
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.isSafe
@@ -431,6 +432,7 @@ class GameplayViewModelFactory(
             statesRoot = File(appContext.filesDir, "states"),
             mirrors = SafMirrorLocator(resolver, folders),
             hasFolderPermission = folders::hasPersistedPermission,
+            emulationFor = GameplaySettingsRepository.shared(appContext).emulationProvider(),
         )
         val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(
