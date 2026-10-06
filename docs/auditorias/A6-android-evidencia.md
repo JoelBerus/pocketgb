@@ -11,7 +11,7 @@ Rama `a6-l5-catalogo` sobre `codex/android-port` @ `8362274` (L0 a L4) más L5. 
 - **L5** (`2de3ece`, `78d8f5e`, `d72d9ad`, `6d4ef71`): catálogo de 61 ids y 106 capturas, manifiesto único `tools/android-screens.txt`, script con rotación, color dinámico con semilla, reintentos y `swipe`, `CatalogCoverageTest` (7 pruebas), `VERIFICACION.md` y esta evidencia. Los lotes anteriores no dejaron archivos en `debug/catalog/`; L5 creó `CatalogData`, `LibraryCatalog`, `SettingsCatalog` y `GameplayCatalog`, convirtió `DebugCatalog` en un registro (`catalogScreens`) y retiró `GameplayDebugScreen` (sustituida por `GameplayCatalogScreen`).
 
 ## Decisiones K1 a K20
-Aplicadas según el plan; no se cambió ninguna. K1 (sin «modo silencio»; pie «El sonido sigue el volumen multimedia del teléfono»), K2 volumen nativo, K3 escalado, K4 y K5 tema y pantalla completa, K6 a K8 ajustes por huella, K9 a K11 portadas y carril, K12 y K13 controles y HUD, K14 estados, K15 cabecera, K16 y K17 almacenamiento y licencias, K18 a K20 biblioteca.
+Sin cambiar ninguna. Corrección (A6-H3): en la versión inicial de esta evidencia se decía «K6 a K8 aplicadas», pero los ajustes de emulación nunca llegaban al núcleo (A6-H1). Quedan aplicadas de verdad con el lote A6-R (`921155e`, prueba `EmulationSettingsAppliedTest`, ver [A6-android-respuesta.md](A6-android-respuesta.md)). K1 (sin «modo silencio»; pie «El sonido sigue el volumen multimedia del teléfono»), K2 volumen nativo, K3 escalado, K4 y K5 tema y pantalla completa, K6 a K8 ajustes por huella, K9 a K11 portadas y carril, K12 y K13 controles y HUD, K14 estados, K15 cabecera, K16 y K17 almacenamiento y licencias, K18 a K20 biblioteca.
 
 ## Desviaciones
 - El plan habla de 31 ids existentes, pero la lista enumera 30; el catálogo conserva los 30 y añade 31 (61 en total, con `library-grid-scrolled` extra).
@@ -45,12 +45,30 @@ Sin `INTERNET`. DEX de Release (`unzip 'classes*.dex' | strings | grep -c`): `De
 `git diff --stat main -- core/` vacío (no se tocó `core/`).
 
 ## Capturas
-106 PNG (36 claro, 60 oscuro, 4 + 4 dinámicas) de 61 ids; lista y revisión por captura en [VERIFICACION.md](../diseno-android/VERIFICACION.md). Defectos corregidos: D1 (formato de tamaños), D2 (pie del editor), D3 y D4 (script). Pendientes: D5 (tooltip «Drag handle»), D6 («Salir» fuera de vista en horizontal), D7, D8.
+106 PNG (37 claro + 61 oscuro + 8 dinámicas, 4 + 4) de 61 ids; lista y revisión por captura en [VERIFICACION.md](../diseno-android/VERIFICACION.md). Defectos corregidos: D1 (formato de tamaños), D2 (pie del editor), D3 y D4 (script). Pendientes: D5 (tooltip «Drag handle»), D6 («Salir» fuera de vista en horizontal), D7, D8.
 
 ## Lo que NO se ha verificado
 - Teléfono real: tacto, háptica, audio, 60 fps, rendimiento.
 - Carpeta SAF real y Rojo/Amarillo con cartuchos reales; el catálogo usa ROM y portadas sintéticas.
 - Cutouts, rotación sin pausa (A7), mando físico (A7), TalkBack y contraste formal (A7).
-- `tools/android-save-kill-test.sh` (50 iteraciones), `make -C core test` y `make -C core asan` no se ejecutaron en esta pasada.
+- `make -C core test` y `make -C core asan` no se ejecutaron en esta pasada (`core/` sin cambios). El kill-test sí se ejecutó tras A6-R (ver abajo).
 - Comparación de los avisos de lint con A5 y auditoría independiente de L1 a L5.
 - Si D5 y D8 son artefactos del emulador (teclado) o del código: sin comprobar.
+
+## Actualización tras la respuesta a la auditoría (lote A6-R, código final `013910d`)
+Los recuentos de arriba son de `1118ab1`; sobre `013910d` (A6-R encima de `codex/android-port` con A7-L1):
+- JVM `:app:testDebugUnitTest` (suma de los XML): **331 tests, 0 fallos, 0 errores, 0 omitidos** (`@Test` en `src/test`: 331). Una corrida intermedia bajo carga extrema del Mac (load average 136) falló `ProcessKillTest.killedWriterNeverLeavesAPartialOrMissingSave` ("debía completarse algún guardado en total (14)", dependiente de tiempos); aislada pasó dos veces y la suite completa pasó después. No toqué `saves/`.
+- `:app:assembleDebug` y `:app:lintDebug`: `BUILD SUCCESSFUL`, lint `0 errors, 19 warnings` (antes 35: bajan por los textos huérfanos de A6-H6).
+- Instrumentados por paquete, bajo el mutex `emu`: `game` 90 tests y `ui` 68 tests, 0 fallos, 0 errores, 0 omitidos. No se reejecutó el resto de paquetes (hay 294 `@Test` en `src/androidTest`); `EmulationSettingsAppliedTest` (4), `LoadStateConfirmDialogTest` (3) y `EmulatorSessionTest.copyFrame…` incluidos.
+- A6-H1: la prueba `EmulationSettingsAppliedTest` falló 2 de 4 sin la corrección (`globalColorAndPaletteAreAppliedOnOpen`, `perGamePaletteWinsOverTheGlobalOne`) y pasó 4 de 4 con ella.
+
+### Criterio 9: `tools/android-save-kill-test.sh 50` (DS-H1)
+Con `:app:installDebug` previo del código A6-R (`013910d`), emulador `Small_Phone_API_35`, bajo el mutex `emu`:
+```
+iter  48  kill=kill9      tras 1270 ms  -> OK bytes=8192 counter=3194 confirmed=3194 backups=5 stateTmpFound=0 stateTmpOrphans=0
+iter  49  kill=force-stop tras  416 ms  -> OK bytes=8192 counter=3235 confirmed=3235 backups=5 stateTmpFound=0 stateTmpOrphans=0
+iter  50  kill=kill9      tras  919 ms  -> OK bytes=8192 counter=3312 confirmed=3312 backups=5 stateTmpFound=0 stateTmpOrphans=0
+Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)
+OK: 50/50 iteraciones con el invariante intacto
+```
+(Se pegan las últimas iteraciones; las 50 dieron OK.)
