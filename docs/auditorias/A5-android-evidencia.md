@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-05
 
-**Rama:** `codex/android-port`. **Commit base: `b8b91bb`** (etapas 1–8 de A5, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta). El texto de las etapas 6–8 describe ese commit; las **correcciones de la 1ª vuelta** (sección «Correcciones de la 1ª vuelta» más abajo) están **sin commitear** sobre `b8b91bb` (el commit lo hace quien integre el hito). Donde una afirmación del texto original quedó matizada por esas correcciones se marca con «(corregido: …)».
+**Rama:** `codex/android-port`. **Estado actual:** commit base de la 2ª vuelta **`acfe806`** (1ª vuelta corregida) + las correcciones de la 2ª vuelta (sección «Correcciones de la 2ª vuelta», al final de las correcciones de la 1ª), **sin commitear** (lo hace quien integre el hito). **Commit base original: `b8b91bb`** (etapas 1–8 de A5, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta). El texto de las etapas 6–8 describe ese commit; las **correcciones de la 1ª vuelta** (sección «Correcciones de la 1ª vuelta» más abajo) quedaron en `acfe806`. Donde una afirmación del texto original quedó matizada por esas correcciones se marca con «(corregido: …)».
 
 **Alcance (etapas 6–8):** `SaveCoordinator` y `GameSession` (6); `GameLauncher`, `GameplayViewModel`, `GameplayHost` con menú de pausa, estados, diálogo de fallo local y avisos de espejo, Ajustes › Partidas con restauración de backups, **Jugar/Continuar habilitado** y catálogo debug (7); `tools/android-save-kill-test.sh`, medición de `flushSync` y esta evidencia (8). Las etapas 1–5 ya tienen su evidencia en commits previos; aquí se reejecutan sus pruebas dentro de la batería completa.
 
@@ -110,7 +110,7 @@ Observaciones abiertas (A6): con tema claro la barra de estado del juego (fondo 
 
 ## Correcciones de la 1ª vuelta de auditoría
 
-Informes: `A5-android-codex.md` (RECHAZAR: H1, H2 bloqueantes; H3 alta; H4 media; H5 baja), `A5-android-opus.md` (APROBAR CON CAMBIOS: H1 alta; H2–H5 medias; H6–H12 bajas) y `A5-android-deepseek.md` (RECHAZAR: H1 bloqueante, H2 baja; informe poco fiable, pero H1 es real). Árbol auditado: `b8b91bb`; las correcciones están **sin commitear** sobre él. Implementadas con TDD: cada prueba nueva se escribió para el comportamiento corregido; las marcadas «falla sin la corrección» se comprobaron **revirtiendo temporalmente la corrección** (resultado abajo).
+Informes: `A5-android-codex.md` (RECHAZAR: H1, H2 bloqueantes; H3 alta; H4 media; H5 baja), `A5-android-opus.md` (APROBAR CON CAMBIOS: H1 alta; H2–H5 medias; H6–H12 bajas) y `A5-android-deepseek.md` (RECHAZAR: H1 bloqueante, H2 baja; informe poco fiable, pero H1 es real). Árbol auditado: `b8b91bb`; las correcciones quedaron en el commit `acfe806` (auditado en la 2ª vuelta). Implementadas con TDD: cada prueba nueva se escribió para el comportamiento corregido; las marcadas «falla sin la corrección» se comprobaron **revirtiendo temporalmente la corrección** (resultado abajo).
 
 ### Hallazgo → corrección → prueba
 
@@ -181,11 +181,64 @@ El Mac estuvo con la memoria saturada (swap 14–20 GB de 21 GB, compresor > 6 G
 
 - **2ª vuelta de auditoría** (Codex/Opus) sobre el commit que contenga estas correcciones; **prueba manual de Joel** en el teléfono (carpeta real, Rojo/Amarillo, cierre forzado real J11, recuperación desde el espejo, restaurar) siguen pendientes.
 - **Opus H1 contra la apertura y `restore()`**: no hay una prueba de interfoliación específica de `SaveOpening.prepare` ni de `restore`; ambos pasan por los mismos métodos de `SaveStore` bajo el mismo lock, que es lo que prueban las dos pruebas de concurrencia. Una interfoliación entre los pasos de `prepare` (cada paso es atómico, el conjunto no) no se pierde datos pero no está probada con latches.
-- **`rescueExit` con `KeptOpen`**: la sesión queda abierta y reintentando mientras viva el proceso; si el proceso muere antes de que el disco vuelva, solo queda el estado de rescate (probado: se escribe). No hay una "reaper" que cierre esa sesión cuando el guardado acaba confirmándose (el hilo de guardado sí la confirma; el cierre lo hace el sistema al morir el proceso).
-- **Rollback fallido y reapertura**: tras `StateError.RollbackFailed` la sesión no guarda más; que reabrir recupere la partida anterior intacta se probó a nivel de disco (no cambia) y no con una reapertura real.
+- **`rescueExit` con `KeptOpen`** (corregido en la 2ª vuelta, A5V2-H1): `OrphanSessionRegistry` hereda la sesión, reintenta y la cierra al confirmarse el guardado; ver «Correcciones de la 2ª vuelta».
+- **Rollback fallido y reapertura** (corregido en la 2ª vuelta, A5V2-H3): la partida anterior se repone como principal y la reapertura se bloquea hasta entonces; ver «Correcciones de la 2ª vuelta».
 - **Anti-ANR**: el plazo corto (500 ms) tras un `TimedOut` está medido solo en prueba con un disco atascado inyectado; no hay medida de ANR en un teléfono. `ON_PAUSE` sigue esperando hasta 3 s en el hilo principal la primera vez (decisión J5).
 - **`DirectorySync` en Android real**: la tolerancia por mensaje de errno (`Invalid argument`, etc.) se probó en JVM y con el sistema de archivos del emulador (`SaveFilesOnAndroidTest`); no se sabe qué mensajes dan otros sistemas de archivos de teléfonos reales.
 - Cierres forzados en el teléfono (J11), proveedores SAF reales y nube, TalkBack y fuente al 200 % (como antes).
+
+## Correcciones de la 2ª vuelta de auditoría
+
+Informes: `A5-android-codex-v2.md` (RECHAZAR: A5V2-H1 y H3 bloqueantes, H2 alta, H4 baja) y `A5-android-deepseek-v2.md`. Árbol auditado: **`acfe806`**; las correcciones están **sin commitear** sobre él (corrida del 2026-10-05/06). Implementadas con TDD; cada prueba se comprobó **revirtiendo temporalmente la corrección** (tabla siguiente).
+
+### Hallazgo → corrección → prueba
+
+| Hallazgo | Corrección | Prueba que lo cubre |
+|---|---|---|
+| **A5V2-H1** (bloqueante): una sesión que acaba `KeptOpen` queda sin dueño, nunca se cierra y puede pisar una restauración o una sesión nueva | `OrphanSessionRegistry` (a nivel de app, `OrphanSessionRegistry.shared`) hereda la sesión. `GameplayViewModel.onCleared` hace `claim` SÍNCRONO (la huella entra en `BlockedFingerprints` antes de lanzar el rescate) y tras el rescate `settle`: `Closed` ⇒ libera la huella (esperando la salida real del hilo de guardado si quedó `SaveThreadStuck`); `KeptOpen` ⇒ reintenta `rescueExit(1 intento, sin reescribir el estado de rescate)` con backoff exponencial 1 s…30 s en un `ScheduledThreadPoolExecutor` de un hilo que muere solo tras 2 s inactivo (sin fugas). Al confirmarse guarda AUTO, cierra y libera. `GameLauncher.openBlocking` rechaza con `OpenError.SavePending` (antes de tocar ningún archivo) y `SavesBrowser.restore` con `SavePendingException` («Guardado pendiente de esa partida…») mientras la huella esté bloqueada | `GameplayViewModelDestroyTest.onClearedWithAFailingDiskHandsTheSessionToTheRegistryWhichBlocksThenClosesItWhenTheDiskRecovers` (producción pura, sin segunda llamada: `onCleared` → KeptOpen → reabrir da `OpenFailed(SavePending)` y restaurar `SavePendingException` → vuelve el disco → se cierra sola con AUTO y SRAM confirmada → huella libre, 0 hilos del registro → ya se reabre y restaura); `GameSessionHardeningTest.theOrphanRegistryClosesAKeptOpenSessionByItselfWhenTheDiskRecoversAndReleasesTheFingerprint` (nivel sesión+registro) y `rescueExitWithAFailingDiskKeepsTheSessionOpen…RetriesDoNotPileUpRescues`; JVM `SavesBrowserTest.restoreIsRefusedWhileAnOrphanSessionStillHasItsSavePending`, `blockedFingerprintsAreCountedPerOwner`. **Falla sin la corrección: sí** |
+| **A5V2-H2** (alta): carrera TOCTOU entre «canal en reposo» y `snapshot()` | `MirrorChannel.withIdleLease(timeoutMs, block)`: espera el reposo y toma el lease en el MISMO instante bajo el lock del canal; mientras dura, `enqueue`/`retryIfNeeded` conservan la petición (coalescida) pero NO arrancan el trabajador, que arranca al soltar el lease (también si `block` lanza). `SaveOpening.snapshotWhenIdle` lee dentro del lease; se mantiene el plazo de 5 s y el fallback a `Unavailable` | JVM `MirrorChannelRobustnessTest.aWriteEnqueuedRightAfterIdleCannotStartWhileTheSnapshotIsBeingRead` (la escritura se encola DENTRO de `snapshot()`, justo tras el reposo; 300 ms de margen; el snapshot es el contenido previo completo, ningún escritor empezó durante la lectura y corre después), `theLeaseIsReleasedEvenIfTheReadThrowsAndHeldWritesStillRun`; siguen `openingNeverReadsAMirrorWithAWriteInFlight` y `awaitIdleTimesOut…`. **Falla sin la corrección: sí** (con `awaitIdle` + `snapshot()` falla la primera) |
+| **A5V2-H3** (bloqueante): rollback fallido con escritura B rezagada que acaba como `.sav` principal | `loadState` toma una copia INDEPENDIENTE en memoria de la SRAM (`sramBefore`) antes de cargar el estado. Si `loadStateRaw(previous)` falla (o el flush no se confirmó): `disablePersistence` y `repairPrevious`: bloquea la huella y encola `persistLocal(sramBefore)` en el MISMO hilo de guardado (FIFO, detrás de B) con el escritor atómico ⇒ A principal y B backup (y A al espejo). Espera `repairWaitMs` (3 s); si no, la reparación continúa en el hilo `pocketgb-save-repair` (backoff 0,2…5 s; si el hilo de guardado se cierra sin ejecutarla, espera su salida real y escribe directamente) y la huella sigue bloqueada hasta lograrlo. `StateError.RollbackFailed.restored` solo afirma «la partida guardada sigue intacta» si quedó confirmado; si no, dice que se está restaurando y que no se podrá abrir aún | `GameSessionHardeningTest.aFailedRollbackWithALateWriteEndsWithThePreviousSaveAsPrimaryAndBlocksReopeningUntilThen` (latch `StallingOps`: B en vuelo, falla `loadStateRaw(previous)`, plazo vencido ⇒ `restored=false`, mensaje sin «intacta», huella bloqueada y `openBlocking` ⇒ `SavePending`; se libera B ⇒ la reparación libera la huella, el principal es A, B queda en backups, se reabre); `ifTheRollbackItselfFailsTheSessionStopsPersisting…` (adaptado, sigue verde). **Falla sin la corrección: sí** (dos reversiones, ver abajo) |
+| **A5V2-H4** (baja): evidencia y estado con «sin commitear» sobre `b8b91bb` | Cabecera y esta sección con el SHA `acfe806` y el estado real; `docs/ESTADO.md` actualizado | este documento y `docs/ESTADO.md` |
+
+### Comprobación «falla sin la corrección» (reversión temporal)
+
+| Qué se revirtió | Prueba que falló | Resultado |
+|---|---|---|
+| H2: `snapshotWhenIdle` = `awaitIdle` + `snapshot()` (código de `acfe806`) | `MirrorChannelRobustnessTest.aWriteEnqueuedRightAfterIdleCannotStartWhileTheSnapshotIsBeingRead` | 1 de 5 falla; restaurado ⇒ 5/5 |
+| H1: `settle(KeptOpen)` sin reintentos (sesión huérfana sin dueño) | `GameSessionHardeningTest.theOrphanRegistryCloses…` («el registro la cierra solo») y el build de `GameplayViewModelDestroyTest` falla (misma causa) | falla |
+| H3 (a): `repairPrevious` omitido (`confirmed = true`, comportamiento de `acfe806`) | `aFailedRollbackWithALateWriteEndsWith…` («no estaba confirmado») | falla |
+| H3 (b): reparación sin escribir A (`persistLocal` vaciado, pero con bloqueo y mensaje) | misma prueba: «el principal es A, no B: arrays first differed» (B queda como principal) | falla |
+
+Tras cada reversión se restauró el código (copia exacta de `/private/tmp/…/bk`) y se volvió a pasar la batería.
+
+### Verificación fresca de la corrida de la 2ª vuelta
+
+Núcleo (sin tocar `core/`): `make -C core test` y `make -C core asan` → `65/68 PASS · requeridos: 65/65 PASS · HITO=M1` y `OK: todos los casos requeridos en PASS` (los dos).
+
+Emulador `Small_Phone_API_35` SIN ventana (`-no-window -gpu swiftshader_indirect -memory 3072`, animaciones a 0), Gradle `--no-daemon -Xmx1536m`:
+
+```bash
+cd android
+ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew --no-daemon clean :app:testDebugUnitTest \
+  :app:connectedDebugAndroidTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+```
+
+Resultado: `BUILD SUCCESSFUL in 3m 36s`. Lint: **0 errores, 15 avisos** (los mismos). Recuentos reales (de los XML): **JVM 237 tests, 0 fallos/errores/omitidos** (`acfe806`: 233; +2 `MirrorChannelRobustnessTest`, +2 `SavesBrowserTest`); **instrumentados 183 tests, 0 fallos/errores/omitidos** (`acfe806`: 181; `GameSessionHardeningTest` 11 (+2), `GameplayViewModelDestroyTest` 3, resto igual). Los instrumentados se ejecutaron de verdad: el XML de `connected/debug` lista los 183 `testcase` (p. ej. `aFailedRollbackWithALateWrite…`, `theOrphanRegistryCloses…`).
+
+`./gradlew :app:testDebugUnitTest --rerun-tasks` ×3: `BUILD SUCCESSFUL` las tres, 237 tests y 0 fallos en cada una (≈51–57 s).
+
+`tools/android-save-kill-test.sh 50`: `Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)` / `OK: 50/50 iteraciones con el invariante intacto`.
+
+Release: `aapt dump permissions` solo `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (0 `INTERNET`); 0 coincidencias en los DEX de Release de `DebugCatalog`, `TestDocumentsProvider`, `save-stress`, `save-verify`, `SaveStress`, `GameplayTestActivity`, `GameplayDebugScreen`, `NativeVideoScreen`, `sramCounter16` y `DebugSyntheticRom`. `git status`: solo código y docs (ningún `.sav`, `.state`, ROM ni APK).
+
+### Lo que NO está verificado tras las correcciones de la 2ª vuelta
+
+- **3ª vuelta de auditoría** y **prueba manual de Joel en el teléfono** (J11) siguen pendientes.
+- **Muerte del proceso con una sesión huérfana**: el registro vive en el proceso; si éste muere antes de que vuelva el disco solo queda el estado de rescate (probado que se escribe) y el `.sav` anterior; al relanzar, el bloqueo ya no existe (correcto: no hay sesión que escriba).
+- **`SaveThreadStuck` en el registro y reparación tras cierre forzado del hilo**: la espera a la salida real del hilo (`awaitSaveThreadExit`) y la escritura directa de la reparación cuando la cola se cerró no tienen una prueba propia con hilo atascado; la rama principal (cola FIFO detrás de B) sí.
+- **Reparación que falla en bucle** (disco que nunca vuelve): reintenta con backoff acotado indefinidamente mientras viva el proceso y la huella sigue bloqueada; solo se probó el caso en que el disco responde.
+- **Interfoliación de dos `withIdleLease` simultáneos** (dos aperturas de la misma huella): se serializan por el mismo lock/callbacks pero no hay una prueba con dos hilos.
+- **Mensaje de `SavePending` en la UI** (`open_error_save_pending`, texto de Ajustes › Partidas): cubierto a nivel de modelo; sin captura visual nueva.
 
 ## Decisiones de Joel (J1–J11) y dónde quedaron
 

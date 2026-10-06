@@ -56,6 +56,34 @@ class SavesBrowserTest {
         assertArrayEquals(version(2), store.load())
     }
 
+    @Test fun restoreIsRefusedWhileAnOrphanSessionStillHasItsSavePending() {
+        val d = dir()
+        val store = SaveStore(d, TEST_FP)
+        store.save(version(1))
+        store.save(version(2))
+        val blocked = BlockedFingerprints()
+        val browser = SavesBrowser(d, blocked = blocked)
+        blocked.acquire(TEST_FP) // sesión huérfana con guardado pendiente
+        val error = assertThrows(SavePendingException::class.java) { browser.restore(TEST_FP, 1, openFingerprint = null) }
+        assertTrue(error.message!!.startsWith("Guardado pendiente de esa partida"))
+        assertArrayEquals("no se tocó nada", version(2), store.load())
+        blocked.release(TEST_FP)
+        browser.restore(TEST_FP, 1, openFingerprint = null) // ya se permite
+        assertArrayEquals(version(1), store.load())
+    }
+
+    @Test fun blockedFingerprintsAreCountedPerOwner() {
+        val blocked = BlockedFingerprints()
+        blocked.acquire("a"); blocked.acquire("a")
+        blocked.release("a")
+        assertTrue(blocked.isBlocked("a"))
+        blocked.release("a")
+        assertTrue(!blocked.isBlocked("a"))
+        blocked.release("a") // un release de más no deja el contador negativo
+        blocked.acquire("a")
+        assertTrue(blocked.isBlocked("a"))
+    }
+
     @Test fun emptyDirectoryListsNothing() {
         assertTrue(SavesBrowser(dir()).list().isEmpty())
     }

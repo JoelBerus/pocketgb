@@ -34,13 +34,15 @@ object SaveOpening {
     }
 
     /**
-     * Snapshot del espejo SOLO cuando el canal de esa huella ya no tiene una escritura en vuelo, esperando
-     * como mucho [waitMs]. Una escritura SAF a medias (`wt` trunca primero) dejaría un `.sav` vacío o parcial y,
-     * con RTC, un prefijo de tamaño válido se importaría sin reloj. Si el canal no se vacía a tiempo el espejo
-     * es [SaveMirror.Snapshot.Unavailable]: nunca se lee parcial. Se llama fuera del hilo principal.
+     * Snapshot del espejo SOLO cuando el canal de esa huella no tiene una escritura en vuelo, esperando como
+     * mucho [waitMs]. La lectura ocurre DENTRO de un lease del canal ([MirrorChannel.withIdleLease]): comprobar
+     * "en reposo" y leer es una sola operación, así que ningún `enqueue` puede iniciar un `wt` (que trunca primero
+     * y dejaría un `.sav` parcial; con RTC un prefijo válido se importaría sin reloj) entre ambas cosas. Si el
+     * canal no se vacía a tiempo el espejo es [SaveMirror.Snapshot.Unavailable]: nunca se lee parcial. Se llama
+     * fuera del hilo principal.
      */
     fun snapshotWhenIdle(mirror: SaveMirror, channel: MirrorChannel, waitMs: Long = 5_000): SaveMirror.Snapshot =
-        if (channel.awaitIdle(waitMs)) mirror.snapshot() else SaveMirror.Snapshot.Unavailable
+        channel.withIdleLease(waitMs) { mirror.snapshot() } ?: SaveMirror.Snapshot.Unavailable
 
     fun prepare(
         store: SaveStore,

@@ -4,6 +4,7 @@ import com.joelbermudez.pocketgb.emulator.CoreError
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.SessionError
 import com.joelbermudez.pocketgb.emulator.SessionState
+import com.joelbermudez.pocketgb.saves.BlockedFingerprints
 import com.joelbermudez.pocketgb.saves.CloseResult
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.StateSlot
@@ -193,7 +194,7 @@ class GameSessionHardeningTest {
     // ---- Opus H2 / DeepSeek H1: onCleared ya no fuerza nada; rescueExit
 
     @Test
-    fun rescueExitWithAFailingDiskKeepsTheSessionOpenWithARescueStateThenClosesWhenTheDiskRecovers() {
+    fun rescueExitWithAFailingDiskKeepsTheSessionOpenWithARescueStateAndRetriesDoNotPileUpRescues() {
         val ops = FailableOps()
         openGame(SyntheticRom.sramCounter(), ops = ops, autoTick = false).use { g ->
             val game = g.game
@@ -207,12 +208,86 @@ class GameSessionHardeningTest {
             assertTrue("estado de rescate escrito", g.states.entries().containsKey(StateSlot.RESCUE))
             assertNotNull(game.saveProblem.value)
 
+            // Los reintentos automáticos del registro no reescriben el estado de rescate (no se acumulan archivados).
+            repeat(3) { assertEquals(RescueOutcome.KeptOpen, game.rescueExit(attempts = 1, retryDelayMs = 0, writeRescueState = false)) }
+            assertEquals(0, g.states.directory.listFiles { f -> f.name.startsWith("rescue-") }!!.size)
+        }
+    }
+
+    /**
+     * A5V2-H1 (nivel sesión + registro, sin segunda llamada manual): el rescate acaba en KeptOpen, la sesión pasa al
+     * registro, el disco vuelve y el REGISTRO guarda AUTO, cierra la sesión y libera la huella.
+     */
+    @Test
+    fun theOrphanRegistryClosesAKeptOpenSessionByItselfWhenTheDiskRecoversAndReleasesTheFingerprint() {
+        val ops = FailableOps()
+        val blocked = BlockedFingerprints()
+        val registry = OrphanSessionRegistry(blocked, initialDelayMs = 30, maxDelayMs = 100, keepAliveMs = 100)
+        openGame(SyntheticRom.sramCounter(), ops = ops, autoTick = false, blocked = blocked).use { g ->
+            val game = g.game
+            game.start()
+            assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+            game.session.pause()
+            ops.failSav = true
+
+            registry.claim(game)
+            assertTrue(blocked.isBlocked(game.fingerprint))
+            registry.settle(game, game.rescueExit(attempts = 2, retryDelayMs = 20)) // KeptOpen
+            Thread.sleep(300) // varios reintentos con el disco fallando: sigue abierta y bloqueada
+            assertFalse(game.isClosed)
+            assertTrue(blocked.isBlocked(game.fingerprint))
+
             ops.failSav = false
             val core = game.session.copySram()
-            assertEquals(RescueOutcome.Closed, game.rescueExit(attempts = 2, retryDelayMs = 20))
-            assertTrue(game.isClosed)
-            assertArrayEquals(core, g.store!!.load())
+            assertTrue("el registro la cierra solo", waitUntil(15_000) { game.isClosed })
+            assertTrue("y libera la huella", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+            assertArrayEquals("el disco quedó con la SRAM confirmada", core, g.store!!.load())
             assertTrue(g.states.entries().containsKey(StateSlot.AUTO))
+            assertTrue("sin hilos del registro vivos", waitUntil(10_000) { registry.liveThreads == 0 })
+        }
+    }
+
+    // ---- A5V2-H3: rollback fallido con una escritura rezagada
+
+    /**
+     * B (la SRAM del estado rechazado) queda en vuelo, el rollback del núcleo falla y el plazo vence. Mientras B no
+     * termine la huella está bloqueada y el mensaje NO afirma que la partida siga intacta; al liberarse B, la
+     * reparación (en el mismo hilo, detrás de B) deja A como principal y B como backup, y la huella se libera.
+     */
+    @Test
+    fun aFailedRollbackWithALateWriteEndsWithThePreviousSaveAsPrimaryAndBlocksReopeningUntilThen() {
+        val ops = StallingOps()
+        val session = RollbackFailsSession()
+        val blocked = BlockedFingerprints()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
+            blocked = blocked, repairWaitMs = 300,
+        ).use { g ->
+            val game = g.game
+            val store = g.store!!
+            assertEquals(FlushResult.Saved, playAndPause(game))
+            game.saveState(StateSlot.MANUAL1)
+            assertEquals(FlushResult.Saved, playAndPause(game, 300))
+            val a = store.load()!!
+
+            ops.arm() // B (la SRAM del estado cargado) se atasca en vuelo
+            val error = assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+            assertTrue(ops.awaitEntered())
+            assertFalse("no estaba confirmado", error.restored)
+            assertFalse("no afirma que siga intacta", error.message!!.contains("intacta"))
+            assertTrue("la huella está bloqueada hasta resolverlo", blocked.isBlocked(game.fingerprint))
+            val launcher = GameplayTestHost.launcher(g.root, ops, blocked = blocked)
+            val reopen = launcher.openBlocking(GameplayTestHost.entry)
+            assertEquals(OpenResult.Failed(OpenError.SavePending), reopen)
+
+            ops.release() // B termina tarde y se instala como principal; la reparación la sucede
+            assertTrue("la reparación libera la huella", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+            assertArrayEquals("el principal es A, no B", a, store.load())
+            assertTrue("B quedó como backup, no se perdió", store.backups().isNotEmpty())
+
+            val reopened = launcher.openBlocking(GameplayTestHost.entry)
+            assertTrue("tras resolverlo se puede reabrir: $reopened", reopened is OpenResult.Opened)
+            (reopened as OpenResult.Opened).game.close()
         }
     }
 

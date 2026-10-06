@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.joelbermudez.pocketgb.emulator.SessionState
+import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.SavePendingException
+import com.joelbermudez.pocketgb.saves.SavesBrowser
 import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.testing.FailableOps
 import com.joelbermudez.pocketgb.testing.StallingOps
@@ -14,6 +17,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -35,11 +40,15 @@ class GameplayViewModelDestroyTest {
         root.deleteRecursively()
     }
 
+    private val blocked = BlockedFingerprints()
+    private val orphans = OrphanSessionRegistry(blocked, initialDelayMs = 50, maxDelayMs = 200, keepAliveMs = 100)
+
     private fun newViewModel(ops: com.joelbermudez.pocketgb.saves.SaveFileOps) = GameplayViewModel(
-        GameplayTestHost.launcher(root, ops),
+        GameplayTestHost.launcher(root, ops, blocked = blocked),
         rescue = { rescueExecutor.execute(it) },
         rescueAttempts = 3,
         rescueRetryDelayMs = 50,
+        orphans = orphans,
     )
 
     /** Registra el ViewModel en un store y lo limpia: así se ejecuta el `onCleared` real. */
@@ -63,8 +72,13 @@ class GameplayViewModelDestroyTest {
         return game
     }
 
+    /**
+     * A5V2-H1, camino de producción SIN llamadas manuales: onCleared → KeptOpen → el registro de la app mantiene la
+     * huella bloqueada (reabrir y restaurar se rechazan) → vuelve el disco → el registro guarda y cierra solo →
+     * la huella se libera y ya se puede reabrir y restaurar.
+     */
     @Test
-    fun onClearedWithAFailingDiskKeepsTheSessionAndWritesARescueWithoutBlockingTheCaller() {
+    fun onClearedWithAFailingDiskHandsTheSessionToTheRegistryWhichBlocksThenClosesItWhenTheDiskRecovers() {
         val ops = FailableOps()
         val vm = newViewModel(ops)
         val game = openAndPlay(vm)
@@ -73,20 +87,43 @@ class GameplayViewModelDestroyTest {
         val elapsedMs = destroy(vm)
 
         assertTrue("onCleared no bloquea al llamador ($elapsedMs ms)", elapsedMs < 1_000)
+        assertTrue("la huella queda bloqueada ya desde onCleared", blocked.isBlocked(game.fingerprint))
         rescueExecutor.shutdown()
         assertTrue(rescueExecutor.awaitTermination(30, TimeUnit.SECONDS))
+        Thread.sleep(400) // el registro reintenta varias veces con el disco fallando
         assertFalse("con el disco fallando NO se cierra la sesión", game.isClosed)
         assertTrue("estado de rescate escrito", File(root, "states/${game.fingerprint}/rescue.state").exists())
         assertNotNull(game.saveProblem.value)
         assertFalse("el rescate no usa la ranura AUTO", File(root, "states/${game.fingerprint}/auto.state").exists())
+        assertEquals("los reintentos no acumulan rescates archivados", 0, File(root, "states/${game.fingerprint}").listFiles { f -> f.name.startsWith("rescue-") }!!.size)
 
-        // El disco vuelve: la sesión conservada sigue reintentando por su cuenta y deja disco == núcleo.
+        // Mientras tanto: reabrir y restaurar se rechazan con un mensaje claro.
+        val vm2 = newViewModel(ops)
+        vm2.open(GameplayTestHost.entry)
+        assertTrue(waitUntil(15_000) { vm2.dialog.value != null })
+        assertEquals(GameDialog.OpenFailed(OpenError.SavePending), vm2.dialog.value)
+        assertEquals(null, vm2.game.value)
+        val restoreError = assertThrows(SavePendingException::class.java) {
+            SavesBrowser(File(root, "saves"), blocked = blocked).restore(game.fingerprint, 1, vm2.openFingerprint.value)
+        }
+        assertTrue(restoreError.message!!.startsWith("Guardado pendiente de esa partida"))
+
+        // El disco vuelve: SIN ninguna llamada manual el registro confirma el guardado, escribe AUTO y cierra.
         ops.failSav = false
         val core = game.session.copySram()
-        assertTrue("el guardado pendiente se confirma solo", waitUntil(30_000) {
-            File(root, "saves/${game.fingerprint}.sav").let { it.exists() && it.readBytes().contentEquals(core) }
-        })
-        game.close()
+        assertTrue("la sesión se cierra sola", waitUntil(30_000) { game.isClosed && game.state.value == SessionState.Closed })
+        assertTrue("la huella se libera", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+        assertArrayEquals("el disco quedó con la SRAM confirmada", core, File(root, "saves/${game.fingerprint}.sav").readBytes())
+        assertTrue(File(root, "states/${game.fingerprint}/auto.state").exists())
+        assertTrue("sin hilos del registro vivos", waitUntil(10_000) { orphans.liveThreads == 0 })
+
+        // Y ahora sí: se puede restaurar (ya no es el error de guardado pendiente) y reabrir.
+        val afterwards = runCatching { SavesBrowser(File(root, "saves"), blocked = blocked).restore(game.fingerprint, 1, null) }
+        assertFalse("restaurar ya no está bloqueado", afterwards.exceptionOrNull() is SavePendingException)
+        val vm3 = newViewModel(ops)
+        vm3.open(GameplayTestHost.entry)
+        assertTrue("se reabre", waitUntil(15_000) { vm3.game.value != null })
+        vm3.game.value!!.close()
     }
 
     @Test

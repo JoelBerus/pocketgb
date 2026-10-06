@@ -16,7 +16,11 @@ class SavedGameUi(
  * partida actual como copia `.1`: nunca se pierde nada. La UI deshabilita la restauración de la huella que
  * tiene una sesión abierta; aquí además se rechaza si [openFingerprint] coincide.
  */
-class SavesBrowser(private val directory: File, private val ops: SaveFileOps = PosixSaveFileOps) {
+class SavesBrowser(
+    private val directory: File,
+    private val ops: SaveFileOps = PosixSaveFileOps,
+    private val blocked: BlockedFingerprints = BlockedFingerprints.shared,
+) {
     fun list(): List<SavedGameUi> {
         val index = SavesIndex(directory, ops)
         return index.savedGames().map { game ->
@@ -29,9 +33,14 @@ class SavesBrowser(private val directory: File, private val ops: SaveFileOps = P
         }
     }
 
-    /** @throws IllegalStateException si esa huella tiene la sesión abierta. */
+    /**
+     * @throws IllegalStateException si esa huella tiene la sesión abierta.
+     * @throws SavePendingException si una sesión ya cerrada por la UI aún tiene su guardado pendiente (huérfana o en
+     *   reparación): una escritura tardía suya pisaría la restauración.
+     */
     fun restore(fingerprint: String, backup: Int, openFingerprint: String?) {
         check(fingerprint != openFingerprint) { "No se puede restaurar mientras el juego está abierto" }
+        if (blocked.isBlocked(fingerprint)) throw SavePendingException(fingerprint)
         // Con los tamaños válidos del cartucho (guardados al abrir el juego) no se restaura una partida que el
         // núcleo rechazaría; si el índice no los tiene (entradas antiguas) no se puede juzgar y se permite.
         val sizes = SavesIndex(directory, ops).load()[fingerprint]?.validSizes?.toSet()

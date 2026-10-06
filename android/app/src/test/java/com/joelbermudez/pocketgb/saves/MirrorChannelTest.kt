@@ -266,4 +266,59 @@ class MirrorChannelRobustnessTest {
         assertTrue(snapshot is SaveMirror.Snapshot.Read)
         assertEquals(1, snapshotCalls)
     }
+    /**
+     * A5V2-H2: la carrera TOCTOU entre "el canal está en reposo" y "leo el espejo". La escritura llega JUSTO tras
+     * alcanzar el reposo, dentro de la lectura: con el lease no puede empezar hasta que la lectura termina, así que
+     * el snapshot es el contenido anterior completo y no uno truncado por un `wt`.
+     */
+    @Test fun aWriteEnqueuedRightAfterIdleCannotStartWhileTheSnapshotIsBeingRead() {
+        val registry = MirrorChannelRegistry()
+        val s = store()
+        val mirror = FakeSaveMirror(SaveMirror.Snapshot.Read(bytes(0, 0, 0, 0), 1L))
+        val channel = registry.channel(s.fingerprint)
+        val reading = java.util.concurrent.atomic.AtomicBoolean(false)
+        val startedDuringRead = java.util.concurrent.atomic.AtomicBoolean(false)
+        val writerRan = java.util.concurrent.atomic.AtomicBoolean(false)
+        val spy = object : SaveMirror by mirror {
+            override fun snapshot(): SaveMirror.Snapshot {
+                reading.set(true)
+                // El canal ya está en reposo y nosotros dentro de la lectura: llega una escritura nueva.
+                channel.enqueue(MirrorChannel.Request(bytes(9, 9, 9, 9), s) { d ->
+                    if (reading.get()) startedDuringRead.set(true)
+                    writerRan.set(true)
+                    mirror.write(d)
+                })
+                Thread.sleep(300) // margen de sobra para que un escritor (erróneo) arrancara y truncara
+                val read = mirror.snapshot()
+                reading.set(false)
+                return read
+            }
+        }
+
+        val snapshot = SaveOpening.snapshotWhenIdle(spy, channel, waitMs = 3_000)
+
+        assertEquals("el snapshot es el contenido previo completo", SaveMirror.Snapshot.Read(bytes(0, 0, 0, 0), 1L), snapshot)
+        assertFalse("ninguna escritura empezó durante la lectura", startedDuringRead.get())
+        assertTrue("la escritura retenida corre al soltar el lease", waitUntil { writerRan.get() })
+        assertTrue(waitUntil { !channel.pending })
+        assertArrayEquals(bytes(9, 9, 9, 9), mirror.writes.single())
+    }
+
+    @Test fun theLeaseIsReleasedEvenIfTheReadThrowsAndHeldWritesStillRun() {
+        val registry = MirrorChannelRegistry()
+        val s = store()
+        val mirror = FakeSaveMirror()
+        val channel = registry.channel(s.fingerprint)
+        val ran = CountDownLatch(1)
+        try {
+            channel.withIdleLease(1_000) {
+                channel.enqueue(MirrorChannel.Request(bytes(1, 1, 1, 1), s) { d -> ran.countDown(); mirror.write(d) })
+                throw IllegalStateException("lectura rota")
+            }
+            org.junit.Assert.fail("debía lanzar")
+        } catch (_: IllegalStateException) {
+        }
+        assertTrue("el escritor retenido arranca tras el fallo", ran.await(3, TimeUnit.SECONDS))
+        assertEquals("y un segundo lease se puede tomar", 5, channel.withIdleLease(3_000) { 5 })
+    }
 }

@@ -79,6 +79,7 @@
     <string name="open_error_too_large">El archivo supera los 8 MiB, así que no es un ROM de Game Boy.</string>
     <string name="open_error_rom">El núcleo rechazó el ROM: %1$s</string>
     <string name="open_error_mirror_not_downloaded">Hay un .sav junto al juego pero no se pudo leer y no hay partida en el teléfono. Para no empezar de cero ni pisarla, el juego no se abre. Reintenta con conexión.</string>
+    <string name="open_error_save_pending">Guardado pendiente de esa partida: la sesión anterior aún está terminando de guardarla. Espera unos segundos e inténtalo de nuevo.</string>
     <string name="open_error_save_incompatible">La partida guardada no es compatible con este juego.</string>
     <string name="open_error_local_save">No se pudo leer o preparar la partida local, así que el juego no se abre para no pisarla. %1$s</string>
     <string name="open_error_unreadable">No se pudo leer el archivo.</string>

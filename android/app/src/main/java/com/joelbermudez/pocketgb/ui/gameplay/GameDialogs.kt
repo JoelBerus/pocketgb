@@ -61,6 +61,7 @@ fun openErrorText(error: OpenError): String = when (error) {
     OpenError.MirrorNotDownloaded -> stringResource(R.string.open_error_mirror_not_downloaded)
     OpenError.SaveIncompatible -> stringResource(R.string.open_error_save_incompatible)
     is OpenError.LocalSaveFailed -> stringResource(R.string.open_error_local_save, causeText(error.error))
+    OpenError.SavePending -> stringResource(R.string.open_error_save_pending)
     OpenError.Unreadable -> stringResource(R.string.open_error_unreadable)
     is OpenError.Core -> stringResource(R.string.open_error_core, causeText(error.error))
 }

@@ -94,6 +94,8 @@ class GameplayViewModel(
     private val rescue: (() -> Unit) -> Unit = GameRescue::run,
     private val rescueAttempts: Int = 10,
     private val rescueRetryDelayMs: Long = 1_000,
+    /** Dueño de las sesiones que sobreviven a este ViewModel con el guardado pendiente (A5V2-H1). */
+    private val orphans: OrphanSessionRegistry = OrphanSessionRegistry.shared,
 ) : ViewModel(scope) {
     private val _game = MutableStateFlow<GameSession?>(null)
     val game: StateFlow<GameSession?> = _game.asStateFlow()
@@ -344,8 +346,9 @@ class GameplayViewModel(
      * El ViewModel se destruye (la actividad termina de verdad, no una rotación). No hay UI que confirme un riesgo,
      * así que NUNCA se fuerza una salida: se pausa lo que corre (rápido, aquí) y el vaciado, el estado AUTO y el
      * cierre pasan a [rescue], fuera del hilo principal, bajo el mismo Mutex que las operaciones (espera a la que
-     * esté en curso). Si el guardado no se confirma tras reintentar, la sesión queda abierta con su guardado
-     * pendiente y un estado de rescate escrito ([GameSession.rescueExit]).
+     * esté en curso). Si el guardado no se confirma tras reintentar, la sesión queda abierta con un estado de
+     * rescate escrito ([GameSession.rescueExit]) y pasa al [OrphanSessionRegistry] de la app, que la mantiene
+     * bloqueada (sin reabrir ni restaurar), reintenta y la cierra sola cuando el guardado se confirma.
      */
     override fun onCleared() {
         val game = _game.value ?: return
@@ -355,11 +358,16 @@ class GameplayViewModel(
             if (game.session.state.value == com.joelbermudez.pocketgb.emulator.SessionState.Running) game.session.pause()
         } catch (_: Exception) {
         }
+        // La huella queda bloqueada YA (síncrono, antes de que el rescate corra): hasta que la sesión se cierre nadie
+        // puede abrirla ni restaurarla. El registro de la app hereda la sesión si el rescate no logra cerrarla.
+        orphans.claim(game)
         rescue {
-            try {
+            val outcome = try {
                 kotlinx.coroutines.runBlocking { operations.withLock { game.rescueExit(rescueAttempts, rescueRetryDelayMs) } }
             } catch (_: Throwable) {
+                RescueOutcome.KeptOpen
             }
+            orphans.settle(game, outcome)
         }
     }
 }

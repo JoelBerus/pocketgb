@@ -10,6 +10,7 @@ import com.joelbermudez.pocketgb.library.LibraryScanner
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.library.RomSource
+import com.joelbermudez.pocketgb.saves.BlockedFingerprints
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
@@ -59,6 +60,9 @@ sealed interface OpenError {
 
     /** No se pudo leer o preparar la partida local: abrir empezaría de cero y podría pisarla. */
     data class LocalSaveFailed(val error: Throwable) : OpenError
+
+    /** Esa partida tiene un guardado pendiente de una sesión anterior (huérfana o en reparación): no se abre aún. */
+    data object SavePending : OpenError
 
     /** El archivo no se pudo leer. */
     data object Unreadable : OpenError
@@ -126,6 +130,8 @@ class GameLauncher(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Cuánto espera la apertura a que se vacíe el canal del espejo de esta huella antes de darlo por no disponible. */
     private val mirrorIdleWaitMs: Long = 5_000,
+    /** Huellas con un guardado pendiente en manos de la app: no se abren hasta que termine (A5V2-H1/H3). */
+    private val blocked: BlockedFingerprints = BlockedFingerprints.shared,
 ) {
     suspend fun open(entry: RomEntry): OpenResult = withContext(io + NonCancellable) { openBlocking(entry) }
 
@@ -167,6 +173,8 @@ class GameLauncher(
                 return OpenResult.Failed(OpenError.RomRejected(error))
             }
             val fingerprint = info.fingerprintHex
+            // Antes de tocar NINGÚN archivo (recoverOrphans borra temporales que la sesión pendiente puede estar usando).
+            if (blocked.isBlocked(fingerprint)) return OpenResult.Failed(OpenError.SavePending)
             val states = StateStore(statesRoot, fingerprint, fileOps)
             val events = GameEvents()
             // Temporales huérfanos de una escritura interrumpida (estados, capturas, índice): mejor esfuerzo.
@@ -233,6 +241,7 @@ class GameLauncher(
                 entryId = entry.id,
                 events = events,
                 policy = policy(),
+                blocked = blocked,
             )
             handedOver = true
             return OpenResult.Opened(game)

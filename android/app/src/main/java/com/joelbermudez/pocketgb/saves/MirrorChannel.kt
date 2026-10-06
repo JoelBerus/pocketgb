@@ -35,6 +35,8 @@ class MirrorChannel internal constructor(fingerprint: String) {
     /** Contenido que se está escribiendo ahora (fuera del lock). */
     private var inFlight: ByteArray? = null
     private var workerRunning = false
+    /** Lease de lectura ([withIdleLease]): mientras es `true` ningún escritor puede empezar. */
+    private var leased = false
     private var needsRetry = false
     private val idleCallbacks = ArrayList<() -> Unit>()
 
@@ -50,7 +52,7 @@ class MirrorChannel internal constructor(fingerprint: String) {
             if (pendingRequest == null && inFlight?.contentEquals(request.data) == true) return
             pendingRequest = request
             needsRetry = true
-            start = !workerRunning
+            start = !workerRunning && !leased
             if (start) workerRunning = true
         }
         if (start) executor.execute(::drain)
@@ -61,7 +63,7 @@ class MirrorChannel internal constructor(fingerprint: String) {
         synchronized(lock) {
             if (!needsRetry || (pendingRequest == null && inFlight?.contentEquals(request.data) == true)) return
             pendingRequest = request
-            start = !workerRunning
+            start = !workerRunning && !leased
             if (start) workerRunning = true
         }
         if (start) executor.execute(::drain)
@@ -69,7 +71,7 @@ class MirrorChannel internal constructor(fingerprint: String) {
 
     fun whenIdle(callback: () -> Unit) {
         synchronized(lock) {
-            if (workerRunning) {
+            if (workerRunning || leased) {
                 idleCallbacks += callback
                 return
             }
@@ -93,6 +95,63 @@ class MirrorChannel internal constructor(fingerprint: String) {
         }
         if (!idle) synchronized(lock) { idleCallbacks.remove(callback) }
         return idle
+    }
+
+    /**
+     * Ejecuta [block] (una lectura del espejo) con el canal en reposo y SIN que ningún escritor pueda empezar hasta
+     * que termine: espera como mucho [timeoutMs] a que no haya escritura en vuelo y, en el mismo instante y bajo
+     * el mismo lock, toma el lease. Las escrituras que lleguen durante [block] se conservan (coalescidas) y
+     * arrancan al soltarlo. `null` si el canal no quedó en reposo a tiempo (no se llama a [block]).
+     */
+    fun <T> withIdleLease(timeoutMs: Long, block: () -> T): T? {
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000
+        while (true) {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val callback: () -> Unit = { latch.countDown() }
+            val acquired = synchronized(lock) {
+                if (!workerRunning && !leased) {
+                    leased = true
+                    true
+                } else {
+                    idleCallbacks += callback
+                    false
+                }
+            }
+            if (acquired) break
+            val remainingNs = deadline - System.nanoTime()
+            val woke = try {
+                remainingNs > 0 && latch.await(remainingNs, TimeUnit.NANOSECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+            if (!woke) {
+                synchronized(lock) { idleCallbacks.remove(callback) }
+                return null
+            }
+        }
+        try {
+            return block()
+        } finally {
+            releaseLease()
+        }
+    }
+
+    private fun releaseLease() {
+        val start: Boolean
+        var callbacks: List<() -> Unit> = emptyList()
+        synchronized(lock) {
+            leased = false
+            start = pendingRequest != null && !workerRunning
+            if (start) workerRunning = true
+            // Quien esperaba un hueco (otro lease o `whenIdle`) se despierta si no empieza un escritor ahora.
+            if (!start && !workerRunning) {
+                callbacks = idleCallbacks.toList()
+                idleCallbacks.clear()
+            }
+        }
+        if (start) executor.execute(::drain)
+        runAll(callbacks)
     }
 
     /** Callbacks en espera (tests y diagnóstico). */

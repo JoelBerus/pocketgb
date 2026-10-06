@@ -295,6 +295,19 @@ class SaveCoordinator(
     }
 
     /**
+     * Encola [block] en el hilo de guardado SIN esperar (FIFO: corre cuando termine lo que ya estaba en vuelo) y
+     * devuelve su futuro. Lanza [java.io.IOException] si el guardado ya está cerrado.
+     */
+    fun <T> submitOnSaveThread(block: () -> T): java.util.concurrent.Future<T> = try {
+        executor.submit(Callable { block() })
+    } catch (_: RejectedExecutionException) {
+        throw java.io.IOException("El guardado ya está cerrado")
+    }
+
+    /** Cerrado y con el hilo de guardado ya terminado: lo encolado y no ejecutado no se ejecutará nunca. */
+    val isFinished: Boolean get() = closed && saveThread?.isAlive != true
+
+    /**
      * Cierra el guardado (I3) y comprueba que el hilo terminó de verdad. Orden: 1) marca cerrado bajo la
      * compuerta (ninguna copia nativa nueva); 2) deja que lo ya encolado termine (las tareas nuevas ven el
      * cierre y salen sin tocar nada); 3) pasado [graceMs], interrumpe; 4) une el hilo [killWaitMs]. Si sigue

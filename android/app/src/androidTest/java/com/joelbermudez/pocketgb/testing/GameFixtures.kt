@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb.testing
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.game.GameSession
+import com.joelbermudez.pocketgb.saves.BlockedFingerprints
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
@@ -104,6 +105,8 @@ fun openGame(
     flushTimeoutMs: Long = 3_000,
     closeGraceMs: Long = 10_000,
     closeKillWaitMs: Long = 5_000,
+    blocked: BlockedFingerprints = BlockedFingerprints(),
+    repairWaitMs: Long = 3_000,
 ): OpenedGame {
     val info = session.load(rom, 1_700_000_000)
     val fingerprint = info.fingerprintHex
@@ -123,6 +126,7 @@ fun openGame(
         session, info, states, target, baseline,
         autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
         closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
+        blocked = blocked, repairWaitMs = repairWaitMs,
     )
     return OpenedGame(game, store, states, root)
 }
