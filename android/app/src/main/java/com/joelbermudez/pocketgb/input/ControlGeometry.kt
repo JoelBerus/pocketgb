@@ -87,7 +87,7 @@ sealed interface ControlHit {
 class ControlGeometry(
     layout: ControlLayout,
     orientation: ControlsOrientation,
-    private val area: ControlBounds,
+    val area: ControlBounds,
     private val density: Float = 1f,
     /** Escala global (Ajustes › Controles): multiplica la de cada control; el producto se recorta a 0,6..1,6×1,15. */
     private val sizeScale: Float = 1f,
@@ -173,6 +173,17 @@ class ControlGeometry(
         hypot(point.x - bounds.centerX, point.y - bounds.centerY) <= bounds.width / 2f
 
     companion object {
+        /**
+         * Área segura de los controles (A7 R15): la vista menos los márgenes ([SafeInsets]: recorte de pantalla, barras y
+         * gestos). La imagen del juego puede invadir el recorte; los controles, nunca. Nunca colapsa a menos de 1 px.
+         */
+        fun safeArea(width: Float, height: Float, insets: SafeInsets): ControlBounds = ControlBounds(
+            insets.left.toFloat(),
+            insets.top.toFloat(),
+            (width - insets.right).coerceAtLeast(insets.left + 1f),
+            (height - insets.bottom).coerceAtLeast(insets.top + 1f),
+        )
+
         const val MIN_TOUCH_SIZE = 48f
         const val EDGE_MARGIN_DP = 8f
         const val SNAP_THRESHOLD_DP = 12f
@@ -234,3 +245,11 @@ class ControlGeometry(
         }
     }
 }
+
+/** Unión de márgenes seguros (p. ej. recorte de pantalla y gestos del sistema): el mayor de cada lado. */
+fun SafeInsets.union(other: SafeInsets): SafeInsets = SafeInsets(
+    left = maxOf(left, other.left),
+    top = maxOf(top, other.top),
+    right = maxOf(right, other.right),
+    bottom = maxOf(bottom, other.bottom),
+)

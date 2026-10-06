@@ -14,6 +14,8 @@ import com.joelbermudez.pocketgb.emulator.ScaleMode
 import com.joelbermudez.pocketgb.testing.SyntheticRom
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import org.junit.Rule
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GameSurfaceTest {
@@ -89,5 +91,69 @@ class GameSurfaceTest {
             compose.onNodeWithTag("game-surface").assertIsDisplayed()
             compose.waitUntil(5_000) { session.frameCount > before }
         }
+    }
+
+    /** A7 R12: un fabricante que destruye y recrea la superficie al rotar no produce doble adjunto ni deja la sesión huérfana. */
+    @Test
+    fun destroyAndRecreateOnTheSameViewAttachesOnceAtATime() {
+        val attached = java.util.concurrent.atomic.AtomicInteger()
+        val maxConcurrent = java.util.concurrent.atomic.AtomicInteger()
+        val attaches = java.util.concurrent.atomic.AtomicInteger()
+        val scales = java.util.concurrent.atomic.AtomicInteger()
+        EmulatorSession().use { session ->
+            session.load(SyntheticRom.romOnly())
+            session.start()
+            val sink = object : SurfaceSink {
+                override fun attach(surface: android.view.Surface) {
+                    maxConcurrent.set(maxOf(maxConcurrent.get(), attached.incrementAndGet()))
+                    attaches.incrementAndGet()
+                    session.attachSurface(surface)
+                }
+                override fun detach() {
+                    attached.decrementAndGet()
+                    session.detachSurface()
+                }
+                override fun applyScale(mode: ScaleMode) {
+                    scales.incrementAndGet()
+                    session.setScaleMode(mode)
+                }
+            }
+            compose.activityRule.scenario.onActivity { activity ->
+                activity.setContent {
+                    PocketGBTheme {
+                        GameSurface(sink, Modifier.fillMaxSize().testTag("game-surface"), ScaleMode.FILL)
+                    }
+                }
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            compose.waitUntil(5_000) { attaches.get() == 1 }
+            val surfaceView = findSurfaceView(compose.activity.window.decorView)
+            val scalesBefore = scales.get()
+
+            repeat(5) {
+                compose.runOnUiThread { surfaceView.visibility = android.view.View.GONE }
+                compose.waitForIdle()
+                compose.waitUntil(5_000) { attached.get() == 0 }
+                compose.runOnUiThread { surfaceView.visibility = android.view.View.VISIBLE }
+                compose.waitUntil(5_000) { attached.get() == 1 }
+            }
+
+            assertEquals("nunca dos adjuntos a la vez", 1, maxConcurrent.get())
+            assertEquals("un adjunto por cada creación", 6, attaches.get())
+            assertEquals(1, attached.get())
+            assertTrue("surfaceChanged reaplica el escalado", scales.get() > scalesBefore)
+            val before = session.frameCount
+            compose.waitUntil(5_000) { session.frameCount > before }
+        }
+    }
+
+    private fun findSurfaceView(root: android.view.View): android.view.SurfaceView {
+        if (root is android.view.SurfaceView) return root
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) {
+                runCatching { return findSurfaceView(root.getChildAt(i)) }
+            }
+        }
+        error("sin SurfaceView")
     }
 }

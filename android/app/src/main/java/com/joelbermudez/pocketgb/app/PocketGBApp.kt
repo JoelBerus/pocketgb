@@ -49,20 +49,10 @@ import com.joelbermudez.pocketgb.ui.settings.LicensesScreen
 import com.joelbermudez.pocketgb.ui.settings.StorageSettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.LibrarySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.SettingsScreen
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import com.joelbermudez.pocketgb.ui.library.ENABLE_LIST_DETAIL
+import com.joelbermudez.pocketgb.ui.library.LibraryListDetail
 import kotlinx.coroutines.launch
-
-private data class NavigationItem(
-    val destination: TopLevelDestination,
-    val label: String,
-    val selectedIcon: ImageVector,
-    val icon: ImageVector,
-)
-
-private val navigationItems = listOf(
-    NavigationItem(TopLevelDestination.LIBRARY, "Biblioteca", Icons.Filled.VideogameAsset, Icons.Outlined.VideogameAsset),
-    NavigationItem(TopLevelDestination.FAVORITES, "Favoritos", Icons.Filled.Star, Icons.Outlined.StarBorder),
-    NavigationItem(TopLevelDestination.SETTINGS, "Ajustes", Icons.Filled.Settings, Icons.Outlined.Settings),
-)
 
 @Composable
 fun PocketGBApp(
@@ -75,12 +65,12 @@ fun PocketGBApp(
     // El estado de navegación vive aquí (no en el Scaffold): al salir de una partida se vuelve al mismo sitio.
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
     GameplayRoot(gameplay) {
-        AppScaffold(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
+        AppContent(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
     }
 }
 
 @Composable
-private fun AppScaffold(
+private fun AppContent(
     navigationState: AppNavigationState,
     appearance: AppearanceState,
     appearanceRepository: AppearanceRepository,
@@ -94,35 +84,32 @@ private fun AppScaffold(
         navigationState.pop()
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                navigationItems.forEach { item ->
-                    val selected = navigationState.selected == item.destination
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = dropUnlessResumed { navigationState.select(item.destination) },
-                        icon = {
-                            Icon(
-                                imageVector = if (selected) item.selectedIcon else item.icon,
-                                contentDescription = item.label,
+    AppScaffold(navigationState) {
+        NavDisplay(
+            backStack = navigationState.currentBackStack,
+            onBack = { navigationState.pop() },
+            entryProvider = { route ->
+                when (route) {
+                    LibraryRoute.Root -> NavEntry(route) {
+                        if (ENABLE_LIST_DETAIL && isExpandedWidth(currentWindowAdaptiveInfo().windowSizeClass.minWidthDp)) {
+                            // Expanded: lista y detalle a la vez (A7 R14); desactivado hasta pulir el panel doble.
+                            LibraryListDetail(
+                                list = { openDetails ->
+                                    LibraryScreen(
+                                        viewModel = library,
+                                        onOpenDetails = openDetails,
+                                        onPlay = gameplay::open,
+                                        gameplaySettings = gameplaySettings,
+                                    )
+                                },
+                                detail = { id ->
+                                    GameDetailsScreen(
+                                        library, id, onPlay = gameplay::open, onBack = {},
+                                        gameplaySettings = gameplaySettings,
+                                    )
+                                },
                             )
-                        },
-                        label = { Text(item.label) },
-                    )
-                }
-            }
-        },
-    ) { innerPadding ->
-        // Los insets del sistema y de la barra inferior se consumen aquí una sola vez;
-        // las pantallas hijas no los vuelven a aplicar.
-        Box(modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)) {
-            NavDisplay(
-                backStack = navigationState.currentBackStack,
-                onBack = { navigationState.pop() },
-                entryProvider = { route ->
-                    when (route) {
-                        LibraryRoute.Root -> NavEntry(route) {
+                        } else {
                             LibraryScreen(
                                 viewModel = library,
                                 onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
@@ -130,93 +117,93 @@ private fun AppScaffold(
                                 gameplaySettings = gameplaySettings,
                             )
                         }
-                        is LibraryRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(
-                                library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
-                                gameplaySettings = gameplaySettings,
-                            )
-                        }
-                        FavoritesRoute.Root -> NavEntry(route) {
-                            FavoritesScreen(
-                                viewModel = library,
-                                onOpenDetails = { navigationState.push(FavoritesRoute.Details(it)) },
-                                onPlay = gameplay::open,
-                                gameplaySettings = gameplaySettings,
-                            )
-                        }
-                        is FavoritesRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(
-                                library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
-                                gameplaySettings = gameplaySettings,
-                            )
-                        }
-                        SettingsRoute.Root -> NavEntry(route) {
-                            SettingsScreen(
-                                onEmulation = { navigationState.push(SettingsRoute.SettingsEmulation) },
-                                onControls = { navigationState.push(SettingsRoute.SettingsControls) },
-                                onAudio = { navigationState.push(SettingsRoute.SettingsAudio) },
-                                onDisplay = { navigationState.push(SettingsRoute.SettingsDisplay) },
-                                onStorage = { navigationState.push(SettingsRoute.SettingsStorage) },
-                                onAppearance = { navigationState.push(SettingsRoute.Appearance) },
-                                onLibrary = { navigationState.push(SettingsRoute.Library) },
-                                onSaves = { navigationState.push(SettingsRoute.Saves) },
-                                onAbout = { navigationState.push(SettingsRoute.About) },
-                            )
-                        }
-                        SettingsRoute.Appearance -> NavEntry(route) {
-                            AppearanceScreen(
-                                appearance = appearance,
-                                onThemeModeChange = { mode ->
-                                    scope.launch { appearanceRepository.setThemeMode(mode) }
-                                },
-                                onDynamicColorChange = { enabled ->
-                                    scope.launch { appearanceRepository.setDynamicColor(enabled) }
-                                },
-                                onBack = { navigationState.pop() },
-                            )
-                        }
-                        SettingsRoute.Library -> NavEntry(route) {
-                            LibrarySettingsScreen(library, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.Saves -> NavEntry(route) {
-                            val context = LocalContext.current
-                            val browser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
-                            SavesScreen(browser, gameplay, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.About -> NavEntry(route) {
-                            AboutScreen(
-                                onBack = { navigationState.pop() },
-                                onLicenses = { navigationState.push(SettingsRoute.SettingsLicenses) },
-                            )
-                        }
-                        SettingsRoute.SettingsControls -> NavEntry(route) {
-                            ControlsSettingsScreen(
-                                gameplaySettings,
-                                onBack = { navigationState.pop() },
-                                onController = { navigationState.push(SettingsRoute.SettingsController) },
-                            )
-                        }
-                        SettingsRoute.SettingsController -> NavEntry(route) {
-                            ControllerMappingScreen(gameplaySettings, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.SettingsDisplay -> NavEntry(route) {
-                            DisplaySettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.SettingsEmulation -> NavEntry(route) {
-                            EmulationSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.SettingsAudio -> NavEntry(route) {
-                            AudioSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.SettingsStorage -> NavEntry(route) {
-                            StorageSettingsScreen(onBack = { navigationState.pop() })
-                        }
-                        SettingsRoute.SettingsLicenses -> NavEntry(route) {
-                            LicensesScreen(onBack = { navigationState.pop() })
-                        }
                     }
-                },
-            )
-        }
+                    is LibraryRoute.Details -> NavEntry(route) {
+                        GameDetailsScreen(
+                            library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                            gameplaySettings = gameplaySettings,
+                        )
+                    }
+                    FavoritesRoute.Root -> NavEntry(route) {
+                        FavoritesScreen(
+                            viewModel = library,
+                            onOpenDetails = { navigationState.push(FavoritesRoute.Details(it)) },
+                            onPlay = gameplay::open,
+                            gameplaySettings = gameplaySettings,
+                        )
+                    }
+                    is FavoritesRoute.Details -> NavEntry(route) {
+                        GameDetailsScreen(
+                            library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                            gameplaySettings = gameplaySettings,
+                        )
+                    }
+                    SettingsRoute.Root -> NavEntry(route) {
+                        SettingsScreen(
+                            onEmulation = { navigationState.push(SettingsRoute.SettingsEmulation) },
+                            onControls = { navigationState.push(SettingsRoute.SettingsControls) },
+                            onAudio = { navigationState.push(SettingsRoute.SettingsAudio) },
+                            onDisplay = { navigationState.push(SettingsRoute.SettingsDisplay) },
+                            onStorage = { navigationState.push(SettingsRoute.SettingsStorage) },
+                            onAppearance = { navigationState.push(SettingsRoute.Appearance) },
+                            onLibrary = { navigationState.push(SettingsRoute.Library) },
+                            onSaves = { navigationState.push(SettingsRoute.Saves) },
+                            onAbout = { navigationState.push(SettingsRoute.About) },
+                        )
+                    }
+                    SettingsRoute.Appearance -> NavEntry(route) {
+                        AppearanceScreen(
+                            appearance = appearance,
+                            onThemeModeChange = { mode ->
+                                scope.launch { appearanceRepository.setThemeMode(mode) }
+                            },
+                            onDynamicColorChange = { enabled ->
+                                scope.launch { appearanceRepository.setDynamicColor(enabled) }
+                            },
+                            onBack = { navigationState.pop() },
+                        )
+                    }
+                    SettingsRoute.Library -> NavEntry(route) {
+                        LibrarySettingsScreen(library, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.Saves -> NavEntry(route) {
+                        val context = LocalContext.current
+                        val browser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
+                        SavesScreen(browser, gameplay, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.About -> NavEntry(route) {
+                        AboutScreen(
+                            onBack = { navigationState.pop() },
+                            onLicenses = { navigationState.push(SettingsRoute.SettingsLicenses) },
+                        )
+                    }
+                    SettingsRoute.SettingsControls -> NavEntry(route) {
+                        ControlsSettingsScreen(
+                            gameplaySettings,
+                            onBack = { navigationState.pop() },
+                            onController = { navigationState.push(SettingsRoute.SettingsController) },
+                        )
+                    }
+                    SettingsRoute.SettingsController -> NavEntry(route) {
+                        ControllerMappingScreen(gameplaySettings, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.SettingsDisplay -> NavEntry(route) {
+                        DisplaySettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.SettingsEmulation -> NavEntry(route) {
+                        EmulationSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.SettingsAudio -> NavEntry(route) {
+                        AudioSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.SettingsStorage -> NavEntry(route) {
+                        StorageSettingsScreen(onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.SettingsLicenses -> NavEntry(route) {
+                        LicensesScreen(onBack = { navigationState.pop() })
+                    }
+                }
+            },
+        )
     }
 }

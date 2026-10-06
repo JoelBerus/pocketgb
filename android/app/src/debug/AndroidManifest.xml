@@ -4,6 +4,7 @@
         <!-- Solo Debug: anfitrión de las pruebas instrumentadas del juego (rotación, menú de pausa). -->
         <activity
             android:name="com.joelbermudez.pocketgb.debug.GameplayTestActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="false" />
     </application>
 </manifest>

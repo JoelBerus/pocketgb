@@ -230,6 +230,15 @@ class GameplayViewModel(
         onFlushResult(result)
     }
 
+    /**
+     * Memoria baja (A7 R13): solo cuando la app está en segundo plano (`TRIM_MEMORY_UI_HIDDEN` o peor) se pausa con el
+     * mismo camino que `ON_PAUSE` ([onBackground]: flush acotado, idempotente). En primer plano (`RUNNING_*`) no se
+     * toca la partida. No añade ninguna ruta de guardado.
+     */
+    fun onTrimMemory(level: Int) {
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) onBackground()
+    }
+
     /** Resultado de un vaciado hecho por el ciclo de vida: si no quedó a salvo, aviso (el indicador persiste solo). */
     fun onFlushResult(result: FlushResult) {
         if (!result.isSafe) _notices.tryEmit(GameNotice.SavePending)

@@ -143,6 +143,11 @@ class ArtworkStore(
         _version.value += 1
     }
 
+    /** Memoria baja (A7 R13): vacía solo la caché en memoria; el disco y [version] no cambian (se vuelve a decodificar al pedirla). */
+    fun trimMemory() {
+        synchronized(cache) { cache.clear() }
+    }
+
     private fun ownFiles(): List<File> {
         if (Files.isSymbolicLink(directory.toPath())) return emptyList()
         return directory.listFiles()?.filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }.orEmpty()

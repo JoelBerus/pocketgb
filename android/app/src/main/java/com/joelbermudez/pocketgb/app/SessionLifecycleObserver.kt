@@ -11,6 +11,7 @@ import com.joelbermudez.pocketgb.saves.FlushResult
  * Si el plazo se agota o falla, el juego queda en pausa con el guardado pendiente: `ON_STOP` (o la vuelta
  * a primer plano) lo reintenta, y intentar salir lo cuenta como fallo. Volver a primer plano NO reanuda:
  * el juego queda en pausa. [GameSession.pause] es idempotente, así que repetir eventos es inocuo.
+ * Rotar no llega aquí: `MainActivity` declara `configChanges`, A7 R12; sí llegan multiventana, llamadas y segundo plano.
  */
 class SessionLifecycleObserver(
     private val game: GameSession,
