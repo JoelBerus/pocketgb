@@ -103,6 +103,27 @@ struct EmulatorSessionContractTests {
         session.stop()
     }
 
+    /// M9-H1: con un núcleo compuesto que SÍ guarda y carga estados y SRAM, solo las guardas de la sesión
+    /// (`persisters.count <= 1`) pueden rechazarlos, y ningún `.sav` cambia.
+    @Test func statesAreRefusedByTheSessionGuardEvenIfTheCoreCouldSaveThem() throws {
+        let dir = try Self.tempDir()
+        let a = FakeCore(), b = FakeCore()
+        let storeA = SaveStore(directory: dir, fingerprint: "a"), storeB = SaveStore(directory: dir, fingerprint: "b")
+        let persisters = [SRAMPersistence(core: a, target: SaveTarget(local: storeA, mirror: nil)),
+                          SRAMPersistence(core: b, target: SaveTarget(local: storeB, mirror: nil))]
+        let session = EmulatorSession(core: PairCore(a, b, savesEverything: true), info: Self.info,
+                                      persisters: persisters, loadWarning: nil, onAudioInterrupted: {})
+        #expect(throws: CoreError.linkUnsupported) { try session.start(restoring: Data([1])) }
+        session.start()
+        session.pause()
+        let savedA = try storeA.load(), savedB = try storeB.load()
+        let changed = Data(repeating: 0x77, count: 8_192)
+        a.setSRAM(changed)
+        #expect(throws: CoreError.linkUnsupported) { try session.loadState(Data([1])) }
+        #expect(try storeA.load() == savedA && storeB.load() == savedB)   // el rechazo no escribió nada
+        session.stop()
+    }
+
     @Test func pauseFlushesEveryPersisterEvenIfOneFails() throws {
         let dirA = try Self.tempDir(), dirB = try Self.tempDir()
         let coreA = FakeCore(), coreB = FakeCore()
@@ -131,7 +152,11 @@ struct EmulatorSessionContractTests {
 final class PairCore: ConsoleCore, @unchecked Sendable {
     let console = Console.gameBoy
     let a: FakeCore, b: FakeCore
-    init(_ a: FakeCore, _ b: FakeCore) { self.a = a; self.b = b }
+    /// `true`: estados y SRAM funcionan (no lanzan), para que solo las guardas de `EmulatorSession` los rechacen.
+    let savesEverything: Bool
+    init(_ a: FakeCore, _ b: FakeCore, savesEverything: Bool = false) {
+        self.a = a; self.b = b; self.savesEverything = savesEverything
+    }
     func setButtons(_ mask: UInt16) {}
     func runFrame() { a.runFrame() }
     var cpuLocked: Bool { false }
@@ -141,10 +166,16 @@ final class PairCore: ConsoleCore, @unchecked Sendable {
     var sramFooterBytes: Int { 0 }
     var sramDirty: Bool { false }
     func clearSRAMDirty() {}
-    func sramLoad(_ data: Data) throws(CoreError) { throw .linkUnsupported }
-    func sramSave() throws(CoreError) -> Data { throw .linkUnsupported }
+    func sramLoad(_ data: Data) throws(CoreError) { if !savesEverything { throw .linkUnsupported } }
+    func sramSave() throws(CoreError) -> Data {
+        if savesEverything { return try a.sramSave() }
+        throw .linkUnsupported
+    }
     func setRTCTime(_ unixTime: Int64) {}
-    func stateSave() throws(CoreError) -> Data { throw .linkUnsupported }
-    func stateLoad(_ data: Data) throws(CoreError) { throw .linkUnsupported }
+    func stateSave() throws(CoreError) -> Data {
+        if savesEverything { return Data([0]) }
+        throw .linkUnsupported
+    }
+    func stateLoad(_ data: Data) throws(CoreError) { if !savesEverything { throw .linkUnsupported } }
     func shutdown() { a.shutdown() }
 }
