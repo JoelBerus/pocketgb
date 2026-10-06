@@ -63,4 +63,34 @@ class ControlsFadeControllerTest {
         assertEquals(1f, fade.alpha(), 0f)
         assertFalse(fade.hintAlpha() > 0f)
     }
+
+    @Test
+    fun reduceMotionHidesAtOnceAfterTheDelayWithoutAFade() {
+        val fade = controller(ControlsVisibility.ON_TOUCH).apply { reduceMotion = true }
+        now += ControlsFadeController.DELAY_MS
+        assertEquals(1f, fade.alpha(), 0f)
+        now += 1
+        assertEquals(0f, fade.alpha(), 0f)
+        assertNull(fade.msUntilChange())
+    }
+
+    @Test
+    fun reduceMotionNeverReportsIntermediateAlpha() {
+        val fade = controller(ControlsVisibility.ON_TOUCH).apply { reduceMotion = true }
+        for (elapsed in 0L..4_000L step 50L) {
+            now = 1_000L + elapsed
+            val alpha = fade.alpha()
+            assertTrue("alfa intermedio $alpha a los $elapsed ms", alpha == 0f || alpha == 1f)
+        }
+    }
+
+    @Test
+    fun reduceMotionStillSchedulesTheHideAndTheHintEndsWithoutRamp() {
+        val fade = controller(ControlsVisibility.ON_TOUCH).apply { reduceMotion = true }
+        now += 1_000
+        assertEquals(2_000L, fade.msUntilChange())
+        val hidden = controller(ControlsVisibility.HIDDEN).apply { reduceMotion = true }
+        now += ControlsFadeController.DELAY_MS + 1
+        assertEquals(0f, hidden.hintAlpha(), 0f)
+    }
 }

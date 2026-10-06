@@ -44,12 +44,10 @@
     <string name="game_save_date">Partida %1$s</string>
     <string name="game_cannot_open">No se puede abrir</string>
     <string name="game_favorite">Favorito</string>
-    <string name="game_problem">Problema</string>
     <string name="game_system_gb">Game Boy</string>
     <string name="game_system_gbc">Game Boy Color</string>
     <string name="game_artwork_description">Última captura de %1$s</string>
     <string name="game_details_action">Ver detalle</string>
-    <string name="game_more_actions">Más acciones</string>
     <string name="game_status_played">Jugado %1$s</string>
 
     <!-- Fechas relativas -->

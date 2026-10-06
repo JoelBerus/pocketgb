@@ -3,6 +3,14 @@ package com.joelbermudez.pocketgb.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import org.junit.Assert.assertFalse
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -798,5 +806,137 @@ class LibraryUiTest {
         compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details)) }
         compose.onNodeWithTag("game-details-artwork").assertIsDisplayed()
         compose.onNodeWithContentDescription("Sin captura, portada generada para RED", useUnmergedTree = true).assertExists()
+    }
+
+    // --- A7-L2: accesibilidad ---
+
+    private val longTitle = entry("Largo.gb", "THE LEGEND OF ZELDA LINKS AWAKENING DX EDICION ESPECIAL", true)
+
+    /** Fuerza una escala de fuente como la del sistema (el `Density` la lleva y `LocalLargeFont` la deriva). */
+    @Composable
+    private fun WithFontScale(scale: Float, content: @Composable () -> Unit) {
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, scale), content = content)
+    }
+
+    @Test
+    fun aGameCardIsOneNodeWithTheCombinedLabelAndMoreOptions() {
+        compose.setContent {
+            LibraryHarness(
+                LibraryState.Ready(listOf(red), "Juegos"),
+                LibraryPreferencesData(favorites = setOf(red.id)),
+            )
+        }
+        cards().assertCountEquals(1)
+        cards()[0].assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("RED, Game Boy, Favorito, Sin jugar")),
+        )
+        cards()[0].assert(
+            SemanticsMatcher("acción «Más opciones»") {
+                it.config.getOrNull(SemanticsActions.OnLongClick)?.label == "Más opciones"
+            },
+        )
+    }
+
+    @Test
+    fun aProblemCardAnnouncesTheReasonInsteadOfTheLastPlayed() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(listOf(broken), "Juegos")) }
+        cards()[0].assert(
+            SemanticsMatcher("etiqueta con el problema") {
+                it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()?.startsWith("ROTO, Game Boy, ") == true
+            },
+        )
+    }
+
+    @Test
+    fun withFontScaleTwoTheGridHasOneColumnAndTitlesAreNotTruncated() {
+        compose.setContent {
+            WithFontScale(2.0f) { LibraryHarness(LibraryState.Ready(listOf(longTitle, red, yellow), "Juegos")) }
+        }
+        compose.waitForIdle()
+        val lefts = cards().fetchSemanticsNodes().map { it.positionInRoot.x }
+        assertTrue("una columna: $lefts", lefts.isNotEmpty() && lefts.all { it == lefts.first() })
+        val result = androidx.compose.ui.text.TextLayoutResult::class.java
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onAllNodes(hasText(longTitle.title), useUnmergedTree = true).fetchSemanticsNodes().forEach { node ->
+            val list = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(list)
+            layouts += list
+        }
+        assertTrue("no se encontró el diseño del título", layouts.isNotEmpty())
+        layouts.forEach { assertFalse("el título está truncado", it.hasVisualOverflow) }
+        assertTrue(result.simpleName.isNotEmpty())
+    }
+
+    @Test
+    fun withFontScaleOneTheGridKeepsSeveralColumnsAndLimitsTitlesToTwoLines() {
+        compose.setContent {
+            WithFontScale(1.0f) { LibraryHarness(LibraryState.Ready(listOf(longTitle, red, yellow, alpha), "Juegos")) }
+        }
+        compose.waitForIdle()
+        val lefts = cards().fetchSemanticsNodes().map { it.positionInRoot.x }.distinct()
+        assertTrue("varias columnas: $lefts", lefts.size >= 2)
+    }
+
+    @Test
+    fun withFontScaleTwoTheContinueRailBecomesAColumnOfAtMostThreeRows() {
+        val recent = listOf(red, yellow, alpha, color)
+        val prefs = withPlayed(*recent.toTypedArray())
+        compose.setContent {
+            WithFontScale(2.0f) {
+                LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+            }
+        }
+        compose.waitForIdle()
+        val rows = compose.onAllNodesWithTag("continue-card").fetchSemanticsNodes()
+        assertTrue("como mucho 3 filas: ${rows.size}", rows.size in 1..3)
+        val lefts = rows.map { it.positionInRoot.x }
+        assertTrue("misma columna: $lefts", lefts.all { it == lefts.first() })
+        if (rows.size > 1) assertTrue(rows[1].positionInRoot.y > rows[0].positionInRoot.y)
+    }
+
+    @Test
+    fun withNormalFontTheContinueRailStaysHorizontal() {
+        val recent = listOf(red, yellow, alpha)
+        val prefs = withPlayed(*recent.toTypedArray())
+        compose.setContent {
+            LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+        }
+        compose.waitForIdle()
+        val rows = compose.onAllNodesWithTag("continue-card").fetchSemanticsNodes()
+        assertTrue(rows.size >= 2)
+        assertTrue(rows[1].positionInRoot.x > rows[0].positionInRoot.x)
+    }
+
+    @Test
+    fun withFontScaleTwoTheDetailsStackTheirRows() {
+        compose.setContent {
+            WithFontScale(2.0f) {
+                PocketGBTheme {
+                    GameDetailsContent(
+                        entry = red,
+                        load = DetailsLoad.Loaded(
+                            GameDetails(red, "ROM", 32 * 1024, 0, hasBattery = false, hasRtc = false, headerChecksumOk = true, globalChecksumOk = true, fingerprint = "%064x".format(1L)),
+                        ),
+                        favorite = false,
+                        lastPlayedAt = null,
+                        onPlay = {},
+                        onToggleFavorite = {},
+                        onHide = {},
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("game-details-stats").performScrollTo()
+        // Tres estadísticas apiladas: cada una empieza en la misma x y bajo la anterior.
+        val stats = compose.onNodeWithTag("game-details-stats").fetchSemanticsNode().children
+        assertTrue(stats.size >= 3)
+        assertTrue(stats.map { it.positionInRoot.x }.distinct().size == 1)
+        assertTrue(stats[1].positionInRoot.y > stats[0].positionInRoot.y)
+        // Los botones secundarios también se apilan.
+        val favorite = compose.onNodeWithTag("game-details-favorite").fetchSemanticsNode()
+        val settings = compose.onNodeWithTag("game-details-settings").fetchSemanticsNode()
+        assertEquals(favorite.positionInRoot.x, settings.positionInRoot.x, 0.5f)
     }
 }

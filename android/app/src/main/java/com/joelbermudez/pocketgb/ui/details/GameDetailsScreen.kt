@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 import com.joelbermudez.pocketgb.library.ByteFormat
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
@@ -267,18 +268,25 @@ fun GameDetailsContent(
 private fun Stats(entry: RomEntry, lastPlayedAt: Long?) {
     Column {
         HorizontalDivider()
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("game-details-stats")) {
-            Stat(
-                stringResource(R.string.details_played),
-                lastPlayedAt?.let { relativeDateText(it) } ?: stringResource(R.string.details_never),
-                Modifier.weight(1f),
-            )
-            Stat(
-                stringResource(R.string.details_save),
-                entry.mirrorSaveDate?.let { relativeDateText(it) } ?: stringResource(R.string.details_none),
-                Modifier.weight(1f),
-            )
-            Stat(stringResource(R.string.details_size), ByteFormat.format(entry.sizeBytes), Modifier.weight(1f))
+        val played = stringResource(R.string.details_played)
+        val playedValue = lastPlayedAt?.let { relativeDateText(it) } ?: stringResource(R.string.details_never)
+        val save = stringResource(R.string.details_save)
+        val saveValue = entry.mirrorSaveDate?.let { relativeDateText(it) } ?: stringResource(R.string.details_none)
+        val size = stringResource(R.string.details_size)
+        val sizeValue = ByteFormat.format(entry.sizeBytes)
+        if (LocalLargeFont.current) {
+            // Fuente grande (R9): una estadística por fila en vez de tres columnas estrechas.
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("game-details-stats"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Stat(played, playedValue, Modifier.fillMaxWidth())
+                Stat(save, saveValue, Modifier.fillMaxWidth())
+                Stat(size, sizeValue, Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("game-details-stats")) {
+                Stat(played, playedValue, Modifier.weight(1f))
+                Stat(save, saveValue, Modifier.weight(1f))
+                Stat(size, sizeValue, Modifier.weight(1f))
+            }
         }
         HorizontalDivider()
     }
@@ -297,10 +305,10 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, onOpenSettings: () -> Unit) {
     val favoriteLabel = stringResource(if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add)
     val soon = stringResource(R.string.details_states_soon)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val favoriteButton: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedButton(
             onClick = onToggleFavorite,
-            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-favorite")
+            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-favorite")
                 .semantics { contentDescription = favoriteLabel },
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
@@ -311,24 +319,42 @@ private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, on
             )
             Text(stringResource(R.string.game_favorite), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
         }
+    }
+    val statesButton: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedButton(
             onClick = {},
             enabled = false,
-            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-states")
+            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-states")
                 .semantics { stateDescription = soon },
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
             Icon(Icons.Outlined.ViewAgenda, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.details_states), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
         }
+    }
+    val settingsButton: @Composable (Modifier) -> Unit = { modifier ->
         OutlinedButton(
             onClick = onOpenSettings,
-            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-settings")
+            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-settings")
                 .semantics { contentDescription = "Ajustes del juego" },
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
             Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.details_settings), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+        }
+    }
+    if (LocalLargeFont.current) {
+        // Con fuente grande (R9) los botones se apilan: en una fila sus textos no caben.
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            favoriteButton(Modifier.fillMaxWidth())
+            statesButton(Modifier.fillMaxWidth())
+            settingsButton(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            favoriteButton(Modifier.weight(1f))
+            statesButton(Modifier.weight(1f))
+            settingsButton(Modifier.weight(1f))
         }
     }
 }
@@ -404,6 +430,17 @@ private fun LoadedFacts(details: GameDetails) {
 /** Etiqueta a la izquierda y valor a la derecha; apilados si el texto no cabe (fuentes grandes). */
 @Composable
 private fun Fact(label: String, value: String) {
+    if (LocalLargeFont.current) {
+        Column(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 8.dp).semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.bodyMedium)
+        }
+        HorizontalDivider()
+        return
+    }
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -427,6 +464,26 @@ private fun Fact(label: String, value: String) {
 
 @Composable
 private fun ChecksumFact(label: String, ok: Boolean, okText: String, badText: String) {
+    val large = LocalLargeFont.current
+    if (large) {
+        Column(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 8.dp).semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (ok) Icons.Filled.CheckCircle else Icons.Outlined.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+                Text(if (ok) okText else badText, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        HorizontalDivider()
+        return
+    }
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

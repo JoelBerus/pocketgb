@@ -3,13 +3,9 @@
     <string name="notice_header_damaged">Cabecera dañada: el juego puede no funcionar bien.</string>
 
     <!-- HUD (K13) -->
-    <string name="hud_pause">Pausa y opciones</string>
-    <string name="hud_speed">Avance rápido</string>
-    <string name="hud_speed_off">Desactivado</string>
     <string name="hud_speed_value">×%1$d</string>
 
     <!-- Controles (K12) -->
-    <string name="controls_content_description">Controles del juego: cruceta, A, B, Start y Select</string>
     <string name="controls_hidden_hint">Controles ocultos · abre el menú para mostrarlos</string>
 
     <!-- Menú de pausa (iOS PauseView) -->

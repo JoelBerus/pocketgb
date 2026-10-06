@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TalkBack en los controles táctiles (A7-L2, R7): un nodo virtual por control -->
+    <string name="controls_a11y_dpad">Cruceta</string>
+    <string name="controls_a11y_a">Botón A</string>
+    <string name="controls_a11y_b">Botón B</string>
+    <string name="controls_a11y_start">Start</string>
+    <string name="controls_a11y_select">Select</string>
+    <string name="controls_a11y_menu">Menú</string>
+    <string name="controls_a11y_up">Arriba</string>
+    <string name="controls_a11y_down">Abajo</string>
+    <string name="controls_a11y_left">Izquierda</string>
+    <string name="controls_a11y_right">Derecha</string>
+    <string name="controls_a11y_open_menu">Abrir menú</string>
+
+    <!-- HUD (R8) -->
+    <string name="hud_a11y_pause">Pausa</string>
+    <string name="hud_a11y_pause_action">Abrir el menú de pausa</string>
+    <string name="hud_a11y_speed_normal">Velocidad normal, cambiar</string>
+    <string name="hud_a11y_speed_fast">Velocidad ×%1$d, cambiar</string>
+    <string name="hud_a11y_speed_state_on">Avance rápido activado</string>
+    <string name="hud_a11y_speed_state_off">Avance rápido desactivado</string>
+
+    <!-- Tarjetas de la biblioteca (R8) -->
+    <string name="game_a11y_more_options">Más opciones</string>
+
+    <!-- Identificadores de las acciones personalizadas de TalkBack -->
+    <item name="a11y_action_up" type="id" />
+    <item name="a11y_action_down" type="id" />
+    <item name="a11y_action_left" type="id" />
+    <item name="a11y_action_right" type="id" />
+    <item name="a11y_action_open_menu" type="id" />
+    <item name="a11y_action_more_options" type="id" />
+</resources>

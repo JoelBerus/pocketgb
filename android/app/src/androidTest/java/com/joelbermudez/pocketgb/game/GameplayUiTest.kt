@@ -284,14 +284,18 @@ class GameplayUiTest {
         assertEquals(1, game.session.speed)
         compose.onNodeWithTag("hud-pause").assertIsDisplayed()
         compose.onNodeWithTag("hud-speed").assertIsDisplayed()
-        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Desactivado"))
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Avance rápido desactivado"))
+
+        compose.onNodeWithTag("hud-pause").assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Pausa")))
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Velocidad normal, cambiar")))
 
         compose.onNodeWithTag("hud-speed").performClick()
         assertTrue(waitUntil { game.session.speed == 2 })
-        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "×2"))
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Velocidad ×2, cambiar")))
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Avance rápido activado"))
         compose.onNodeWithTag("hud-speed").performClick()
         assertTrue(waitUntil { game.session.speed == 4 })
-        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "×4"))
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Avance rápido activado"))
         compose.onNodeWithTag("hud-speed").performClick()
         assertTrue(waitUntil { game.session.speed == 1 })
     }

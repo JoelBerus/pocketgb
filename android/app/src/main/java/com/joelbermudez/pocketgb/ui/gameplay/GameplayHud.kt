@@ -67,16 +67,18 @@ fun GameplayHud(
     haptics: Boolean = true,
 ) {
     val view = LocalView.current
-    val pauseLabel = stringResource(R.string.hud_pause)
-    val speedLabel = stringResource(R.string.hud_speed)
-    val speedState = if (speed > 1) stringResource(R.string.hud_speed_value, speed) else stringResource(R.string.hud_speed_off)
+    // R8: nombres cortos («Pausa», «Velocidad ×2, cambiar») y el estado aparte, para que TalkBack lo lea como valor.
+    val pauseLabel = stringResource(R.string.hud_a11y_pause)
+    val pauseAction = stringResource(R.string.hud_a11y_pause_action)
+    val speedLabel = if (speed > 1) stringResource(R.string.hud_a11y_speed_fast, speed) else stringResource(R.string.hud_a11y_speed_normal)
+    val speedState = stringResource(if (speed > 1) R.string.hud_a11y_speed_state_on else R.string.hud_a11y_speed_state_off)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier
                 .size(48.dp)
                 .clip(CircleShape)
                 .background(HudScrim)
-                .clickable(role = Role.Button, onClick = onPause)
+                .clickable(onClickLabel = pauseAction, role = Role.Button, onClick = onPause)
                 .semantics { contentDescription = pauseLabel }
                 .testTag("hud-pause"),
             horizontalArrangement = Arrangement.Center,
