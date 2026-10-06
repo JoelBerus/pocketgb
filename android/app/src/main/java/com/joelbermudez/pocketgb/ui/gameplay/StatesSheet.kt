@@ -78,7 +78,7 @@ fun StatesSheet(
     snackbar: SnackbarHostState,
     onBack: () -> Unit,
     onSave: (StateSlot) -> Unit,
-    onLoad: (StateSlot) -> Unit,
+    onLoad: (StateSlot, Boolean) -> Unit,
     onDelete: (StateSlot) -> Unit,
 ) {
     SheetOrDialog(landscape = landscape, onDismiss = onBack, modifier = Modifier.testTag("states-sheet")) {
@@ -93,7 +93,8 @@ fun StatesContent(
     snackbar: SnackbarHostState,
     onBack: () -> Unit,
     onSave: (StateSlot) -> Unit,
-    onLoad: (StateSlot) -> Unit,
+    /** `(ranura, guardarActualEnAuto)`: K14. */
+    onLoad: (StateSlot, Boolean) -> Unit,
     onDelete: (StateSlot) -> Unit,
 ) {
     var pending by remember { mutableStateOf<PendingAction?>(null) }
@@ -134,8 +135,7 @@ fun StatesContent(
                                 when {
                                     entry == null -> stringResource(R.string.state_slot_empty)
                                     entry.corrupt -> stringResource(R.string.state_corrupt)
-                                    else -> DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                                        .format(Date(entry.dateMs))
+                                    else -> formatStateDate(entry.dateMs)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -175,29 +175,34 @@ fun StatesContent(
                 }
             }
         }
+        Text(
+            stringResource(R.string.gameplay_states_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         SnackbarHost(snackbar)
     }
-    pending?.let { action ->
+    (pending as? PendingAction.Load)?.let { action ->
+        LoadStateConfirmDialog(
+            slot = action.slot,
+            slotLabel = slotLabel(action.slot).lowercase(),
+            onSaveAndLoad = { pending = null; onLoad(action.slot, true) },
+            onLoadWithoutSaving = { pending = null; onLoad(action.slot, false) },
+            onCancel = { pending = null },
+        )
+    }
+    pending?.takeIf { it !is PendingAction.Load }?.let { action ->
         val label = slotLabel(action.slot)
         val (title, body, confirm, destructiveColor) = when (action) {
             is PendingAction.Replace -> Quad(
-                stringResource(R.string.state_replace_title, label),
-                stringResource(R.string.state_replace_body),
-                stringResource(R.string.state_replace_confirm),
+                stringResource(R.string.gameplay_replace_title, label.lowercase()),
+                ui.entries[action.slot]?.takeIf { !it.corrupt }?.let { entry ->
+                    stringResource(R.string.gameplay_replace_body, formatStateDate(entry.dateMs))
+                } ?: stringResource(R.string.gameplay_replace_body_undated),
+                stringResource(R.string.gameplay_replace_confirm),
                 true,
             )
-            is PendingAction.Load -> Quad(
-                stringResource(R.string.state_load_title, label),
-                stringResource(
-                    when (action.slot) {
-                        StateSlot.AUTO -> R.string.state_load_body_auto
-                        StateSlot.RESCUE -> R.string.state_load_body_rescue
-                        else -> R.string.state_load_body
-                    },
-                ),
-                stringResource(R.string.state_load_confirm),
-                true,
-            )
+            is PendingAction.Load -> error("la carga tiene su propio diálogo")
             is PendingAction.Delete -> Quad(
                 stringResource(R.string.state_delete_title, label),
                 stringResource(R.string.state_delete_body),
@@ -215,7 +220,7 @@ fun StatesContent(
                         pending = null
                         when (action) {
                             is PendingAction.Replace -> onSave(action.slot)
-                            is PendingAction.Load -> onLoad(action.slot)
+                            is PendingAction.Load -> Unit
                             is PendingAction.Delete -> onDelete(action.slot)
                         }
                     },
@@ -234,6 +239,9 @@ fun StatesContent(
         )
     }
 }
+
+private fun formatStateDate(dateMs: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(dateMs))
 
 private val CompactPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
 

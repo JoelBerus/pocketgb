@@ -1,5 +1,8 @@
 package com.joelbermudez.pocketgb.input
 
+import com.joelbermudez.pocketgb.settings.MAX_CONTROL_SCALE
+import com.joelbermudez.pocketgb.settings.MAX_SIZE_SCALE
+import com.joelbermudez.pocketgb.settings.MIN_CONTROL_SCALE
 import com.joelbermudez.pocketgb.settings.StoredControlLayout
 import kotlinx.serialization.Serializable
 import kotlin.math.PI
@@ -86,10 +89,19 @@ class ControlGeometry(
     orientation: ControlsOrientation,
     private val area: ControlBounds,
     private val density: Float = 1f,
+    /** Escala global (Ajustes › Controles): multiplica la de cada control; el producto se recorta a 0,6..1,6×1,15. */
+    private val sizeScale: Float = 1f,
+    /** El control MENU solo se puede tocar si se dibuja (K13: en A6 va oculto). */
+    private val showMenu: Boolean = true,
 ) {
+    private val layout = layout
+
+    fun scale(id: ControlId): Float =
+        (layout.scale(id) * sizeScale).coerceIn(MIN_CONTROL_SCALE, MAX_CONTROL_SCALE * MAX_SIZE_SCALE)
+
     val frames: Map<ControlId, ControlBounds> = ControlId.entries.associateWith { id ->
         val base = baseSize(id)
-        val scale = layout.scale(id)
+        val scale = scale(id)
         val width = base.first * scale * density
         val height = base.second * scale * density
         val relative = layout.centers[id] ?: ControlLayout.defaults(orientation).centers.getValue(id)
@@ -127,6 +139,7 @@ class ControlGeometry(
     fun hit(point: ControlPoint): ControlHit? {
         if (inCircle(point, abFrame)) return ControlHit.AB
         listOf(ControlId.A, ControlId.B, ControlId.DPAD, ControlId.MENU).forEach { id ->
+            if (id == ControlId.MENU && !showMenu) return@forEach
             if (inCircle(point, touchFrame(id))) return ControlHit.Single(id)
         }
         listOf(ControlId.START, ControlId.SELECT).forEach { id ->
@@ -142,11 +155,54 @@ class ControlGeometry(
         return dpadMask(point.x - frame.centerX, point.y - frame.centerY, frame.width / 2f)
     }
 
+    /**
+     * Centro normalizado donde queda [id] si se arrastra hasta [point] en el editor: ajustado a 8 dp del borde del área
+     * si está a menos de [SNAP_THRESHOLD_DP] de él, y nunca fuera de ella.
+     */
+    fun snappedCenter(id: ControlId, point: ControlPoint): NormalizedPoint {
+        val frame = frames.getValue(id)
+        val x = snapAxis(point.x, frame.width / 2f, area.left, area.right, EDGE_MARGIN_DP * density, SNAP_THRESHOLD_DP * density)
+        val y = snapAxis(point.y, frame.height / 2f, area.top, area.bottom, EDGE_MARGIN_DP * density, SNAP_THRESHOLD_DP * density)
+        return NormalizedPoint(
+            ((x - area.left) / area.width).coerceIn(0f, 1f),
+            ((y - area.top) / area.height).coerceIn(0f, 1f),
+        )
+    }
+
     private fun inCircle(point: ControlPoint, bounds: ControlBounds): Boolean =
         hypot(point.x - bounds.centerX, point.y - bounds.centerY) <= bounds.width / 2f
 
     companion object {
         const val MIN_TOUCH_SIZE = 48f
+        const val EDGE_MARGIN_DP = 8f
+        const val SNAP_THRESHOLD_DP = 12f
+
+        /** Centro en un eje: dentro de [min]+[margin]+[half]..[max]-[margin]-[half], pegado al borde si está a menos de [threshold]. */
+        fun snapAxis(center: Float, half: Float, min: Float, max: Float, margin: Float, threshold: Float): Float {
+            val low = min + margin + half
+            val high = max - margin - half
+            if (low >= high) return (min + max) / 2f
+            return when {
+                center <= low + threshold -> low
+                center >= high - threshold -> high
+                else -> center
+            }
+        }
+
+        /**
+         * Las cuatro zonas de dirección dentro de la cruceta (para dibujar los brazos de la cruz o las cuatro flechas
+         * separadas): su centro cae en el sector de su dirección de [dpadMask].
+         */
+        fun dpadArms(frame: ControlBounds): Map<GameBoyButton, ControlBounds> {
+            val third = frame.width / 3f
+            val thirdH = frame.height / 3f
+            return mapOf(
+                GameBoyButton.UP to ControlBounds(frame.left + third, frame.top, frame.right - third, frame.top + thirdH),
+                GameBoyButton.DOWN to ControlBounds(frame.left + third, frame.bottom - thirdH, frame.right - third, frame.bottom),
+                GameBoyButton.LEFT to ControlBounds(frame.left, frame.top + thirdH, frame.left + third, frame.bottom - thirdH),
+                GameBoyButton.RIGHT to ControlBounds(frame.right - third, frame.top + thirdH, frame.right, frame.bottom - thirdH),
+            )
+        }
 
         fun dpadMask(dx: Float, dy: Float, radius: Float): Int {
             if (hypot(dx, dy) < radius * 0.25f) return 0

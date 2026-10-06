@@ -4,11 +4,22 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.view.ViewCompat
+import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import com.joelbermudez.pocketgb.settings.DpadStyle
 
+/**
+ * Controles táctiles del juego, dibujados con colores fijos sobre una capa oscura localizada (K12): no dependen del
+ * tema ni del color dinámico, así que se leen sobre cualquier fotograma. Con [editing] se convierte en el lienzo del
+ * editor: arrastrar mueve un control, tocar lo elige, y no manda nada al juego.
+ */
 class GameControlsView(
     context: Context,
     var onMaskChanged: (Int) -> Unit,
@@ -18,29 +29,98 @@ class GameControlsView(
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
+    private val density = resources.displayMetrics.density
     private var inputEngine: TouchInputEngine? = null
     private var lastMask = 0
     private var lastPressed = emptySet<ControlId>()
+    private var lastDpad = 0
+
+    /** Reloj del desvanecido; se sustituye en las pruebas. */
+    var clock: () -> Long = SystemClock::uptimeMillis
+        set(value) {
+            field = value
+            fade = ControlsFadeController(fade.visibility, value)
+        }
+    private var fade = ControlsFadeController(ControlsVisibility.ALWAYS, clock)
+    private val fadeTick = Runnable { invalidate() }
 
     var hapticsEnabled: Boolean = true
-    var foregroundColor: Int = Color.WHITE
+
+    /** Impacto al pulsar A/B/Start/Select. */
+    var hapticFeedback: () -> Unit = { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+
+    /** Selección al cambiar de sector de la cruceta. */
+    var sectorFeedback: () -> Unit = { performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
+
+    var renderOptions: ControlsRenderOptions = ControlsRenderOptions()
         set(value) {
+            if (field == value) return
+            val menuChanged = field.showMenu != value.showMenu
+            field = value
+            if (menuChanged) rebuild() else invalidate()
+        }
+
+    var controlsVisibility: ControlsVisibility
+        get() = fade.visibility
+        set(value) {
+            if (fade.visibility == value) return
+            fade.visibility = value
+            invalidate()
+        }
+
+    /** `null` = la de fábrica de la orientación. */
+    var controlLayout: ControlLayout? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            dragPreview = null // el diseño guardado ya trae la posición soltada
+            rebuild()
+        }
+
+    var sizeScale: Float = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            rebuild()
+        }
+
+    var safeInsets: SafeInsets = SafeInsets.NONE
+        set(value) {
+            if (field == value) return
+            field = value
+            rebuild()
+        }
+
+    /** `null` = se deduce del tamaño (ancho > alto es horizontal). */
+    var orientationOverride: ControlsOrientation? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            rebuild()
+        }
+
+    // --- Editor ---
+    var editing: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            dragPreview = null
+            publishClearedInput()
+            if (value) fade.restart()
+            invalidate()
+        }
+    var selected: ControlId? = null
+        set(value) {
+            if (field == value) return
             field = value
             invalidate()
         }
-    var controlBackgroundColor: Int = 0x88404040.toInt()
-        set(value) {
-            field = value
-            invalidate()
-        }
-    var pressedColor: Int = 0xCC707070.toInt()
-        set(value) {
-            field = value
-            invalidate()
-        }
-    var hapticFeedback: () -> Unit = {
-        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-    }
+    var onEditSelect: (ControlId) -> Unit = {}
+    var onEditCommit: (ControlId, NormalizedPoint) -> Unit = { _, _ -> }
+    private var dragId: ControlId? = null
+    private var dragOffsetX = 0f
+    private var dragOffsetY = 0f
+    private var dragPreview: Pair<ControlId, NormalizedPoint>? = null
 
     lateinit var controlGeometry: ControlGeometry
         private set
@@ -48,24 +128,52 @@ class GameControlsView(
     init {
         isFocusable = true
         isClickable = true
-        contentDescription = "Controles del juego: cruceta, A, B, Start, Select y Menú"
+        contentDescription = context.getString(R.string.controls_content_description)
     }
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
+        rebuild()
+    }
+
+    private fun rebuild() {
+        if (width <= 0 || height <= 0) return
         publishClearedInput()
-        val orientation = if (width > height) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
+        val orientation = orientationOverride
+            ?: if (width > height) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
+        var layout = controlLayout ?: ControlLayout.defaults(orientation)
+        dragPreview?.let { (id, point) -> layout = layout.copy(centers = layout.centers + (id to point)) }
+        val insets = safeInsets
         controlGeometry = ControlGeometry(
-            layout = ControlLayout.defaults(orientation),
+            layout = layout,
             orientation = orientation,
-            area = ControlBounds(0f, 0f, width.toFloat(), height.toFloat()),
-            density = resources.displayMetrics.density,
+            area = ControlBounds(
+                insets.left.toFloat(),
+                insets.top.toFloat(),
+                (width - insets.right).toFloat().coerceAtLeast(insets.left + 1f),
+                (height - insets.bottom).toFloat().coerceAtLeast(insets.top + 1f),
+            ),
+            density = density,
+            sizeScale = sizeScale,
+            showMenu = renderOptions.showMenu,
         )
         inputEngine = TouchInputEngine(controlGeometry)
+        updateGestureExclusion()
+        invalidate()
+    }
+
+    private fun updateGestureExclusion() {
+        val rects = GestureExclusion.rects(controlGeometry, width.toFloat(), density).map {
+            android.graphics.Rect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+        }
+        ViewCompat.setSystemGestureExclusionRects(this, rects)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!::controlGeometry.isInitialized) return false
+        if (editing) return onEditorTouch(event)
         val engine = inputEngine ?: return false
+        fade.onTouch()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
@@ -89,6 +197,47 @@ class GameControlsView(
         return true
     }
 
+    private fun onEditorTouch(event: MotionEvent): Boolean {
+        val point = ControlPoint(event.x, event.y)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val id = pickControl(point)
+                dragId = id
+                if (id != null) {
+                    val frame = controlGeometry.frames.getValue(id)
+                    dragOffsetX = frame.centerX - point.x
+                    dragOffsetY = frame.centerY - point.y
+                    selected = id
+                    onEditSelect(id)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> dragId?.let { id ->
+                val target = ControlPoint(point.x + dragOffsetX, point.y + dragOffsetY)
+                dragPreview = id to controlGeometry.snappedCenter(id, target)
+                rebuild()
+            }
+            MotionEvent.ACTION_UP -> {
+                val preview = dragPreview
+                dragId = null
+                // El diseño guardado llega por `controlLayout`; mientras tanto se conserva la vista previa.
+                if (preview != null) onEditCommit(preview.first, preview.second)
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                dragId = null
+                if (dragPreview != null) {
+                    dragPreview = null
+                    rebuild()
+                }
+            }
+        }
+        return true
+    }
+
+    /** El control tocado en el editor: el más pequeño bajo el dedo, para poder elegir uno que tape a otro. */
+    private fun pickControl(point: ControlPoint): ControlId? = ControlId.entries
+        .filter { (it != ControlId.MENU || renderOptions.showMenu) && controlGeometry.touchFrame(it).contains(point) }
+        .minByOrNull { controlGeometry.touchFrame(it).let { frame -> frame.width * frame.height } }
+
     override fun performClick(): Boolean {
         super.performClick()
         return true
@@ -97,31 +246,189 @@ class GameControlsView(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val engine = inputEngine ?: return
-        ControlId.entries.forEach { id ->
-            val bounds = controlGeometry.frames.getValue(id)
-            paint.color = if (id in engine.pressed) pressedColor else controlBackgroundColor
-            val rect = RectF(bounds.left, bounds.top, bounds.right, bounds.bottom)
-            when (id) {
-                ControlId.START, ControlId.SELECT -> canvas.drawRoundRect(rect, bounds.height / 2f, bounds.height / 2f, paint)
-                else -> canvas.drawOval(rect, paint)
+        val fadeAlpha = if (editing) 1f else fade.alpha()
+        if (fadeAlpha > 0f) {
+            val factor = (if (editing) 1f else renderOptions.opacityFraction) * fadeAlpha
+            val labelFactor = (if (editing) 1f else renderOptions.labelFraction) * fadeAlpha
+            ControlId.entries.forEach { id ->
+                if (id == ControlId.MENU && !renderOptions.showMenu) return@forEach
+                drawControl(canvas, id, engine, factor, labelFactor)
             }
-            paint.color = foregroundColor
-            paint.textSize = when (id) {
-                ControlId.A, ControlId.B -> bounds.height * 0.42f
-                else -> bounds.height.coerceAtMost(bounds.width) * 0.18f
-            }
-            canvas.drawText(label(id), bounds.centerX, textBaseline(bounds), paint)
+        }
+        if (!editing) drawHint(canvas)
+        if (editing) selected?.let { drawSelection(canvas, it) }
+        fade.msUntilChange()?.let { delay ->
+            removeCallbacks(fadeTick)
+            postDelayed(fadeTick, delay)
         }
     }
 
+    private fun drawHint(canvas: Canvas) {
+        val alpha = fade.hintAlpha()
+        if (alpha <= 0f) return
+        val text = context.getString(R.string.controls_hidden_hint)
+        paint.style = Paint.Style.FILL
+        paint.textSize = 13f * density
+        val width = paint.measureText(text) + 28f * density
+        val height = 28f * density
+        val bounds = ControlBounds(0f, 0f, this.width.toFloat(), this.height.toFloat())
+        val rect = RectF(
+            bounds.centerX - width / 2f,
+            bounds.bottom - 24f * density - height / 2f,
+            bounds.centerX + width / 2f,
+            bounds.bottom - 24f * density + height / 2f,
+        )
+        paint.color = argb(0.55f * alpha, 0)
+        canvas.drawRoundRect(rect, height / 2f, height / 2f, paint)
+        paint.color = argb(alpha, 0xFFFFFF)
+        canvas.drawText(text, rect.centerX(), rect.centerY() - (paint.ascent() + paint.descent()) / 2f, paint)
+    }
+
+    private fun drawSelection(canvas: Canvas, id: ControlId) {
+        val b = controlGeometry.frames.getValue(id)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f * density
+        paint.color = 0xFFFFFFFF.toInt()
+        paint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(8f * density, 5f * density), 0f)
+        val pad = 6f * density
+        canvas.drawRoundRect(RectF(b.left - pad, b.top - pad, b.right + pad, b.bottom + pad), 14f * density, 14f * density, paint)
+        paint.pathEffect = null
+        paint.style = Paint.Style.FILL
+    }
+
+    private fun drawControl(canvas: Canvas, id: ControlId, engine: TouchInputEngine, factor: Float, labelFactor: Float) {
+        val b = controlGeometry.frames.getValue(id)
+        val pressed = id in engine.pressed
+        val rect = RectF(b.left, b.top, b.right, b.bottom)
+        when (id) {
+            ControlId.DPAD -> drawDpad(canvas, b, engine.dpadMask, factor, labelFactor)
+            ControlId.START, ControlId.SELECT -> {
+                val radius = b.height / 2f
+                scrim(canvas, rect, radius, factor)
+                paint.style = Paint.Style.FILL
+                paint.color = fill(pressed, factor)
+                canvas.drawRoundRect(rect, radius, radius, paint)
+                ring(canvas, rect, radius, RING_NEUTRAL, factor)
+                label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, labelFactor)
+            }
+            else -> {
+                scrim(canvas, rect, b.width / 2f, factor)
+                paint.style = Paint.Style.FILL
+                paint.color = fill(pressed, factor)
+                canvas.drawOval(rect, paint)
+                ring(canvas, rect, b.width / 2f, if (id == ControlId.A) RING_A else if (id == ControlId.B) RING_B else RING_NEUTRAL, factor)
+                label(canvas, label(id), b, b.height * 0.42f, labelFactor)
+            }
+        }
+    }
+
+    private fun drawDpad(canvas: Canvas, frame: ControlBounds, mask: Int, factor: Float, labelFactor: Float) {
+        val arms = ControlGeometry.dpadArms(frame)
+        val third = frame.width / 3f
+        val round = third * 0.28f
+        val arrows = renderOptions.dpadStyle == DpadStyle.ARROWS
+        paint.style = Paint.Style.FILL
+        if (arrows) {
+            arms.forEach { (button, arm) ->
+                val gap = third * 0.12f
+                val rect = RectF(arm.left + gap, arm.top + gap, arm.right - gap, arm.bottom - gap)
+                scrim(canvas, rect, round, factor)
+                paint.style = Paint.Style.FILL
+                paint.color = fill(mask and button.mask != 0, factor)
+                canvas.drawRoundRect(rect, round, round, paint)
+                ring(canvas, rect, round, RING_NEUTRAL, factor)
+                arrowIn(canvas, button, rect, labelFactor)
+            }
+        } else {
+            // Cruz de una pieza: oscurece y rellena los brazos y el centro; el brazo pulsado se ilumina.
+            val horizontal = RectF(frame.left, frame.top + third, frame.right, frame.bottom - third)
+            val vertical = RectF(frame.left + third, frame.top, frame.right - third, frame.bottom)
+            scrim(canvas, horizontal, round, factor)
+            scrim(canvas, vertical, round, factor)
+            paint.style = Paint.Style.FILL
+            paint.color = fill(false, factor)
+            canvas.drawRoundRect(horizontal, round, round, paint)
+            canvas.drawRoundRect(vertical, round, round, paint)
+            arms.forEach { (button, arm) ->
+                if (mask and button.mask != 0) {
+                    paint.color = fill(true, factor)
+                    canvas.drawRoundRect(RectF(arm.left, arm.top, arm.right, arm.bottom), round, round, paint)
+                }
+                arrow(canvas, button, arm, labelFactor)
+            }
+            val cross = Path().apply {
+                addRoundRect(horizontal, round, round, Path.Direction.CW)
+                addRoundRect(vertical, round, round, Path.Direction.CW)
+            }
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.5f * density
+            paint.color = argb(0.5f * factor, RING_NEUTRAL)
+            canvas.drawPath(cross, paint)
+            paint.style = Paint.Style.FILL
+        }
+    }
+
+    private fun arrowIn(canvas: Canvas, button: GameBoyButton, rect: RectF, labelFactor: Float) = arrow(
+        canvas, button, ControlBounds(rect.left, rect.top, rect.right, rect.bottom), labelFactor,
+    )
+
+    private fun arrow(canvas: Canvas, button: GameBoyButton, arm: ControlBounds, labelFactor: Float) {
+        val size = arm.width.coerceAtMost(arm.height) * 0.26f
+        val cx = arm.centerX
+        val cy = arm.centerY
+        val path = Path()
+        when (button) {
+            GameBoyButton.UP -> { path.moveTo(cx, cy - size); path.lineTo(cx - size, cy + size * 0.7f); path.lineTo(cx + size, cy + size * 0.7f) }
+            GameBoyButton.DOWN -> { path.moveTo(cx, cy + size); path.lineTo(cx - size, cy - size * 0.7f); path.lineTo(cx + size, cy - size * 0.7f) }
+            GameBoyButton.LEFT -> { path.moveTo(cx - size, cy); path.lineTo(cx + size * 0.7f, cy - size); path.lineTo(cx + size * 0.7f, cy + size) }
+            else -> { path.moveTo(cx + size, cy); path.lineTo(cx - size * 0.7f, cy - size); path.lineTo(cx - size * 0.7f, cy + size) }
+        }
+        path.close()
+        paint.style = Paint.Style.FILL
+        paint.color = argb(labelFactor, 0xFFFFFF)
+        canvas.drawPath(path, paint)
+    }
+
+    /** Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. */
+    private fun scrim(canvas: Canvas, rect: RectF, radius: Float, factor: Float) {
+        val pad = 5f * density
+        paint.style = Paint.Style.FILL
+        paint.color = argb(0.28f * factor, 0)
+        canvas.drawRoundRect(RectF(rect.left - pad, rect.top - pad, rect.right + pad, rect.bottom + pad), radius + pad, radius + pad, paint)
+    }
+
+    private fun ring(canvas: Canvas, rect: RectF, radius: Float, color: Int, factor: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f * density
+        paint.color = argb((if (color == RING_NEUTRAL) 0.5f else 0.95f) * factor, color)
+        canvas.drawRoundRect(rect, radius, radius, paint)
+        paint.style = Paint.Style.FILL
+    }
+
+    private fun fill(pressed: Boolean, factor: Float): Int =
+        if (pressed) argb(0.92f * factor, FILL_PRESSED) else argb(0.72f * factor, FILL_NEUTRAL)
+
+    private fun label(canvas: Canvas, text: String, bounds: ControlBounds, size: Float, labelFactor: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = argb(labelFactor, 0xFFFFFF)
+        paint.textSize = size
+        canvas.drawText(text, bounds.centerX, bounds.centerY - (paint.ascent() + paint.descent()) / 2f, paint)
+    }
+
     fun release() {
+        removeCallbacks(fadeTick)
         publishClearedInput()
     }
 
     private fun publish(engine: TouchInputEngine) {
         val pressed = engine.pressed
-        if (hapticsEnabled && (pressed - lastPressed).isNotEmpty()) hapticFeedback()
+        val dpad = engine.dpadMask
+        if (hapticsEnabled) {
+            if ((pressed - lastPressed - ControlId.DPAD).isNotEmpty()) hapticFeedback()
+            if (dpad != 0 && dpad != lastDpad) sectorFeedback()
+        }
         lastPressed = pressed
+        lastDpad = dpad
         val mask = engine.mask
         if (mask != lastMask) {
             lastMask = mask
@@ -133,6 +440,7 @@ class GameControlsView(
     private fun publishClearedInput() {
         inputEngine?.cancelAll()
         lastPressed = emptySet()
+        lastDpad = 0
         if (lastMask != 0) {
             lastMask = 0
             onMaskChanged(0)
@@ -143,7 +451,7 @@ class GameControlsView(
     private fun MotionEvent.pointAt(index: Int) = ControlPoint(getX(index), getY(index))
 
     private fun label(id: ControlId): String = when (id) {
-        ControlId.DPAD -> "✦"
+        ControlId.DPAD -> ""
         ControlId.A -> "A"
         ControlId.B -> "B"
         ControlId.START -> "START"
@@ -151,6 +459,14 @@ class GameControlsView(
         ControlId.MENU -> "MENÚ"
     }
 
-    private fun textBaseline(bounds: ControlBounds): Float =
-        bounds.centerY - (paint.ascent() + paint.descent()) / 2f
+    private fun argb(alpha: Float, rgb: Int): Int =
+        Color.argb((alpha.coerceIn(0f, 1f) * 255f).toInt(), Color.red(rgb), Color.green(rgb), Color.blue(rgb))
+
+    private companion object {
+        const val FILL_NEUTRAL = 0x1F2024
+        const val FILL_PRESSED = 0x4A4D57
+        const val RING_NEUTRAL = 0xC9CDD6
+        const val RING_A = 0xFFA04D
+        const val RING_B = 0x6CB4FF
+    }
 }

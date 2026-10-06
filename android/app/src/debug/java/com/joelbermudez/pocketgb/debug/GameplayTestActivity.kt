@@ -11,12 +11,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.ui.gameplay.GameplayRoot
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 
 /** Configuración del anfitrión de pruebas: quien lo lance define cómo se crea el ViewModel (sobrevive a `recreate()`). */
 object GameplayTestConfig {
     @Volatile var factory: (() -> GameplayViewModel)? = null
+
+    /** Repositorio de ajustes de la prueba (con un archivo temporal); `null` usa el de la app. */
+    @Volatile var settings: GameplaySettingsRepository? = null
+
+    /** Tema de la app bajo el juego: las pruebas lo ponen en claro para comprobar que el juego sigue oscuro (K4). */
+    @Volatile var appearance: AppearanceState = AppearanceState.DEFAULT
 }
 
 /**
@@ -36,8 +43,10 @@ class GameplayTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            PocketGBTheme(appearance = AppearanceState.DEFAULT) {
-                GameplayRoot(vm) { Text("sin juego", Modifier.testTag("no-game")) }
+            PocketGBTheme(appearance = GameplayTestConfig.appearance) {
+                GameplayRoot(vm, settings = GameplayTestConfig.settings ?: GameplaySettingsRepository.shared(this)) {
+                    Text("sin juego", Modifier.testTag("no-game"))
+                }
             }
         }
     }
