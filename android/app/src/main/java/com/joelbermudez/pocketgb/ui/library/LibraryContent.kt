@@ -127,13 +127,12 @@ fun LibraryContent(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
             when (state) {
-                LibraryState.Loading -> ScanningPane(message = "Cargando biblioteca…")
+                LibraryState.Loading -> ScanningPane(message = stringResource(R.string.library_loading))
                 LibraryState.NoFolder -> EmptyState(
                     icon = Icons.Outlined.FolderOpen,
-                    title = "Elige una carpeta con tus juegos",
-                    message = "PocketGB busca archivos .gb y .gbc en la carpeta y sus subcarpetas directas. " +
-                        "Nunca los copia ni los modifica.",
-                    actions = { Button(onClick = onChooseFolder) { Text("Elegir carpeta") } },
+                    title = stringResource(R.string.library_pick_title),
+                    message = stringResource(R.string.library_pick_message),
+                    actions = { Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_action)) } },
                 )
                 is LibraryState.Scanning -> if (state.previous.isEmpty()) {
                     ScanningPane(message = scanMessage(state.done, state.total))
@@ -157,11 +156,11 @@ fun LibraryContent(
                 is LibraryState.Ready -> if (state.entries.isEmpty()) {
                     EmptyState(
                         icon = Icons.Outlined.SportsEsports,
-                        title = "No hay juegos en esta carpeta",
-                        message = "Solo se buscan archivos .gb y .gbc en la carpeta y un nivel de subcarpetas.",
+                        title = stringResource(R.string.library_empty_title),
+                        message = stringResource(R.string.library_empty_message),
                         actions = {
                             Button(onClick = onRescan) { Text(stringResource(R.string.library_rescan)) }
-                            OutlinedButton(onClick = onChooseFolder) { Text("Elegir otra carpeta") }
+                            OutlinedButton(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }
                         },
                     )
                 } else {
@@ -212,9 +211,8 @@ private fun LibraryErrorPane(error: LibraryError, onChooseFolder: () -> Unit, on
     when (error) {
         LibraryError.PermissionRevoked -> EmptyState(
             icon = Icons.Outlined.ErrorOutline,
-            title = "PocketGB perdió el acceso a la carpeta",
-            message = "El sistema revocó el permiso. Tus juegos y partidas siguen donde estaban; " +
-                "elige la carpeta otra vez para concederlo de nuevo.",
+            title = stringResource(R.string.library_access_lost_title),
+            message = stringResource(R.string.library_access_lost_message),
             actions = {
                 Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_choose_again)) }
                 OutlinedButton(onClick = onRescan) { Text(stringResource(R.string.library_retry)) }
@@ -222,30 +220,29 @@ private fun LibraryErrorPane(error: LibraryError, onChooseFolder: () -> Unit, on
         )
         LibraryError.FolderMissing -> EmptyState(
             icon = Icons.Outlined.FolderOff,
-            title = "La carpeta ya no existe",
-            message = "Se movió o se borró. Elige otra carpeta o reintenta si la restauraste.",
+            title = stringResource(R.string.library_folder_missing_title),
+            message = stringResource(R.string.library_folder_missing_message),
             actions = {
-                Button(onClick = onChooseFolder) { Text("Elegir otra carpeta") }
+                Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }
                 OutlinedButton(onClick = onRescan) { Text(stringResource(R.string.library_retry)) }
             },
         )
         LibraryError.AccessNotKept -> EmptyState(
             icon = Icons.Outlined.ErrorOutline,
-            title = "No se pudo conservar el acceso a la carpeta",
-            message = "El sistema no permitió recordar la carpeta elegida. La carpeta anterior no se tocó; " +
-                "elige otra vez o reintenta con la que ya tenías.",
+            title = stringResource(R.string.library_persist_failed_title),
+            message = stringResource(R.string.library_persist_failed_message),
             actions = {
-                Button(onClick = onChooseFolder) { Text("Elegir carpeta") }
+                Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_action)) }
                 OutlinedButton(onClick = onRescan) { Text(stringResource(R.string.library_retry)) }
             },
         )
         LibraryError.Unreadable -> EmptyState(
             icon = Icons.Outlined.ErrorOutline,
-            title = "No se pudo leer la carpeta",
-            message = "El proveedor de archivos no respondió. Comprueba la conexión o el almacenamiento y reintenta.",
+            title = stringResource(R.string.library_read_failed_title),
+            message = stringResource(R.string.library_read_failed_message),
             actions = {
                 Button(onClick = onRescan) { Text(stringResource(R.string.library_retry)) }
-                OutlinedButton(onClick = onChooseFolder) { Text("Elegir otra carpeta") }
+                OutlinedButton(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }
             },
         )
     }
@@ -406,12 +403,12 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
             .focusRequester(focus).testTag("library-search"),
         singleLine = true,
-        label = { Text("Buscar juegos") },
+        label = { Text(stringResource(R.string.library_search_label)) },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = if (query.isNotEmpty()) {
             {
                 IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Clear, contentDescription = "Borrar búsqueda")
+                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.library_search_clear))
                 }
             }
         } else {
@@ -469,8 +466,8 @@ private fun NoResults(
         )
         allHidden -> EmptyState(
             icon = Icons.Outlined.VisibilityOff,
-            title = "Todos los juegos están ocultos",
-            message = "Muéstralos de nuevo en Ajustes › Biblioteca.",
+            title = stringResource(R.string.library_all_hidden_title),
+            message = stringResource(R.string.library_all_hidden_message),
         )
         filter == LibraryFilter.FAVORITES -> EmptyState(
             icon = Icons.Outlined.SearchOff,
@@ -560,7 +557,7 @@ private fun MenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
         text = { Text(label) },
         onClick = onClick,
         leadingIcon = if (selected) {
-            { Icon(Icons.Filled.Check, contentDescription = "Seleccionado") }
+            { Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.library_selected)) }
         } else {
             { Box(Modifier.width(24.dp)) }
         },

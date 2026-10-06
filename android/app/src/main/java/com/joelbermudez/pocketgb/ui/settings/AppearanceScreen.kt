@@ -36,10 +36,10 @@ fun AppearanceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Apariencia") },
+                title = { Text(stringResource(R.string.settings_appearance_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_appearance_back))
                     }
                 },
             )
@@ -65,8 +65,8 @@ fun AppearanceScreen(
             }
             item {
                 ListItem(
-                    headlineContent = { Text("Color dinámico") },
-                    supportingContent = { Text("Usa los colores del fondo de pantalla") },
+                    headlineContent = { Text(stringResource(R.string.settings_appearance_dynamic_color)) },
+                    supportingContent = { Text(stringResource(R.string.settings_appearance_dynamic_color_summary)) },
                     trailingContent = {
                         Switch(
                             checked = appearance.dynamicColor,

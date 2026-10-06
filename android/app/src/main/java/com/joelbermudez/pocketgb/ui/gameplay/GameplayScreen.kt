@@ -30,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.joelbermudez.pocketgb.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -170,10 +172,10 @@ fun GameplayScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Juego en pausa", style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.gameplay_paused_title), style = MaterialTheme.typography.titleLarge)
                 Button(onClick = {
                     if (session.state.value == SessionState.Paused) session.resume()
-                }) { Text("Continuar") }
+                }) { Text(stringResource(R.string.gameplay_resume)) }
             }
         }
     }
