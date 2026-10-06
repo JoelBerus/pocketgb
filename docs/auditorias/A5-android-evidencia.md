@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-05
 
-**Rama:** `codex/android-port`. **Estado actual:** commit base de la 2ª vuelta **`acfe806`** (1ª vuelta corregida) + las correcciones de la 2ª vuelta (sección «Correcciones de la 2ª vuelta», al final de las correcciones de la 1ª), **sin commitear** (lo hace quien integre el hito). **Commit base original: `b8b91bb`** (etapas 1–8 de A5, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta). El texto de las etapas 6–8 describe ese commit; las **correcciones de la 1ª vuelta** (sección «Correcciones de la 1ª vuelta» más abajo) quedaron en `acfe806`. Donde una afirmación del texto original quedó matizada por esas correcciones se marca con «(corregido: …)».
+**Rama:** `codex/android-port`. **Commits de A5:** `b8b91bb` (etapas 1–8, el árbol que auditaron Codex, Opus y DeepSeek en la 1ª vuelta), `acfe806` (correcciones de la 1ª vuelta), `ffd6d97` (correcciones de la 2ª vuelta, auditadas en la 3ª) y el commit que sigue a `ffd6d97` (correcciones de la 3ª vuelta, sección «Correcciones de la 3ª vuelta»). El texto de las etapas 6–8 describe `b8b91bb`; donde una afirmación original quedó matizada por las correcciones posteriores se marca con «(corregido: …)».
 
 **Alcance (etapas 6–8):** `SaveCoordinator` y `GameSession` (6); `GameLauncher`, `GameplayViewModel`, `GameplayHost` con menú de pausa, estados, diálogo de fallo local y avisos de espejo, Ajustes › Partidas con restauración de backups, **Jugar/Continuar habilitado** y catálogo debug (7); `tools/android-save-kill-test.sh`, medición de `flushSync` y esta evidencia (8). Las etapas 1–5 ya tienen su evidencia en commits previos; aquí se reejecutan sus pruebas dentro de la batería completa.
 
@@ -189,16 +189,16 @@ El Mac estuvo con la memoria saturada (swap 14–20 GB de 21 GB, compresor > 6 G
 
 ## Correcciones de la 2ª vuelta de auditoría
 
-Informes: `A5-android-codex-v2.md` (RECHAZAR: A5V2-H1 y H3 bloqueantes, H2 alta, H4 baja) y `A5-android-deepseek-v2.md`. Árbol auditado: **`acfe806`**; las correcciones están **sin commitear** sobre él (corrida del 2026-10-05/06). Implementadas con TDD; cada prueba se comprobó **revirtiendo temporalmente la corrección** (tabla siguiente).
+Informes: `A5-android-codex-v2.md` (RECHAZAR: A5V2-H1 y H3 bloqueantes, H2 alta, H4 baja) y `A5-android-deepseek-v2.md`. Árbol auditado: **`acfe806`**; las correcciones quedaron en el commit **`ffd6d97`** (corrida del 2026-10-05/06; auditadas en la 3ª vuelta). Implementadas con TDD; cada prueba se comprobó **revirtiendo temporalmente la corrección** (tabla siguiente).
 
 ### Hallazgo → corrección → prueba
 
 | Hallazgo | Corrección | Prueba que lo cubre |
 |---|---|---|
-| **A5V2-H1** (bloqueante): una sesión que acaba `KeptOpen` queda sin dueño, nunca se cierra y puede pisar una restauración o una sesión nueva | `OrphanSessionRegistry` (a nivel de app, `OrphanSessionRegistry.shared`) hereda la sesión. `GameplayViewModel.onCleared` hace `claim` SÍNCRONO (la huella entra en `BlockedFingerprints` antes de lanzar el rescate) y tras el rescate `settle`: `Closed` ⇒ libera la huella (esperando la salida real del hilo de guardado si quedó `SaveThreadStuck`); `KeptOpen` ⇒ reintenta `rescueExit(1 intento, sin reescribir el estado de rescate)` con backoff exponencial 1 s…30 s en un `ScheduledThreadPoolExecutor` de un hilo que muere solo tras 2 s inactivo (sin fugas). Al confirmarse guarda AUTO, cierra y libera. `GameLauncher.openBlocking` rechaza con `OpenError.SavePending` (antes de tocar ningún archivo) y `SavesBrowser.restore` con `SavePendingException` («Guardado pendiente de esa partida…») mientras la huella esté bloqueada | `GameplayViewModelDestroyTest.onClearedWithAFailingDiskHandsTheSessionToTheRegistryWhichBlocksThenClosesItWhenTheDiskRecovers` (producción pura, sin segunda llamada: `onCleared` → KeptOpen → reabrir da `OpenFailed(SavePending)` y restaurar `SavePendingException` → vuelve el disco → se cierra sola con AUTO y SRAM confirmada → huella libre, 0 hilos del registro → ya se reabre y restaura); `GameSessionHardeningTest.theOrphanRegistryClosesAKeptOpenSessionByItselfWhenTheDiskRecoversAndReleasesTheFingerprint` (nivel sesión+registro) y `rescueExitWithAFailingDiskKeepsTheSessionOpen…RetriesDoNotPileUpRescues`; JVM `SavesBrowserTest.restoreIsRefusedWhileAnOrphanSessionStillHasItsSavePending`, `blockedFingerprintsAreCountedPerOwner`. **Falla sin la corrección: sí** |
+| **A5V2-H1** (bloqueante): una sesión que acaba `KeptOpen` queda sin dueño, nunca se cierra y puede pisar una restauración o una sesión nueva | `OrphanSessionRegistry` (a nivel de app, `OrphanSessionRegistry.shared`) hereda la sesión. `GameplayViewModel.onCleared` hace `claim` SÍNCRONO (la huella entraba en `BlockedFingerprints` antes de lanzar el rescate; **sustituido en la 3ª vuelta por `FingerprintOwnership`**, ver más abajo) y tras el rescate `settle`: `Closed` ⇒ libera la huella (esperando la salida real del hilo de guardado si quedó `SaveThreadStuck`); `KeptOpen` ⇒ reintenta `rescueExit(1 intento, sin reescribir el estado de rescate)` con backoff exponencial 1 s…30 s en un `ScheduledThreadPoolExecutor` de un hilo que muere solo tras 2 s inactivo (sin fugas). Al confirmarse guarda AUTO, cierra y libera. `GameLauncher.openBlocking` rechaza con `OpenError.SavePending` (antes de tocar ningún archivo) y `SavesBrowser.restore` con `SavePendingException` («Guardado pendiente de esa partida…») mientras la huella esté bloqueada | `GameplayViewModelDestroyTest.onClearedWithAFailingDiskHandsTheSessionToTheRegistryWhichBlocksThenClosesItWhenTheDiskRecovers` (producción pura, sin segunda llamada: `onCleared` → KeptOpen → reabrir da `OpenFailed(SavePending)` y restaurar `SavePendingException` → vuelve el disco → se cierra sola con AUTO y SRAM confirmada → huella libre, 0 hilos del registro → ya se reabre y restaura); `GameSessionHardeningTest.theOrphanRegistryClosesAKeptOpenSessionByItselfWhenTheDiskRecoversAndReleasesTheFingerprint` (nivel sesión+registro) y `rescueExitWithAFailingDiskKeepsTheSessionOpen…RetriesDoNotPileUpRescues`; JVM `SavesBrowserTest.restoreIsRefusedWhileAnOrphanSessionStillHasItsSavePending`, `blockedFingerprintsAreCountedPerOwner`. **Falla sin la corrección: sí** |
 | **A5V2-H2** (alta): carrera TOCTOU entre «canal en reposo» y `snapshot()` | `MirrorChannel.withIdleLease(timeoutMs, block)`: espera el reposo y toma el lease en el MISMO instante bajo el lock del canal; mientras dura, `enqueue`/`retryIfNeeded` conservan la petición (coalescida) pero NO arrancan el trabajador, que arranca al soltar el lease (también si `block` lanza). `SaveOpening.snapshotWhenIdle` lee dentro del lease; se mantiene el plazo de 5 s y el fallback a `Unavailable` | JVM `MirrorChannelRobustnessTest.aWriteEnqueuedRightAfterIdleCannotStartWhileTheSnapshotIsBeingRead` (la escritura se encola DENTRO de `snapshot()`, justo tras el reposo; 300 ms de margen; el snapshot es el contenido previo completo, ningún escritor empezó durante la lectura y corre después), `theLeaseIsReleasedEvenIfTheReadThrowsAndHeldWritesStillRun`; siguen `openingNeverReadsAMirrorWithAWriteInFlight` y `awaitIdleTimesOut…`. **Falla sin la corrección: sí** (con `awaitIdle` + `snapshot()` falla la primera) |
 | **A5V2-H3** (bloqueante): rollback fallido con escritura B rezagada que acaba como `.sav` principal | `loadState` toma una copia INDEPENDIENTE en memoria de la SRAM (`sramBefore`) antes de cargar el estado. Si `loadStateRaw(previous)` falla (o el flush no se confirmó): `disablePersistence` y `repairPrevious`: bloquea la huella y encola `persistLocal(sramBefore)` en el MISMO hilo de guardado (FIFO, detrás de B) con el escritor atómico ⇒ A principal y B backup (y A al espejo). Espera `repairWaitMs` (3 s); si no, la reparación continúa en el hilo `pocketgb-save-repair` (backoff 0,2…5 s; si el hilo de guardado se cierra sin ejecutarla, espera su salida real y escribe directamente) y la huella sigue bloqueada hasta lograrlo. `StateError.RollbackFailed.restored` solo afirma «la partida guardada sigue intacta» si quedó confirmado; si no, dice que se está restaurando y que no se podrá abrir aún | `GameSessionHardeningTest.aFailedRollbackWithALateWriteEndsWithThePreviousSaveAsPrimaryAndBlocksReopeningUntilThen` (latch `StallingOps`: B en vuelo, falla `loadStateRaw(previous)`, plazo vencido ⇒ `restored=false`, mensaje sin «intacta», huella bloqueada y `openBlocking` ⇒ `SavePending`; se libera B ⇒ la reparación libera la huella, el principal es A, B queda en backups, se reabre); `ifTheRollbackItselfFailsTheSessionStopsPersisting…` (adaptado, sigue verde). **Falla sin la corrección: sí** (dos reversiones, ver abajo) |
-| **A5V2-H4** (baja): evidencia y estado con «sin commitear» sobre `b8b91bb` | Cabecera y esta sección con el SHA `acfe806` y el estado real; `docs/ESTADO.md` actualizado | este documento y `docs/ESTADO.md` |
+| **A5V2-H4** (baja): evidencia y estado con «sin commitear» sobre `b8b91bb` | Cabecera y esta sección con el SHA `acfe806`; las correcciones de esta vuelta son el commit `ffd6d97` (la 3ª vuelta de Codex, A5V3-H2, detectó que seguían diciendo «sin commitear» y se corrigió en la 3ª vuelta) | este documento y `docs/ESTADO.md` |
 
 ### Comprobación «falla sin la corrección» (reversión temporal)
 
@@ -239,6 +239,72 @@ Release: `aapt dump permissions` solo `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
 - **Reparación que falla en bucle** (disco que nunca vuelve): reintenta con backoff acotado indefinidamente mientras viva el proceso y la huella sigue bloqueada; solo se probó el caso en que el disco responde.
 - **Interfoliación de dos `withIdleLease` simultáneos** (dos aperturas de la misma huella): se serializan por el mismo lock/callbacks pero no hay una prueba con dos hilos.
 - **Mensaje de `SavePending` en la UI** (`open_error_save_pending`, texto de Ajustes › Partidas): cubierto a nivel de modelo; sin captura visual nueva.
+
+## Correcciones de la 3ª vuelta de auditoría
+
+Informes: `A5-android-codex-v3.md` (RECHAZAR: A5V3-H1 bloqueante, A5V3-H2 baja) y `A5-android-deepseek-v3.md` (APROBAR CON CAMBIOS: H1 media, el reaper). Árbol auditado: **`ffd6d97`**; las correcciones están en el commit que sigue a `ffd6d97` (corrida del 2026-10-06). Cada prueba clave se comprobó **revirtiendo temporalmente la corrección**.
+
+### Diseño: propiedad exclusiva atómica por huella
+
+`saves/FingerprintOwnership.kt` sustituye a `BlockedFingerprints` (contador + `isBlocked`, que permitía «comprobar y luego actuar»). `tryAcquire(fingerprint, owner): Lease?` comprueba y adquiere bajo el mismo monitor (como máximo un `Lease` vivo por huella); `Lease.close()` es idempotente y un `close` viejo nunca suelta a un dueño nuevo.
+
+- `GameLauncher.openBlocking` adquiere el lease justo después de leer la cabecera (huella conocida) y ANTES de tocar ningún archivo de `saves/`/`states/`; si ya hay dueño ⇒ `OpenError.SavePending`; si la apertura falla o lanza, lo libera en `finally`; si tiene éxito se lo entrega a `GameSession`.
+- `GameSession` posee el lease TODA su vida (contador de usos: 1 la sesión + 1 por reparación pendiente). Lo suelta cuando `tryClose` terminó de verdad (hilo de guardado terminado) y no queda reparación; con el hilo atascado lo suelta el hilo `pocketgb-save-reaper` en `finally`, también ante `InterruptedException` o error. `repairPrevious` ya no adquiere nada: retiene el mismo token hasta confirmar.
+- `OrphanSessionRegistry`: `onCleared`/orfandad TRANSFIEREN la sesión (con su mismo lease) al registro; no hay liberar-y-readquirir. Desaparece el hilo `pocketgb-orphan-reaper` (la liberación es de la sesión).
+- `SavesBrowser.restore` usa `withExclusive`: el permiso envuelve comprobación y mutación y se libera en `finally`; con dueño ⇒ `SavePendingException`.
+- `GameplayViewModel.open`: si `recordPlayed` lanza tras abrir, cierra la sesión (antes la dejaba abierta con su huella).
+
+### Hallazgo → corrección → prueba
+
+| Hallazgo | Corrección | Prueba que lo cubre |
+|---|---|---|
+| **A5V3-H1** (bloqueante), restore vs `onCleared`/`repairPrevious` entre la comprobación y la mutación | `SavesBrowser.restore` bajo `withExclusive` | JVM `SavesBrowserTest.aRestoreInFlightCannotBeOvertakenByAnotherOwnerBetweenCheckAndMutation` (latch DENTRO de la mutación: `tryAcquire` ha de dar `null`; al terminar, libre), `anOwnerThatAcquiredFirstMakesRestoreFailWithoutTouchingFiles`, `restoreReleasesItsPermitEvenWhenItFails`, `restoreIsRefusedWhileTheFingerprintHasAnOwner` |
+| **A5V3-H1**, dos aperturas simultáneas de la misma huella | Lease adquirido por el lanzador antes de tocar archivos y conservado toda la sesión | Instrumentado `FingerprintOwnershipLauncherTest.twoSimultaneousOpensOfTheSameFingerprintOnlyOneWins` (la 1ª se detiene en el localizador del espejo con el lease ya tomado; la 2ª ⇒ `SavePending`; la ganadora conserva el lease; tras cerrar se puede abrir) |
+| **A5V3-H1**, transferencia `onCleared` → registro | La sesión conserva el mismo token | `GameplayViewModelDestroyTest.onClearedWithAFailingDisk…`: un hilo intruso llama a `tryAcquire` sin parar desde antes de `onCleared` hasta el cierre (>100 intentos); 0 adquisiciones con la sesión abierta |
+| **A5V3-H1**, lease liberado al cerrar / fallar / lanzar | `finally` en lanzador, sesión y ViewModel | `FingerprintOwnershipLauncherTest.theLeaseIsReleasedWhenTheOpenFailsOrThrows` (excepción inesperada y `Refusal`), `aViewModelThatFailsAfterOpeningStillReleasesTheLease`, `GameSessionHardeningTest.theOrphanRegistryCloses…` (se libera tras el cierre por el registro), `aFailedRollbackWithALateWrite…` (se conserva hasta `close()`) |
+| **A5V3-H1**, reparación pendiente tras cerrar la sesión | Contador de usos del lease en `GameSession` | `GameSessionHardeningTest.theLeaseOutlivesTheSessionCloseUntilThePendingRepairFinishes` |
+| **DeepSeek H1** (reaper sin liberar al ser interrumpido) | El reaper suelta el lease en `finally` | `GameSessionHardeningTest.theSaveReaperReleasesTheLeaseEvenIfItIsInterrupted` (interrumpe `pocketgb-save-reaper` con el hilo de guardado atascado) |
+| **A5V3-H2** (baja): documentación dependiente del estado de commit | Redacción sin «sin commitear»; commits `acfe806`/`ffd6d97` correctos | este documento y `docs/ESTADO.md` |
+
+### Comprobación «falla sin la corrección» (reversión temporal)
+
+| Qué se revirtió | Prueba que falló | Resultado |
+|---|---|---|
+| `restore`: `isOwned` + mutación sin lease (check+acción) | `SavesBrowserTest.aRestoreInFlightCannotBeOvertakenByAnotherOwnerBetweenCheckAndMutation` | 1 de 10 falla (`tryAcquire` tenía éxito en plena restauración); restaurado ⇒ 10/10 |
+| Lanzador: `isOwned` al principio y `tryAcquire` solo al construir la sesión | `FingerprintOwnershipLauncherTest.twoSimultaneousOpens…` («esperaba SavePending y abrió») y `theLeaseIsReleasedWhenTheOpenFailsOrThrows` («durante la apertura tenía dueño») | 2 de 3 fallan; restaurado ⇒ 3/3 |
+
+Las demás pruebas de esta vuelta (transferencia, reaper, lease tras cierre con reparación, ViewModel) se escribieron para el comportamiento nuevo y no se revirtió cada una. Tras cada reversión se restauró el código (copia exacta).
+
+### Verificación fresca de la corrida de la 3ª vuelta
+
+Núcleo (sin tocar `core/`): `make -C core test` y `make -C core asan` → `65/68 PASS · requeridos: 65/65 PASS · HITO=M1` y `OK: todos los casos requeridos en PASS` (los dos).
+
+Emulador `Small_Phone_API_35` SIN ventana (`-no-window -gpu swiftshader_indirect -memory 3072`, animaciones a 0), Gradle `--no-daemon -Xmx1536m --max-workers=1`:
+
+```bash
+cd android
+ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew --no-daemon --max-workers=1 clean :app:testDebugUnitTest \
+  :app:connectedDebugAndroidTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+```
+
+Resultado: `BUILD SUCCESSFUL in 4m 55s`. Lint: **0 errores, 15 avisos** (los mismos). Recuentos reales (de los XML): **JVM 241 tests, 0 fallos/errores** (`ffd6d97`: 237; `SavesBrowserTest` 6 → 10); **instrumentados 188 tests, 0 fallos/errores/omitidos** (`ffd6d97`: 183; +3 `FingerprintOwnershipLauncherTest`, +2 `GameSessionHardeningTest`). El XML de `connected/debug` lista los 188 `testcase`, incluidos los nuevos.
+
+`./gradlew :app:testDebugUnitTest --rerun-tasks` ×3 (emulador apagado): `BUILD SUCCESSFUL` las tres, 241 tests y 0 fallos (≈48 s).
+
+`tools/android-save-kill-test.sh 50`: `Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)` / `OK: 50/50 iteraciones con el invariante intacto` (tras `installDebug`).
+
+Release: `aapt2 dump permissions` solo `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (0 `INTERNET`); 0 coincidencias en los DEX de Release de `DebugCatalog`, `TestDocumentsProvider`, `save-stress`, `save-verify`, `SaveStress`, `GameplayTestActivity`, `GameplayDebugScreen`, `NativeVideoScreen`. `git status`: solo código y docs (ningún `.sav`, `.state`, ROM ni APK).
+
+### Incidencia de entorno (honestidad)
+
+Con `--max-workers` por defecto, en dos corridas completas seguidas (con el emulador y la compilación/lint en paralelo y el Mac con carga ~27–38) falló `ProcessKillTest.killedWriterNeverLeavesAPartialOrMissingSave` por su umbral de significatividad («debía completarse algún guardado en total (16)», umbral > 40): depende de la carga del anfitrión (ya documentado arriba), no del invariante, y no toca código de esta vuelta. Pasa sola (`--rerun-tasks` ×5) y la corrida completa con `--max-workers=1` pasó entera.
+
+### Lo que NO está verificado tras las correcciones de la 3ª vuelta
+
+- **Auditoría de la 4ª vuelta** y **prueba manual de Joel en el teléfono** (J11).
+- Un reaper interrumpido suelta el lease aunque el hilo de guardado siguiera atascado (así lo pide DeepSeek H1; en producción solo ocurre al morir el proceso, donde ya no hay sesión que escriba). No se probó una escritura tardía posterior a esa liberación.
+- Reversión no aplicada a las pruebas de transferencia, reaper, lease con reparación y ViewModel (solo se escribieron en positivo).
+- `SaveThreadStuck` con la sesión huérfana en el registro y la reparación tras cierre forzado del hilo siguen sin prueba propia de extremo a extremo (heredado de la 2ª vuelta).
 
 ## Decisiones de Joel (J1–J11) y dónde quedaron
 

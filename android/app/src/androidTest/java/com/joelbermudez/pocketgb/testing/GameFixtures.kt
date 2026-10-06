@@ -3,7 +3,7 @@ package com.joelbermudez.pocketgb.testing
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.game.GameSession
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
@@ -105,7 +105,7 @@ fun openGame(
     flushTimeoutMs: Long = 3_000,
     closeGraceMs: Long = 10_000,
     closeKillWaitMs: Long = 5_000,
-    blocked: BlockedFingerprints = BlockedFingerprints(),
+    ownership: FingerprintOwnership = FingerprintOwnership(),
     repairWaitMs: Long = 3_000,
 ): OpenedGame {
     val info = session.load(rom, 1_700_000_000)
@@ -122,11 +122,12 @@ fun openGame(
         target = SaveTarget(saveStore, mirror, registry = MirrorChannelRegistry())
         baseline = session.copySram()
     }
+    val lease = ownership.tryAcquire(fingerprint, "prueba") ?: error("la huella ya tiene dueño")
     val game = GameSession(
         session, info, states, target, baseline,
         autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
         closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
-        blocked = blocked, repairWaitMs = repairWaitMs,
+        lease = lease, repairWaitMs = repairWaitMs,
     )
     return OpenedGame(game, store, states, root)
 }

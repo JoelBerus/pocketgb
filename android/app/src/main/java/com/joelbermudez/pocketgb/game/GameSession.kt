@@ -5,8 +5,8 @@ import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import com.joelbermudez.pocketgb.emulator.SessionError
 import com.joelbermudez.pocketgb.emulator.SessionState
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
 import com.joelbermudez.pocketgb.saves.CloseResult
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.FramePng
 import com.joelbermudez.pocketgb.saves.SaveCoordinator
@@ -140,8 +140,12 @@ class GameSession(
     /** Plazo de gracia del cierre del hilo de guardado antes de interrumpirlo (I3). */
     private val closeGraceMs: Long = 10_000,
     private val closeKillWaitMs: Long = 5_000,
-    /** Huellas bloqueadas para reabrir/restaurar mientras una reparación de la partida anterior no termina (A5V2-H3). */
-    private val blocked: BlockedFingerprints = BlockedFingerprints.shared,
+    /**
+     * Propiedad exclusiva de la huella (A5V3-H1), adquirida por el lanzador ANTES de tocar ningún archivo. La sesión la
+     * posee toda su vida (también como huérfana y durante una reparación) y la suelta cuando está cerrada de verdad
+     * (hilo de guardado terminado) y sin reparación en curso. `null` solo en pruebas sin lanzador.
+     */
+    private val lease: FingerprintOwnership.Lease? = null,
     /** Cuánto espera [loadState] a que la reparación de la partida anterior quede confirmada antes de informar. */
     private val repairWaitMs: Long = 3_000,
     /** Plazo corto de los vaciados del hilo principal tras un [FlushResult.TimedOut] reciente (anti-ANR). */
@@ -151,6 +155,23 @@ class GameSession(
 
     /** Error de guardado local sin resolver (escritura fallida o pendiente), o `null`. */
     val saveProblem: StateFlow<Throwable?> = mutableProblem.asStateFlow()
+
+    /**
+     * Cuántos "usos" mantienen vivo el lease: 1 por la propia sesión (se suelta al cerrarse) + 1 por cada reparación de
+     * la partida anterior en curso. Al llegar a 0 se libera el lease (idempotente).
+     */
+    private val leaseHolds = java.util.concurrent.atomic.AtomicInteger(1)
+
+    private fun holdLease() {
+        leaseHolds.incrementAndGet()
+    }
+
+    private fun dropLease() {
+        if (leaseHolds.decrementAndGet() == 0) lease?.close()
+    }
+
+    /** `true` mientras la sesión conserva la propiedad exclusiva de su huella (pruebas). */
+    val holdsLease: Boolean get() = lease?.isReleased == false
 
     private val closedFlag = AtomicBoolean(false)
     val isClosed: Boolean get() = closedFlag.get()
@@ -345,8 +366,8 @@ class GameSession(
      * que salga de verdad (B ya no puede escribir) y se escribe directamente.
      */
     private fun repairPrevious(target: SaveTarget, sram: ByteArray): Boolean {
-        val fp = fingerprint
-        blocked.acquire(fp)
+        // La sesión ya posee la huella; la reparación la mantiene aunque la sesión se cierre antes de terminar.
+        holdLease()
         val done = java.util.concurrent.CountDownLatch(1)
         val first = try { coordinator.submitOnSaveThread { target.persistLocal(sram) } } catch (_: IOException) { null }
         Thread({
@@ -383,9 +404,9 @@ class GameSession(
                     }
                 }
             } finally {
-                // Solo se libera la huella cuando la reparación terminó (éxito) o el hilo murió interrumpido.
-                blocked.release(fp)
-                done.countDown()
+                // Solo se suelta la huella cuando la reparación terminó (éxito) o el hilo murió interrumpido (y la sesión
+                // ya está cerrada).
+                try { dropLease() } finally { done.countDown() }
             }
         }, "pocketgb-save-repair").apply { isDaemon = true }.start()
         return try { done.await(repairWaitMs, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {
@@ -484,19 +505,26 @@ class GameSession(
      */
     fun tryClose(): CloseResult {
         if (!closedFlag.compareAndSet(false, true)) return closeResult ?: CloseResult.Closed
-        val result = coordinator.shutdown(closeGraceMs, closeKillWaitMs)
+        val result = try {
+            coordinator.shutdown(closeGraceMs, closeKillWaitMs)
+        } catch (error: Throwable) {
+            dropLease()
+            throw error
+        }
         closeResult = result
         when (result) {
-            CloseResult.Closed -> session.close()
+            CloseResult.Closed -> try { session.close() } finally { dropLease() }
             is CloseResult.SaveThreadStuck -> {
                 Log.w(TAG, "El hilo de guardado no terminó (${result.threadName}); el handle nativo se libera cuando salga")
                 Thread({
+                    // La propiedad de la huella se suelta SIEMPRE al acabar este hilo (también interrumpido o con error).
                     try {
                         coordinator.awaitThreadExit()
+                        session.close()
                     } catch (_: InterruptedException) {
-                        return@Thread
+                    } finally {
+                        dropLease()
                     }
-                    session.close()
                 }, "pocketgb-save-reaper").apply { isDaemon = true }.start()
             }
         }

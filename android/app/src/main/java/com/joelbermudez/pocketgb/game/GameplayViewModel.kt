@@ -142,8 +142,8 @@ class GameplayViewModel(
                             game.close()
                             return@launch
                         }
-                        recordPlayed(entry, game.fingerprint, now())
                         try {
+                            recordPlayed(entry, game.fingerprint, now())
                             game.start()
                         } catch (error: Exception) {
                             game.close()

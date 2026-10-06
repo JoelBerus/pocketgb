@@ -2,7 +2,7 @@ package com.joelbermudez.pocketgb.game
 
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomSource
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
@@ -27,7 +27,7 @@ object GameplayTestHost {
         ops: SaveFileOps = PosixSaveFileOps,
         rom: ByteArray = SyntheticRom.sramCounter(),
         mirrors: MirrorLocator = MirrorLocator { _, _, _, _ -> null },
-        blocked: BlockedFingerprints = BlockedFingerprints(),
+        ownership: FingerprintOwnership = FingerprintOwnership(),
     ) = GameLauncher(
         roms = RomSource { _, _ -> rom },
         savesDirectory = File(root, "saves"),
@@ -35,6 +35,6 @@ object GameplayTestHost {
         mirrors = mirrors,
         fileOps = ops,
         registry = MirrorChannelRegistry(),
-        blocked = blocked,
+        ownership = ownership,
     )
 }

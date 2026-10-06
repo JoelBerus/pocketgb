@@ -10,7 +10,7 @@ import com.joelbermudez.pocketgb.library.LibraryScanner
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.library.RomSource
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
@@ -130,8 +130,8 @@ class GameLauncher(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Cuánto espera la apertura a que se vacíe el canal del espejo de esta huella antes de darlo por no disponible. */
     private val mirrorIdleWaitMs: Long = 5_000,
-    /** Huellas con un guardado pendiente en manos de la app: no se abren hasta que termine (A5V2-H1/H3). */
-    private val blocked: BlockedFingerprints = BlockedFingerprints.shared,
+    /** Propiedad exclusiva por huella: una partida solo la tiene una sesión, huérfana, reparación o restauración (A5V3-H1). */
+    private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
 ) {
     suspend fun open(entry: RomEntry): OpenResult = withContext(io + NonCancellable) { openBlocking(entry) }
 
@@ -166,6 +166,7 @@ class GameLauncher(
             return OpenResult.Failed(OpenError.Core(error))
         }
         var handedOver = false
+        var lease: FingerprintOwnership.Lease? = null
         try {
             val info = try {
                 session.load(rom, now() / 1000)
@@ -173,8 +174,10 @@ class GameLauncher(
                 return OpenResult.Failed(OpenError.RomRejected(error))
             }
             val fingerprint = info.fingerprintHex
-            // Antes de tocar NINGÚN archivo (recoverOrphans borra temporales que la sesión pendiente puede estar usando).
-            if (blocked.isBlocked(fingerprint)) return OpenResult.Failed(OpenError.SavePending)
+            // Propiedad exclusiva ATÓMICA antes de tocar NINGÚN archivo (recoverOrphans borra temporales que otra sesión
+            // puede estar usando). Se conserva toda la vida de la sesión (la posee GameSession); si la apertura falla,
+            // se libera en el `finally`. Si ya tiene dueño (sesión abierta, huérfana, reparación, restauración): no se abre.
+            lease = ownership.tryAcquire(fingerprint, "sesión") ?: return OpenResult.Failed(OpenError.SavePending)
             val states = StateStore(statesRoot, fingerprint, fileOps)
             val events = GameEvents()
             // Temporales huérfanos de una escritura interrumpida (estados, capturas, índice): mejor esfuerzo.
@@ -241,7 +244,7 @@ class GameLauncher(
                 entryId = entry.id,
                 events = events,
                 policy = policy(),
-                blocked = blocked,
+                lease = lease,
             )
             handedOver = true
             return OpenResult.Opened(game)
@@ -250,7 +253,9 @@ class GameLauncher(
         } catch (error: RuntimeException) {
             return OpenResult.Failed(OpenError.Core(error))
         } finally {
-            if (!handedOver) session.close()
+            if (!handedOver) {
+                try { session.close() } finally { lease?.close() }
+            }
         }
     }
 }

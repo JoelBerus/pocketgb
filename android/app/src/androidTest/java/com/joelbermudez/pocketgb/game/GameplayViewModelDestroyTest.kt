@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.joelbermudez.pocketgb.emulator.SessionState
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.SavePendingException
 import com.joelbermudez.pocketgb.saves.SavesBrowser
 import com.joelbermudez.pocketgb.saves.StateSlot
@@ -40,11 +40,11 @@ class GameplayViewModelDestroyTest {
         root.deleteRecursively()
     }
 
-    private val blocked = BlockedFingerprints()
-    private val orphans = OrphanSessionRegistry(blocked, initialDelayMs = 50, maxDelayMs = 200, keepAliveMs = 100)
+    private val ownership = FingerprintOwnership()
+    private val orphans = OrphanSessionRegistry(initialDelayMs = 50, maxDelayMs = 200, keepAliveMs = 100)
 
     private fun newViewModel(ops: com.joelbermudez.pocketgb.saves.SaveFileOps) = GameplayViewModel(
-        GameplayTestHost.launcher(root, ops, blocked = blocked),
+        GameplayTestHost.launcher(root, ops, ownership = ownership),
         rescue = { rescueExecutor.execute(it) },
         rescueAttempts = 3,
         rescueRetryDelayMs = 50,
@@ -84,10 +84,28 @@ class GameplayViewModelDestroyTest {
         val game = openAndPlay(vm)
         ops.failSav = true
 
+        // A5V3-H1 (c): transferencia onCleared -> registro SIN ventana. Un hilo intenta adquirir la huella sin parar,
+        // desde antes de destruir el ViewModel hasta que la sesión se cierra: nunca debe lograrlo con la sesión abierta.
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val violations = java.util.concurrent.atomic.AtomicInteger()
+        val attempts = java.util.concurrent.atomic.AtomicLong()
+        val poller = Thread {
+            while (!stop.get()) {
+                val lease = ownership.tryAcquire(game.fingerprint, "intruso")
+                attempts.incrementAndGet()
+                if (lease != null) {
+                    // La sesión marca `isClosed` ANTES de soltar el lease: con la sesión abierta, esto es una violación.
+                    if (!game.isClosed) violations.incrementAndGet()
+                    lease.close()
+                    stop.set(true)
+                }
+            }
+        }.apply { isDaemon = true; start() }
+
         val elapsedMs = destroy(vm)
 
         assertTrue("onCleared no bloquea al llamador ($elapsedMs ms)", elapsedMs < 1_000)
-        assertTrue("la huella queda bloqueada ya desde onCleared", blocked.isBlocked(game.fingerprint))
+        assertTrue("la huella queda bloqueada ya desde onCleared", ownership.isOwned(game.fingerprint))
         rescueExecutor.shutdown()
         assertTrue(rescueExecutor.awaitTermination(30, TimeUnit.SECONDS))
         Thread.sleep(400) // el registro reintenta varias veces con el disco fallando
@@ -104,7 +122,7 @@ class GameplayViewModelDestroyTest {
         assertEquals(GameDialog.OpenFailed(OpenError.SavePending), vm2.dialog.value)
         assertEquals(null, vm2.game.value)
         val restoreError = assertThrows(SavePendingException::class.java) {
-            SavesBrowser(File(root, "saves"), blocked = blocked).restore(game.fingerprint, 1, vm2.openFingerprint.value)
+            SavesBrowser(File(root, "saves"), ownership = ownership).restore(game.fingerprint, 1, vm2.openFingerprint.value)
         }
         assertTrue(restoreError.message!!.startsWith("Guardado pendiente de esa partida"))
 
@@ -112,13 +130,17 @@ class GameplayViewModelDestroyTest {
         ops.failSav = false
         val core = game.session.copySram()
         assertTrue("la sesión se cierra sola", waitUntil(30_000) { game.isClosed && game.state.value == SessionState.Closed })
-        assertTrue("la huella se libera", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+        assertTrue("la huella se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+        assertTrue("el intruso solo ganó tras el cierre", waitUntil(10_000) { stop.get() })
+        poller.join(5_000)
+        assertEquals("ninguna adquisición con la sesión viva (ni al pasar al registro)", 0, violations.get())
+        assertTrue("el intruso lo intentó muchas veces (${attempts.get()})", attempts.get() > 100)
         assertArrayEquals("el disco quedó con la SRAM confirmada", core, File(root, "saves/${game.fingerprint}.sav").readBytes())
         assertTrue(File(root, "states/${game.fingerprint}/auto.state").exists())
         assertTrue("sin hilos del registro vivos", waitUntil(10_000) { orphans.liveThreads == 0 })
 
         // Y ahora sí: se puede restaurar (ya no es el error de guardado pendiente) y reabrir.
-        val afterwards = runCatching { SavesBrowser(File(root, "saves"), blocked = blocked).restore(game.fingerprint, 1, null) }
+        val afterwards = runCatching { SavesBrowser(File(root, "saves"), ownership = ownership).restore(game.fingerprint, 1, null) }
         assertFalse("restaurar ya no está bloqueado", afterwards.exceptionOrNull() is SavePendingException)
         val vm3 = newViewModel(ops)
         vm3.open(GameplayTestHost.entry)

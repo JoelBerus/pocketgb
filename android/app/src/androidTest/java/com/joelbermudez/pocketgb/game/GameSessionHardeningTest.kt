@@ -4,7 +4,7 @@ import com.joelbermudez.pocketgb.emulator.CoreError
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.SessionError
 import com.joelbermudez.pocketgb.emulator.SessionState
-import com.joelbermudez.pocketgb.saves.BlockedFingerprints
+import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.CloseResult
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.StateSlot
@@ -221,9 +221,9 @@ class GameSessionHardeningTest {
     @Test
     fun theOrphanRegistryClosesAKeptOpenSessionByItselfWhenTheDiskRecoversAndReleasesTheFingerprint() {
         val ops = FailableOps()
-        val blocked = BlockedFingerprints()
-        val registry = OrphanSessionRegistry(blocked, initialDelayMs = 30, maxDelayMs = 100, keepAliveMs = 100)
-        openGame(SyntheticRom.sramCounter(), ops = ops, autoTick = false, blocked = blocked).use { g ->
+        val ownership = FingerprintOwnership()
+        val registry = OrphanSessionRegistry(initialDelayMs = 30, maxDelayMs = 100, keepAliveMs = 100)
+        openGame(SyntheticRom.sramCounter(), ops = ops, autoTick = false, ownership = ownership).use { g ->
             val game = g.game
             game.start()
             assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
@@ -231,16 +231,16 @@ class GameSessionHardeningTest {
             ops.failSav = true
 
             registry.claim(game)
-            assertTrue(blocked.isBlocked(game.fingerprint))
+            assertTrue(ownership.isOwned(game.fingerprint))
             registry.settle(game, game.rescueExit(attempts = 2, retryDelayMs = 20)) // KeptOpen
             Thread.sleep(300) // varios reintentos con el disco fallando: sigue abierta y bloqueada
             assertFalse(game.isClosed)
-            assertTrue(blocked.isBlocked(game.fingerprint))
+            assertTrue(ownership.isOwned(game.fingerprint))
 
             ops.failSav = false
             val core = game.session.copySram()
             assertTrue("el registro la cierra solo", waitUntil(15_000) { game.isClosed })
-            assertTrue("y libera la huella", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+            assertTrue("y libera la huella", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
             assertArrayEquals("el disco quedó con la SRAM confirmada", core, g.store!!.load())
             assertTrue(g.states.entries().containsKey(StateSlot.AUTO))
             assertTrue("sin hilos del registro vivos", waitUntil(10_000) { registry.liveThreads == 0 })
@@ -258,10 +258,10 @@ class GameSessionHardeningTest {
     fun aFailedRollbackWithALateWriteEndsWithThePreviousSaveAsPrimaryAndBlocksReopeningUntilThen() {
         val ops = StallingOps()
         val session = RollbackFailsSession()
-        val blocked = BlockedFingerprints()
+        val ownership = FingerprintOwnership()
         openGame(
             SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
-            blocked = blocked, repairWaitMs = 300,
+            ownership = ownership, repairWaitMs = 300,
         ).use { g ->
             val game = g.game
             val store = g.store!!
@@ -275,19 +275,86 @@ class GameSessionHardeningTest {
             assertTrue(ops.awaitEntered())
             assertFalse("no estaba confirmado", error.restored)
             assertFalse("no afirma que siga intacta", error.message!!.contains("intacta"))
-            assertTrue("la huella está bloqueada hasta resolverlo", blocked.isBlocked(game.fingerprint))
-            val launcher = GameplayTestHost.launcher(g.root, ops, blocked = blocked)
+            assertTrue("la huella está bloqueada hasta resolverlo", ownership.isOwned(game.fingerprint))
+            val launcher = GameplayTestHost.launcher(g.root, ops, ownership = ownership)
             val reopen = launcher.openBlocking(GameplayTestHost.entry)
             assertEquals(OpenResult.Failed(OpenError.SavePending), reopen)
 
             ops.release() // B termina tarde y se instala como principal; la reparación la sucede
-            assertTrue("la reparación libera la huella", waitUntil(15_000) { !blocked.isBlocked(game.fingerprint) })
+            assertTrue("la reparación termina", waitUntil(15_000) { store.load()?.contentEquals(a) == true })
             assertArrayEquals("el principal es A, no B", a, store.load())
             assertTrue("B quedó como backup, no se perdió", store.backups().isNotEmpty())
+            assertTrue("la sesión sigue abierta y conserva su huella", ownership.isOwned(game.fingerprint))
 
+            // La propiedad la suelta el cierre de la sesión (y no antes): ahora sí se puede reabrir.
+            game.close()
+            assertTrue("el cierre libera la huella", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
             val reopened = launcher.openBlocking(GameplayTestHost.entry)
             assertTrue("tras resolverlo se puede reabrir: $reopened", reopened is OpenResult.Opened)
             (reopened as OpenResult.Opened).game.close()
+        }
+    }
+
+    /**
+     * A5V3-H1: si la sesión se cierra MIENTRAS la reparación sigue pendiente, el lease no se suelta hasta que la
+     * reparación termina (la reparación es un segundo "uso" del mismo token).
+     */
+    @Test
+    fun theLeaseOutlivesTheSessionCloseUntilThePendingRepairFinishes() {
+        val ops = StallingOps()
+        val session = RollbackFailsSession()
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
+            closeGraceMs = 200, closeKillWaitMs = 200, ownership = ownership, repairWaitMs = 300,
+        ).use { g ->
+            val game = g.game
+            val store = g.store!!
+            assertEquals(FlushResult.Saved, playAndPause(game))
+            game.saveState(StateSlot.MANUAL1)
+            assertEquals(FlushResult.Saved, playAndPause(game, 300))
+            val a = store.load()!!
+            ops.arm()
+            assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+            assertTrue(ops.awaitEntered())
+
+            game.tryClose() // hilo atascado: SaveThreadStuck, y además hay una reparación pendiente
+            assertTrue("la huella sigue con dueño", ownership.isOwned(game.fingerprint))
+            assertNull("nadie más puede adquirirla", ownership.tryAcquire(game.fingerprint, "intruso"))
+
+            ops.release()
+            assertTrue("al terminar todo se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            assertArrayEquals("y el principal es A", a, store.load())
+        }
+    }
+
+    // ---- DeepSeek H1 / A5V3: el reaper suelta el lease también ante interrupción
+
+    @Test
+    fun theSaveReaperReleasesTheLeaseEvenIfItIsInterrupted() {
+        val ops = StallingOps()
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, autoTick = false, flushTimeoutMs = 300,
+            closeGraceMs = 200, closeKillWaitMs = 200, ownership = ownership,
+        ).use { g ->
+            val game = g.game
+            game.start()
+            assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+            ops.arm()
+            assertEquals(FlushResult.TimedOut, game.pause())
+            assertTrue(ops.awaitEntered())
+            assertTrue(game.tryClose() is CloseResult.SaveThreadStuck)
+            assertTrue("con el hilo vivo la huella sigue con dueño", ownership.isOwned(game.fingerprint))
+
+            val reaper = Thread.getAllStackTraces().keys.first { it.name == "pocketgb-save-reaper" && it.isAlive }
+            reaper.interrupt()
+            assertTrue("interrumpido, el reaper suelta el lease", waitUntil(10_000) { !ownership.isOwned(game.fingerprint) })
+            assertFalse(game.holdsLease)
+
+            ops.release()
+            game.awaitSaveThreadExit()
+            try { game.session.close() } catch (_: Exception) {}
         }
     }
 
