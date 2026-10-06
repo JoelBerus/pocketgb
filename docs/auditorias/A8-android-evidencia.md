@@ -33,4 +33,4 @@ No aparece `INTERNET` en ninguno de los dos APK (el único permiso es el interno
 - No se ejecutaron pruebas JVM, instrumentadas ni el catálogo en este lote; el icono no se vio en un launcher real (ni en dispositivo ni en emulador), solo se comprobó que compila y que `aapt2` lo referencia. La forma vectorial se escribió a mano a partir de los SVG y no se comparó pixel a pixel.
 - Los «trucos de entorno» del emulador (`hide_error_dialogs`, animaciones a 0) están descritos pero no los aplica ningún script del repo.
 - Las cifras de pruebas citadas en `docs/06-testing.md` (372, 333, 50/50) provienen de la evidencia de A7, no de una corrida nueva.
-- Auditoría conjunta de A8, pruebas reales de Joel y cierre de A5V6-H1, A5V6-H3 y A5V7-H1.
+- Auditoría conjunta de A8 y pruebas reales de Joel. (Los riesgos residuales A5V6-H1, A5V6-H3 y A5V7-H1 ya se cerraron en A6-L0: `docs/auditorias/A6-L0-opus.md`, APROBAR.)
