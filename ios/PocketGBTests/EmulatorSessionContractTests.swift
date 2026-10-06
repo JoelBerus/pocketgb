@@ -9,6 +9,7 @@ final class FakeCore: ConsoleCore, @unchecked Sendable {
     private let lock = NSLock()
     private var sram: Data
     private var shutdowns = 0
+    private var readsAfterShutdown = 0
 
     init(sramBytes: Int = 8_192) { sram = Data(count: sramBytes) }
 
@@ -35,7 +36,13 @@ final class FakeCore: ConsoleCore, @unchecked Sendable {
     var sramDirty: Bool { false }
     func clearSRAMDirty() {}
     func sramLoad(_ data: Data) throws(CoreError) { setSRAM(data) }
-    func sramSave() throws(CoreError) -> Data { lock.lock(); defer { lock.unlock() }; return sram }
+    func sramSave() throws(CoreError) -> Data {
+        lock.lock(); defer { lock.unlock() }
+        if shutdowns > 0 { readsAfterShutdown += 1 }
+        return sram
+    }
+    /// Lecturas de la SRAM posteriores a `shutdown()` (el último flush debe ir antes).
+    var sramReadsAfterShutdown: Int { lock.lock(); defer { lock.unlock() }; return readsAfterShutdown }
     func setRTCTime(_ unixTime: Int64) {}
     func stateSave() throws(CoreError) -> Data { Data() }
     func stateLoad(_ data: Data) throws(CoreError) {}
@@ -63,6 +70,37 @@ struct EmulatorSessionContractTests {
         session.resume()
         session.stop()
         #expect(core.shutdownCount == 1)
+    }
+
+    /// M9L2-H2: `shutdown()` va después del último flush (el detach del cable con la SRAM ya en disco).
+    @Test func shutdownRunsAfterTheFinalFlush() throws {
+        let dir = try Self.tempDir()
+        let core = FakeCore()
+        let store = SaveStore(directory: dir, fingerprint: "final")
+        let persister = SRAMPersistence(core: core, target: SaveTarget(local: store, mirror: nil))
+        let session = EmulatorSession(core: core, info: Self.info, persisters: [persister], loadWarning: nil,
+                                      onAudioInterrupted: {})
+        session.start()
+        let data = Data(repeating: 0x5C, count: 8_192)
+        core.setSRAM(data)          // cambia tras `start`: solo el flush de `stop()` puede guardarlo
+        session.stop()
+        #expect(try store.load() == data)
+        #expect(core.shutdownCount == 1)
+        #expect(core.sramReadsAfterShutdown == 0)
+    }
+
+    @Test func statesAreRefusedWithSeveralPersisters() throws {
+        let dir = try Self.tempDir()
+        let a = FakeCore(), b = FakeCore()
+        let persisters = [SRAMPersistence(core: a, target: SaveTarget(local: SaveStore(directory: dir, fingerprint: "a"), mirror: nil)),
+                          SRAMPersistence(core: b, target: SaveTarget(local: SaveStore(directory: dir, fingerprint: "b"), mirror: nil))]
+        let session = EmulatorSession(core: PairCore(a, b), info: Self.info, persisters: persisters,
+                                      loadWarning: nil, onAudioInterrupted: {})
+        #expect(throws: CoreError.linkUnsupported) { try session.start(restoring: Data([1])) }
+        session.start()
+        session.pause()
+        #expect(throws: CoreError.linkUnsupported) { try session.loadState(Data([1])) }
+        session.stop()
     }
 
     @Test func pauseFlushesEveryPersisterEvenIfOneFails() throws {

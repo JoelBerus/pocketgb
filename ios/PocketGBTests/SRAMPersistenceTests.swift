@@ -107,6 +107,28 @@ struct SRAMPersistenceTests {
         #expect(try o.store.load() == sram(0x07))
     }
 
+    /// M9L2-H1: tras una escritura ASÍNCRONA fallida, `retryIfFailed` fuerza la reescritura sin flush síncrono.
+    @Test func retryAfterAFailedAsyncWriteRewritesWithoutASyncFlush() throws {
+        let o = try open(saving: true)
+        o.persister.prime()
+        for _ in 0..<5 { o.core.runFrame() }        // el juego escribe en la SRAM
+        #expect(o.core.sramDirty)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        o.persister.check()                          // flanco
+        clock.advance(seconds: 1.1)
+        o.persister.check()                          // escritura asíncrona: falla en la cola
+        o.persister.waitForPendingWrites()
+        #expect(try o.store.load() == nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        o.persister.retryIfFailed()
+        o.persister.check()
+        clock.advance(seconds: 1.1)
+        o.persister.check()                          // reintento tras el debounce
+        o.persister.waitForPendingWrites()
+        #expect(try o.store.load() == o.core.sramSave())
+    }
+
     @Test func debounceWritesOneSecondAfterTheGameSaved() throws {
         let o = try open(saving: true)
         o.persister.prime()

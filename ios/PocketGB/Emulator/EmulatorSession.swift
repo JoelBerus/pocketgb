@@ -146,6 +146,9 @@ final class EmulatorSession: @unchecked Sendable {
     @MainActor
     func start(restoring state: Data?) throws {
         if let state {
+            // Invariante (M9L2-H3): con varias persistencias (cable link) no hay estados; la vigencia
+            // por contenido de abajo solo vale con un núcleo y una SRAM.
+            guard persisters.count <= 1 else { throw CoreError.linkUnsupported }
             let previous = try core.stateSave()
             let sramBefore = try ramBytes()
             do { try core.stateLoad(state) } catch CoreError.stateConfig {
@@ -359,6 +362,8 @@ final class EmulatorSession: @unchecked Sendable {
     /// anterior como backup `.1` antes de sustituirla (SPEC §12).
     @MainActor
     func loadState(_ data: Data) throws {
+        // Invariante (M9L2-H3): con varias persistencias (cable link) no hay estados.
+        guard persisters.count <= 1 else { throw CoreError.linkUnsupported }
         try withParkedCore { core in
             // Si la partida del estado no se puede guardar en el acto, el núcleo vuelve a
             // como estaba: nunca queda en marcha una partida que no está en disco
