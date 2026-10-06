@@ -198,4 +198,89 @@ struct GBATests {
         #expect(info.sramBytes == 64 * 1024 && !info.hasRTC)
         #expect(EmulatorSession.validSaveSizes(info) == [64 * 1024])
     }
+
+    // MARK: - Tipo de partida forzado, de extremo a extremo (G8-H2, G8-H3)
+
+    /// Todos los archivos bajo `dir` (ruta relativa → contenido): local, espejo y backups.
+    private func diskState() throws -> [String: Data] {
+        var files: [String: Data] = [:]
+        let enumerator = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey])
+        while let url = enumerator?.nextObject() as? URL {
+            guard (try url.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else { continue }
+            files[String(url.path.dropFirst(dir.path.count))] = try Data(contentsOf: url)
+        }
+        return files
+    }
+
+    /// Abre una sesión GBA con `emulation` sobre un `.sav` local y un espejo ya escritos, la
+    /// ejecuta (start → pause → stop) y devuelve la sesión y los archivos antes y después.
+    private func runSession(emulation: EmulationOptions, local: Data, mirrorData: Data?,
+                            mirrorAge: TimeInterval = 3600) throws
+        -> (session: EmulatorSession, before: [String: Data], after: [String: Data]) {
+        let probe = try GBACoreBridge()
+        let fingerprint = try probe.loadROM(Self.rom(), bios: nil, unixTime: 0).fingerprint
+        let store = SaveStore(directory: dir, fingerprint: fingerprint)
+        try store.save(local)
+        let mirror = SaveMirror(url: dir.appendingPathComponent("juego.sav"))
+        var snapshot = SaveMirror.Snapshot.absent
+        if let mirrorData {
+            try mirrorData.write(to: mirror.url)
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(mirrorAge)],
+                                                  ofItemAtPath: mirror.url.path)
+            snapshot = mirror.snapshot()
+        }
+        let before = try diskState()
+        let session = try EmulatorSession(romData: Self.rom(), savesDirectory: dir, mirror: mirror,
+                                          mirrorSnapshot: snapshot, emulation: emulation,
+                                          console: .gameBoyAdvance, onAudioInterrupted: {})
+        session.start()
+        Thread.sleep(forTimeInterval: 0.3)
+        session.pause()
+        session.stop()
+        return (session, before, try diskState())
+    }
+
+    /// Un `.sav` de 32 KiB (SRAM detectada) y su espejo no coinciden con ningún otro tipo forzado:
+    /// nada cambia en disco, aunque el juego escriba en la SRAM.
+    @Test(arguments: [
+        ("Flash 64 KiB", UInt8(3), UInt8(0)), ("Flash 128 KiB", 4, 0),
+        ("EEPROM 512 B", 5, 0), ("EEPROM 8 KiB", 6, 0),
+        ("Sin partida", 1, 0), ("Sin partida con reloj", 1, 1), ("Sin partida sin reloj", 1, 2),
+        ("Flash 64 KiB con reloj", 3, 1), ("EEPROM 512 B con reloj", 5, 1),
+    ])
+    func forcedMismatchingMediumLeavesLocalMirrorAndBackupsUntouched(_ name: String, saveType: UInt8, rtc: UInt8) throws {
+        let local = Data(repeating: 0x11, count: 32 * 1024)
+        let mirrorData = Data(repeating: 0x22, count: 32 * 1024)
+        let result = try runSession(emulation: EmulationOptions(colorForGameBoy: false, compatPalette: 0,
+                                                                gbaSaveType: saveType, gbaRTC: rtc),
+                                    local: local, mirrorData: mirrorData)
+        #expect(result.before.values.contains(local) && result.before.values.contains(mirrorData), "\(name)")
+        #expect(result.after == result.before, "\(name): el disco cambió")
+    }
+
+    /// Caso de G8-H2: EEPROM 512 B forzada, local de 512 B y espejo de 8 KiB más reciente. Antes
+    /// se instalaba el espejo (la local pasaba a backup) y luego el núcleo lo rechazaba.
+    @Test func forcedEEPROM512IgnoresANewerMirrorOf8KiB() throws {
+        let local = Data(repeating: 0x33, count: 512)
+        let mirrorData = Data(repeating: 0x44, count: 8192)
+        let result = try runSession(emulation: EmulationOptions(colorForGameBoy: false, compatPalette: 0,
+                                                                gbaSaveType: 5),
+                                    local: local, mirrorData: mirrorData)
+        #expect(EmulatorSession.validSaveSizes(result.session.info) == [512])
+        #expect(result.after == result.before)
+        #expect(result.after.values.filter { $0 == local }.count == 1)
+        #expect(!result.after.keys.contains { $0.contains("backups") })
+        #expect(result.session.loadWarning == .mirrorIgnored)
+    }
+
+    @Test func forcedSRAMMatchingTheLocalSaveStillSavesNormally() throws {
+        let local = Data(repeating: 0x00, count: 32 * 1024)
+        let result = try runSession(emulation: EmulationOptions(colorForGameBoy: false, compatPalette: 0,
+                                                                gbaSaveType: 2),
+                                    local: local, mirrorData: nil)
+        #expect(result.session.loadWarning == nil)
+        let fingerprint = result.session.info.fingerprint
+        let saved = try #require(try SaveStore(directory: dir, fingerprint: fingerprint).load())
+        #expect(saved.count == 32 * 1024 && saved[0] == 0x42)
+    }
 }

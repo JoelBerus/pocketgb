@@ -70,6 +70,8 @@ struct RomInfo: Sendable {
     let fingerprint: String
     /// Game Boy Advance: medio EEPROM (el `.sav` puede ser de 512 B o de 8 KiB).
     var eeprom = false
+    /// Game Boy Advance: el ajuste por juego fija el tamaño de la EEPROM (solo vale ese `sramBytes`).
+    var eepromSizeFixed = false
     /// Game Boy Advance: se usó la BIOS del usuario (si no, HLE).
     var biosLoaded = false
 }

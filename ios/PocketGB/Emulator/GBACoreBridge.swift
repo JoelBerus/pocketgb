@@ -34,6 +34,8 @@ final class GBACoreBridge: ConsoleCore {
     private let g: OpaquePointer
     private var hasRTC = false
     private var eeprom = false
+    /// EEPROM con tamaño fijado por un ajuste (`save_type` forzado): solo vale ese tamaño.
+    private var eepromSizeFixed = false
 
     /// SHA-256 de la BIOS oficial (GBA, GBA SP, Micro y Game Boy Player).
     static let knownBIOSSHA256 = "fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570"
@@ -82,21 +84,26 @@ final class GBACoreBridge: ConsoleCore {
         hasRTC = info.has_rtc
         let eeprom = info.save_type == GBA_SAVE_EEPROM512 || info.save_type == GBA_SAVE_EEPROM8K
         self.eeprom = eeprom
+        let sizeFixed = eeprom && opts.save_type != GBA_SAVE_AUTO
+        eepromSizeFixed = sizeFixed
         var rom = RomInfo(title: title, cartType: 0, sramBytes: Int(info.save_bytes),
                           hasBattery: info.save_bytes > 0 || info.has_rtc, hasRTC: info.has_rtc,
                           headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
         rom.console = .gameBoyAdvance
         rom.eeprom = eeprom
+        rom.eepromSizeFixed = sizeFixed
         rom.biosLoaded = info.bios_loaded
         return rom
     }
 
-    /// Tamaños de `.sav` que acepta `sramLoad`: el medio (EEPROM: 512 B u 8 KiB) y, con RTC,
-    /// también con sus 16 bytes al final.
+    /// Tamaños de `.sav` que acepta `sramLoad`: el medio (EEPROM sin ajuste: 512 B u 8 KiB; con
+    /// el tamaño fijado por un ajuste, solo ese) y, con RTC, también con sus 16 bytes al final.
+    /// Con un medio de 0 bytes ("Sin partida") y RTC, solo los 16 bytes del reloj.
     static func validSaveSizes(_ info: RomInfo) -> Set<Int> {
-        let media: Set<Int> = info.eeprom ? [512, 8192] : [info.sramBytes]
+        let media: Set<Int> = info.eeprom && !info.eepromSizeFixed ? [512, 8192]
+            : info.sramBytes > 0 ? [info.sramBytes] : []
         guard info.hasRTC else { return media }
-        return media.union(media.map { $0 + rtcBytes })
+        return media.isEmpty ? [rtcBytes] : media.union(media.map { $0 + rtcBytes })
     }
 
     func setButtons(_ mask: UInt16) { gba_set_buttons(g, mask) }
@@ -119,15 +126,16 @@ final class GBACoreBridge: ConsoleCore {
     var sramDirty: Bool { gba_save_dirty(g) }
     func clearSRAMDirty() { gba_save_clear_dirty(g) }
 
-    /// Acepta el medio solo o el medio + RTC. Ante un tamaño inesperado no cambia nada.
+    /// Acepta el medio solo o el medio + RTC (con un medio de 0 bytes, solo el RTC). Ante un
+    /// tamaño inesperado no cambia nada.
     func sramLoad(_ data: Data) throws(CoreError) {
         var media = data
         var rtc: Data?
-        if hasRTC, data.count > Self.rtcBytes, isMediaSize(data.count - Self.rtcBytes) {
+        if hasRTC, data.count >= Self.rtcBytes, isMediaSize(data.count - Self.rtcBytes) {
             media = data.prefix(data.count - Self.rtcBytes)
             rtc = data.suffix(Self.rtcBytes)
         }
-        guard isMediaSize(media.count) else { throw .sramSize }
+        guard isMediaSize(media.count), !media.isEmpty || rtc != nil else { throw .sramSize }
         if let rtc {
             // El RTC primero: si no es válido no se toca la partida.
             let r = rtc.withUnsafeBytes { raw in
@@ -135,15 +143,17 @@ final class GBACoreBridge: ConsoleCore {
             }
             if let e = CoreError(gba: r) { throw e }
         }
+        guard !media.isEmpty else { return }
         let r = media.withUnsafeBytes { raw in
             gba_save_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
         }
         if let e = CoreError(gba: r) { throw e }
     }
 
-    /// Solo el tamaño del medio de este cartucho (EEPROM: 512 B u 8 KiB mientras no se sepa cuál).
+    /// Solo el tamaño del medio de este cartucho (EEPROM sin ajuste: 512 B u 8 KiB mientras
+    /// no se sepa cuál; con el tamaño fijado, solo el del núcleo, como `gba_save_load`).
     private func isMediaSize(_ n: Int) -> Bool {
-        eeprom ? n == 512 || n == 8192 : n == gba_save_size(g)
+        eeprom && !eepromSizeFixed ? n == 512 || n == 8192 : n == gba_save_size(g)
     }
 
     func sramSave() throws(CoreError) -> Data {
