@@ -4,6 +4,7 @@ import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.input.NormalizedPoint
+import com.joelbermudez.pocketgb.input.PadAction
 import com.joelbermudez.pocketgb.library.DefaultPreferencesFileOps
 import com.joelbermudez.pocketgb.library.PreferencesFileOps
 import java.io.File
@@ -253,5 +254,58 @@ class GameplaySettingsTest {
         assertThrows(IOException::class.java) { noRename.save(GameplaySettingsData(opacity = 100)) }
         assertEquals(30, GameplaySettingsFile(file()).load().opacity)
         assertNotNull(file())
+    }
+
+    @Test
+    fun controllerSettingsDefaultsAndSanitizing() {
+        assertFalse(GameplaySettingsData().showTouchControlsWithController)
+        val dirty = ControllerMappingData(
+            mapOf(
+                "A" to android.view.KeyEvent.KEYCODE_BUTTON_X,
+                "NOPE" to android.view.KeyEvent.KEYCODE_BUTTON_Y,
+                "B" to 0,
+                "START" to android.view.KeyEvent.KEYCODE_DPAD_UP,
+                "SELECT" to android.view.KeyEvent.KEYCODE_BUTTON_X, // duplicado: gana la última
+                "MENU" to android.view.KeyEvent.KEYCODE_BACK,
+                "FAST_FORWARD" to android.view.KeyEvent.KEYCODE_BUTTON_R1,
+            ),
+        ).sanitized()
+        assertEquals(
+            mapOf("SELECT" to android.view.KeyEvent.KEYCODE_BUTTON_X, "FAST_FORWARD" to android.view.KeyEvent.KEYCODE_BUTTON_R1),
+            dirty.bindings,
+        )
+        val sane = GameplaySettingsData(controllerMapping = ControllerMappingData(mapOf("X" to 5))).sanitized()
+        assertEquals(ControllerMappingData(), sane.controllerMapping)
+    }
+
+    @Test
+    fun assignMovesAKeyAndDropsItsPreviousOwner() {
+        val k = android.view.KeyEvent.KEYCODE_BUTTON_X
+        val first = ControllerMappingData.assign(null, PadAction.A, k)
+        assertEquals(k, first.bindings["A"])
+        val moved = ControllerMappingData.assign(first, PadAction.MENU, k)
+        assertEquals(k, moved.bindings["MENU"])
+        assertFalse(moved.bindings.containsKey("A"))
+        // B conserva el botón inferior.
+        assertEquals(android.view.KeyEvent.KEYCODE_BUTTON_A, moved.bindings["B"])
+    }
+
+    @Test
+    fun controllerFieldsRoundTripAndOldJsonStillLoads() {
+        val data = GameplaySettingsData(
+            showTouchControlsWithController = true,
+            controllerMapping = ControllerMappingData(mapOf("A" to android.view.KeyEvent.KEYCODE_BUTTON_X)),
+        )
+        GameplaySettingsFile(file()).save(data)
+        assertEquals(data, GameplaySettingsFile(file()).load())
+        file().writeText("""{"schema":1,"opacity":50}""")
+        val old = GameplaySettingsFile(file()).load()
+        assertEquals(50, old.opacity)
+        assertFalse(old.showTouchControlsWithController)
+        assertNull(old.controllerMapping)
+        file().writeText("""{"showTouchControlsWithController":"si","controllerMapping":{"bindings":"x"}}""")
+        val bad = GameplaySettingsFile(file()).load()
+        assertFalse(bad.showTouchControlsWithController)
+        assertNull(bad.controllerMapping)
     }
 }

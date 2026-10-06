@@ -2,7 +2,10 @@ package com.joelbermudez.pocketgb
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -59,6 +62,33 @@ class AppShellTest {
     private fun back() {
         compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Volver").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    fun controllerMappingIsReachableAndAssignsAButton() {
+        openSettings("Controles")
+        compose.onNodeWithTag("controller-assign").performScrollTo().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Botones del mando").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("pad-row-A").assertIsDisplayed()
+        compose.onNodeWithTag("pad-key-A", useUnmergedTree = true).assertTextEquals("Derecho (B)")
+        compose.onNodeWithTag("pad-reset").assertIsNotEnabled()
+        try {
+            compose.onNodeWithTag("pad-row-A").performClick()
+            compose.onNodeWithText("Pulsa un botón del mando").assertIsDisplayed()
+            compose.onNodeWithTag("assign-dialog").performKeyInput { keyDown(androidx.compose.ui.input.key.Key.ButtonX) }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Pulsa un botón del mando").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithTag("pad-key-A", useUnmergedTree = true).assertTextEquals("Izquierdo (X)")
+            compose.onNodeWithTag("pad-reset").assertIsEnabled()
+        } finally {
+            compose.onNodeWithTag("pad-reset").performScrollTo().performClick()
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(hasTestTag("pad-key-A") and hasText("Derecho (B)"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("pad-key-A", useUnmergedTree = true).assertTextEquals("Derecho (B)")
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("controller-show-touch").performScrollTo().assertIsDisplayed()
     }
 
     @Test

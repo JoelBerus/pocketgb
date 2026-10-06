@@ -62,6 +62,9 @@ sealed interface SettingsRoute : AppRoute {
     data object SettingsControls : SettingsRoute
 
     @Serializable
+    data object SettingsController : SettingsRoute
+
+    @Serializable
     data object SettingsDisplay : SettingsRoute
 
     @Serializable

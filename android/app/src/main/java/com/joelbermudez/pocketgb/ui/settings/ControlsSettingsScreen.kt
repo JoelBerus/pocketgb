@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.ui.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -30,10 +31,10 @@ import com.joelbermudez.pocketgb.ui.settings.components.SwitchRow
 
 /** Ajustes › Controles: opacidad, cruceta, tamaño, visibilidad, háptica y disposición. */
 @Composable
-fun ControlsSettingsScreen(repository: GameplaySettingsRepository, onBack: () -> Unit) {
+fun ControlsSettingsScreen(repository: GameplaySettingsRepository, onBack: () -> Unit, onController: () -> Unit = {}) {
     val data by repository.state.collectAsStateWithLifecycle()
     val failure by repository.persistFailure.collectAsStateWithLifecycle()
-    ControlsSettingsContent(data, repository::update, onBack, warning = persistWarning(failure != null))
+    ControlsSettingsContent(data, repository::update, onBack, warning = persistWarning(failure != null), onController = onController)
 }
 
 @Composable
@@ -43,6 +44,7 @@ fun ControlsSettingsContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     warning: String? = null,
+    onController: () -> Unit = {},
 ) {
     SettingsPage(stringResource(R.string.settings_controls), onBack, modifier, warning) {
         SettingsGroup(
@@ -102,6 +104,24 @@ fun ControlsSettingsContent(
                 checked = data.haptics,
                 onCheckedChange = { value -> onUpdate { it.copy(haptics = value) } },
                 tag = "controls-haptics",
+            )
+        }
+        SettingsGroup(
+            header = stringResource(R.string.controller_group_header),
+            footer = stringResource(R.string.controller_group_footer),
+        ) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.controller_assign_buttons)) },
+                supportingContent = { Text(stringResource(R.string.controller_assign_summary)) },
+                trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = Modifier.clickable(onClick = onController).testTag("controller-assign"),
+            )
+            SwitchRow(
+                title = stringResource(R.string.controller_show_touch),
+                checked = data.showTouchControlsWithController,
+                onCheckedChange = { value -> onUpdate { it.copy(showTouchControlsWithController = value) } },
+                tag = "controller-show-touch",
             )
         }
         SettingsGroup(

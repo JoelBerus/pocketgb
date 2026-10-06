@@ -19,6 +19,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,8 +66,17 @@ fun GameplayScreen(
     onEditingDone: () -> Unit = {},
     /** Guarda un cambio de ajustes (el editor persiste con esto en la orientación actual). */
     onSettingsChange: ((GameplaySettingsData) -> GameplaySettingsData) -> Unit = {},
+    /** Peticiones de ciclo de velocidad que no vienen del HUD (botón R1 del mando). */
+    speedCycleRequests: Flow<Unit> = emptyFlow(),
 ) {
     var speed by remember { mutableIntStateOf(session.speed) }
+    val cycleSpeed = {
+        val next = SpeedCycle.next(speed)
+        session.setSpeed(next)
+        speed = next
+    }
+    val currentCycle by rememberUpdatedState(cycleSpeed)
+    LaunchedEffect(speedCycleRequests) { speedCycleRequests.collect { currentCycle() } }
     val sessionState by session.state.collectAsStateWithLifecycle()
     var selected by remember(editing) { mutableStateOf<ControlId?>(null) }
     val pause = {
@@ -135,11 +148,7 @@ fun GameplayScreen(
             GameplayHud(
                 speed = speed,
                 onPause = pause,
-                onCycleSpeed = {
-                    val next = SpeedCycle.next(speed)
-                    session.setSpeed(next)
-                    speed = next
-                },
+                onCycleSpeed = cycleSpeed,
                 haptics = settings.haptics,
                 modifier = Modifier
                     .align(Alignment.TopEnd)

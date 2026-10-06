@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="controller_group_header">Mando</string>
+    <string name="controller_assign_buttons">Asignar botones</string>
+    <string name="controller_assign_summary">Elige qué botón del mando hace cada cosa</string>
+    <string name="controller_show_touch">Mostrar controles táctiles con mando</string>
+    <string name="controller_group_footer">Con un mando conectado los controles de pantalla se ocultan; quedan el menú y el botón de pausa.</string>
+
+    <string name="controller_mapping_title">Botones del mando</string>
+    <string name="controller_mapping_header">Acciones</string>
+    <string name="controller_mapping_footer">Pulsa una acción y luego el botón del mando que quieras usar. Por defecto el botón derecho es A y el inferior es B.</string>
+    <string name="controller_reset">Restablecer</string>
+    <string name="controller_unassigned">Sin asignar</string>
+
+    <string name="pad_action_a">Botón A</string>
+    <string name="pad_action_b">Botón B</string>
+    <string name="pad_action_start">Start</string>
+    <string name="pad_action_select">Select</string>
+    <string name="pad_action_menu">Menú de pausa</string>
+    <string name="pad_action_fast_forward">Avance rápido (×1, ×2, ×4)</string>
+
+    <string name="pad_key_a">Inferior (A)</string>
+    <string name="pad_key_b">Derecho (B)</string>
+    <string name="pad_key_x">Izquierdo (X)</string>
+    <string name="pad_key_y">Superior (Y)</string>
+    <string name="pad_key_l1">L1</string>
+    <string name="pad_key_r1">R1</string>
+    <string name="pad_key_l2">L2</string>
+    <string name="pad_key_r2">R2</string>
+    <string name="pad_key_start">Start</string>
+    <string name="pad_key_select">Select</string>
+    <string name="pad_key_mode">Mode</string>
+    <string name="pad_key_thumb_l">Stick izquierdo (pulsar)</string>
+    <string name="pad_key_thumb_r">Stick derecho (pulsar)</string>
+    <string name="pad_key_other">Botón %1$s</string>
+
+    <string name="controller_assign_dialog_title">Pulsa un botón del mando</string>
+    <string name="controller_assign_dialog_message">Para «%1$s». Atrás cancela.</string>
+    <string name="controller_assign_cancel">Cancelar</string>
+</resources>
