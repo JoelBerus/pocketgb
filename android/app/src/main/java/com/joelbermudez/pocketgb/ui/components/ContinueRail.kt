@@ -134,7 +134,7 @@ private fun ContinueCard(
             cover(Modifier.width(RAIL_OTHER_WIDTH_DP.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 texts(Modifier.fillMaxWidth())
-                ContinueButton(entry, continueDescription, onContinue)
+                ContinueButton(entry, continueDescription, onContinue, Modifier.fillMaxWidth(), wrap = true)
             }
         }
     } else {
@@ -146,7 +146,7 @@ private fun ContinueCard(
 }
 
 @Composable
-private fun ContinueButton(entry: RomEntry, description: String, onContinue: (RomEntry) -> Unit, modifier: Modifier = Modifier) {
+private fun ContinueButton(entry: RomEntry, description: String, onContinue: (RomEntry) -> Unit, modifier: Modifier = Modifier, wrap: Boolean = false) {
     FilledTonalButton(
         onClick = { onContinue(entry) },
         modifier = modifier
@@ -155,6 +155,6 @@ private fun ContinueButton(entry: RomEntry, description: String, onContinue: (Ro
             .semantics { contentDescription = description },
     ) {
         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-        Text(stringResource(R.string.continue_button), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+        Text(stringResource(R.string.continue_button), modifier = Modifier.padding(start = 6.dp), maxLines = if (wrap) 2 else 1)
     }
 }

@@ -139,7 +139,7 @@ class DebugCatalogTest {
     fun controllerMappingScreensShowTheDefaultsAndTheAssignDialog() {
         launch("settings-controller-mapping").use {
             compose.onNodeWithTag("pad-row-A").assertIsDisplayed()
-            compose.onNodeWithTag("pad-key-A").assertTextEquals("Derecho (B)")
+            compose.onNodeWithTag("pad-key-A", useUnmergedTree = true).assertTextEquals("Derecho (B)")
             compose.onNodeWithTag("pad-reset").assertExists()
         }
         launch("controller-assign-dialog").use {
