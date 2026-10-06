@@ -54,6 +54,17 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - rechazo de estados corruptos
 - cable link virtual (`unit_link.c`, M9): deriva del lockstep tras 10⁶ bloques, causalidad en el primer flanco, cable suelto y reentrada, intercambio de bytes entre dos ROMs sintéticos (DMG, CGB con reloj rápido, doble velocidad, compatibilidad), framebuffer sin cortes y realineado tras recarga o save state
 
+## Núcleo GBA (`gba/`, G0–G9)
+- **Suites** (`make -C gba test`, `make -C gba asan`; runner `gba/tests/runner.c`, casos en `gba/tests/suite.txt` con la misma convención `hito|ruta|modo|…|tipo`): unit tests propios (`gbatest --unit`); **SingleStepTests/ARM7TDMI** (45 × 50 000 casos, 100 %); **jsmolka/gba-tests** (`arm`, `thumb`, `memory`, `bios`, `nes`, `save/*`, `ppu/*`); 14 escenas homebrew propias de PPU, ROMs de EEPROM, RTC y audio (`gba/tests/homebrew/`, compiladas con `clang --target=armv4t` y `ld.lld`); modos `state` y `det` de determinismo. Se descargan con `tools/fetch-gba-test-roms.sh` (nunca versionadas).
+- **Oráculo:** mGBA 0.10.5 compilado aparte (`make -C gba oracle`, `tools/gba-compare.py`, `tools/oracle-gba/`), solo para desarrollo y nunca enlazado en la app.
+- **Fuzzers** (`make -C gba fuzz`): `fuzz_load_rom`, `fuzz_cart`, `fuzz_state_load` y `fuzz_io`, 600 s cada uno en la nube (resultado en la evidencia de cada hito).
+- **Chequeos:** `check-header` (el header compila aislado), `check-globals` y `check-symbols` (sin colisiones con el núcleo GB; pensados para `nm` de Linux).
+- **Limitación en el Mac de Joel:** `make -C gba test`/`asan` completos necesitan `ld.lld` (homebrew de la suite) y los ROMs de SingleStepTests, que no están en este Mac; ahí se ejecutan `gbatest --unit`, la variante ASan compilada con el `EXTRA` del Makefile y los ROMs de jsmolka con el runner. `check-symbols`/`check-globals` dan falsos positivos con el `nm` de macOS (prefijo `_`, símbolos locales `s` de datos constantes de Mach-O); la suite completa corre en la nube (Linux) y en el CI.
+- `make -C core test` usa `HITO=M1` por defecto: la regresión completa del núcleo GB es `make -C core test HITO=M8` (157/157 requeridos).
+
+## Tests de la app (G7–G8)
+Suite unitaria de Swift (`GBATests`, ajustes por juego, L/R, saves GBA con RTC, estados por configuración) y de UI con capturas (`tools/ios-screenshots.sh`; en G8: 117 tests y 94 capturas). Las pruebas con temporizadores cortos (`SaveMirrorTests`, `StateSRAMTests`) esperan 2 s y pueden fallar si el Mac está muy cargado: repetirlas con la máquina libre.
+
 ## Sanitizers y fuzzing
 - `make asan`: todo lo anterior compilado con `-fsanitize=address,undefined -fno-omit-frame-pointer`.
 - `make fuzz`: tres fuzzers en `core/fuzz/`:

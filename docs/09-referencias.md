@@ -17,9 +17,11 @@
 | Referencia | Licencia | Uso permitido |
 |---|---|---|
 | **GBATEK** (Martin Korth) | docs | Especificación principal; se cita por sección. |
+| **tonc** (Jasper Vijn) | docs | Demos y explicación de los modos de vídeo. |
 | **ARM7TDMI Technical Reference Manual** (ARM DDI 0029) | docs | Instrucciones, modos, excepciones. |
 | **SkyEmu**: https://github.com/skylersaleh/SkyEmu | MIT | Única fuente de la que se puede copiar código, citando el origen en el archivo. |
 | **zaydlang/multiplication-algorithm** | zlib | Acarreo de las multiplicaciones (`gba/src/arm_mulcarry.c`, portado y marcado como modificado). |
-| **jsmolka/gba-tests**, **SingleStepTests/ARM7TDMI** | MIT | Pruebas; descarga fijada a commit. |
-| **mGBA** 0.10.5 (MPL-2.0) | — | Solo lectura y **oráculo de desarrollo** de la PPU (`make -C gba oracle`, nunca enlazado en la app). No copiar. |
+| **jsmolka/gba-tests** | MIT | ROMs de prueba (`arm`, `thumb`, `memory`, `bios`, `nes`, `save`, `ppu`); descarga fijada a commit. |
+| **SingleStepTests/ARM7TDMI** | MIT | Casos de un solo paso de la CPU (45 × 50 000); descarga fijada. |
+| **mGBA** 0.10.5 (MPL-2.0) | — | Solo lectura y **oráculo de desarrollo** de la PPU y de los niveles de audio (`make -C gba oracle`, nunca enlazado en la app). No copiar. |
 | **NanoBoyAdvance** (GPLv3), **Hades** (GPLv2), **FuzzARM** (GPLv3) | — | Solo lectura. No copiar. |

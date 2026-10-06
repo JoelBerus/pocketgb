@@ -15,7 +15,9 @@
         │ serial · joypad · state      — sin I/O, sin globals      │
         └─────────────────────────────────────────────────────────┘
 ```
-Regla: **toda** la lógica de emulación está en `core/`. Los frontends solo convierten entre el mundo del SO (toques, archivos, audio, GPU) y la API C.
+**Segundo núcleo (G0–G8).** Junto a `core/` (Game Boy / Color) vive `gba/` (Game Boy Advance, contrato [`gba/include/pocketgba.h`](../gba/include/pocketgba.h), [10](10-gba-spec.md)), con las mismas reglas: C11 puro, sin I/O ni globals, determinista, símbolos con prefijo `gba_`/`arm_` para poder enlazar ambos en la app (el SHA-256 lo aporta solo `core/`). En Swift, el protocolo `ConsoleCore` abstrae la consola: `GBCore` (`CoreBridge`, sin cambios de comportamiento) y `GBACore` (`GBACoreBridge`). La sesión de emulación, el audio, el render, los saves y los save states son genéricos por `ConsoleCore`: cambian el tamaño del frame (160×144 / 240×160), la máscara de botones (16 bits; L y R solo en GBA) y las opciones por juego.
+
+Regla: **toda** la lógica de emulación está en `core/` (GB) o `gba/` (GBA). Los frontends solo convierten entre el mundo del SO (toques, archivos, audio, GPU) y la API C.
 
 ## API C (contrato)
 La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). Resumen:
@@ -46,13 +48,14 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 - **Pacing por audio.** El reloj maestro es la tarjeta de sonido. Los 59,7275 fps del GB contra los 60/120 Hz de la pantalla: se dibuja el último frame completo y se aceptan frames repetidos u omitidos ocasionales. El audio no se corta.
 - **Avance rápido ×N.** Se ejecutan N frames por ciclo y se descarta el audio sobrante (o se remuestrea), para que no se desincronice.
 - **Callback de audio** (tiempo real): solo lee del ring buffer SPSC lock-free. Sin locks, sin alloc, sin Swift runtime pesado. Si hay underrun, rellena con la última muestra (sin clic) y cuenta el underrun para diagnóstico.
-- **Render** (`MTKView`, `preferredFramesPerSecond = 60`): sube el último buffer listo a una `MTLTexture` de 160×144 y la dibuja con sampler `nearest`.
+- **Render** (`MTKView`, `preferredFramesPerSecond = 60`): sube el último buffer listo a una `MTLTexture` del tamaño del frame (160×144 en GB, 240×160 en GBA) y la dibuja con sampler `nearest`.
 
 ## Datos persistentes
 | Qué | Dónde (iOS) | Formato |
 |---|---|---|
-| ROMs | Carpeta de iCloud Drive elegida por Joel (bookmark) | `.gb` / `.gbc` sin tocar |
+| ROMs | Carpeta de iCloud Drive elegida por Joel (bookmark) | `.gb` / `.gbc` / `.gba` sin tocar |
 | Partida (SRAM) | `Application Support/Saves/<huella>.sav` + espejo `<rom>.sav` junto al ROM | Bytes crudos de la RAM del cartucho (compatible con otros emuladores) |
+| Partida GBA | Igual que la GB (mismo `.sav`, ruta atómica, backups y espejo) | Medio de guardado + 16 bytes de RTC al final si el cartucho tiene reloj |
 | Backups | `Application Support/Saves/backups/<huella>.<n>.sav` (n = 1…5) | Igual |
 | Save states | `Application Support/States/<huella>.<slot>.state` | Formato propio versionado |
 | Ajustes | `UserDefaults` | Opacidad de controles, escala, etc. |
@@ -62,4 +65,5 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 ## Compilación
 - `core/Makefile`: clang, `-std=c11 -Wall -Wextra -Werror -pedantic`. Targets: `lib`, `test`, `asan`, `fuzz`, `oracle`.
 - iOS: los fuentes de `core/src` se añaden a un target de Xcode como **referencia a carpeta** (no se copian). El header se expone vía `module.modulemap`, en `core/include/module.modulemap`, con `module PocketGBCore { header "pocketgb.h" export * }`.
+- `gba/Makefile`: mismas banderas; targets `lib`, `test`, `asan`, `fuzz`, `oracle`, `check-header`, `check-globals`, `check-symbols`. En iOS `gba/src` entra como referencia a carpeta y `gba/include/module.modulemap` define `PocketGBACore`.
 - Android: `android/app/src/main/cpp/CMakeLists.txt` añade `../../../../../core/src/*.c` ([05](05-android-spec.md)).
