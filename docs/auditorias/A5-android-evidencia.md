@@ -390,3 +390,14 @@ Auditado: `73de293` (5ª vuelta documentada; código `0fe6c80`). Informe: `A5-an
 | A5V6-H3 (alta) | **No corregido (riesgo residual aceptado por Joel).** Si falla la creación o el arranque del hilo de reparación (`OutOfMemoryError`, `SecurityException`) tras `holdLease()`, el hold extra no se libera. | — |
 
 Verificación tras los cambios (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 191/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50; `core/` sin cambios. No verificado: prueba manual J11 en teléfono. H1 y H3 quedan como pendientes antes de A8 (auditoría conjunta final).
+
+## 7ª vuelta (cierre de A5 a falta de prueba manual)
+
+Auditado: `7c6ef8c` (código) y `d9cfb40` (docs). Informe: `A5-android-codex-v7.md`: **APROBAR CON CAMBIOS**. Codex verificó que las correcciones de A5V6-H2 y A5V6-H4 y sus tests son válidos (prueban el código de producción y fallarían sin la corrección), no halló rutas ordinarias que suelten el lease con una escritura viva o lo retengan para siempre, confirmó que la documentación de los riesgos residuales H1/H3 es exacta, e indicó que **A5 puede pasar a prueba manual en teléfono**.
+
+| ID | Estado |
+|---|---|
+| A5V7-H1 (alta) | **Riesgo residual aceptado, sin corregir.** Si `executor.shutdown()` lanza (p. ej. `SecurityException`) antes de cerrar el executor del coordinador, el reaper de `tryClose()` espera indefinidamente y retiene la huella y el handle. El test de H2 cubre la variante donde el cierre ya se solicitó y falla después. Condición excepcional, sin ruta ordinaria. Corrección sugerida: operación no lanzable que garantice `shutdownNow()` antes del reaper y un test con la excepción previa al `shutdown`. |
+| A5V7-H2 (baja) | Corregido: `docs/ESTADO.md` coherente (cabecera y cuerpo). |
+
+Riesgos residuales abiertos de A5, a cerrar antes de A8 (auditoría conjunta final): **A5V6-H1**, **A5V6-H3** y **A5V7-H1**; todos requieren un `Error`/OOM/excepción del sistema dentro de rutas ya excepcionales. Pendiente: prueba manual de Joel en el teléfono (carpeta real, Rojo/Amarillo, cierre forzado real J11, recuperación desde el espejo, restaurar un backup).
