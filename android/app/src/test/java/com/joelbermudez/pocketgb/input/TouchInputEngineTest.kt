@@ -49,4 +49,24 @@ class TouchInputEngineTest {
         assertEquals(0, engine.mask)
         assertTrue(engine.pressed.isEmpty())
     }
+
+    @Test
+    fun dpadMaskTracksSectorChangesIndependentlyOfFaceButtons() {
+        val engine = TouchInputEngine(geometry)
+        val dpad = geometry.frames.getValue(ControlId.DPAD)
+        val a = geometry.frames.getValue(ControlId.A)
+
+        engine.pointerDown(1, ControlPoint(dpad.right, dpad.centerY))
+        assertEquals(GameBoyButton.RIGHT.mask, engine.dpadMask)
+        engine.pointerMove(1, ControlPoint(dpad.centerX, dpad.top))
+        assertEquals(GameBoyButton.UP.mask, engine.dpadMask)
+        engine.pointerMove(1, ControlPoint(dpad.centerX, dpad.centerY))
+        assertEquals(0, engine.dpadMask)
+
+        engine.pointerDown(2, ControlPoint(a.centerX, a.centerY))
+        assertEquals("A no cuenta como cruceta", 0, engine.dpadMask)
+        engine.pointerUp(1)
+        engine.pointerUp(2)
+        assertEquals(0, engine.dpadMask)
+    }
 }

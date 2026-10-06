@@ -50,6 +50,12 @@ class TouchInputEngine(var geometry: ControlGeometry) {
             }
         }
 
+    /** Solo la parte de cruceta de [mask]: la usa la háptica de «selección» al cambiar de sector. */
+    val dpadMask: Int
+        get() = touches.entries.fold(0) { result, (pointerId, hit) ->
+            if (hit == ControlHit.Single(ControlId.DPAD)) result or (points[pointerId]?.let(geometry::dpadMask) ?: 0) else result
+        }
+
     val pressed: Set<ControlId>
         get() = buildSet {
             touches.forEach { (pointerId, hit) ->
