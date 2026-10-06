@@ -36,9 +36,20 @@ android {
         }
     }
 
+    sourceSets.getByName("androidTest").assets.srcDir("build/generated/screenManifest")
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+// El manifiesto de capturas vive en tools/ (lo lee el script); CatalogCoverageTest lo recibe como asset de prueba.
+val copyScreenManifest = tasks.register<Copy>("copyScreenManifest") {
+    from(layout.projectDirectory.file("../../tools/android-screens.txt"))
+    into(layout.buildDirectory.dir("generated/screenManifest"))
+}
+tasks.configureEach {
+    if (name.endsWith("AndroidTestAssets")) dependsOn(copyScreenManifest)
 }
 
 dependencies {

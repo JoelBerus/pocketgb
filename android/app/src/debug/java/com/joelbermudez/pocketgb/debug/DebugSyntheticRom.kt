@@ -1,7 +1,11 @@
 package com.joelbermudez.pocketgb.debug
 
 internal object DebugSyntheticRom {
-    fun create(): ByteArray {
+    /**
+     * [light] rellena la VRAM con ceros (pantalla blanca: peor caso de contraste para los controles superpuestos);
+     * [damagedHeader] deja mal el checksum de cabecera (`gameplay-header-damaged`).
+     */
+    fun create(light: Boolean = false, damagedHeader: Boolean = false): ByteArray {
         val rom = ByteArray(32 * 1024)
         rom[0x100] = 0xC3.toByte() // Salta la cabecera hacia el programa sintético en 0x0150.
         rom[0x101] = 0x50
@@ -15,7 +19,7 @@ internal object DebugSyntheticRom {
         for (index in 0x134..0x14C) {
             headerChecksum = (headerChecksum - (rom[index].toInt() and 0xFF) - 1) and 0xFF
         }
-        rom[0x14D] = headerChecksum.toByte()
+        rom[0x14D] = (if (damagedHeader) headerChecksum xor 0xFF else headerChecksum).toByte()
 
         // Programa mínimo generado: apaga el LCD, llena VRAM con un patrón y vuelve a encenderlo.
         byteArrayOf(
@@ -23,7 +27,7 @@ internal object DebugSyntheticRom {
             0xE0.toByte(), 0x40,
             0x21, 0x00, 0x80.toByte(),
             0x11, 0x00, 0x20,
-            0x3E, 0xAA.toByte(),
+            0x3E, if (light) 0x00 else 0xAA.toByte(),
             0x22,
             0x1B,
             0x7A,

@@ -14,6 +14,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,7 +28,9 @@ class DebugCatalogTest {
     fun knownScreenShowsExpectedSemantics() {
         launch("library-grid").use {
             compose.onNodeWithTag("debug-screen-library-grid").assertIsDisplayed()
-            compose.onAllNodesWithTag("game-card").assertCountEquals(4)
+            // Hay más de cuatro juegos: la cuadrícula perezosa pinta los que caben bajo el carril.
+            assertTrue(compose.onAllNodesWithTag("game-card").fetchSemanticsNodes().size >= 4)
+            compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
         }
     }
 
@@ -35,7 +38,8 @@ class DebugCatalogTest {
     fun libraryCatalogScreensShowTheirStates() {
         launch("library-empty").use { compose.onNodeWithText("Elegir carpeta").assertIsDisplayed() }
         launch("library-error").use { compose.onNodeWithText("Volver a elegir").assertIsDisplayed() }
-        launch("library-search").use { compose.onNodeWithText("Sin resultados").assertIsDisplayed() }
+        launch("library-search").use { compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Buscar en todos").assertIsDisplayed() }
         launch("library-list").use {
             compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
         }
@@ -44,7 +48,7 @@ class DebugCatalogTest {
             compose.onNodeWithTag("game-details-problem").assertIsDisplayed()
         }
         launch("favorites-empty").use { compose.onNodeWithText("Todavía no hay favoritos").assertIsDisplayed() }
-        launch("favorites").use { compose.onAllNodesWithTag("game-card").assertCountEquals(2) }
+        launch("favorites").use { compose.onNodeWithTag("favorites-recent").assertIsDisplayed() }
         launch("settings-library").use { compose.onNodeWithText("Juegos ocultos").assertIsDisplayed() }
     }
 
