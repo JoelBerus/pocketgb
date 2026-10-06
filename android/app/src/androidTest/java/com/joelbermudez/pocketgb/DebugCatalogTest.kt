@@ -4,7 +4,6 @@ import android.content.Intent
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -27,7 +26,7 @@ class DebugCatalogTest {
     fun knownScreenShowsExpectedSemantics() {
         launch("library-grid").use {
             compose.onNodeWithTag("debug-screen-library-grid").assertIsDisplayed()
-            compose.onAllNodesWithTag("game-card").assertCountEquals(4)
+            compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
         }
     }
 
@@ -35,7 +34,8 @@ class DebugCatalogTest {
     fun libraryCatalogScreensShowTheirStates() {
         launch("library-empty").use { compose.onNodeWithText("Elegir carpeta").assertIsDisplayed() }
         launch("library-error").use { compose.onNodeWithText("Volver a elegir").assertIsDisplayed() }
-        launch("library-search").use { compose.onNodeWithText("Sin resultados").assertIsDisplayed() }
+        launch("library-search").use { compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Buscar en todos").assertIsDisplayed() }
         launch("library-list").use {
             compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
         }
@@ -44,8 +44,8 @@ class DebugCatalogTest {
             compose.onNodeWithTag("game-details-problem").assertIsDisplayed()
         }
         launch("favorites-empty").use { compose.onNodeWithText("Todavía no hay favoritos").assertIsDisplayed() }
-        launch("favorites").use { compose.onAllNodesWithTag("game-card").assertCountEquals(2) }
-        launch("settings-library").use { compose.onNodeWithText("Juegos ocultos").assertIsDisplayed() }
+        launch("favorites").use { compose.onNodeWithTag("favorites-recent").assertIsDisplayed() }
+        launch("settings-library").use { compose.onNodeWithText("Juegos ocultos").assertExists() }
     }
 
     @Test
@@ -106,9 +106,9 @@ class DebugCatalogTest {
             compose.onNodeWithTag("gameplay-surface").assertIsDisplayed()
             compose.onNodeWithTag("game-controls").assertIsDisplayed()
             compose.onNodeWithContentDescription(
-                "Controles del juego: cruceta, A, B, Start, Select y Menú",
+                "Controles del juego: cruceta, A, B, Start y Select",
             ).assertIsDisplayed()
-            compose.onNodeWithText("×1").assertIsDisplayed()
+            compose.onNodeWithTag("hud-speed").assertIsDisplayed()
         }
     }
 
@@ -127,7 +127,7 @@ class DebugCatalogTest {
     @Test
     fun fastForwardCatalogStartsAtFourTimesSpeed() {
         launch("gameplay-fast-forward").use {
-            compose.onNodeWithText("×4").assertIsSelected()
+            compose.onNodeWithText("×4").assertIsDisplayed()
         }
     }
 

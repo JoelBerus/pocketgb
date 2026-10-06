@@ -20,6 +20,13 @@ import com.joelbermudez.pocketgb.library.LibraryFilter
 import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.LibraryState
+import com.joelbermudez.pocketgb.debug.catalog.CatalogArtwork
+import com.joelbermudez.pocketgb.debug.catalog.GameplayCatalogScreen
+import com.joelbermudez.pocketgb.debug.catalog.GameplayFrame
+import com.joelbermudez.pocketgb.debug.catalog.gameplayCatalogScreens
+import com.joelbermudez.pocketgb.debug.catalog.libraryCatalogScreens
+import com.joelbermudez.pocketgb.debug.catalog.settingsCatalogScreens
+import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.ui.about.AboutScreen
@@ -71,6 +78,89 @@ private fun demoDetails(entry: RomEntry) = GameDetails(
     fingerprint = "9d4c1e07b3a85f26c0de91ab47f3825e6b10c9d7a2f45e83b6c1d09e7f2a4b58",
 )
 
+/** IDs que se ven sobre el juego: siempre oscuros y a pantalla completa (K4, K5), una sola variante de tema. */
+private val darkGameScreens = setOf(
+    "gameplay-controls", "gameplay-fast-forward", "pause-sheet", "pause-dialog", "states-sheet", "states-dialog",
+    "exit-save-failed", "exit-risk", "save-warning", "open-error", "save-problem", "states-rescue",
+)
+
+private val legacyScreens: Map<String, @Composable (DebugIntent) -> Unit> = buildMap<String, @Composable (DebugIntent) -> Unit> {
+    put("library-empty") { DemoLibrary(LibraryState.NoFolder) }
+    put("library-list") {
+        DemoLibrary(LibraryState.Ready(demoGames + demoBroken, "Juegos"), demoFavorites.copy(layout = LibraryLayout.LIST))
+    }
+    put("library-error") { DemoLibrary(LibraryState.Failed(LibraryError.PermissionRevoked)) }
+    put("library-loading") { DemoLibrary(LibraryState.Loading) }
+    put("library-access-error") { DemoLibrary(LibraryState.Failed(LibraryError.AccessNotKept)) }
+    put("library-detail-played") {
+        GameDetailsContent(
+            entry = demoGames[0],
+            load = DetailsLoad.Loaded(demoDetails(demoGames[0])),
+            favorite = false,
+            lastPlayedAt = 1_759_700_000_000,
+            onPlay = {},
+            onToggleFavorite = {},
+            onHide = {},
+            onBack = {},
+        )
+    }
+    put("library-detail-problem") {
+        GameDetailsContent(
+            entry = demoBroken,
+            load = DetailsLoad.Loading,
+            favorite = false,
+            lastPlayedAt = null,
+            onPlay = {},
+            onToggleFavorite = {},
+            onHide = {},
+            onBack = {},
+        )
+    }
+    put("favorites-empty") {
+        FavoritesContent(LibraryState.Ready(demoGames, "Juegos"), LibraryPreferencesData(), demoActions)
+    }
+    put("settings-main") { SettingsScreen(onAppearance = {}, onLibrary = {}, onSaves = {}, onAbout = {}) }
+    put("settings-library") {
+        LibrarySettingsContent(
+            state = LibraryState.Ready(demoGames, "Juegos"),
+            folderName = "Juegos",
+            hidden = listOf(demoGames[2], demoGames[3]),
+            onChooseFolder = {},
+            onRescan = {},
+            onForget = {},
+            onUnhide = {},
+            onBack = {},
+        )
+    }
+    put("appearance") { i -> AppearanceScreen(i.appearance, {}, {}, {}) }
+    put("about") { AboutScreen(onBack = {}) }
+    put("pause-sheet") { PauseSheetCatalog(landscape = false) }
+    put("pause-dialog") { PauseSheetCatalog(landscape = true) }
+    put("states-sheet") { StatesSheetCatalog(landscape = false) }
+    put("states-dialog") { StatesSheetCatalog(landscape = true) }
+    put("exit-save-failed") { ExitSaveFailedCatalog(risk = false) }
+    put("exit-risk") { ExitSaveFailedCatalog(risk = true) }
+    put("save-problem") { SaveProblemCatalog() }
+    put("states-rescue") { StatesRescueCatalog() }
+    put("save-warning") { SaveWarningCatalog() }
+    put("open-error") { OpenErrorCatalog() }
+    put("saves-settings") { SavesSettingsCatalog() }
+    put("native-video") { NativeVideoScreen() }
+    put("gameplay-controls") { GameplayCatalogScreen(GameplaySettingsData()) }
+    put("gameplay-fast-forward") { GameplayCatalogScreen(GameplaySettingsData(), initialSpeed = 4) }
+}.mapValues { (id, content) ->
+    if (id in darkGameScreens) {
+        val framed: @Composable (DebugIntent) -> Unit = { i -> GameplayFrame { content(i) } }
+        framed
+    } else {
+        content
+    }
+}
+
+/** Registro único de pantallas del catálogo: el test de cobertura lo cruza con `tools/android-screens.txt`. */
+internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
+    legacyScreens + libraryCatalogScreens + settingsCatalogScreens + gameplayCatalogScreens
+
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {
     val density = LocalDensity.current
@@ -78,85 +168,9 @@ internal fun DebugCatalog(intent: DebugIntent) {
         LocalDensity provides Density(density.density, intent.fontScale),
     ) {
         Box(Modifier.fillMaxSize().testTag("debug-screen-${intent.screen}")) {
-            when (intent.screen) {
-                "library-empty" -> DemoLibrary(LibraryState.NoFolder)
-                "library-grid" -> DemoLibrary(LibraryState.Ready(demoGames, "Juegos"), demoFavorites)
-                "library-list" -> DemoLibrary(
-                    LibraryState.Ready(demoGames + demoBroken, "Juegos"),
-                    demoFavorites.copy(layout = LibraryLayout.LIST),
-                )
-                "library-search" -> DemoLibrary(
-                    LibraryState.Ready(demoGames, "Juegos"),
-                    demoFavorites,
-                    query = "zelda",
-                )
-                "library-error" -> DemoLibrary(LibraryState.Failed(LibraryError.PermissionRevoked))
-                "library-loading" -> DemoLibrary(LibraryState.Loading)
-                "library-access-error" -> DemoLibrary(LibraryState.Failed(LibraryError.AccessNotKept))
-                "library-detail" -> GameDetailsContent(
-                    entry = demoGames[0],
-                    load = DetailsLoad.Loaded(demoDetails(demoGames[0])),
-                    favorite = true,
-                    lastPlayedAt = null,
-                    onPlay = {},
-                    onToggleFavorite = {},
-                    onHide = {},
-                    onBack = {},
-                )
-                "library-detail-played" -> GameDetailsContent(
-                    entry = demoGames[0],
-                    load = DetailsLoad.Loaded(demoDetails(demoGames[0])),
-                    favorite = false,
-                    lastPlayedAt = 1_759_700_000_000,
-                    onPlay = {},
-                    onToggleFavorite = {},
-                    onHide = {},
-                    onBack = {},
-                )
-                "library-detail-problem" -> GameDetailsContent(
-                    entry = demoBroken,
-                    load = DetailsLoad.Loading,
-                    favorite = false,
-                    lastPlayedAt = null,
-                    onPlay = {},
-                    onToggleFavorite = {},
-                    onHide = {},
-                    onBack = {},
-                )
-                "favorites-empty" -> FavoritesContent(
-                    LibraryState.Ready(demoGames, "Juegos"),
-                    LibraryPreferencesData(),
-                    demoActions,
-                )
-                "favorites" -> FavoritesContent(LibraryState.Ready(demoGames, "Juegos"), demoFavorites, demoActions)
-                "settings-main" -> SettingsScreen(onAppearance = {}, onLibrary = {}, onSaves = {}, onAbout = {})
-                "settings-library" -> LibrarySettingsContent(
-                    state = LibraryState.Ready(demoGames, "Juegos"),
-                    folderName = "Juegos",
-                    hidden = listOf(demoGames[2], demoGames[3]),
-                    onChooseFolder = {},
-                    onRescan = {},
-                    onForget = {},
-                    onUnhide = {},
-                    onBack = {},
-                )
-                "appearance" -> AppearanceScreen(intent.appearance, {}, {}, {})
-                "about" -> AboutScreen(onBack = {})
-                "pause-sheet" -> PauseSheetCatalog(landscape = false)
-                "pause-dialog" -> PauseSheetCatalog(landscape = true)
-                "states-sheet" -> StatesSheetCatalog(landscape = false)
-                "states-dialog" -> StatesSheetCatalog(landscape = true)
-                "exit-save-failed" -> ExitSaveFailedCatalog(risk = false)
-                "exit-risk" -> ExitSaveFailedCatalog(risk = true)
-                "save-problem" -> SaveProblemCatalog()
-                "states-rescue" -> StatesRescueCatalog()
-                "save-warning" -> SaveWarningCatalog()
-                "open-error" -> OpenErrorCatalog()
-                "saves-settings" -> SavesSettingsCatalog()
-                "native-video" -> NativeVideoScreen()
-                "gameplay-controls" -> GameplayDebugScreen()
-                "gameplay-fast-forward" -> GameplayDebugScreen(initialSpeed = 4)
-                else -> UnknownScreen(intent.screen)
+            CatalogArtwork {
+                val screen = catalogScreens[intent.screen]
+                if (screen != null) screen(intent) else UnknownScreen(intent.screen)
             }
         }
     }

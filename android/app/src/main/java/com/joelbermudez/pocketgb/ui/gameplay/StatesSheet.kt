@@ -70,6 +70,9 @@ private sealed interface PendingAction {
     data class Delete(override val slot: StateSlot) : PendingAction
 }
 
+/** Diálogo de confirmación abierto de inicio; solo lo usa el catálogo de capturas (en la app arranca sin ninguno). */
+enum class StatesDialogPreview { REPLACE, LOAD }
+
 /** Hoja de estados: automático + 4 manuales con captura, fecha y Guardar/Cargar/Eliminar. */
 @Composable
 fun StatesSheet(
@@ -80,9 +83,10 @@ fun StatesSheet(
     onSave: (StateSlot) -> Unit,
     onLoad: (StateSlot, Boolean) -> Unit,
     onDelete: (StateSlot) -> Unit,
+    previewDialog: Pair<StatesDialogPreview, StateSlot>? = null,
 ) {
     SheetOrDialog(landscape = landscape, onDismiss = onBack, modifier = Modifier.testTag("states-sheet")) {
-        StatesContent(ui, snackbar, onBack, onSave, onLoad, onDelete)
+        StatesContent(ui, snackbar, onBack, onSave, onLoad, onDelete, previewDialog)
     }
 }
 
@@ -96,8 +100,15 @@ fun StatesContent(
     /** `(ranura, guardarActualEnAuto)`: K14. */
     onLoad: (StateSlot, Boolean) -> Unit,
     onDelete: (StateSlot) -> Unit,
+    previewDialog: Pair<StatesDialogPreview, StateSlot>? = null,
 ) {
-    var pending by remember { mutableStateOf<PendingAction?>(null) }
+    var pending by remember {
+        mutableStateOf<PendingAction?>(
+            previewDialog?.let { (kind, slot) ->
+                if (kind == StatesDialogPreview.LOAD) PendingAction.Load(slot) else PendingAction.Replace(slot)
+            },
+        )
+    }
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),

@@ -68,6 +68,8 @@ fun GameplayScreen(
     onSettingsChange: ((GameplaySettingsData) -> GameplaySettingsData) -> Unit = {},
     /** Peticiones de ciclo de velocidad que no vienen del HUD (botón R1 del mando). */
     speedCycleRequests: Flow<Unit> = emptyFlow(),
+    /** Control seleccionado al abrir el editor; solo lo usa el catálogo de capturas. */
+    initialSelected: ControlId? = null,
 ) {
     var speed by remember { mutableIntStateOf(session.speed) }
     val cycleSpeed = {
@@ -78,7 +80,7 @@ fun GameplayScreen(
     val currentCycle by rememberUpdatedState(cycleSpeed)
     LaunchedEffect(speedCycleRequests) { speedCycleRequests.collect { currentCycle() } }
     val sessionState by session.state.collectAsStateWithLifecycle()
-    var selected by remember(editing) { mutableStateOf<ControlId?>(null) }
+    var selected by remember(editing) { mutableStateOf(initialSelected) }
     val pause = {
         if (onMenu != null) onMenu()
         else if (session.state.value == SessionState.Running) session.pause()
