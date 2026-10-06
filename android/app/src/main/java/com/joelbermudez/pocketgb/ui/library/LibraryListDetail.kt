@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb.ui.library
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldDestinationItem
 import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.material3.Text
@@ -26,8 +27,15 @@ fun LibraryListDetail(
     list: @Composable (openDetails: (String) -> Unit) -> Unit,
     detail: @Composable (gameId: String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Juego mostrado al empezar; solo lo usa el catálogo de capturas. */
+    initialDetailId: String? = null,
 ) {
-    val navigator = rememberListDetailPaneScaffoldNavigator<String>()
+    val navigator = rememberListDetailPaneScaffoldNavigator<String>(
+        initialDestinationHistory = listOfNotNull(
+            ThreePaneScaffoldDestinationItem<String>(ListDetailPaneScaffoldRole.List),
+            initialDetailId?.let { ThreePaneScaffoldDestinationItem(ListDetailPaneScaffoldRole.Detail, it) },
+        ),
+    )
     val scope = rememberCoroutineScope()
     NavigableListDetailPaneScaffold(
         navigator = navigator,

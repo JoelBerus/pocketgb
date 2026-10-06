@@ -1,7 +1,10 @@
 # Manifiesto único del catálogo de capturas de Android (lo leen tools/android-screenshots.sh y CatalogCoverageTest).
 # Formato: <id> <portrait|landscape> <light|dark|dyn-green|dyn-violet> [clave=valor ...]
 #   - Una línea por captura; un mismo id repetido (otro tema) debe llevar la misma orientación y los mismos argumentos.
-#   - Los argumentos se pasan a la app como extras de texto (DebugIntent); `wait=<s>` (espera extra) y `swipe=up` (desplazar antes de capturar) son solo del script.
+#   - Los argumentos se pasan a la app como extras de texto (DebugIntent; `fontScale` como Float). Son solo del script y no llegan a la app:
+#     `wait=<s>` (espera extra), `swipe=up` (desplazar antes de capturar), `window=wide` (A7: pantalla de 1280x800 a 240 dpi, 853 dp de
+#     ancho, para el NavigationRail y el lista-detalle; la orientación del manifiesto no gira la pantalla) y `cutout=tall` (A7: recorte
+#     de pantalla simulado con el overlay del sistema; sin él el ID se omite con aviso en un AVD que no lo tenga).
 #   - El juego va siempre oscuro (K4): sus ids solo tienen la variante dark.
 #   - dyn-green / dyn-violet: color dinámico con semilla fija (Android 12+), en tema claro.
 launch portrait light
@@ -110,3 +113,25 @@ open-error portrait dark
 save-problem portrait dark
 states-rescue portrait dark
 gameplay-header-damaged portrait dark rom=damaged
+# A7 · mando físico (L1)
+gameplay-controller landscape dark controller=1
+gameplay-controller-touch portrait dark controller=1 showTouch=1
+settings-controller-mapping portrait light controller=1
+settings-controller-mapping portrait dark controller=1
+controller-assign-dialog portrait light
+controller-assign-dialog portrait dark
+# A7 · accesibilidad (L2): fuente al 200 % y contraste alto
+library-ax5 portrait light fontScale=2.0
+library-ax5 portrait dark fontScale=2.0
+library-detail-ax5 portrait light fontScale=2.0
+settings-ax5 portrait light fontScale=2.0
+library-high-contrast portrait light contrast=high
+library-high-contrast portrait dark contrast=high
+gameplay-high-contrast portrait dark contrast=high opacity=30
+gameplay-landscape-high-contrast landscape dark contrast=high opacity=30
+pause-sheet-ax5 portrait dark fontScale=2.0
+# A7 · ventana ancha y recorte (L3)
+library-wide-rail landscape light window=wide
+library-wide-rail landscape dark window=wide
+library-list-detail landscape light window=wide
+gameplay-cutout-landscape landscape dark cutout=tall

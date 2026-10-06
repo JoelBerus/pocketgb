@@ -6,13 +6,20 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
+import android.view.View
+import android.view.ViewGroup
+import com.joelbermudez.pocketgb.input.GameControlsView
+import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,11 +112,58 @@ class DebugCatalogTest {
             compose.onNodeWithTag("debug-screen-gameplay-controls").assertIsDisplayed()
             compose.onNodeWithTag("gameplay-surface").assertIsDisplayed()
             compose.onNodeWithTag("game-controls").assertIsDisplayed()
-            compose.onNodeWithContentDescription(
-                "Controles del juego: cruceta, A, B, Start y Select",
-            ).assertIsDisplayed()
+            // Desde A7-L2 la vista no tiene una descripción única: cada control es un nodo virtual (TalkBack).
+            it.onActivity { activity ->
+                val controls = findControls(activity.window.decorView)
+                assertNotNull("falta GameControlsView", controls)
+                assertNull(controls!!.contentDescription)
+                val host = controls.accessibilityNodeProvider!!.createAccessibilityNodeInfo(View.NO_ID)!!
+                assertEquals(5, host.childCount)
+            }
             compose.onNodeWithTag("hud-speed").assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun controllerScreensHideTheTouchControlsUnlessTheSettingKeepsThem() {
+        launch("gameplay-controller", "controller" to "1").use {
+            compose.onNodeWithTag("hud-speed").assertIsDisplayed()
+            it.onActivity { a -> assertEquals(ControlsVisibility.HIDDEN, findControls(a.window.decorView)!!.controlsVisibility) }
+        }
+        launch("gameplay-controller-touch", "controller" to "1", "showTouch" to "1").use {
+            it.onActivity { a -> assertEquals(ControlsVisibility.ALWAYS, findControls(a.window.decorView)!!.controlsVisibility) }
+        }
+    }
+
+    @Test
+    fun controllerMappingScreensShowTheDefaultsAndTheAssignDialog() {
+        launch("settings-controller-mapping").use {
+            compose.onNodeWithTag("pad-row-A").assertIsDisplayed()
+            compose.onNodeWithTag("pad-key-A", useUnmergedTree = true).assertTextEquals("Derecho (B)")
+            compose.onNodeWithTag("pad-reset").assertExists()
+        }
+        launch("controller-assign-dialog").use {
+            compose.onNodeWithTag("assign-dialog").assertIsDisplayed()
+            compose.onNodeWithText("Pulsa un botón del mando").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun largeFontAndHighContrastArgumentsReachTheScreens() {
+        launch("library-ax5", "fontScale" to "2.0").use {
+            // Con fuente al 200 % la biblioteca pasa a una columna (columnsFor): una sola tarjeta por fila.
+            compose.onNodeWithTag("debug-screen-library-ax5").assertIsDisplayed()
+            compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
+        }
+        launch("library-high-contrast", "contrast" to "high").use {
+            compose.onNodeWithTag("debug-screen-library-high-contrast").assertIsDisplayed()
+        }
+    }
+
+    private fun findControls(root: View): GameControlsView? {
+        if (root is GameControlsView) return root
+        if (root is ViewGroup) for (i in 0 until root.childCount) findControls(root.getChildAt(i))?.let { return it }
+        return null
     }
 
     @Test
@@ -131,12 +185,13 @@ class DebugCatalogTest {
         }
     }
 
-    private fun launch(screen: String): ActivityScenario<MainActivity> {
+    private fun launch(screen: String, vararg extras: Pair<String, String>): ActivityScenario<MainActivity> {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val intent = Intent(context, MainActivity::class.java)
             .putExtra("screen", screen)
             .putExtra("theme", "light")
             .putExtra("dynamicColor", false)
+        extras.forEach { (key, value) -> intent.putExtra(key, value) }
         return ActivityScenario.launch(intent)
     }
 }

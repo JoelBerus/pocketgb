@@ -156,8 +156,8 @@ Un fallo de espejo es una advertencia y permite jugar porque la local ya está s
 3. **A3 · Audio, input y ciclo de vida:** AAudio, pacing, multitouch, háptica, background y velocidad.
 4. **A4 · Biblioteca:** SAF, permisos, escaneo, preferencias, búsqueda, filtros y detalle.
 5. **A5 · Partidas y estados:** atomicidad local, backups, espejo, restauración y slots.
-6. **A6 · Paridad visual:** ajustes, opciones por juego, portadas y todos los estados D1–D8.
-7. **A7 · Robustez:** mando, TalkBack, fuente, contraste, rotación y límites adaptativos.
+6. **A6 · Paridad visual:** ajustes, opciones por juego, portadas y todos los estados D1–D8. **Implementado y auditado** (Opus y DeepSeek; respuesta en `docs/auditorias/A6-android-respuesta.md`).
+7. **A7 · Robustez:** mando, TalkBack, fuente, contraste, rotación y límites adaptativos. **Implementado** (L1 a L4); pendiente de auditoría y de las pruebas reales (`docs/auditorias/A7-android-evidencia.md`).
 8. **A8 · Cierre:** regresión, Release, documentación, prueba real y auditoría conjunta con Claude.
 
 ## 8. Verificación y aceptación

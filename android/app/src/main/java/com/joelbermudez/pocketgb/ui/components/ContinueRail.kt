@@ -130,12 +130,13 @@ private fun ContinueCard(
         }
     }
     if (horizontal) {
-        Row(modifier.testTag("continue-card"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            cover(Modifier.width(RAIL_OTHER_WIDTH_DP.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                texts(Modifier.fillMaxWidth())
-                ContinueButton(entry, continueDescription, onContinue)
+        // Fuente grande: el botón ocupa todo el ancho bajo portada y texto (en la columna de texto no cabe «Continuar»).
+        Column(modifier.testTag("continue-card"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                cover(Modifier.width(RAIL_OTHER_WIDTH_DP.dp))
+                texts(Modifier.weight(1f))
             }
+            ContinueButton(entry, continueDescription, onContinue, Modifier.fillMaxWidth())
         }
     } else {
         Column(modifier.testTag("continue-card"), verticalArrangement = Arrangement.spacedBy(4.dp)) {

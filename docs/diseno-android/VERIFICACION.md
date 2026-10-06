@@ -1,6 +1,6 @@
 # Verificación visual de Android (A6-L5)
 
-Catálogo: `tools/android-screens.txt` (61 ids, 106 capturas) generado con `tools/android-screenshots.sh` en el emulador `Small_Phone_API_35` (720x1280, sin ventana, animaciones a 0). Salida: `android/build/screenshots/<id>-<orientación>-<tema>.png` (no se versiona). Corrida final sobre `d72d9ad` más los arreglos de esta revisión. Claude miró cada PNG (hojas de contacto con la herramienta Read) contra lo que debe verse.
+Catálogo: `tools/android-screens.txt` (A6: 61 ids, 106 capturas; con A7: 75 ids, 125 capturas) generado con `tools/android-screenshots.sh` en el emulador `Small_Phone_API_35` (720x1280, sin ventana, animaciones a 0). Salida: `android/build/screenshots/<id>-<orientación>-<tema>.png` (no se versiona). Corrida final sobre `d72d9ad` más los arreglos de esta revisión. Claude miró cada PNG (hojas de contacto con la herramienta Read) contra lo que debe verse.
 
 ## Ciclo
 1. `cd android && ./gradlew --no-daemon --max-workers=1 :app:installDebug` y `tools/android-screenshots.sh` (variables `SCREENS`, `THEMES`, `RESUME=1`).
@@ -59,4 +59,28 @@ Leyenda de variantes: C claro, O oscuro, D1/D2 color dinámico verde/violeta. To
 | D9 | Color dinámico: el valor se cambia con `settings put secure theme_customization_overlay_packages` (comillas remotas) | Verde y violeta se ven distintos del azul por defecto; no se comparó el matiz exacto |
 
 ## Lo que el catálogo no ve
-Tacto real, háptica, audio, fps, carpeta SAF real, cutouts, rotación sin pausa, mando y TalkBack (A7).
+Tacto real, háptica, audio, fps, carpeta SAF real, cutouts reales, rotación sin pausa, mando real y TalkBack (A7: ver la sección A7 y `docs/auditorias/A7-android-evidencia.md`).
+
+## A7 (L4): mando, accesibilidad, ventana ancha y recorte
+Catálogo ampliado a 75 ids y 125 capturas (los 14 ids nuevos suman 19 capturas) en `Small_Phone_API_35` (720x1280, 320 dpi), código `b734e03`. Argumentos nuevos de `DebugIntent`: `controller=1`, `showTouch=1`, `fontScale=2.0` (el script lo manda como `--ef`), `contrast=high|medium`, `reduceMotion=1`. `buildVariantContent` los aplica **fuera** de `PocketGBTheme` (`LocalDensity` + `LocalAccessibilityOverrides`). Argumentos solo del script: `window=wide` (`wm size 1280x800` + `wm density 240` = 853 dp, rotación 0; se restaura con `wm size reset`/`wm density reset`, también en el `trap`) y `cutout=tall` (`cmd overlay enable --user 0 com.android.internal.display.cutout.emulation.tall`, disponible en este AVD; si falta el overlay, el id se omite con el aviso «requiere AVD con recorte»).
+
+| Id (variantes) | Debe verse | Se ve | Resultado |
+|---|---|---|---|
+| gameplay-controller (O, horizontal) | Sin controles táctiles; HUD de pausa y velocidad | Imagen centrada, solo pausa y avance rápido | ✅ (no hay «pista» de pausa en pantalla: la pista del plan se limita al pie de Ajustes) |
+| gameplay-controller-touch (O) | Con `showTouch=1` los controles siguen | Cruceta, A, B, Select, Start y HUD | ✅ |
+| settings-controller-mapping (C,O) | Seis acciones con el botón asignado | Botón A = Derecho (B), Botón B = Inferior (A), Start, Select, Menú = Mode / L1, Avance = R1; pie con la regla | ✅ («Restablecer» queda bajo el pliegue) |
+| controller-assign-dialog (C,O) | «Pulsa un botón del mando» para A | Diálogo con título, «Para «Botón A». Atrás cancela.» y Cancelar | ✅ |
+| library-ax5 (C,O) | Una columna, carril en columna, sin texto cortado | Una columna, títulos en 2 líneas, carril apilado; el botón «Continuar» salía como «Conti» | **Defecto L4-D1 corregido** (`546d220`: el botón ocupa todo el ancho bajo portada y texto); tras el arreglo se ve «Continuar» completo. Los chips de filtro se desplazan en horizontal («Fa…» asoma): comportamiento esperado |
+| library-detail-ax5 (C) | Filas apiladas | Portada, título, botón Continuar a todo el ancho; filas apiladas bajo el pliegue | ✅ |
+| settings-ax5 (C) | Filas legibles | Títulos a 200 % sin cortes, 7 filas visibles | ✅ |
+| library-high-contrast (C,O) | Esquema de contraste alto, sin color dinámico | Texto y bordes más fuertes que el estándar; diferencia sutil en la biblioteca | ✅ (el contraste se aprecia más en los controles) |
+| gameplay-high-contrast (O) | Controles sólidos pese a `opacity=30` | Cruceta, A y B con relleno opaco y anillo claro | ✅ |
+| gameplay-landscape-high-contrast (O, horizontal) | Igual en horizontal | Controles sólidos, Select/Start con anillo | ✅ |
+| pause-sheet-ax5 (O) | Hoja de pausa con fuente grande | Hoja completa, botones y pies sin cortes | ✅ |
+| library-wide-rail (C,O, 1280x800) | NavigationRail con tres destinos | Rail a la izquierda (Biblioteca seleccionada, Favoritos, Ajustes) y contenido ancho | ✅ |
+| library-list-detail (C, 1280x800) | Lista y detalle a la vez | Biblioteca a la izquierda y detalle de POKÉMON RED a la derecha | ✅ (estructura; `ENABLE_LIST_DETAIL` sigue en `false`: no está conectada a la navegación) |
+| gameplay-cutout-landscape (O, horizontal) | Controles fuera del recorte | Cruceta desplazada a la derecha respecto a `gameplay-landscape-high-contrast` | ✅ con reserva: `screencap` no dibuja el recorte, solo se ve el desplazamiento de los controles |
+
+Regresión visual de L2/L3 en A6 (recaptura de `library-grid` C, `library-detail` C, `gameplay-controls` O, `pause-sheet` O y `settings-main` O sobre `f00beec`): sin cambios respecto a A6 (carril con portadas, detalle con datos, controles y HUD, hoja de pausa y Ajustes completos).
+
+Defectos A7: L4-D1 corregido (arriba, dos commits: `f00beec` partía «Continuar» en «Conti/nuar» y `546d220` lo resuelve). Pendientes: ninguno grande. Observación (no es defecto de L4): con `controls=hidden` los nodos virtuales de TalkBack siguen existiendo (los controles ocultos siguen siendo pulsables).
