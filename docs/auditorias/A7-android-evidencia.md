@@ -12,7 +12,7 @@ Rama `a7-l4-catalogo` sobre `codex/android-port` @ `cadf641` (A6 cerrado + A7 L1
 Aplicadas en L1 a L3 sin cambiar ninguna: R1 a R6 (L1), R7 a R11 y R16 (L2), R12 a R15 (L3). Matices: R5 «pista de pausa»: no hay una pista en pantalla con los controles ocultos (solo el HUD de pausa y velocidad; la explicación está en el pie de Ajustes › Controles). R14: el lista-detalle existe pero sigue desactivado (`ENABLE_LIST_DETAIL = false`), decisión del plan; el rail sí está activo.
 
 ## Desviaciones
-- **Dependencia `materialyoucolor`:** la tarea decía que L2 la había añadido; no es así. `Color.kt` contiene constantes `Color(0x...)` de los esquemas de contraste medio y alto (generadas con el algoritmo de Material Color Utilities, comentario en el archivo) y `build.gradle.kts` solo añadió `androidx.customview:customview:1.1.0`. Origen y licencia: no hay artefacto externo que auditar.
+- **Dependencia `materialyoucolor`:** la tarea decía que L2 la había añadido; no es así. `Color.kt` contiene constantes `Color(0x...)` de los esquemas de contraste medio y alto (generadas con el algoritmo de Material Color Utilities, comentario en el archivo) y `build.gradle.kts` añadió `androidx.customview:customview:1.1.0` (L2) y, en L3, las cuatro dependencias adaptativas de AndroidX (`adaptive`, `adaptive-layout`, `adaptive-navigation` y `material3-adaptive-navigation-suite`, todas AndroidX). Origen y licencia: no hay artefacto externo que auditar.
 - **L1 y L2 dejaron los ids del catálogo y los argumentos de `DebugIntent` a L4**; L4 los creó (`debug/catalog/A7Catalog.kt`) con tres ganchos mínimos en producción, de valor por defecto neutro: `touchSettingsFor` (la misma función que usa `GameplayHost` para ocultar los controles con mando), `initialAssigning` en `ControllerMappingContent` y `initialDetailId` en `LibraryListDetail`.
 - **Argumentos solo del script** `window` y `cutout`; `fontScale` pasa a ser un Float en el intent (`--ef`). `DebugCatalog` ya no aplica la escala de fuente: la aplica `buildVariantContent` fuera de `PocketGBTheme` (antes `LocalLargeFont` no la veía).
 - Varios ids son alias de pantallas de A6 con otros argumentos (`library-ax5` = `library-grid` con `fontScale=2.0`, etc.).
@@ -64,3 +64,16 @@ OK: 50/50 iteraciones con el invariante intacto
 - Combinación de rotación y cierre forzado del proceso (ver desviaciones); `make -C core test` y `asan` en esta pasada.
 - Que el tooltip «Drag handle» y el resaltado gris del primer elemento (D5, D8 de A6) sean artefactos del emulador.
 - Auditoría independiente de A7.
+
+## Correcciones de la auditoría Opus
+
+Auditoría: `A7-android-opus.md`; respuesta completa en `A7-android-respuesta.md`. Rama `a7-respuesta`.
+
+- **A7-H1 (rojo sin la corrección):** instrumentados `com.joelbermudez.pocketgb.game`, 95 pruebas, `GamepadUiTest`:
+  `unassignedPadKeyIsNotConsumedAndKeepsTouchControls` falla con «BUTTON_THUMBL no está asignado: no se consume» y
+  `keyboardArrowWithOnlyDpadSourceDoesNotHideTouchControls` con «una flecha de teclado no se consume». Con la corrección: 95 pruebas, 0 fallos.
+- **A7-H2 (rojo):** `ControlGeometryTest.gestureExclusionNeverLeavesTheSafeAreaVertically` falla (AssertionError, línea 233) con el `GestureExclusion` anterior; verde con la corrección.
+- **A7-H4 (rojo):** `ControlsTalkBackTest.hiddenControlsAnnounceTheirHiddenStateToTalkBack` falla («DPAD oculto expected:<Oculto> but was:<null>», 22 pruebas, 1 fallo); verde con la corrección (22/22).
+- **DS-H1…H3:** ver la respuesta.
+- **Suite final:** JVM 375 pruebas, 0 fallos, 0 errores; `assembleDebug` y `lintDebug` BUILD SUCCESSFUL; instrumentados `game` 95/95 y `input` 22/22 (bajo el mutex del emulador, Small_Phone_API_35).
+- Nota: en una pasada JVM completa `ProcessKillTest.killedWriterNeverLeavesAPartialOrMissingSave` falló una vez con la máquina cargada; solo, y en la pasada completa siguiente, pasa. No se ha tocado esa ruta.
