@@ -62,4 +62,22 @@ class ViewportTest {
         assertThrows(IllegalArgumentException::class.java) { Viewport.calculate(0, 100, ScaleMode.FILL) }
         assertThrows(IllegalArgumentException::class.java) { Viewport.calculate(100, -1, ScaleMode.INTEGER) }
     }
+
+    @Test
+    fun defaultModeCentersLargestIntegerScale() {
+        assertEquals(
+            Viewport(left = 0, top = 64, width = 320, height = 288, scale = 2),
+            Viewport.calculate(width = 320, height = 416),
+        )
+    }
+
+    @Test
+    fun undersizedSurfaceFallsBackWithoutNegativeBounds() {
+        val viewport = Viewport.calculate(width = 159, height = 143)
+
+        assertTrue(viewport.left >= 0 && viewport.top >= 0)
+        assertTrue(viewport.width in 1..159)
+        assertTrue(viewport.height in 1..143)
+        assertEquals(0, viewport.scale)
+    }
 }

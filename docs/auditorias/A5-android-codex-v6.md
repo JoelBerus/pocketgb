@@ -41,4 +41,3 @@ La corrección de A5V5-H1 y su prueba son válidas, pero el barrido completo enc
 - Los artefactos existentes son plausibles y posteriores al cambio: JVM 241/241 e instrumentados 189/189; el XML instrumentado contiene exactamente `interruptingTheRepairThreadNeverReleasesTheLeaseNorCancelsTheRepair`.
 - `git diff --check 8b30cfd..HEAD -- android docs` no mostró errores.
 - El árbol contiene `.codex/` y `docs/auditorias/A5-android-codex-v6.md` sin seguimiento; no los consideré parte del commit auditado ni los modifiqué.
-

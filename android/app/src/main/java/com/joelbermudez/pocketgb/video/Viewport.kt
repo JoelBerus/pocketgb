@@ -42,6 +42,3 @@ data class Viewport(
         }
     }
 }
-
-/** Nombre histórico (A2-A5); se conserva para no tocar a sus llamadores. */
-typealias IntegerViewport = Viewport

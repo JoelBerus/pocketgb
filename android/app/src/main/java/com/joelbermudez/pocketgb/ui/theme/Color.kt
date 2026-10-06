@@ -162,4 +162,3 @@ internal val PocketDarkHighContrastColorScheme = darkColorScheme(
     errorContainer = Color(0xFFFF7E5E),
     onErrorContainer = Color(0xFF000000),
 )
-

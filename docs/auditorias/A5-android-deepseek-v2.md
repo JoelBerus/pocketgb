@@ -35,7 +35,7 @@ Se listan los criterios de la 1ª vuelta que quedaron corregidos y los nuevos, t
 | Evidencia ligada al commit auditado | sí | La evidencia distingue entre commit base y correcciones sin commitear; todas las correcciones están documentadas |
 
 ## Notas
-- La auditoría se realizó sobre el código con las **correcciones de la 1ª vuelta incorporadas**, tal como se detalla en `docs/auditorias/A5-android-evidencia.md`.  
-- No fue posible reejecutar la batería de pruebas (sandbox sin herramientas), pero la evidencia adjunta muestra 233 pruebas JVM y 181 instrumentadas con 0 fallos, y 50 iteraciones del kill-test exitosas. La inspección del código confirma que los mecanismos añadidos son correctos.  
-- Los criterios de pérdida de partida, en particular los relacionados con el cierre del coordinador, el rollback de estados y la salida del ViewModel, han quedado robustamente cubiertos.  
+- La auditoría se realizó sobre el código con las **correcciones de la 1ª vuelta incorporadas**, tal como se detalla en `docs/auditorias/A5-android-evidencia.md`.
+- No fue posible reejecutar la batería de pruebas (sandbox sin herramientas), pero la evidencia adjunta muestra 233 pruebas JVM y 181 instrumentadas con 0 fallos, y 50 iteraciones del kill-test exitosas. La inspección del código confirma que los mecanismos añadidos son correctos.
+- Los criterios de pérdida de partida, en particular los relacionados con el cierre del coordinador, el rollback de estados y la salida del ViewModel, han quedado robustamente cubiertos.
 - El único punto pendiente sigue siendo la **prueba manual en el teléfono de Joel** (carpeta real, cierre forzado real, recuperación desde espejo), que la propia evidencia declara como no verificada.
