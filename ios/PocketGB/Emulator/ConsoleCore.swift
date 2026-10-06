@@ -71,4 +71,13 @@ protocol ConsoleCore: AnyObject {
 
     func stateSave() throws(CoreError) -> Data
     func stateLoad(_ data: Data) throws(CoreError)
+
+    /// Lo llama `EmulatorSession.run()` en el hilo de emulación tras el último flush. Declarado
+    /// en el protocolo (no solo en la extensión) para que `any ConsoleCore` lo despache
+    /// dinámicamente: el cable link desconecta aquí (`gb_link_detach` antes de `gb_destroy`).
+    func shutdown()
+}
+
+extension ConsoleCore {
+    func shutdown() {}
 }
