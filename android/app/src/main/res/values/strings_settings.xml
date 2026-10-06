@@ -75,8 +75,6 @@
     <!-- Audio -->
     <string name="audio_volume_label">Volumen</string>
     <string name="audio_volume_value">%1$d %%</string>
-    <string name="audio_volume_low">Volumen bajo</string>
-    <string name="audio_volume_high">Volumen alto</string>
     <string name="audio_footer_system">El sonido sigue el volumen multimedia del teléfono.</string>
     <string name="audio_background_label">En segundo plano</string>
     <string name="audio_background_value">Pausa</string>
@@ -87,10 +85,9 @@
     <string name="storage_saves">Partidas y copias</string>
     <string name="storage_states">Estados guardados</string>
     <string name="storage_artwork">Portadas</string>
-    <string name="storage_measuring">Calculando…</string>
     <string name="storage_footer">Los juegos (ROM) están en tu carpeta y PocketGB no los copia, así que no ocupan espacio de la app. La copia de cada partida junto al ROM tampoco se cuenta.</string>
     <string name="storage_clear_artwork">Borrar portadas</string>
-    <string name="storage_clear_footer">Las portadas son capturas del último momento jugado; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.</string>
+    <string name="storage_clear_footer">Las portadas son capturas de la última escena jugada; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.</string>
     <string name="storage_clear_title">¿Borrar las portadas?</string>
     <string name="storage_clear_body">Las partidas, las copias y los estados se conservan.</string>
     <string name="storage_cleared">Portadas borradas</string>
@@ -107,14 +104,12 @@
 
     <!-- Partidas -->
     <string name="saves_footer">La partida de cada juego se guarda en este teléfono y se copia junto al ROM. PocketGB conserva las 5 versiones anteriores.</string>
-    <string name="saves_current_label">Partida actual</string>
     <string name="saves_current_saved">Guardada · %1$s</string>
     <string name="saves_backup_latest">Copia más reciente · %1$s</string>
     <string name="saves_restore_footer">Restaurar no borra nada: la partida actual se guarda antes como copia.</string>
 
     <!-- Apariencia -->
     <string name="appearance_footer">El juego siempre se muestra sobre fondo oscuro, sea cual sea el modo, para no deslumbrar ni restar contraste a los controles.</string>
-    <string name="appearance_theme_header">Biblioteca y ajustes</string>
 
     <!-- Por juego (también lo usa la hoja de ajustes del juego) -->
     <string name="setting_global">Global</string>
