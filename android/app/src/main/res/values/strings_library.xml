@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Biblioteca, Favoritos y detalle del juego (A6-L3). Textos nuevos de estas pantallas, solo aquí. -->
+<resources>
+    <!-- Cabecera y búsqueda -->
+    <string name="library_title">Biblioteca</string>
+    <string name="library_all_games">Todos los juegos</string>
+    <string name="library_more_options">Más opciones</string>
+    <string name="library_view">Vista</string>
+    <string name="library_sort_by">Ordenar por</string>
+    <string name="library_rescan">Volver a escanear</string>
+    <string name="library_change_folder">Cambiar carpeta</string>
+    <string name="library_scanning">Buscando juegos…</string>
+    <string name="library_scanning_progress">Buscando juegos… %1$d de %2$d</string>
+    <string name="library_updating_description">Actualizando la biblioteca</string>
+    <string name="library_results_one">1 resultado</string>
+    <string name="library_results_many">%1$d resultados</string>
+    <string name="library_no_results_title">Sin resultados para «%1$s»</string>
+    <string name="library_no_results_all">Ningún juego de la carpeta se llama así. Revisa la ortografía o prueba con parte del nombre.</string>
+    <string name="library_no_results_filter">No hay coincidencias en %1$s. Puede que el juego esté en otro filtro.</string>
+    <string name="library_search_all">Buscar en todos</string>
+    <string name="library_show_all">Ver todos</string>
+    <string name="library_no_favorites_title">Todavía no hay favoritos</string>
+    <string name="library_no_favorites_message">Mantén pulsado un juego y elige «Añadir a favoritos».</string>
+    <string name="library_no_games_filter_title">No hay juegos %1$s</string>
+    <string name="library_no_games_filter_message">No hay juegos de este sistema en la carpeta.</string>
+    <string name="library_retry">Reintentar</string>
+    <string name="library_choose_again">Volver a elegir</string>
+    <plurals name="library_new_games">
+        <item quantity="one">1 juego nuevo en la carpeta</item>
+        <item quantity="other">%1$d juegos nuevos en la carpeta</item>
+    </plurals>
+
+    <!-- Continuar jugando -->
+    <string name="continue_playing">Continuar jugando</string>
+    <string name="continue_button">Continuar</string>
+    <string name="continue_button_description">Continuar %1$s</string>
+    <string name="continue_played">Jugado %1$s</string>
+    <string name="recent_played_title">Jugados recientemente</string>
+
+    <!-- Tarjetas y filas -->
+    <string name="game_new">Nuevo</string>
+    <string name="game_never_played">Sin jugar</string>
+    <string name="game_save_date">Partida %1$s</string>
+    <string name="game_cannot_open">No se puede abrir</string>
+    <string name="game_favorite">Favorito</string>
+    <string name="game_system_gb">Game Boy</string>
+    <string name="game_system_gbc">Game Boy Color</string>
+    <string name="game_artwork_description">Última captura de %1$s</string>
+    <string name="game_details_action">Ver detalle</string>
+    <string name="game_status_played">Jugado %1$s</string>
+
+    <!-- Fechas relativas -->
+    <string name="date_now">ahora mismo</string>
+    <string name="date_minutes">hace %1$d min</string>
+    <string name="date_hours">hace %1$d h</string>
+    <string name="date_yesterday">ayer</string>
+    <string name="date_days">hace %1$d días</string>
+
+    <!-- Menú contextual -->
+    <string name="menu_play">Jugar</string>
+    <string name="menu_details">Ver detalle</string>
+    <string name="menu_favorite_add">Añadir a favoritos</string>
+    <string name="menu_favorite_remove">Quitar de favoritos</string>
+    <string name="menu_states_soon">Estados (próximamente)</string>
+    <string name="menu_game_settings">Ajustes del juego</string>
+    <string name="menu_hide">Ocultar de PocketGB</string>
+
+    <!-- Ocultar -->
+    <string name="hide_title">¿Ocultar de PocketGB?</string>
+    <string name="hide_message">«%1$s» dejará de aparecer en la biblioteca. No se borra el ROM ni la partida; puedes mostrarlo de nuevo en Ajustes › Biblioteca.</string>
+    <string name="hide_confirm">Ocultar</string>
+    <string name="hide_cancel">Cancelar</string>
+
+    <!-- Favoritos -->
+    <string name="favorites_title">Favoritos</string>
+    <string name="favorites_empty_message">Marca un juego con una estrella para encontrarlo aquí. Aquí verás también los que jugaste hace poco.</string>
+    <string name="favorites_hint_add">Mantén pulsado un juego y elige «Añadir a favoritos».</string>
+    <string name="favorites_hint_remove">Mantén pulsado un juego para quitarlo de favoritos.</string>
+
+    <!-- Detalle -->
+    <string name="details_back">Volver</string>
+    <string name="details_played">Jugado</string>
+    <string name="details_save">Partida</string>
+    <string name="details_size">Tamaño</string>
+    <string name="details_never">Nunca</string>
+    <string name="details_none">—</string>
+    <string name="details_play">Jugar</string>
+    <string name="details_continue">Continuar</string>
+    <string name="details_states">Estados</string>
+    <string name="details_states_soon">Próximamente</string>
+    <string name="details_settings">Ajustes</string>
+    <string name="details_hide">Ocultar de PocketGB</string>
+    <string name="details_hide_footer">Ocultar no borra el ROM ni la partida.</string>
+
+    <!-- Ajustes del juego (K8) -->
+    <string name="game_settings_title">Ajustes de %1$s</string>
+    <string name="game_settings_done">Listo</string>
+    <string name="game_settings_header_dmg">Juego de Game Boy</string>
+    <string name="game_settings_header_gbc">Juego de Game Boy Color: siempre en color</string>
+    <string name="game_settings_footer">Se aplica la próxima vez que abras el juego.</string>
+    <string name="game_settings_color">Color</string>
+    <string name="game_settings_palette">Paleta</string>
+    <string name="game_settings_global_color_on">Global (en color)</string>
+    <string name="game_settings_global_color_off">Global (sin color)</string>
+    <string name="game_settings_color_on">En color</string>
+    <string name="game_settings_color_off">Sin color</string>
+    <string name="game_settings_global_palette">Global (%1$s)</string>
+    <string name="game_settings_reset">Usar los ajustes globales</string>
+    <string name="game_settings_loading">Leyendo el juego…</string>
+    <string name="game_settings_unavailable">No se pudo leer el juego, así que no se pueden personalizar sus ajustes ahora.</string>
+    <!-- A8-S: literales extraídos -->
+    <string name="details_title">Detalle</string>
+    <string name="details_unavailable_title">Juego no disponible</string>
+    <string name="details_unavailable_message">Ya no está en la carpeta o se ocultó.</string>
+    <string name="details_problem">Problema</string>
+    <string name="details_reading_metadata">Leyendo metadatos…</string>
+    <string name="details_sha_label">Huella SHA-256</string>
+    <string name="details_fact_cartridge">Cartucho</string>
+    <string name="details_fact_save">Partida guardada</string>
+    <string name="details_no_ram">Sin RAM</string>
+    <string name="details_battery_suffix"> · batería</string>
+    <string name="details_rtc_suffix"> · reloj</string>
+    <string name="library_loading">Cargando biblioteca…</string>
+    <string name="library_pick_title">Elige una carpeta con tus juegos</string>
+    <string name="library_pick_action">Elegir carpeta</string>
+    <string name="library_empty_title">No hay juegos en esta carpeta</string>
+    <string name="library_pick_other_action">Elegir otra carpeta</string>
+    <string name="library_empty_message">Solo se buscan archivos .gb y .gbc en la carpeta y un nivel de subcarpetas.</string>
+    <string name="library_access_lost_title">PocketGB perdió el acceso a la carpeta</string>
+    <string name="library_folder_missing_title">La carpeta ya no existe</string>
+    <string name="library_folder_missing_message">Se movió o se borró. Elige otra carpeta o reintenta si la restauraste.</string>
+    <string name="library_persist_failed_title">No se pudo conservar el acceso a la carpeta</string>
+    <string name="library_read_failed_title">No se pudo leer la carpeta</string>
+    <string name="library_read_failed_message">El proveedor de archivos no respondió. Comprueba la conexión o el almacenamiento y reintenta.</string>
+    <string name="library_search_label">Buscar juegos</string>
+    <string name="library_search_clear">Borrar búsqueda</string>
+    <string name="library_all_hidden_title">Todos los juegos están ocultos</string>
+    <string name="library_all_hidden_message">Muéstralos de nuevo en Ajustes › Biblioteca.</string>
+    <string name="library_selected">Seleccionado</string>
+    <string name="library_pick_message">PocketGB busca archivos .gb y .gbc en la carpeta y sus subcarpetas directas. Nunca los copia ni los modifica.</string>
+    <string name="library_access_lost_message">El sistema revocó el permiso. Tus juegos y partidas siguen donde estaban; elige la carpeta otra vez para concederlo de nuevo.</string>
+    <string name="library_persist_failed_message">El sistema no permitió recordar la carpeta elegida. La carpeta anterior no se tocó; elige otra vez o reintenta con la que ya tenías.</string>
+    <string name="favorites_no_folder_title">Sin carpeta de juegos</string>
+    <string name="favorites_no_folder_message">Elige o repara la carpeta en Biblioteca para ver aquí tus favoritos.</string>
+    <string name="details_settings_button">Ajustes del juego</string>
+</resources>

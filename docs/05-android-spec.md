@@ -1,54 +1,58 @@
-# 05 · Especificación Android (futuro, no híbrido)
+# 05 · Implementación Android nativa
 
-Objetivo: la **misma app** que [04](04-ios-spec.md), con UI 100 % nativa en Kotlin y el **mismo `core/`** compilado con el NDK. No se usan Flutter, React Native, KMP UI ni WebView.
+> La especificación vigente y aprobada está en [diseno-android/SPEC.md](diseno-android/SPEC.md). Este documento describe la implementación real (estado A1–A7 implementados, A8 en curso) y las equivalencias técnicas con iOS.
+
+Objetivo: la **misma app** que [04](04-ios-spec.md), con UI 100 % nativa en Kotlin/Compose y el **mismo `core/`** compilado con el NDK. No se usan Flutter, React Native, KMP UI ni WebView.
 
 ## Requisitos
-- Android Studio (última estable), NDK r27+ y CMake 3.22+ desde el SDK Manager.
-- minSdk 26 (AAudio), targetSdk el último, Kotlin 2.x, Jetpack Compose (BOM).
-- Paquete `com.joelbermudez.pocketgb`. Sin permiso `INTERNET` en el manifiesto: la auditoría lo verifica.
+- Android Studio, JDK 17, SDK Platform 37, Build Tools 37.0.0, NDK 27.3.13750724 y CMake 3.22.1.
+- minSdk 26 (AAudio), targetSdk 37, Kotlin 2.x, Jetpack Compose (BOM 2026.09.00), Navigation 3. Solo AndroidX y kotlinx-serialization en runtime.
+- Paquete `com.joelbermudez.pocketgb`. Sin permiso `INTERNET`: se verifica con `aapt2 dump permissions` sobre el APK Release.
+- Versión actual: `versionName 1.0.0`, `versionCode 2`.
 
-## Estructura
+## Estructura real
 ```
 android/
-  settings.gradle.kts, build.gradle.kts
-  app/build.gradle.kts            # externalNativeBuild { cmake { path = "src/main/cpp/CMakeLists.txt" } }
-  app/src/main/cpp/CMakeLists.txt # add_library(pocketgb SHARED jni_bridge.c ${CORE_SRCS})
-  app/src/main/cpp/jni_bridge.c   # JNI → pocketgb.h
+  app/build.gradle.kts
+  app/src/main/cpp/
+    CMakeLists.txt        # biblioteca `pocketgb` = fuentes de core/src + los cuatro de abajo
+    pocketgb_jni.c        # puente JNI → API C, con validación de argumentos hostiles
+    native_session.c      # sesión nativa: estados, hilo de emulación, pacing, SRAM y estados
+    audio_output.c        # salida AAudio (callback de tiempo real)
+    audio_ring.c          # ring buffer SPSC lock-free
   app/src/main/java/com/joelbermudez/pocketgb/
-    MainActivity.kt, library/, emulator/, video/, audio/, input/, saves/, settings/
+    app/ emulator/ video/ audio/ input/ game/ saves/ library/ settings/ ui/
+  app/src/{debug,release,test,androidTest}/
 ```
-`CMakeLists.txt`:
-```cmake
-cmake_minimum_required(VERSION 3.22)
-project(pocketgb C)
-set(CMAKE_C_STANDARD 11)
-file(GLOB CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../core/src/*.c)
-add_library(pocketgb SHARED jni_bridge.c ${CORE_SRCS})
-target_include_directories(pocketgb PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../core/include)
-target_compile_options(pocketgb PRIVATE -Wall -Wextra -O2)
-target_link_libraries(pocketgb android aaudio log)
-```
+Mapa de paquetes en [android/README.md](../android/README.md).
+
+## Arquitectura
+- **`EmulatorSession`** (`emulator/`): envoltorio Kotlin del handle nativo. Un candado de handle evita usar la sesión durante el cierre; el handle nativo solo se destruye una vez.
+- **`GameSession`** (`game/`): une sesión, partida y estados de un juego abierto. Gestiona el cierre (sincrónico si puede; con un reaper si el hilo de guardado no responde) y la reparación tras un rollback fallido.
+- **`SaveCoordinator`** (`saves/`): un único hilo `pocketgb-saves` serializa todo el I/O de partidas y estados; vaciado síncrono de la SRAM, políticas de `SramFlushPolicy`, `AtomicSaveWriter` (temporal, `fsync`, rename) con 5 backups rotativos y espejo `<rom>.sav` junto a la ROM vía SAF (`SafSaveMirror`, `MirrorChannel`).
+- **`FingerprintOwnership`**: un solo dueño por huella de ROM (SHA-256 truncado a 128 bits) en el proceso; impide dos sesiones escribiendo la misma partida.
+- **`OrphanSessionRegistry`**: retiene las sesiones que no pudieron cerrarse (`KeptOpen`) hasta que el cierre termina, para no liberar la huella antes de tiempo.
+- **`GameplaySettings*`** (`settings/`): ajustes globales y por juego (color, paleta, controles, mando) con persistencia atómica en `filesDir/gameplay-settings.json`.
+- **`ArtworkStore`** (`library/artwork/`): portadas capturadas del último frame al cerrar, en caché con recorte de memoria (`onTrimMemory`).
+- **`GamepadInput`**, `GamepadMonitor`, `GamepadRouter` (`input/`): mapeo por posición, hat y stick; acciones configurables (menú, velocidad).
+- **`ControlsAccessibilityHelper`** (`input/`): `ExploreByTouchHelper` con un nodo virtual por control para TalkBack.
 
 ## Equivalencias iOS → Android
 | Pieza | iOS | Android |
 |---|---|---|
-| UI | SwiftUI | Jetpack Compose |
-| Imagen del juego | `MTKView` + textura 160×144 nearest | `SurfaceView` + `ANativeWindow_setBuffersGeometry(160·k, 144·k, RGBA_8888)` + `ANativeWindow_lock`. El escalado nearest ×k (entero) se hace en C, así el compositor no aplica filtro bilineal perceptible. Alternativa: `GLSurfaceView` con `GL_NEAREST`. |
-| Audio | `AVAudioSourceNode` | AAudio en modo `PERFORMANCE_MODE_LOW_LATENCY` con data callback nativo que lee el mismo ring buffer SPSC (en C) |
-| Hilo de emulación | `Thread` Swift | `pthread` nativo creado desde JNI (evita la GC en el bucle) |
-| Controles translúcidos | `UIView` multitouch | `View` personalizada con `onTouchEvent` multipuntero (`ACTION_POINTER_DOWN/UP`, `getPointerId`), con la misma geometría y opacidades de [04](04-ios-spec.md) |
-| Háptica | `UIImpactFeedbackGenerator` | `view.performHapticFeedback(KEYBOARD_TAP)` |
-| Mandos | `GameController` | `onKeyDown`/`onGenericMotionEvent` (`KEYCODE_BUTTON_A`, `AXIS_HAT_X/Y`) |
-| Biblioteca | Document picker de carpeta + security-scoped bookmark | `ACTION_OPEN_DOCUMENT_TREE` + `takePersistableUriPermission(READ|WRITE)` + `DocumentFile.fromTreeUri` (funciona con Google Drive, carpeta local o SD) |
-| Escritura atómica | `replaceItemAt` | Local: `File.createTempFile` + `FileOutputStream.fd.sync()` + `renameTo` en `filesDir`. Espejo SAF: `contentResolver.openOutputStream(uri, "wt")` |
-| Ciclo de vida | `scenePhase` | `ON_PAUSE` → flush síncrono de la SRAM; `ON_STOP` → detener el audio |
+| UI | SwiftUI | Jetpack Compose (Material 3, color dinámico) |
+| Imagen del juego | `MTKView` + textura 160×144 nearest | `SurfaceView` + `ANativeWindow`; escalado entero nearest ×k en C |
+| Audio | `AVAudioSourceNode` | AAudio `LOW_LATENCY`, callback nativo que lee el ring SPSC; fallback a reloj si no hay audio |
+| Hilo de emulación | `Thread` Swift | hilo nativo creado en `native_session.c` (sin GC en el bucle) |
+| Controles | `UIView` multitouch | `View` personalizada con multitoque (`GameControlsView`, `TouchInputEngine`) |
+| Háptica | `UIImpactFeedbackGenerator` | `performHapticFeedback` |
+| Mandos | `GameController` | `GamepadInput` sobre `KeyEvent`/`MotionEvent` (botones, hat `AXIS_HAT_X/Y`, stick); mapeo por posición y reasignable |
+| Biblioteca | Document picker + bookmark | `ACTION_OPEN_DOCUMENT_TREE` + permisos persistentes (lectura y escritura); detección de revocación |
+| Escritura atómica | `replaceItemAt` | temporal + `fsync` + rename en `filesDir/saves`; espejo SAF junto a la ROM |
+| Ciclo de vida | `scenePhase` | observador de lifecycle: pausa y vaciado de SRAM; sin reanudación automática; rotación sin pausa (`configChanges`) |
 
-## Instalación (gratis, sin caducidad)
-```bash
-cd android && ./gradlew assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
-```
-Firmar con un keystore propio (`keytool -genkeypair`), guardado **fuera** del repo. Hay que habilitar en el teléfono *Opciones de desarrollador › Depuración USB*.
+## Estado por hito
+A1 a A5 cerrados y probados (A5 con prueba manual pendiente); A6 cerrado y auditado; A7 implementado y en auditoría; A8 en curso. Detalle y evidencia: [hitos/README.md](hitos/README.md) y `auditorias/A*-android-evidencia.md`. Las pruebas reales pendientes están en [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md). La UI del cable virtual no forma parte de Android v1.
 
-## Orden sugerido al portar
-Seguir M4 → M7 con estas equivalencias. El núcleo ya estará probado, así que el port es solo del frontend.
+## Instalación
+Debug por USB con `./gradlew :app:installDebug`, o Release firmado con un almacén de claves propio fuera del repo. Pasos en [07-instalacion-android.md](07-instalacion-android.md). El repositorio no define `signingConfigs`: el APK Release sale sin firmar.

@@ -31,8 +31,13 @@ DerivedData/
 *.xcuserstate
 # Android
 android/**/build/
+android/**/.cxx/
 android/.gradle/
 android/local.properties
+android/.idea/
+android/build/screenshots/
+*.jks
+*.keystore
 .DS_Store
 __pycache__/
 gba/tests/roms

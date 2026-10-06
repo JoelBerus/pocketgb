@@ -15,7 +15,7 @@ Con un lector USB de cartuchos, por ejemplo **GBxCart RW** (insideGadgets) o **G
 3. Comprueba en PocketGB que los checksums coinciden (A15). Si no coinciden, limpia los contactos y repite el volcado.
 
 ## Dónde viven
-- `iCloud Drive/PocketGB/` (o la carpeta que elijas en la app), **privada, sin compartir**.
+- `iCloud Drive/PocketGB/` (o la carpeta que elijas en la app), **privada, sin compartir**. En Android, una carpeta local, de tarjeta SD o de Drive elegida con el selector del sistema (SAF); la app escribe `<rom>.sav` junto a la ROM, nunca la ROM.
 - Si quieres un respaldo, usa un disco local cifrado. **Nunca** GitHub, ni público ni privado, ni un enlace compartido de Drive.
 
 ## Protecciones del repo

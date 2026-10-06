@@ -32,5 +32,18 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 | G8 · App: pantalla, controles y audio | ☁️ + CI macOS · 🍎 | ✅ implementado y auditado (Opus: APROBAR CON CAMBIOS → corregido, H11 en G9); 🍎 pendiente de Joel: 60 fps, Kirby ≥ 30 min con cierre forzado, audio y L/R |
 | G9 · Cierre | ☁️ + 🍎 | ☁️ regresión y documentación hechas ([G9-evidencia](../auditorias/G9-evidencia.md)); faltan la prueba de Joel, la auditoría final Codex y la PR a `main` con su aprobación |
 
+**Hitos Android A1–A8** (app nativa Kotlin/Compose, plan en [../diseno-android/SPEC.md](../diseno-android/SPEC.md) §7):
+
+| Hito | Estado |
+|---|---|
+| A1 · Fundamentos | ✅ cerrado ([evidencia](../auditorias/A1-android-evidencia.md)) |
+| A2 · Core y vídeo | ✅ cerrado ([evidencia](../auditorias/A2-android-evidencia.md)) |
+| A3 · Audio, input y ciclo de vida | ✅ cerrado, probado por Joel ([evidencia](../auditorias/A3-android-evidencia.md)) |
+| A4 · Biblioteca | ✅ cerrado, probado por Joel ([evidencia](../auditorias/A4-android-evidencia.md)) |
+| A5 · Partidas y estados | ✅ implementado y auditado en 7 vueltas; prueba manual de Joel pendiente ([PRUEBAS-JOEL](../PRUEBAS-JOEL.md)) ([evidencia](../auditorias/A5-android-evidencia.md)) |
+| A6 · Paridad visual | ✅ cerrado y auditado (Opus y DeepSeek, respuesta A6-R; kill-test 50/50) ([evidencia](../auditorias/A6-android-evidencia.md)) |
+| A7 · Robustez | 🟡 implementado (L1 a L4), pendiente de auditoría y de pruebas reales ([evidencia](../auditorias/A7-android-evidencia.md)) |
+| A8 · Cierre | 🟡 en curso: documentación, `docs/07-instalacion-android.md`, `docs/PRUEBAS-JOEL.md`, icono adaptativo y versión 1.0.0 ([evidencia](../auditorias/A8-android-evidencia.md)); pendientes: literales `Text("…")` a `strings.xml`, auditoría conjunta y pruebas reales de Joel |
+
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ajustes (lista) -->
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_group_game">Juego</string>
+    <string name="settings_group_library">Biblioteca y partidas</string>
+    <string name="settings_emulation">Emulación</string>
+    <string name="settings_controls">Controles</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_display">Pantalla</string>
+    <string name="settings_library">Biblioteca</string>
+    <string name="settings_saves">Partidas</string>
+    <string name="settings_storage">Almacenamiento</string>
+    <string name="settings_appearance">Apariencia</string>
+    <string name="settings_about">Acerca de</string>
+    <string name="settings_back">Volver</string>
+    <string name="settings_persist_failed">No se pudieron guardar los ajustes en el teléfono. Se reintentará con el siguiente cambio.</string>
+
+    <!-- Controles -->
+    <string name="controls_opacity_header">Opacidad en horizontal</string>
+    <string name="controls_opacity_label">Opacidad</string>
+    <string name="controls_opacity_value">%1$d %%</string>
+    <string name="controls_opacity_footer">Cambia solo el aspecto sobre el juego: cada control conserva su área táctil y su capa oscura para leerse sobre escenas claras.</string>
+    <string name="controls_dpad_header">Cruceta</string>
+    <string name="controls_dpad_label">Cruceta</string>
+    <string name="controls_dpad_cross">Game Boy</string>
+    <string name="controls_dpad_arrows">Flechas separadas</string>
+    <string name="controls_dpad_footer">Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de consola. Ambas admiten diagonales.</string>
+    <string name="controls_group_header">Controles</string>
+    <string name="controls_size_label">Tamaño</string>
+    <string name="controls_size_small">Pequeño</string>
+    <string name="controls_size_normal">Normal</string>
+    <string name="controls_size_large">Grande</string>
+    <string name="controls_visibility_label">Mostrar</string>
+    <string name="controls_visibility_always">Siempre</string>
+    <string name="controls_visibility_on_touch">Al tocar</string>
+    <string name="controls_visibility_hidden">Ocultos</string>
+    <string name="controls_haptics">Háptica</string>
+    <string name="controls_layout_header">Disposición</string>
+    <string name="controls_reset_portrait">Restablecer disposición vertical</string>
+    <string name="controls_reset_landscape">Restablecer disposición horizontal</string>
+    <string name="controls_layout_footer">Para mover los controles, abre el menú del juego y elige «Personalizar controles». Vertical y horizontal se guardan por separado.</string>
+
+    <!-- Pantalla -->
+    <string name="display_preview_description">Vista previa de la pantalla, proporción 10:9</string>
+    <string name="display_preview_footer">Game Boy: 160 × 144 píxeles (10:9). La imagen nunca se estira.</string>
+    <string name="display_integer_scale">Escala entera en horizontal</string>
+    <string name="display_filter_label">Filtro</string>
+    <string name="display_filter_value">Píxeles nítidos</string>
+    <string name="display_scale_footer">Con escala entera todos los píxeles tienen el mismo tamaño; puede quedar un borde negro. En vertical la imagen ocupa todo el ancho.</string>
+
+    <!-- Emulación -->
+    <string name="emulation_header">Juegos de Game Boy</string>
+    <string name="emulation_color_label">Color en juegos de Game Boy</string>
+    <string name="emulation_palette_label">Paleta</string>
+    <string name="emulation_footer">Como en una Game Boy Color: los juegos de Game Boy se ven con una paleta de color. «Automática» es la que elegiría la consola por el título; las demás, las combinaciones de botones al encenderla. Se aplica al abrir el juego. Los estados guardados en un modo no se cargan en el otro.</string>
+    <string name="emulation_gbc_label">Juegos de Game Boy Color</string>
+    <string name="emulation_gbc_value">Siempre en color</string>
+    <string-array name="compat_palette_names">
+        <item>Automática</item>
+        <item>→</item>
+        <item>←</item>
+        <item>↑</item>
+        <item>↓</item>
+        <item>→ + A</item>
+        <item>← + A</item>
+        <item>↑ + A</item>
+        <item>↓ + A</item>
+        <item>→ + B</item>
+        <item>← + B</item>
+        <item>↑ + B</item>
+        <item>↓ + B</item>
+    </string-array>
+
+    <!-- Audio -->
+    <string name="audio_volume_label">Volumen</string>
+    <string name="audio_volume_value">%1$d %%</string>
+    <string name="audio_footer_system">El sonido sigue el volumen multimedia del teléfono.</string>
+    <string name="audio_background_label">En segundo plano</string>
+    <string name="audio_background_value">Pausa</string>
+    <string name="audio_background_footer">Al salir de PocketGB el juego se pausa y la partida se guarda. No hay audio en segundo plano.</string>
+
+    <!-- Almacenamiento -->
+    <string name="storage_header">En este teléfono</string>
+    <string name="storage_saves">Partidas y copias</string>
+    <string name="storage_states">Estados guardados</string>
+    <string name="storage_artwork">Portadas</string>
+    <string name="storage_footer">Los juegos (ROM) están en tu carpeta y PocketGB no los copia, así que no ocupan espacio de la app. La copia de cada partida junto al ROM tampoco se cuenta.</string>
+    <string name="storage_clear_artwork">Borrar portadas</string>
+    <string name="storage_clear_footer">Las portadas son capturas de la última escena jugada; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.</string>
+    <string name="storage_clear_title">¿Borrar las portadas?</string>
+    <string name="storage_clear_body">Las partidas, las copias y los estados se conservan.</string>
+    <string name="storage_cleared">Portadas borradas</string>
+
+    <!-- Biblioteca -->
+    <string name="library_settings_view_header">Presentación</string>
+    <string name="library_settings_layout">Vista</string>
+    <string name="library_settings_sort">Ordenar por</string>
+    <string name="library_settings_folder_header">Carpeta de juegos</string>
+    <string name="library_settings_folder_footer">PocketGB lee los ROM de esta carpeta sin copiarlos ni modificarlos.</string>
+    <string name="library_settings_hidden_footer">Ocultar un juego no borra el ROM, ni la partida, ni sus copias.</string>
+    <string name="library_settings_show">Mostrar</string>
+    <string name="library_settings_show_description">Mostrar %1$s</string>
+
+    <!-- Partidas -->
+    <string name="saves_footer">La partida de cada juego se guarda en este teléfono y se copia junto al ROM. PocketGB conserva las 5 versiones anteriores.</string>
+    <string name="saves_current_saved">Guardada · %1$s</string>
+    <string name="saves_backup_latest">Copia más reciente · %1$s</string>
+    <string name="saves_restore_footer">Restaurar no borra nada: la partida actual se guarda antes como copia.</string>
+
+    <!-- Apariencia -->
+    <string name="appearance_footer">El juego siempre se muestra sobre fondo oscuro, sea cual sea el modo, para no deslumbrar ni restar contraste a los controles.</string>
+
+    <!-- Por juego (también lo usa la hoja de ajustes del juego) -->
+    <string name="setting_global">Global</string>
+    <string name="setting_customized">Personalizado</string>
+
+    <!-- Acerca de -->
+    <string name="about_version">Versión</string>
+    <string name="about_core">Núcleo</string>
+    <string name="about_core_value">PocketGB core (C11)</string>
+    <string name="about_consoles">Consolas</string>
+    <string name="about_consoles_value">Game Boy y Game Boy Color</string>
+    <string name="about_privacy_header">Privacidad</string>
+    <string name="about_privacy_body">PocketGB no se conecta a internet: sin telemetría, sin anuncios y sin descargar portadas. Tus juegos y partidas se quedan en tu teléfono y en la carpeta que elijas.</string>
+    <string name="about_games_header">Juegos</string>
+    <string name="about_games_body">Usa solo ROM volcados de tus propios cartuchos. PocketGB no incluye juegos ni el software de arranque de Nintendo.</string>
+    <string name="about_licenses">Licencias de terceros</string>
+
+    <!-- Licencias -->
+    <string name="licenses_title">Licencias</string>
+    <string name="licenses_sameboy_title">SameBoy</string>
+    <string name="licenses_sameboy_body">Tablas de paletas de compatibilidad de Game Boy Color (core/src/cgb.c), transcritas de BootROms/cgb_boot.asm.</string>
+
+    <!-- Portada generada -->
+    <string name="placeholder_description">Sin captura, portada generada para %1$s</string>
+    <!-- A8-S: literales extraídos -->
+    <string name="settings_appearance_title">Apariencia</string>
+    <string name="settings_appearance_back">Volver</string>
+    <string name="settings_appearance_dynamic_color">Color dinámico</string>
+    <string name="settings_appearance_dynamic_color_summary">Usa los colores del fondo de pantalla</string>
+    <string name="settings_library_current_folder">Carpeta actual</string>
+    <string name="settings_library_rescan">Volver a escanear</string>
+    <string name="settings_library_forget">Olvidar carpeta</string>
+    <string name="settings_library_forget_summary">No borra ningún archivo, solo deja de usar la carpeta.</string>
+    <string name="settings_library_hidden_title">Juegos ocultos</string>
+    <string name="settings_library_hidden_none">Ningún juego oculto</string>
+    <string name="settings_library_hidden_none_summary">Los juegos que ocultes aparecerán aquí.</string>
+    <string name="settings_library_forget_dialog_title">¿Olvidar la carpeta?</string>
+    <string name="settings_library_forget_confirm">Olvidar</string>
+    <string name="settings_library_forget_cancel">Cancelar</string>
+    <string name="settings_library_forget_dialog_body">PocketGB dejará de usarla y soltará el permiso. No se borra ningún ROM ni partida; puedes elegirla de nuevo cuando quieras.</string>
+</resources>
