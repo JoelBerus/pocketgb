@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.ByteFormat
+import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.settings.StorageUsage
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
@@ -54,7 +55,8 @@ fun StorageSettingsScreen(onBack: () -> Unit) {
         formatSize = { ByteFormat.format(it) },
         onClearArtwork = {
             scope.launch {
-                withContext(Dispatchers.IO) { StorageUsage.clearArtwork(context.filesDir) }
+                // A6-H5: el almacén compartido invalida la caché y la versión: Favoritos y Detalle sueltan las portadas borradas.
+                withContext(Dispatchers.IO) { ArtworkStore.shared(context).removeAll() }
                 refresh++
                 snackbar.showSnackbar(resources.getString(R.string.storage_cleared))
             }
