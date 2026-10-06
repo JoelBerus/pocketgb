@@ -85,6 +85,7 @@ struct RomInfo: Sendable {
 final class CoreBridge: ConsoleCore {
     let console = Console.gameBoy
     private let g: OpaquePointer
+    private var ramBytesAtLoad = 0
 
     init() throws(CoreError) {
         guard let g = gb_create() else { throw .outOfMemory }
@@ -119,6 +120,7 @@ final class CoreBridge: ConsoleCore {
         let fingerprint = withUnsafeBytes(of: info.fingerprint) { raw in
             raw.prefix(16).map { String(format: "%02x", $0) }.joined()
         }
+        ramBytesAtLoad = Int(info.sram_bytes)
         return RomInfo(title: title, cartType: info.cart_type, sramBytes: Int(info.sram_bytes),
                        hasBattery: info.has_battery, hasRTC: info.has_rtc,
                        headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
@@ -142,6 +144,8 @@ final class CoreBridge: ConsoleCore {
     // MARK: SRAM
 
     var sramSaveSize: Int { gb_sram_save_size(g) }
+    /// Pie del RTC (48 B en MBC3 con reloj): lo que `sramSave()` añade a la RAM.
+    var sramFooterBytes: Int { sramSaveSize - ramBytesAtLoad }
     var sramDirty: Bool { gb_sram_dirty(g) }
     func clearSRAMDirty() { gb_sram_clear_dirty(g) }
 

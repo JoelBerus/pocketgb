@@ -177,7 +177,10 @@ final class EmulatorSession: @unchecked Sendable {
         if let state {
             let previous = try core.stateSave()
             let sramBefore = try ramBytes()
-            try core.stateLoad(state)
+            do { try core.stateLoad(state) } catch CoreError.stateConfig {
+                // Otra configuración (tipo de partida, reloj, BIOS): no es vigente (INT-H2).
+                throw StateError.notCurrent
+            }
             guard try ramBytes() == sramBefore else {
                 try? core.stateLoad(previous)
                 frames.publish { core.copyFramebuffer(to: $0) }
@@ -186,7 +189,7 @@ final class EmulatorSession: @unchecked Sendable {
             // La RAM ya es la de disco: si solo cambia el pie del RTC no se persiste nada
             // (no rota backups ni reescribe el espejo, D81V2-H4). Sin copia confirmada
             // (lectura fallida al abrir) sí se pasa por el flush.
-            let ramOnDisk = confirmed.map { $0.prefix(info.sramBytes) == sramBefore }
+            let ramOnDisk = confirmed.map { $0.dropLast(core.sramFooterBytes) == sramBefore }
             if ramOnDisk != true {
                 guard flushSRAM(sync: true) else {
                     try? core.stateLoad(previous)
@@ -201,9 +204,10 @@ final class EmulatorSession: @unchecked Sendable {
         startThreadAndAudio()
     }
 
-    /// Solo los bytes de RAM de cartucho, sin el pie del RTC (que sí cambia con un estado).
+    /// El medio real completo (tras `sramLoad`, no el tamaño provisional de `info`), sin el
+    /// pie del RTC (que sí cambia con un estado) (INT-H1).
     private func ramBytes() throws -> Data {
-        try core.sramSave().prefix(info.sramBytes)
+        try core.sramSave().dropLast(core.sramFooterBytes)
     }
 
     @MainActor

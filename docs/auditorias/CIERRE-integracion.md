@@ -8,7 +8,7 @@ Rama `cierre-integracion` (desde `main` `76492f4`, sin push).
 | 2 | `g8-gba-controls` (GBA G0–G9, auditado) | `8328fcc` | `94b53fa` |
 
 ## Conflictos y resolución
-Git solo marcó 6 archivos (11 bloques); el resto de los que predijo `merge-tree` (DebugScreenRouter, ControlsOverlayView, GameDetailsView, GameListItem, LibraryPreferences(+Tests), LibraryView, screens.txt, hitos/README.md) se fusionaron solos con el orden D8.1 → GBA; se comprobó que compilan y pasan los tests. `screens.txt` queda con 114 IDs, sin duplicados.
+Git solo marcó 6 archivos (11 bloques); el resto de los que predijo `merge-tree` (DebugScreenRouter, ControlsOverlayView, GameDetailsView, GameListItem, LibraryPreferences(+Tests), LibraryView, screens.txt, hitos/README.md) se fusionaron solos con el orden D8.1 → GBA; se comprobó que compilan y pasan los tests. `screens.txt` queda con 95 IDs, sin duplicados.
 
 | Archivo | Bloques | Resolución |
 |---|---|---|
@@ -31,3 +31,19 @@ No se tocó `core/` ni `gba/`. Ninguna funcionalidad eliminada. La ruta de parti
 ## Pendiente
 - Port Android (`codex/android-port`) se fusiona después.
 - Prueba 🍎 de Joel en el iPhone (D8.1 + Kirby GBA) y aprobación del PR a `main`.
+
+## Revisión independiente (Opus): APROBAR CON CAMBIOS → INT-H1…H4
+
+Informe: [CIERRE-integracion-revision.md](CIERRE-integracion-revision.md).
+
+- **INT-H1 (alta, regla 6) corregido.** `EmulatorSession.ramBytes()` y la comparación con lo confirmado en disco usaban `info.sramBytes` (en GBA con EEPROM autodetectada, el tamaño provisional de 512 B). Ahora comparan `sramSave().dropLast(core.sramFooterBytes)`, el medio real completo; `ConsoleCore.sramFooterBytes` es el pie RTC (GB: `sramSaveSize` menos la RAM de la cabecera; GBA: 16 B con reloj, 0 sin él). Tests nuevos en `GBATests`: `eepromAutoStateDifferingPastByte512IsRejectedWithoutWriting` (rojo antes: «an error was expected but none was thrown»; verde después, disco intacto) y `eepromAutoStateMatchingTheSaveResumesWithoutWriting`. Los tests GB de D8.1 (`StateSRAMTests`, incluidos `newerMirrorRejects…` y RTC MBC3) siguen en verde.
+- **INT-H2 (baja) corregido.** `start(restoring:)` convierte `CoreError.stateConfig` en `StateError.notCurrent`, así `AppState` retira el `.auto` de otra configuración. Test `automaticStateOfAnotherConfigurationIsNotCurrent` (rojo antes: lanzaba `CoreError.stateConfig`).
+- **INT-H3 (baja, doc) corregido:** «95 IDs».
+- **INT-H4 (baja, doc) corregido:** `ESTADO.md` unifica: auditoría Opus final de GBA hecha (`G9-opus.md`); queda la prueba 🍎 de Joel; la auditoría Codex es opcional.
+
+Salidas:
+```
+GBATests + StateSRAMTests: Test run with 31 tests in 2 suites passed — TEST SUCCEEDED
+PocketGBTests completa:    Test run with 130 tests in 12 suites passed — TEST SUCCEEDED
+Release generic/iOS:       ** BUILD SUCCEEDED **
+```

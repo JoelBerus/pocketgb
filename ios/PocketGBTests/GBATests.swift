@@ -15,7 +15,7 @@ struct GBATests {
 
     /// ROM de 1 KiB: `b 0xC0` en la entrada, cabecera con el byte fijo 0x96 y su complemento,
     /// cadena `SRAM_V113` (SRAM de 32 KiB) y, en 0xC0, `*(u8*)0x0E000000 = value; b .`.
-    static func rom(title: String = "POCKETGBA", value: UInt8 = 0x42) -> Data {
+    static func rom(title: String = "POCKETGBA", value: UInt8 = 0x42, tag: String = "SRAM_V113") -> Data {
         var rom = [UInt8](repeating: 0, count: 0x400)
         func word(_ at: Int, _ w: UInt32) {
             for k in 0..<4 { rom[at + k] = UInt8(truncatingIfNeeded: w >> (8 * UInt32(k))) }
@@ -30,7 +30,7 @@ struct GBATests {
         word(0xC4, 0xE3A0_1000 | UInt32(value))     // mov r1, #value
         word(0xC8, 0xE5C0_1000)                     // strb r1, [r0]
         word(0xCC, 0xEAFF_FFFE)                     // b .
-        let tag = Array("SRAM_V113".utf8)
+        let tag = Array(tag.utf8)
         rom.replaceSubrange(0x200..<(0x200 + tag.count), with: tag)
         return Data(rom)
     }
@@ -197,6 +197,56 @@ struct GBATests {
         let info = try core.loadROM(Self.rom(), bios: nil, unixTime: 0, saveType: o.gbaSaveType, rtc: o.gbaRTC)
         #expect(info.sramBytes == 64 * 1024 && !info.hasRTC)
         #expect(EmulatorSession.validSaveSizes(info) == [64 * 1024])
+    }
+
+    // MARK: - Continuación exacta con EEPROM autodetectada (INT-H1, INT-H2)
+
+    /// Estado automático de una sesión EEPROM sin ajuste cuyo `.sav` local de 8 KiB es `save`.
+    private func eepromAutoState(_ save: Data) throws -> (rom: Data, state: Data) {
+        let rom = Self.rom(tag: "EEPROM_V124")
+        let probe = try GBACoreBridge()
+        let fingerprint = try probe.loadROM(rom, bios: nil, unixTime: 0).fingerprint
+        try SaveStore(directory: dir, fingerprint: fingerprint).save(save)
+        let s = try EmulatorSession(romData: rom, savesDirectory: dir, console: .gameBoyAdvance, onAudioInterrupted: {})
+        s.start(); s.pause()
+        let state = try s.saveState().state
+        s.stop()
+        return (rom, state)
+    }
+
+    @Test func eepromAutoStateDifferingPastByte512IsRejectedWithoutWriting() throws {
+        let old = Data((0..<8192).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 1) })
+        let (rom, state) = try eepromAutoState(old)
+        var newer = old
+        newer[4096] ^= 0xFF
+        let probe = try GBACoreBridge()
+        let fingerprint = try probe.loadROM(rom, bios: nil, unixTime: 0).fingerprint
+        try SaveStore(directory: dir, fingerprint: fingerprint).save(newer)
+        let before = try diskState()
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, console: .gameBoyAdvance, onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
+        #expect(try diskState() == before)
+    }
+
+    @Test func eepromAutoStateMatchingTheSaveResumesWithoutWriting() throws {
+        let save = Data((0..<8192).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 1) })
+        let (rom, state) = try eepromAutoState(save)
+        let before = try diskState()
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, console: .gameBoyAdvance, onAudioInterrupted: {})
+        try session.start(restoring: state)
+        session.pause(); session.stop()
+        #expect(try diskState() == before)
+    }
+
+    /// INT-H2: un `.auto` de otra configuración (aquí, con BIOS real) se trata como no vigente.
+    @Test func automaticStateOfAnotherConfigurationIsNotCurrent() throws {
+        let rom = Self.rom()
+        let bios = Data(count: GBACoreBridge.biosBytes)
+        let other = try GBACoreBridge()
+        _ = try other.loadROM(rom, bios: bios, unixTime: 0)
+        let state = try other.stateSave()
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, console: .gameBoyAdvance, onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
     }
 
     // MARK: - Tipo de partida forzado, de extremo a extremo (G8-H2, G8-H3)

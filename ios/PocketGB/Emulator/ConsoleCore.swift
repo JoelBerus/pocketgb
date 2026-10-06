@@ -61,6 +61,8 @@ protocol ConsoleCore: AnyObject {
     /// La partida del cartucho como un único bloque (el `.sav` que se guarda y se refleja
     /// junto al ROM).
     var sramSaveSize: Int { get }
+    /// Bytes al final de `sramSave()` que no son partida sino reloj (pie RTC); 0 sin reloj.
+    var sramFooterBytes: Int { get }
     var sramDirty: Bool { get }
     func clearSRAMDirty()
     func sramLoad(_ data: Data) throws(CoreError)

@@ -123,6 +123,7 @@ final class GBACoreBridge: ConsoleCore {
 
     // MARK: Partida
 
+    var sramFooterBytes: Int { hasRTC ? Self.rtcBytes : 0 }
     var sramSaveSize: Int { gba_save_size(g) + (hasRTC ? Self.rtcBytes : 0) }
     var sramDirty: Bool { gba_save_dirty(g) }
     func clearSRAMDirty() { gba_save_clear_dirty(g) }
