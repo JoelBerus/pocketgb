@@ -12,7 +12,6 @@
     <string name="library_scanning">Buscando juegos…</string>
     <string name="library_scanning_progress">Buscando juegos… %1$d de %2$d</string>
     <string name="library_updating_description">Actualizando la biblioteca</string>
-    <string name="library_folder_label">Carpeta %1$s</string>
     <string name="library_results_one">1 resultado</string>
     <string name="library_results_many">%1$d resultados</string>
     <string name="library_no_results_title">Sin resultados para «%1$s»</string>
@@ -80,7 +79,6 @@
 
     <!-- Detalle -->
     <string name="details_back">Volver</string>
-    <string name="details_artwork_placeholder">Sin captura, portada generada</string>
     <string name="details_played">Jugado</string>
     <string name="details_save">Partida</string>
     <string name="details_size">Tamaño</string>

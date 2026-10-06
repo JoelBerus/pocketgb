@@ -128,6 +128,16 @@ open class EmulatorSession : AutoCloseable {
         }
     }
 
+    /** Solo el fotograma actual (RGBA8888, 160x144), sin serializar el estado. Exige la sesión en pausa (A6-H4). */
+    open fun copyFrame(): IntArray {
+        requirePaused("copiar la pantalla")
+        return withHandle { nativeHandle ->
+            val pixels = IntArray(CoreBridge.FRAME_PIXELS)
+            checkNative("copiar la pantalla", NativeLibrary.nativeSessionCopyFrame(nativeHandle, pixels))
+            pixels
+        }
+    }
+
     /**
      * Aplica un estado sin más: un estado dañado o de otro ROM se rechaza antes de tocar nada, y nunca
      * sustituye la SRAM por su cuenta (la persistencia la decide `GameSession`). Exige la sesión en pausa.

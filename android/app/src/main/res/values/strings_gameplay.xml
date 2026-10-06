@@ -40,7 +40,6 @@
     <string name="editor_smaller">Más pequeño</string>
     <string name="editor_larger">Más grande</string>
     <string name="editor_size">%1$s · %2$d %%</string>
-    <string name="editor_size_description">Tamaño de %1$s: %2$d por ciento</string>
     <string name="editor_control_dpad">Cruceta</string>
     <string name="editor_control_a">A</string>
     <string name="editor_control_b">B</string>

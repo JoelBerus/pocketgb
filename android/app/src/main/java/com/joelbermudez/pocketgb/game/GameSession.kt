@@ -648,7 +648,7 @@ class GameSession(
     private fun captureParkedFrame() {
         val callback = parkedFrameCallback ?: return
         runCatching {
-            if (session.state.value == SessionState.Paused) callback(session.saveState().pixels)
+            if (session.state.value == SessionState.Paused) callback(session.copyFrame())
         }
     }
 

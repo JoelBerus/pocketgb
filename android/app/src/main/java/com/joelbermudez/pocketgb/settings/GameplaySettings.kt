@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.settings
 
+import com.joelbermudez.pocketgb.emulator.EmulationOptions
+import com.joelbermudez.pocketgb.emulator.GbModel
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsOrientation
@@ -8,6 +10,10 @@ import com.joelbermudez.pocketgb.input.PadAction
 import android.view.KeyEvent
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 
 /** Máximo id de paleta de compatibilidad (`GB_COMPAT_PALETTES` en `core/include/pocketgb.h`); 0 = automática. */
@@ -108,8 +114,17 @@ data class GameOverrides(
 
 enum class SelectedModel { AUTO, DMG, CGB }
 
-/** Resultado de resolver global + por juego. L2 lo traduce a su `EmulationOptions` (GbModel + paleta). */
-data class EmulationSelection(val model: SelectedModel, val compatPalette: Int)
+/** Resultado de resolver global + por juego; [toOptions] lo traduce a las opciones del núcleo (GbModel + paleta). */
+data class EmulationSelection(val model: SelectedModel, val compatPalette: Int) {
+    fun toOptions(): EmulationOptions = EmulationOptions(
+        model = when (model) {
+            SelectedModel.AUTO -> GbModel.AUTO
+            SelectedModel.DMG -> GbModel.DMG
+            SelectedModel.CGB -> GbModel.CGB
+        },
+        compatPalette = compatPalette.coerceIn(0, MAX_COMPAT_PALETTE),
+    )
+}
 
 @Serializable
 data class GameplaySettingsData(
@@ -212,6 +227,13 @@ data class GameplaySettingsData(
     }
 
 }
+
+/**
+ * Cambios de paleta (global o del juego [fingerprint]) posteriores al valor actual, sin repetidos (A6-H2). Un `StateFlow`
+ * no es estado de snapshot de Compose: se observa como flujo, no con `snapshotFlow`.
+ */
+fun Flow<GameplaySettingsData>.compatPaletteChanges(fingerprint: String): Flow<Int> =
+    map { it.emulation(fingerprint, false).compatPalette }.distinctUntilChanged().drop(1)
 
 private const val EPSILON = 1e-4f
 

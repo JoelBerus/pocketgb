@@ -28,18 +28,6 @@ class StorageUsageTest {
     }
 
     @Test
-    fun clearArtworkOnlyTouchesArtwork() {
-        write("saves/a.sav", 10)
-        write("states/a.state", 20)
-        write("artwork/x.png", 30)
-        write("artwork/sub/y.png", 40)
-        StorageUsage.clearArtwork(tmp.root)
-        assertEquals(StorageUsage(10, 20, 0), StorageUsage.measure(tmp.root))
-        assertTrue(File(tmp.root, "saves/a.sav").exists())
-        assertTrue(File(tmp.root, "states/a.state").exists())
-    }
-
-    @Test
     fun doesNotFollowSymlinksOutsideTheFolder() {
         write("outside/big.bin", 5000)
         write("saves/a.sav", 7)

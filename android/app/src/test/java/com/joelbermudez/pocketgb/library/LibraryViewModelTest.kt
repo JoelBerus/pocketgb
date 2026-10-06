@@ -584,6 +584,25 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun aRemovedGameIsForgottenSoItIsNewAgainIfItReappears() {
+        val vm = viewModel()
+        vm.rescan()
+        vm.awaitSettled()
+        // B desaparece de la carpeta (borrado o renombrado): el escaneo completo lo olvida.
+        tree = FakeTree(listOf(node("a.gb")), mapOf("a.gb" to rom("ALPHA")))
+        vm.rescan()
+        await { vm.state.first { it is LibraryState.Ready && it.entries.size == 1 } }
+        // Reaparece: ya no estaba en el escaneo anterior, así que es «Nuevo».
+        tree = FakeTree(
+            listOf(node("b.gb"), node("a.gb")),
+            mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("BETA")),
+        )
+        vm.rescan()
+        val back = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 2 } } as LibraryState.Ready
+        assertEquals(listOf("BETA"), back.entries.filter { it.isNew }.map { it.title })
+    }
+
+    @Test
     fun choosingAnotherFolderRestartsTheKnownGames() {
         val vm = viewModel()
         vm.rescan()

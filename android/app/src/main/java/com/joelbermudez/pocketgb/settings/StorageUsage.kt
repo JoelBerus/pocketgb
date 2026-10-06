@@ -19,17 +19,5 @@ data class StorageUsage(val saves: Long = 0, val states: Long = 0, val artwork: 
             states = size(File(filesDir, "states")),
             artwork = size(File(filesDir, "artwork")),
         )
-
-        /** Borra el contenido de `artwork/` y nada más: jamás toca `saves/` ni `states/`. */
-        fun clearArtwork(filesDir: File) {
-            val dir = File(filesDir, "artwork")
-            if (Files.isSymbolicLink(dir.toPath())) return
-            dir.listFiles()?.forEach { deleteTree(it) }
-        }
-
-        private fun deleteTree(file: File) {
-            if (!Files.isSymbolicLink(file.toPath())) file.listFiles()?.forEach { deleteTree(it) }
-            file.delete()
-        }
     }
 }

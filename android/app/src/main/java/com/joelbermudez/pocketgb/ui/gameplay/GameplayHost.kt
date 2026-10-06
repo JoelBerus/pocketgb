@@ -36,16 +36,14 @@ import com.joelbermudez.pocketgb.input.PadAction
 import com.joelbermudez.pocketgb.input.PadOutput
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
+import com.joelbermudez.pocketgb.settings.compatPaletteChanges
 import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import androidx.compose.foundation.background
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 
 /**
  * Raíz del juego: pinta la partida a pantalla completa si hay sesión (sin ruta en el back stack), o
@@ -143,9 +141,7 @@ fun GameplayHost(
     // nunca cambia con la sesión abierta. La escala la aplica GameSurface (K3).
     LaunchedEffect(game, prefs.volume) { game.setVolume(prefs.volume) }
     LaunchedEffect(game) {
-        snapshotFlow { settings.state.value.emulation(game.fingerprint, false).compatPalette }
-            .distinctUntilChanged()
-            .drop(1)
+        settings.state.compatPaletteChanges(game.fingerprint)
             .collect { palette -> runCatching { game.setCompatPalette(palette) } }
     }
 

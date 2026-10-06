@@ -10,6 +10,8 @@
 /* gb_result no tiene "argumento inválido" (core/ no se toca): el puente usa el siguiente código libre
  * y CoreError.fromResult lo traduce a CoreError.InvalidArgument. */
 #define JNI_ERR_INVALID_ARGUMENT 17
+_Static_assert(GB_ERR_BUFFER_TOO_SMALL == 16,
+    "gb_result cambió: JNI_ERR_INVALID_ARGUMENT debe seguir siendo el siguiente código libre");
 
 static bool options_valid(jint model, jint compat_palette) {
     return model >= (jint)GB_MODEL_AUTO && model <= (jint)GB_MODEL_CGB &&

@@ -235,7 +235,9 @@ class LibraryViewModel(
 
     /**
      * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
-     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]).
+     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
+     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo». Un
+     * listado vacío no poda (un proveedor en la nube con un fallo pasajero no debe olvidar toda la biblioteca).
      */
     private fun markNew(entries: List<RomEntry>): List<RomEntry> {
         synchronized(persistLock) {
@@ -254,6 +256,8 @@ class LibraryViewModel(
             if (ids.isNotEmpty()) mutate { it.acknowledge(ids) }
             return entries
         }
+        val gone = known - ids
+        if (gone.isNotEmpty() && ids.isNotEmpty()) mutate { it.copy(knownIds = it.knownIds - gone) }
         val fresh = ids - known
         val toAnnounce = fresh - announcedNew
         if (toAnnounce.isNotEmpty()) {

@@ -28,6 +28,7 @@ import com.joelbermudez.pocketgb.saves.saf.SafSaveMirror
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -134,15 +135,20 @@ class GameLauncher(
     private val mirrorIdleWaitMs: Long = 5_000,
     /** Propiedad exclusiva por huella: una partida solo la tiene una sesión, huérfana, reparación o restauración (A5V3-H1). */
     private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
+    /**
+     * Opciones de emulación según los ajustes (A6-H1): recibe la huella SHA-256 del ROM y si su byte `0x143`
+     * marca un cartucho CGB. La app real la alimenta con `GameplaySettingsRepository`; por defecto, AUTO y paleta 0.
+     */
+    private val emulationFor: (fingerprint: String, isCgbRom: Boolean) -> EmulationOptions = { _, _ -> EmulationOptions() },
 ) {
     /**
-     * [options] se fijan al abrir (modelo y paleta). L3/L4 las resuelven con `GameplaySettingsData.emulation(huella, esCgb)`
-     * (L1) y las pasan aquí; volumen, escala y paleta en caliente los aplica el ViewModel sobre `GameSession`.
+     * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
+     * de la huella y del byte `0x143` del ROM leído; volumen, escala y paleta en caliente los aplica el ViewModel.
      */
-    suspend fun open(entry: RomEntry, options: EmulationOptions = EmulationOptions()): OpenResult =
+    suspend fun open(entry: RomEntry, options: EmulationOptions? = null): OpenResult =
         withContext(io + NonCancellable) { openBlocking(entry, options) }
 
-    fun openBlocking(entry: RomEntry, options: EmulationOptions = EmulationOptions()): OpenResult {
+    fun openBlocking(entry: RomEntry, options: EmulationOptions? = null): OpenResult {
         entry.problem?.let { return OpenResult.Failed(OpenError.Unplayable(it)) }
         if (!hasFolderPermission()) return OpenResult.Failed(OpenError.PermissionRevoked)
         val rom = try {
@@ -167,6 +173,7 @@ class GameLauncher(
         }
         if (rom.size > LibraryScanner.MAX_ROM_BYTES) return OpenResult.Failed(OpenError.RomTooLarge)
 
+        val resolved = options ?: resolveOptions(rom)
         val session = try {
             newSession()
         } catch (error: CoreError) {
@@ -176,7 +183,7 @@ class GameLauncher(
         var lease: FingerprintOwnership.Lease? = null
         try {
             val info = try {
-                session.load(rom, now() / 1000, options)
+                session.load(rom, now() / 1000, resolved)
             } catch (error: CoreError) {
                 return OpenResult.Failed(OpenError.RomRejected(error))
             }
@@ -266,5 +273,17 @@ class GameLauncher(
                 try { session.close() } finally { lease?.close() }
             }
         }
+    }
+
+    /** Huella (SHA-256 del ROM completo) y marca CGB (`0x143` con el bit 7) para pedir las opciones a los ajustes. */
+    private fun resolveOptions(rom: ByteArray): EmulationOptions {
+        if (rom.size <= CGB_FLAG_OFFSET) return EmulationOptions()
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(rom).joinToString("") { "%02x".format(it) }
+        val isCgbRom = (rom[CGB_FLAG_OFFSET].toInt() and 0x80) != 0
+        return emulationFor(fingerprint, isCgbRom)
+    }
+
+    private companion object {
+        const val CGB_FLAG_OFFSET = 0x143
     }
 }

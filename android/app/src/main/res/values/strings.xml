@@ -3,10 +3,6 @@
     <string name="app_name">PocketGB</string>
 
     <!-- Pausa -->
-    <string name="pause_title">Juego en pausa</string>
-    <string name="pause_continue">Continuar</string>
-    <string name="pause_states">Estados</string>
-    <string name="pause_exit">Salir</string>
     <string name="pause_saving">Guardando…</string>
     <string name="opening_game">Abriendo el juego…</string>
 
@@ -23,13 +19,6 @@
     <string name="state_load">Cargar</string>
     <string name="state_delete">Eliminar</string>
     <string name="state_preview">Captura de %1$s</string>
-    <string name="state_replace_title">¿Reemplazar %1$s?</string>
-    <string name="state_replace_body">Se perderá el estado guardado antes en esa ranura.</string>
-    <string name="state_replace_confirm">Reemplazar</string>
-    <string name="state_load_title">¿Cargar %1$s?</string>
-    <string name="state_load_body">Se perderá el progreso desde la última vez que guardaste. Antes se guardará el estado actual en Automático.</string>
-    <string name="state_load_body_auto">Se perderá el progreso desde la última vez que guardaste.</string>
-    <string name="state_load_confirm">Cargar</string>
     <string name="state_delete_title">¿Eliminar %1$s?</string>
     <string name="state_delete_body">No se puede deshacer.</string>
     <string name="state_delete_confirm">Eliminar</string>
