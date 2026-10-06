@@ -1,11 +1,9 @@
 package com.joelbermudez.pocketgb.ui.details
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -20,11 +18,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -46,12 +45,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.ByteFormat
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
@@ -59,10 +64,12 @@ import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.components.EmptyState
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
+import com.joelbermudez.pocketgb.ui.components.ConsoleChip
+import com.joelbermudez.pocketgb.ui.components.GameArtwork
 import com.joelbermudez.pocketgb.ui.components.HideGameDialog
+import com.joelbermudez.pocketgb.ui.components.relativeDateText
 import com.joelbermudez.pocketgb.ui.library.ScanningPane
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 fun GameDetailsScreen(
@@ -70,6 +77,7 @@ fun GameDetailsScreen(
     gameId: String,
     onPlay: (RomEntry) -> Unit,
     onBack: () -> Unit,
+    gameplaySettings: GameplaySettingsRepository? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -93,6 +101,7 @@ fun GameDetailsScreen(
         value = DetailsLoad.Loading
         value = viewModel.loadDetails(entry.id)
     }
+    var showSettings by remember { mutableStateOf(false) }
     GameDetailsContent(
         entry = entry,
         load = load,
@@ -105,6 +114,14 @@ fun GameDetailsScreen(
             onBack()
         },
         onBack = onBack,
+        fingerprint = prefs.fingerprints[entry.id],
+        onOpenSettings = { showSettings = true },
+    )
+    GameSettingsHost(
+        entry = entry.takeIf { showSettings },
+        library = viewModel,
+        repository = gameplaySettings ?: GameplaySettingsRepository.shared(LocalContext.current),
+        onDismiss = { showSettings = false },
     )
 }
 
@@ -126,7 +143,7 @@ private fun GameUnavailable(onBack: () -> Unit) {
 @Composable
 private fun BackButton(onBack: () -> Unit) {
     IconButton(onClick = onBack) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.details_back))
     }
 }
 
@@ -143,14 +160,28 @@ fun GameDetailsContent(
     onHide: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Huella del ROM si ya se conoce (portada real); si no, se usa la de [load] o el placeholder por ruta. */
+    fingerprint: String? = null,
+    onOpenSettings: () -> Unit = {},
 ) {
     var confirmHide by remember { mutableStateOf(false) }
+    val artworkKey = fingerprint ?: (load as? DetailsLoad.Loaded)?.details?.fingerprint
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { BackButton(onBack) },
+                actions = {
+                    IconButton(onClick = onToggleFavorite, modifier = Modifier.testTag("game-details-star")) {
+                        Icon(
+                            if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = stringResource(
+                                if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add,
+                            ),
+                        )
+                    }
+                },
             )
         },
     ) { padding ->
@@ -162,21 +193,16 @@ fun GameDetailsContent(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Artwork()
+            GameArtwork(
+                entry,
+                artworkKey,
+                Modifier.fillMaxWidth().testTag("game-details-artwork"),
+                shape = MaterialTheme.shapes.large,
+            )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(entry.title, style = MaterialTheme.typography.headlineSmall)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ) {
-                        Text(
-                            entry.systemShort,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
+                    ConsoleChip(entry.isColor)
                     Text(
                         if (entry.subfolder.isEmpty()) entry.fileName else "${entry.subfolder} · ${entry.fileName}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -198,34 +224,26 @@ fun GameDetailsContent(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play"),
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(if (lastPlayedAt != null) "Continuar" else "Jugar", modifier = Modifier.padding(start = 8.dp))
-            }
-
-            Facts(entry, load, lastPlayedAt)
-
-            OutlinedButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-favorite"),
-            ) {
-                Icon(
-                    if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
+                val played = lastPlayedAt != null || entry.mirrorSaveDate != null
                 Text(
-                    if (favorite) "Quitar de favoritos" else "Añadir a favoritos",
+                    stringResource(if (played) R.string.details_continue else R.string.details_play),
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
+
+            Stats(entry, lastPlayedAt)
+            SecondaryActions(favorite, onToggleFavorite, onOpenSettings)
+            Facts(entry, load)
+
             OutlinedButton(
                 onClick = { confirmHide = true },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-hide"),
             ) {
                 Icon(Icons.Outlined.VisibilityOff, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text("Ocultar de PocketGB", modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(R.string.details_hide), modifier = Modifier.padding(start = 8.dp))
             }
             Text(
-                "Ocultar no borra el ROM ni la partida.",
+                stringResource(R.string.details_hide_footer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
@@ -244,23 +262,74 @@ fun GameDetailsContent(
     }
 }
 
+/** Jugado, Partida (fecha del `.sav` junto al ROM) y Tamaño, en tres columnas. */
 @Composable
-private fun Artwork() {
-    // Portada local: hasta A6 es un marcador de posición con el icono del sistema.
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(2.2f)
-            .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.large)
-            .testTag("game-details-artwork"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Outlined.SportsEsports,
-            contentDescription = "Portada no disponible",
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
+private fun Stats(entry: RomEntry, lastPlayedAt: Long?) {
+    Column {
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("game-details-stats")) {
+            Stat(
+                stringResource(R.string.details_played),
+                lastPlayedAt?.let { relativeDateText(it) } ?: stringResource(R.string.details_never),
+                Modifier.weight(1f),
+            )
+            Stat(
+                stringResource(R.string.details_save),
+                entry.mirrorSaveDate?.let { relativeDateText(it) } ?: stringResource(R.string.details_none),
+                Modifier.weight(1f),
+            )
+            Stat(stringResource(R.string.details_size), ByteFormat.format(entry.sizeBytes), Modifier.weight(1f))
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier.padding(horizontal = 4.dp).semantics(mergeDescendants = true) {}) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+    }
+}
+
+/** Favorito, Estados (aún no) y Ajustes del juego. */
+@Composable
+private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, onOpenSettings: () -> Unit) {
+    val favoriteLabel = stringResource(if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add)
+    val soon = stringResource(R.string.details_states_soon)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = onToggleFavorite,
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-favorite")
+                .semantics { contentDescription = favoriteLabel },
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+        ) {
+            Icon(
+                if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(stringResource(R.string.game_favorite), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+        }
+        OutlinedButton(
+            onClick = {},
+            enabled = false,
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-states")
+                .semantics { stateDescription = soon },
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+        ) {
+            Icon(Icons.Outlined.ViewAgenda, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(stringResource(R.string.details_states), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+        }
+        OutlinedButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("game-details-settings")
+                .semantics { contentDescription = "Ajustes del juego" },
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+        ) {
+            Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(stringResource(R.string.details_settings), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+        }
     }
 }
 
@@ -282,16 +351,8 @@ private fun ProblemCard(message: String) {
 }
 
 @Composable
-private fun Facts(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long?) {
-    val lastPlayed = remember(lastPlayedAt) {
-        lastPlayedAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
-            ?: "Nunca"
-    }
+private fun Facts(entry: RomEntry, load: DetailsLoad) {
     Column {
-        HorizontalDivider()
-        Fact("Sistema", entry.system)
-        Fact("Tamaño del archivo", ByteFormat.format(entry.sizeBytes))
-        Fact("Última partida", lastPlayed)
         when (load) {
             DetailsLoad.Loading -> if (entry.problem == null) {
                 Row(
@@ -304,7 +365,10 @@ private fun Facts(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long?) {
                 }
             }
             is DetailsLoad.Failed -> Unit
-            is DetailsLoad.Loaded -> LoadedFacts(load.details)
+            is DetailsLoad.Loaded -> {
+                HorizontalDivider()
+                LoadedFacts(load.details)
+            }
         }
     }
 }

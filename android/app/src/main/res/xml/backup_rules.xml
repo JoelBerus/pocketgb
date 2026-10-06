@@ -7,6 +7,7 @@
     - `saves/backups/` NO: son copias rotativas de la propia partida (y la cuarentena de tamaños incorrectos);
       duplicarlas gasta la cuota de 25 MiB sin aportar nada que la partida actual no cubra.
     - `states/` NO: los save states son voluminosos y se regeneran jugando.
+    - `artwork/` NO: portadas capturadas al cerrar un juego (A6 K9); derivadas y regenerables jugando.
     - library_folder: guarda el URI de la carpeta de juegos. Es un permiso SAF ligado a este dispositivo;
       restaurarlo en otro sin su permiso persistente sería un puntero muerto, así que no se respalda.
     - files/library/preferences.json (favoritos, ocultos, huellas por ruta relativa) sí se respalda.
@@ -18,4 +19,5 @@
     <exclude domain="sharedpref" path="library_folder.xml" />
     <exclude domain="file" path="saves/backups/" />
     <exclude domain="file" path="states/" />
+    <exclude domain="file" path="artwork/" />
 </full-backup-content>

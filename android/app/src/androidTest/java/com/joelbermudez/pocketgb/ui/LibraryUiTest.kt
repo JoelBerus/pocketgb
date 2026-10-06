@@ -7,7 +7,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -79,7 +83,13 @@ class LibraryUiTest {
 
     /** Mantiene el estado como lo haría el ViewModel y aplica las preferencias reales. */
     @Composable
-    private fun LibraryHarness(state: LibraryState, initial: LibraryPreferencesData = LibraryPreferencesData()) {
+    private fun LibraryHarness(
+        state: LibraryState,
+        initial: LibraryPreferencesData = LibraryPreferencesData(),
+        artwork: Set<String> = emptySet(),
+        summary: Int = 0,
+        onSummaryShown: () -> Unit = {},
+    ) {
         var prefs by remember { mutableStateOf(initial) }
         var query by remember { mutableStateOf("") }
         var filter by remember { mutableStateOf(LibraryFilter.ALL) }
@@ -100,12 +110,23 @@ class LibraryUiTest {
                     onToggleFavorite = { prefs = prefs.toggleFavorite(it) },
                     onHide = { prefs = prefs.hide(it) },
                     onPlay = if (playFromRecent) ({ played += it.id }) else null,
+                    onGameSettings = { settingsOpened = it.id },
                 ),
+                newGamesSummary = summary,
+                onNewGamesSummaryShown = onSummaryShown,
+                artworkFingerprints = artwork,
             )
         }
     }
 
     private var playFromRecent = false
+
+    /** Huella sintética estable de un juego de prueba. */
+    private fun fingerprintOf(entry: RomEntry) = "%064x".format(entry.id.hashCode().toLong() and 0xFFFFFFFFL)
+
+    private fun withPlayed(vararg played: RomEntry, at: Long = 10L) =
+        played.fold(LibraryPreferencesData()) { prefs, entry -> prefs.recordPlayed(entry.id, fingerprintOf(entry), at) }
+    private var settingsOpened: String? = null
 
     private fun cards() = compose.onAllNodesWithTag("game-card")
 
@@ -159,14 +180,15 @@ class LibraryUiTest {
         compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
         cards().assertCountEquals(4)
         compose.onNodeWithTag("library-search").performTextInput("yel")
-        cards().assertCountEquals(1)
+        // Los resultados de búsqueda se muestran en lista.
+        compose.onAllNodesWithTag("game-list-item").assertCountEquals(1)
         compose.onNodeWithTag("library-search").performTextClearance()
         // El teclado ocupa parte de la pantalla (imePadding): se comprueba con scroll, no con visibilidad.
         compose.onNodeWithTag("library-collection").performScrollToNode(hasText("YELLOW"))
         compose.onNodeWithText("YELLOW").assertIsDisplayed()
         compose.onNodeWithTag("library-search").performTextInput("zzz")
         cards().assertCountEquals(0)
-        compose.onNodeWithText("Sin resultados").assertIsDisplayed()
+        compose.onNodeWithText("Sin resultados", substring = true).assertExists()
     }
 
     @Test
@@ -256,7 +278,8 @@ class LibraryUiTest {
         compose.setContent {
             LibraryHarness(
                 LibraryState.Ready(games, "Juegos"),
-                LibraryPreferencesData(lastPlayed = mapOf(alpha.id to 10L)),
+                withPlayed(alpha),
+                artwork = setOf(fingerprintOf(alpha)),
             )
         }
         compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
@@ -269,11 +292,12 @@ class LibraryUiTest {
         compose.setContent {
             LibraryHarness(
                 LibraryState.Ready(games, "Juegos"),
-                LibraryPreferencesData(lastPlayed = mapOf(alpha.id to 10L)),
+                withPlayed(alpha),
+                artwork = setOf(fingerprintOf(alpha)),
             )
         }
         compose.onNodeWithTag("recent-row").assertIsDisplayed()
-        compose.onNode(hasTestTag("game-card") and hasAnyAncestor(hasTestTag("recent-row"))).performClick()
+        compose.onNodeWithTag("continue-play").performClick()
         assertEquals(listOf("Alpha.gb"), played)
         assertEquals(null, opened)
     }
@@ -382,7 +406,7 @@ class LibraryUiTest {
     fun detailsToggleFavoriteAndConfirmHide() {
         compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details)) }
         compose.onNodeWithTag("game-details-favorite").performScrollTo().performClick()
-        compose.onNodeWithText("Quitar de favoritos").assertExists()
+        compose.onNodeWithTag("game-details-star").assert(hasContentDescription("Quitar de favoritos"))
         compose.onNodeWithTag("game-details-hide").performScrollTo().performClick()
         compose.onNodeWithText("oculto").assertDoesNotExist()
         compose.onNodeWithText("Ocultar").performClick()
@@ -554,5 +578,225 @@ class LibraryUiTest {
             compose.onAllNodesWithText("Juego no disponible").fetchSemanticsNodes().isNotEmpty()
         }
         dir.deleteRecursively()
+    }
+
+    // ---- A6-L3: carril, menú contextual, búsqueda, progreso y detalle ----
+
+    @Test
+    fun railShowsOnlyRecentGamesThatHaveCapturedArtwork() {
+        compose.setContent {
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"),
+                withPlayed(alpha, red, at = 10L),
+                artwork = setOf(fingerprintOf(alpha)), // red se jugó pero no tiene captura
+            )
+        }
+        compose.onNodeWithTag("recent-row").assertIsDisplayed()
+        compose.onAllNodesWithTag("continue-card").assertCountEquals(1)
+        compose.onNodeWithText("Continuar", substring = false).assertIsDisplayed()
+    }
+
+    @Test
+    fun railDoesNotAppearWhenNoPlayedGameHasArtwork() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha)) }
+        compose.onAllNodesWithTag("recent-row").assertCountEquals(0)
+    }
+
+    @Test
+    fun railIsHiddenOutsideTheAllFilter() {
+        compose.setContent {
+            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+        }
+        compose.onAllNodesWithTag("recent-row").assertCountEquals(1)
+        compose.onNodeWithTag("filter-GB").performClick()
+        compose.onAllNodesWithTag("recent-row").assertCountEquals(0)
+    }
+
+    @Test
+    fun tappingTheRailCoverOpensTheDetailsAndTheButtonOpensTheGame() {
+        playFromRecent = true
+        compose.setContent {
+            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+        }
+        compose.onNodeWithTag("continue-cover").performClick()
+        assertEquals("Alpha.gb", opened)
+        assertTrue(played.isEmpty())
+        compose.onNodeWithTag("continue-play").performClick()
+        assertEquals(listOf("Alpha.gb"), played)
+    }
+
+    @Test
+    fun contextMenuOffersEveryActionAndStatesAreDisabled() {
+        playFromRecent = true
+        compose.setContent { LibraryHarness(LibraryState.Ready(listOf(red), "Juegos")) }
+        compose.onNodeWithTag("game-card").performTouchInput { longClick() }
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
+        compose.onNodeWithText("Ver detalle").assertIsDisplayed()
+        compose.onNodeWithText("Añadir a favoritos").assertIsDisplayed()
+        compose.onNodeWithText("Estados (próximamente)").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Ajustes del juego").assertIsDisplayed()
+        compose.onNodeWithText("Ocultar de PocketGB").assertIsDisplayed()
+        compose.onNodeWithText("Jugar").performClick()
+        assertEquals(listOf("Red.gb"), played)
+    }
+
+    @Test
+    fun contextMenuGameSettingsAndDetailsInvokeTheirActions() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(listOf(red), "Juegos")) }
+        compose.onNodeWithTag("game-card").performTouchInput { longClick() }
+        compose.onNodeWithText("Ajustes del juego").performClick()
+        assertEquals("Red.gb", settingsOpened)
+        compose.onNodeWithTag("game-card").performTouchInput { longClick() }
+        compose.onNodeWithText("Ver detalle").performClick()
+        assertEquals("Red.gb", opened)
+    }
+
+    @Test
+    fun contextMenuDoesNotOfferPlayForAGameWithAProblem() {
+        playFromRecent = true
+        compose.setContent { LibraryHarness(LibraryState.Ready(listOf(broken), "Juegos")) }
+        compose.onNodeWithTag("game-card").performTouchInput { longClick() }
+        compose.onNodeWithText("Ver detalle").assertIsDisplayed()
+        compose.onAllNodesWithText("Jugar").assertCountEquals(0)
+    }
+
+    @Test
+    fun searchShowsTheResultCountInAList() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
+        compose.onNodeWithTag("library-search").performTextInput("yel")
+        compose.onNodeWithText("1 resultado").assertIsDisplayed()
+        compose.onNodeWithTag("library-search").performTextClearance()
+        compose.onNodeWithTag("library-search").performTextInput("l")
+        compose.onNodeWithText("3 resultados").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchInsideAFilterWithoutMatchesOffersToSearchEverywhere() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
+        compose.onNodeWithTag("filter-GBC").performClick()
+        compose.onNodeWithTag("library-search").performTextInput("red")
+        // El teclado ocupa parte de la pantalla (imePadding): se desplaza hasta el botón antes de tocarlo.
+        compose.onNodeWithText("Sin resultados para «red»").assertExists()
+        compose.onNodeWithText("Buscar en todos").performScrollTo().performClick()
+        compose.onNodeWithTag("filter-ALL").assertIsSelected()
+        compose.onNodeWithText("1 resultado").assertIsDisplayed()
+    }
+
+    @Test
+    fun anEmptyFilterOffersToShowAllGames() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
+        compose.onNodeWithTag("filter-FAVORITES").performClick()
+        compose.onNodeWithText("Ver todos").performClick()
+        compose.onNodeWithTag("filter-ALL").assertIsSelected()
+        cards().assertCountEquals(4)
+    }
+
+    @Test
+    fun headerShowsTheSectionTitleAndTheFolderName() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Mis juegos")) }
+        compose.onNodeWithText("Todos los juegos").assertIsDisplayed()
+        compose.onNodeWithText("Mis juegos").assertIsDisplayed()
+        compose.onNodeWithTag("filter-GB").performClick()
+        compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assert(hasText("GB"))
+    }
+
+    @Test
+    fun moreOptionsMenuRescansAndChangesFolder() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
+        compose.onNodeWithTag("view-menu").performClick()
+        compose.onNodeWithText("Volver a escanear").performClick()
+        assertEquals(1, rescanCount)
+        compose.onNodeWithTag("view-menu").performClick()
+        compose.onNodeWithText("Cambiar carpeta").performClick()
+        assertEquals(1, chooseCount)
+    }
+
+    @Test
+    fun scanProgressShowsXOfY() {
+        compose.setContent { LibraryHarness(LibraryState.Scanning(games, "Juegos", done = 3, total = 10)) }
+        compose.onNodeWithText("Buscando juegos… 3 de 10").assertIsDisplayed()
+        cards().assertCountEquals(4)
+    }
+
+    @Test
+    fun scanProgressWithoutPreviousGamesShowsXOfYToo() {
+        compose.setContent { LibraryHarness(LibraryState.Scanning(emptyList(), null, done = 2, total = 7)) }
+        compose.onNodeWithText("Buscando juegos… 2 de 7").assertIsDisplayed()
+    }
+
+    @Test
+    fun newGamesAreMarkedAndNeverPlayedGamesSaySo() {
+        compose.setContent {
+            LibraryHarness(LibraryState.Ready(listOf(red.copy(isNew = true), alpha), "Juegos"))
+        }
+        compose.onAllNodesWithText("Nuevo").assertCountEquals(1)
+        compose.onAllNodesWithText("Sin jugar").assertCountEquals(2)
+    }
+
+    @Test
+    fun aGameWithASaveNextToItShowsThePartidaDate() {
+        compose.setContent {
+            LibraryHarness(LibraryState.Ready(listOf(red.copy(mirrorSaveDate = System.currentTimeMillis() - 5 * 60_000)), "Juegos"))
+        }
+        compose.onNodeWithText("Partida hace 5 min").assertIsDisplayed()
+    }
+
+    @Test
+    fun newGamesSummaryAppearsOnceAndIsReported() {
+        var shown = 0
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), summary = 2, onSummaryShown = { shown++ }) }
+        compose.onNodeWithText("2 juegos nuevos en la carpeta").assertIsDisplayed()
+        compose.waitUntil(10_000) { shown == 1 }
+    }
+
+    @Test
+    fun permissionRevokedAlsoOffersRetry() {
+        compose.setContent { LibraryHarness(LibraryState.Failed(LibraryError.PermissionRevoked)) }
+        compose.onNodeWithText("Reintentar").performClick()
+        assertEquals(1, rescanCount)
+        assertEquals(0, chooseCount)
+    }
+
+    @Test
+    fun pullToRefreshRescans() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos")) }
+        compose.onNodeWithTag("library-collection").performTouchInput { swipeDown(startY = top + 40f, endY = bottom - 40f) }
+        compose.waitUntil(5_000) { rescanCount >= 1 }
+    }
+
+    @Test
+    fun detailsShowStatsContinueFromTheSaveAndOpenGameSettings() {
+        var settings = 0
+        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 2 * 3_600_000)
+        compose.setContent {
+            PocketGBTheme {
+                GameDetailsContent(
+                    entry = saved,
+                    load = DetailsLoad.Loaded(details),
+                    favorite = false,
+                    lastPlayedAt = null,
+                    onPlay = { played += saved.id },
+                    onToggleFavorite = {},
+                    onHide = {},
+                    onBack = {},
+                    onOpenSettings = { settings++ },
+                )
+            }
+        }
+        compose.onNodeWithText("Continuar").assertIsDisplayed() // hay partida junto al ROM aunque no se haya jugado aquí
+        compose.onNodeWithTag("game-details-stats").assertIsDisplayed()
+        compose.onNodeWithText("hace 2 h").assertIsDisplayed()
+        compose.onNodeWithText("Nunca").assertIsDisplayed()
+        compose.onNodeWithTag("game-details-states").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("game-details-settings").performScrollTo().performClick()
+        assertEquals(1, settings)
+    }
+
+    @Test
+    fun detailsOfAPlayedGameUseTheRealCoverWhenThereIsOne() {
+        // Sin captura en el almacén de la prueba: se ve el placeholder generado con su descripción accesible.
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details)) }
+        compose.onNodeWithTag("game-details-artwork").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Sin captura, portada generada para RED", useUnmergedTree = true).assertExists()
     }
 }

@@ -187,6 +187,12 @@ class GameSession(
 
     @Volatile private var closeResult: CloseResult? = null
 
+    /**
+     * Portada (A6-L3, K9): si está puesto, [tryClose] le entrega el último fotograma (sesión aparcada) tras el
+     * vaciado correcto y antes de liberar el handle nativo. Solo lee; un fallo nunca altera el [CloseResult].
+     */
+    @Volatile var parkedFrameCallback: ((IntArray) -> Unit)? = null
+
     /** Último plazo agotado de un vaciado del hilo principal (ns), o 0. */
     @Volatile private var lastTimeoutNs = 0L
 
@@ -606,7 +612,10 @@ class GameSession(
         }
         closeResult = result
         when (result) {
-            CloseResult.Closed -> try { settleDeferredRepair() } finally { try { session.close() } finally { dropLease() } }
+            CloseResult.Closed -> {
+                captureParkedFrame()
+                try { settleDeferredRepair() } finally { try { session.close() } finally { dropLease() } }
+            }
             is CloseResult.SaveThreadStuck -> {
                 Log.w(TAG, "El hilo de guardado no terminó (${result.threadName}); el handle nativo se libera cuando salga")
                 Thread({
@@ -633,6 +642,14 @@ class GameSession(
             }
         }
         return result
+    }
+
+    /** K9: entrega el último fotograma a [parkedFrameCallback]. Envuelto en `runCatching`: nunca cambia el cierre. */
+    private fun captureParkedFrame() {
+        val callback = parkedFrameCallback ?: return
+        runCatching {
+            if (session.state.value == SessionState.Paused) callback(session.saveState().pixels)
+        }
     }
 
     /** Bloquea hasta que el hilo de guardado haya salido de verdad (tras [tryClose] con [CloseResult.SaveThreadStuck]). */

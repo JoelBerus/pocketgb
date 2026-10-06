@@ -289,4 +289,19 @@ class SafLibraryTest {
         assertTrue(error.remote)
         assertEquals(DetailsLoad.Failed(DetailsError.Remote), await { vm.loadDetails(alfa.id) })
     }
+
+    // ---- A6-L3 (K20): fecha del .sav junto al ROM, sin abrir el archivo ----
+
+    @Test
+    fun scanReadsTheSiblingSavModificationDateInRootAndSubfolder() {
+        val rootMtime = 1_700_000_000_000L
+        val subMtime = 1_710_000_000_000L
+        fixtures.put("Alfa.sav", ByteArray(8192), rootMtime)
+        fixtures.put("Sub/Gamma.sav", ByteArray(8192), subMtime)
+        val entries = LibraryScanner.scan(tree()).associateBy { it.id }
+        assertEquals(rootMtime, entries.getValue("Alfa.gb").mirrorSaveDate)
+        assertEquals(subMtime, entries.getValue("Sub/Gamma.gb").mirrorSaveDate)
+        assertNull(entries.getValue("Beta.GBC").mirrorSaveDate)
+        assertFalse("el .sav no es una entrada", entries.keys.any { it.endsWith(".sav") })
+    }
 }

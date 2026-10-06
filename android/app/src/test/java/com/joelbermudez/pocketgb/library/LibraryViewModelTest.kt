@@ -527,4 +527,70 @@ class LibraryViewModelTest {
             await { vm.loadDetails(entry.id) },
         )
     }
+
+    // ---- A6-L3: progreso, nuevos y resumen ----
+
+    @Test
+    fun scanPublishesRealProgressAsDoneOfTotal() {
+        val seen = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Int>>()
+        val vm = viewModel()
+        scope.launch(Dispatchers.Unconfined) {
+            vm.state.collect { if (it is LibraryState.Scanning) seen += it.done to it.total }
+        }
+        vm.rescan()
+        vm.awaitSettled()
+        assertTrue("debe publicar el último avance 2 de 2: $seen", seen.contains(2 to 2))
+        assertTrue(seen.all { (done, total) -> done <= total })
+    }
+
+    @Test
+    fun firstScanOfAFolderNeverMarksGamesAsNewAndLaterScansDo() {
+        val vm = viewModel()
+        vm.rescan()
+        val first = vm.awaitSettled() as LibraryState.Ready
+        assertTrue(first.entries.none { it.isNew })
+        assertEquals(0, vm.newGamesSummary.value)
+        // Aparece un juego nuevo en la carpeta.
+        tree = FakeTree(
+            listOf(node("b.gb"), node("a.gb"), node("c.gb")),
+            mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("BETA"), "c.gb" to rom("GAMMA")),
+        )
+        vm.rescan()
+        val second = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 3 } } as LibraryState.Ready
+        assertEquals(listOf("GAMMA"), second.entries.filter { it.isNew }.map { it.title })
+        assertEquals(1, vm.newGamesSummary.value)
+        vm.dismissNewGamesSummary()
+        assertEquals(0, vm.newGamesSummary.value)
+    }
+
+    @Test
+    fun openingANewGameClearsItsNewMarkAndItStaysClearedAfterARescan() {
+        val vm = viewModel()
+        vm.rescan()
+        vm.awaitSettled()
+        tree = FakeTree(
+            listOf(node("a.gb"), node("c.gb")),
+            mapOf("a.gb" to rom("ALPHA"), "c.gb" to rom("GAMMA")),
+        )
+        vm.rescan()
+        val ready = await { vm.state.first { it is LibraryState.Ready && it.entries.any { e -> e.isNew } } } as LibraryState.Ready
+        val gamma = ready.entries.first { it.isNew }
+        vm.recordPlayed(gamma, "%064x".format(3), at = 10)
+        val cleared = vm.state.value as LibraryState.Ready
+        assertTrue(cleared.entries.none { it.isNew })
+        vm.rescan()
+        val again = await { vm.state.first { it is LibraryState.Ready && it !== cleared } } as LibraryState.Ready
+        assertTrue(again.entries.none { it.isNew })
+    }
+
+    @Test
+    fun choosingAnotherFolderRestartsTheKnownGames() {
+        val vm = viewModel()
+        vm.rescan()
+        vm.awaitSettled()
+        tree = FakeTree(listOf(node("z.gb")), mapOf("z.gb" to rom("ZETA")))
+        vm.chooseFolder("content://tree/Otra")
+        val ready = await { vm.state.first { it is LibraryState.Ready && it.entries.any { e -> e.title == "ZETA" } } } as LibraryState.Ready
+        assertTrue("el primer escaneo de otra carpeta no marca nada", ready.entries.none { it.isNew })
+    }
 }

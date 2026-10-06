@@ -7,6 +7,7 @@ import com.joelbermudez.pocketgb.library.ContentResolverRomSource
 import com.joelbermudez.pocketgb.library.LibraryFolderStore
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.isSafe
@@ -156,6 +157,7 @@ class GameplayViewModel(
                         _menu.value = GameMenu.None
                         _states.value = StatesUi()
                         _game.value = game
+                        attachCover(game)
                         watch(game)
                         result.warning?.let { _dialog.value = GameDialog.LoadWarning(it) }
                         result.notices.forEach { _notices.tryEmit(it) }
@@ -171,6 +173,7 @@ class GameplayViewModel(
     /** Solo pruebas: toma una partida ya abierta (sin pasar por el lanzador). */
     internal fun adopt(game: GameSession) {
         _game.value = game
+        attachCover(game)
     }
 
     private fun watch(game: GameSession) {
@@ -380,6 +383,24 @@ class GameplayViewModel(
             orphans.settle(game, RescueOutcome.KeptOpen)
         }
     }
+
+    // ------------------------------------------------------------------ portada (A6-L3, K9)
+
+    private var coverSink: ((String, IntArray) -> Unit)? = null
+
+    /** Quién guarda la portada al cerrar una partida (huella, fotograma). Sin sumidero no se captura nada. */
+    fun setCoverSink(sink: ((fingerprint: String, pixels: IntArray) -> Unit)?) {
+        coverSink = sink
+    }
+
+    private fun attachCover(game: GameSession) {
+        game.parkedFrameCallback = { pixels -> onClosed(game.fingerprint, pixels) }
+    }
+
+    /** Gancho de portada: lo llama [GameSession.tryClose] con la sesión aparcada. Mejor esfuerzo. */
+    internal fun onClosed(fingerprint: String, pixels: IntArray) {
+        coverSink?.invoke(fingerprint, pixels)
+    }
 }
 
 class GameplayViewModelFactory(
@@ -400,9 +421,10 @@ class GameplayViewModelFactory(
             mirrors = SafMirrorLocator(resolver, folders),
             hasFolderPermission = folders::hasPersistedPermission,
         )
+        val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(
             launcher = launcher,
             recordPlayed = { entry, fingerprint, at -> library.recordPlayed(entry, fingerprint, at) },
-        ) as T
+        ).also { it.setCoverSink { fingerprint, pixels -> artwork.saveAsync(fingerprint, pixels) } } as T
     }
 }

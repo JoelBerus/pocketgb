@@ -126,19 +126,28 @@ private fun AppScaffold(
                                 viewModel = library,
                                 onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
                                 onPlay = gameplay::open,
+                                gameplaySettings = gameplaySettings,
                             )
                         }
                         is LibraryRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() })
+                            GameDetailsScreen(
+                                library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                                gameplaySettings = gameplaySettings,
+                            )
                         }
                         FavoritesRoute.Root -> NavEntry(route) {
                             FavoritesScreen(
                                 viewModel = library,
                                 onOpenDetails = { navigationState.push(FavoritesRoute.Details(it)) },
+                                onPlay = gameplay::open,
+                                gameplaySettings = gameplaySettings,
                             )
                         }
                         is FavoritesRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() })
+                            GameDetailsScreen(
+                                library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                                gameplaySettings = gameplaySettings,
+                            )
                         }
                         SettingsRoute.Root -> NavEntry(route) {
                             SettingsScreen(

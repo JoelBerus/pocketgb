@@ -23,6 +23,10 @@ data class RomEntry(
     val problem: RomProblem?,
     /** Id de documento de la carpeta que contiene el ROM: ahí vive el `.sav` del espejo SAF. */
     val folderDocumentId: String? = null,
+    /** K19: no se había visto en el escaneo anterior y aún no se ha abierto. */
+    val isNew: Boolean = false,
+    /** K20: fecha de modificación (epoch ms) del `.sav` junto al ROM, solo informativa. `null` si no hay o no se sabe. */
+    val mirrorSaveDate: Long? = null,
 ) {
     val subfolder: String
         get() = id.substringBeforeLast('/', missingDelimiterValue = "")
