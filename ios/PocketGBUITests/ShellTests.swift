@@ -100,3 +100,33 @@ final class ShellLibraryTests: XCTestCase {
         XCTAssertFalse(app.buttons["game-card-Pruebas/rtc3test.gb"].exists)
     }
 }
+
+/// M9: cable link virtual. Abre dmg-acid2 y cgb-acid2 unidos (necesita `FIXTURE_DIR`).
+final class ShellLinkTests: XCTestCase {
+    @MainActor
+    func testSwitchAndExitTheCable() throws {
+        let fixtures = ProcessInfo.processInfo.environment["FIXTURE_DIR"] ?? ""
+        try XCTSkipIf(fixtures.isEmpty, "Sin FIXTURE_DIR")
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiStyle", "dark", "-rom", "\(fixtures)/dmg-acid2.gb",
+                               "-linkROM", "\(fixtures)/cgb-acid2.gbc"]
+        app.launch()
+
+        let toggle = app.buttons["hud-link-switch"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15), "No hay botón de cambio de juego")
+        XCTAssertGreaterThanOrEqual(toggle.frame.width, 44 - 0.01)
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44 - 0.01)
+        XCTAssertEqual(toggle.label, "Cambiar a CGB-ACID2")
+        toggle.tap()
+        XCTAssertTrue(app.buttons["Cambiar a DMG-ACID2"].waitForExistence(timeout: 5), toggle.label)
+
+        app.buttons["hud-menu"].tap()
+        XCTAssertTrue(app.buttons["pause-link-exit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pause-link-switch"].exists)
+        XCTAssertFalse(app.staticTexts["Estados guardados"].exists)
+        XCTAssertFalse(app.buttons["Estados guardados"].exists)
+        app.buttons["pause-link-exit"].tap()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "No volvió a las tabs")
+    }
+}

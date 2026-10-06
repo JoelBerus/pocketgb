@@ -42,6 +42,23 @@ struct GameplayHUD: View {
                 .accessibilityLabel("Avance rápido")
                 .accessibilityValue(state.gameSpeed > 1 ? "×\(state.gameSpeed)" : "Desactivado")
                 .accessibilityIdentifier("hud-speed")
+
+                // Cable link (M9): cambia el juego activo; el otro sigue en la miniatura.
+                if let link = state.link {
+                    Button {
+                        state.switchLinkSide()
+                    } label: {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.body.weight(.bold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .pocketGlass(in: Circle(), interactive: true)
+                    .accessibilityLabel("Cambiar a \(link.peerTitle)")
+                    .accessibilityIdentifier("hud-link-switch")
+                }
             }
         }
     }

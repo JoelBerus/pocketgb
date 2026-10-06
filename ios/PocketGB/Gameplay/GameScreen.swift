@@ -41,7 +41,13 @@ struct GameScreen: View {
                         controls(.portrait)
                             .ignoresSafeArea(edges: .bottom)
                             .overlay(alignment: .top) { hud.padding(.top, 6) }
+                            .overlay(alignment: .topTrailing) { peerPreview(width: 72) }
                     }
+                }
+                if orientation == .landscape {
+                    // Hija del ZStack raíz: respeta el área segura (recorte y Dynamic Island).
+                    peerPreview(width: 96)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 if state.paused {
                     // Frame atenuado detrás de la sheet de pausa.
@@ -79,6 +85,16 @@ struct GameScreen: View {
     @ViewBuilder private var hud: some View {
         if !state.editingControls {
             GameplayHUD()
+        }
+    }
+
+    /// Miniatura del otro juego del cable. Con el editor abierto se oculta con opacidad (no con
+    /// `if`) para no recrear la `MTKView`.
+    @ViewBuilder private func peerPreview(width: CGFloat) -> some View {
+        if let link = state.link {
+            LinkPeerPreview(link: link, width: width)
+                .padding(PocketSpacing.xs)
+                .opacity(state.editingControls ? 0 : 1)
         }
     }
 

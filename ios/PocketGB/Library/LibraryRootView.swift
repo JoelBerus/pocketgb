@@ -20,6 +20,14 @@ struct LibraryRootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .modifier(HideGameAlert())
+        .modifier(LinkContinueAlert())
+        .sheet(item: $state.linkPartnerSource, onDismiss: { state.startPendingLink() }) { entry in
+            LinkPartnerPicker(source: entry)
+                .environment(state)
+                #if DEBUG
+                .modifier(DebugDynamicType())   // la sheet no hereda el tipo accesible forzado (captura AX5)
+                #endif
+        }
         .sheet(item: Binding(get: { state.gameSettingsEntry }, set: { state.gameSettingsEntry = $0 })) { entry in
             GameSettingsView(entry: entry)
                 .environment(state)

@@ -124,3 +124,16 @@ game-settings-gba   portrait  dark  -screen game-settings-gba -demoLibrary stand
 game-settings-gba   portrait  light -screen game-settings-gba -demoLibrary standard
 game-settings-gba-ax5 portrait light -screen game-settings-gba-ax5 -demoLibrary standard -contentSizeCategory accessibility5
 customize-controls-gba-portrait-ax5 portrait dark -screen customize-controls-gba-portrait-ax5 -rom $FIXTURES/arm.gba -contentSizeCategory accessibility5
+
+# ---- M9 · Cable link virtual (dmg-acid2 y cgb-acid2, ROMs de prueba libres) ----
+gameplay-link-portrait  portrait  dark  -screen gameplay-link-portrait -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-landscape landscape dark  -screen gameplay-link-landscape -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-switched  portrait  dark  -screen gameplay-link-switched -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-pause     portrait  dark  -screen gameplay-link-pause -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc -paused
+gameplay-link-reduce-transparency landscape dark -screen gameplay-link-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc -reduceTransparency -controlOpacity 30
+link-partner-picker     portrait  light -screen link-partner-picker -demoLibrary standard
+link-partner-picker     portrait  dark  -screen link-partner-picker -demoLibrary standard
+link-partner-picker-ax5 portrait  light -screen link-partner-picker-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+link-open-refused       portrait  light -screen link-open-refused -demoLibrary standard -demoLinkError same-game
+link-open-refused       portrait  dark  -screen link-open-refused -demoLibrary standard -demoLinkError same-game
+link-continue-warning   portrait  light -screen link-continue-warning -demoLibrary standard

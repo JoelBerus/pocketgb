@@ -37,6 +37,7 @@ struct GameDetailsView: View {
                 }
                 stats(entry)
                 primaryAction(entry)
+                linkAction(entry)
                 secondaryActions(entry)
                 Button(role: .destructive) {
                     state.hideCandidate = entry
@@ -150,6 +151,21 @@ struct GameDetailsView: View {
         }
     }
 
+    /// Cable link (M9): solo juegos de Game Boy y Game Boy Color que se pueden jugar. Este juego
+    /// será el primer lado del cable.
+    @ViewBuilder private func linkAction(_ entry: RomEntry) -> some View {
+        if entry.isPlayable && entry.console == .gameBoy {
+            Button {
+                state.linkPartnerSource = entry
+            } label: {
+                Label("Conectar con otro juego…", systemImage: "cable.connector")
+                    .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+            }
+            .pocketGlassButton()
+            .accessibilityIdentifier("game-details-link")
+        }
+    }
+
     /// Favorito, estados y ajustes: estos dos últimos llegan en D5/D6.
     private func secondaryActions(_ entry: RomEntry) -> some View {
         GlassEffectContainer(spacing: PocketSpacing.xs) {
@@ -200,6 +216,9 @@ struct GameContextMenu: View {
                     state.open(entry: entry, mode: .fresh)
                 }
             }
+        }
+        if entry.isPlayable && entry.console == .gameBoy {
+            Button("Conectar con…", systemImage: "cable.connector") { state.linkPartnerSource = entry }
         }
         Button("Ver detalle", systemImage: "info.circle") { state.showDetails(entry, in: tab) }
         let favorite = state.libraryPrefs.isFavorite(entry)

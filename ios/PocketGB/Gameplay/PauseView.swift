@@ -6,6 +6,11 @@ import SwiftUI
 struct PauseView: View {
     @Environment(AppState.self) private var state
 
+    private var pauseTitle: String {
+        if let link = state.link { return link.activeTitle }
+        return state.session?.info.title.isEmpty == false ? state.session!.info.title : "Pausa"
+    }
+
     var body: some View {
         @Bindable var state = state
         NavigationStack(path: $state.pausePath) {
@@ -27,26 +32,51 @@ struct PauseView: View {
                     .listRowInsets(EdgeInsets())
                     .accessibilityIdentifier("pause-resume")
                 }
-                Section {
-                    NavigationLink(value: PauseRoute.states) {
-                        Label("Estados guardados", systemImage: "square.stack")
+                if let link = state.link {
+                    // Cable link (M9): sin estados guardados (§1.6).
+                    Section {
+                        Button("Cambiar a \(link.peerTitle) y continuar", systemImage: "arrow.left.arrow.right") {
+                            state.switchLinkSide()
+                            state.resume()
+                        }
+                        .accessibilityIdentifier("pause-link-switch")
+                        Button("Personalizar controles", systemImage: "slider.horizontal.3") {
+                            state.editingControls = true
+                            state.resumeKeepingEditorPaused()
+                        }
+                    } footer: {
+                        Text("Con el cable link no hay estados guardados: cargar uno en un juego rompería la conexión con el otro. Cada juego guarda su partida sola.")
                     }
-                    Button("Personalizar controles", systemImage: "slider.horizontal.3") {
-                        state.editingControls = true
-                        state.resumeKeepingEditorPaused()
+                    Section {
+                        Button("Salir del cable", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                            state.closeGame()
+                        }
+                        .accessibilityIdentifier("pause-link-exit")
+                    } footer: {
+                        Text("Al salir se guardan las dos partidas.")
                     }
-                } footer: {
-                    Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras.")
-                }
-                Section {
-                    Button("Salir del juego", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                        state.closeGame()
+                } else {
+                    Section {
+                        NavigationLink(value: PauseRoute.states) {
+                            Label("Estados guardados", systemImage: "square.stack")
+                        }
+                        Button("Personalizar controles", systemImage: "slider.horizontal.3") {
+                            state.editingControls = true
+                            state.resumeKeepingEditorPaused()
+                        }
+                    } footer: {
+                        Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras.")
                     }
-                } footer: {
-                    Text("Al salir se guarda la partida y un estado automático.")
+                    Section {
+                        Button("Salir del juego", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                            state.closeGame()
+                        }
+                    } footer: {
+                        Text("Al salir se guarda la partida y un estado automático.")
+                    }
                 }
             }
-            .navigationTitle(state.session?.info.title.isEmpty == false ? state.session!.info.title : "Pausa")
+            .navigationTitle(pauseTitle)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: PauseRoute.self) { route in
                 switch route {

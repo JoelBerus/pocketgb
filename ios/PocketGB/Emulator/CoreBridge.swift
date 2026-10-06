@@ -11,6 +11,10 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
     case gbaRomTooLarge, gbaBadHeader, biosSize
     /// Game Boy Advance: estado guardado con otro tipo de partida, reloj o BIOS.
     case stateConfig
+    /// Cable link virtual (M9): estados y SRAM del par no están disponibles.
+    case linkUnsupported
+    /// Cable link virtual: `gb_link_attach` rechazó el par (instancia repetida o ya conectada).
+    case linkAttachFailed
     case unknown(UInt32)
 
     /// `nil` si `r == GB_OK`.
@@ -54,6 +58,8 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .stateVersion: return "El estado es de una versión anterior de PocketGB."
         case .stateConfig:
             return "El estado se guardó con otra configuración (tipo de partida, reloj o BIOS) y no se puede cargar con la actual."
+        case .linkUnsupported: return "No disponible con el cable link."
+        case .linkAttachFailed: return "No se pudo conectar el cable link."
         case .stateROMMismatch: return "El estado es de otro juego, o de otro modo (Game Boy o Game Boy Color)."
         case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
@@ -125,6 +131,10 @@ final class CoreBridge: ConsoleCore {
                        hasBattery: info.has_battery, hasRTC: info.has_rtc,
                        headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
     }
+
+    /// Solo para `LinkCable`: el puntero `gb*` sigue siendo de este objeto, que debe seguir
+    /// vivo mientras esté conectado (el cable lo retiene).
+    var linkHandle: OpaquePointer { g }
 
     func setButtons(_ mask: UInt16) { gb_set_buttons(g, UInt8(truncatingIfNeeded: mask)) }
     func runFrame() { gb_run_frame(g) }
