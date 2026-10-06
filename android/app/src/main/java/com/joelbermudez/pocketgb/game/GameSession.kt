@@ -150,6 +150,9 @@ class GameSession(
     private val repairWaitMs: Long = 3_000,
     /** Plazo corto de los vaciados del hilo principal tras un [FlushResult.TimedOut] reciente (anti-ANR). */
     private val shortFlushMs: Long = 500,
+    /** Cierre del hilo de guardado; inyectable en pruebas para simular un fallo en pleno cierre (A5V6-H2). */
+    private val shutdownCoordinator: (SaveCoordinator, Long, Long) -> CloseResult =
+        { coordinator, graceMs, killWaitMs -> coordinator.shutdown(graceMs, killWaitMs) },
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -515,11 +518,13 @@ class GameSession(
      */
     fun tryClose(): CloseResult {
         if (!closedFlag.compareAndSet(false, true)) return closeResult ?: CloseResult.Closed
+        // A5V6-H2: si el cierre del coordinador falla a medias NO se puede asumir que el hilo de guardado terminó:
+        // se trata como "atascado" y el reaper espera su salida real (sin plazo) antes de cerrar y soltar el lease.
         val result = try {
-            coordinator.shutdown(closeGraceMs, closeKillWaitMs)
+            shutdownCoordinator(coordinator, closeGraceMs, closeKillWaitMs)
         } catch (error: Throwable) {
-            dropLease()
-            throw error
+            Log.w(TAG, "El cierre del hilo de guardado falló; se espera a su salida real antes de liberar la huella", error)
+            CloseResult.SaveThreadStuck(SaveCoordinator.THREAD_NAME)
         }
         closeResult = result
         when (result) {

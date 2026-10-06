@@ -361,13 +361,19 @@ class GameplayViewModel(
         // La huella queda bloqueada YA (síncrono, antes de que el rescate corra): hasta que la sesión se cierre nadie
         // puede abrirla ni restaurarla. El registro de la app hereda la sesión si el rescate no logra cerrarla.
         orphans.claim(game)
-        rescue {
-            val outcome = try {
-                kotlinx.coroutines.runBlocking { operations.withLock { game.rescueExit(rescueAttempts, rescueRetryDelayMs) } }
-            } catch (_: Throwable) {
-                RescueOutcome.KeptOpen
+        try {
+            rescue {
+                val outcome = try {
+                    kotlinx.coroutines.runBlocking { operations.withLock { game.rescueExit(rescueAttempts, rescueRetryDelayMs) } }
+                } catch (_: Throwable) {
+                    RescueOutcome.KeptOpen
+                }
+                orphans.settle(game, outcome)
             }
-            orphans.settle(game, outcome)
+        } catch (_: Throwable) {
+            // A5V6-H4: si el rescate no puede ni encolarse (executor rechazado, Error), la sesión ya reclamada pasa de
+            // inmediato al reintento del registro: nunca queda retenida sin nadie que la cierre.
+            orphans.settle(game, RescueOutcome.KeptOpen)
         }
     }
 }

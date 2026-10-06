@@ -148,6 +148,25 @@ class GameplayViewModelDestroyTest {
         vm3.game.value!!.close()
     }
 
+    /** A5V6-H4: el rescate no puede encolarse (executor que rechaza): la sesión pasa igualmente al registro y se cierra. */
+    @Test
+    fun onClearedWhenTheRescueCannotBeQueuedStillHandsTheSessionToTheRegistry() {
+        val vm = GameplayViewModel(
+            GameplayTestHost.launcher(root, com.joelbermudez.pocketgb.saves.PosixSaveFileOps, ownership = ownership),
+            rescue = { throw java.util.concurrent.RejectedExecutionException("sin hilos") },
+            rescueAttempts = 3,
+            rescueRetryDelayMs = 50,
+            orphans = orphans,
+        )
+        val game = openAndPlay(vm)
+
+        destroy(vm) // no debe propagar la excepción del executor
+        assertTrue("la huella queda bloqueada", ownership.isOwned(game.fingerprint) || game.isClosed)
+        assertTrue("el registro cierra la sesión por su cuenta", waitUntil(30_000) { game.isClosed && game.state.value == SessionState.Closed })
+        assertTrue("y libera la huella", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+        assertTrue(File(root, "saves/${game.fingerprint}.sav").exists())
+    }
+
     @Test
     fun onClearedWithAHealthyDiskSavesSavesAutoStateAndClosesOffTheMainThread() {
         val vm = newViewModel(com.joelbermudez.pocketgb.saves.PosixSaveFileOps)

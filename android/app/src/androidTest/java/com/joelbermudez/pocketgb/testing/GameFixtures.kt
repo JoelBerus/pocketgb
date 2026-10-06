@@ -107,6 +107,7 @@ fun openGame(
     closeKillWaitMs: Long = 5_000,
     ownership: FingerprintOwnership = FingerprintOwnership(),
     repairWaitMs: Long = 3_000,
+    shutdownCoordinator: ((com.joelbermudez.pocketgb.saves.SaveCoordinator, Long, Long) -> com.joelbermudez.pocketgb.saves.CloseResult)? = null,
 ): OpenedGame {
     val info = session.load(rom, 1_700_000_000)
     val fingerprint = info.fingerprintHex
@@ -123,11 +124,20 @@ fun openGame(
         baseline = session.copySram()
     }
     val lease = ownership.tryAcquire(fingerprint, "prueba") ?: error("la huella ya tiene dueño")
-    val game = GameSession(
-        session, info, states, target, baseline,
-        autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
-        closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
-        lease = lease, repairWaitMs = repairWaitMs,
-    )
+    val game = if (shutdownCoordinator == null) {
+        GameSession(
+            session, info, states, target, baseline,
+            autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
+            closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
+            lease = lease, repairWaitMs = repairWaitMs,
+        )
+    } else {
+        GameSession(
+            session, info, states, target, baseline,
+            autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
+            closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
+            lease = lease, repairWaitMs = repairWaitMs, shutdownCoordinator = shutdownCoordinator,
+        )
+    }
     return OpenedGame(game, store, states, root)
 }

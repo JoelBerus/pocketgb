@@ -365,6 +365,40 @@ class GameSessionHardeningTest {
         }
     }
 
+    /**
+     * A5V6-H2: si el cierre del coordinador lanza a medias, `tryClose` NO suelta la huella con el hilo de guardado
+     * vivo: la espera el reaper y solo se libera tras su salida real.
+     */
+    @Test
+    fun aFailingCoordinatorShutdownNeverReleasesTheLeaseWhileTheSaveThreadIsAlive() {
+        val ops = StallingOps()
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, autoTick = false, flushTimeoutMs = 300,
+            closeGraceMs = 200, closeKillWaitMs = 200, ownership = ownership,
+            // Cierra de verdad (el hilo atascado no sale) y después lanza: el cierre falló "a medias".
+            shutdownCoordinator = { c, grace, kill ->
+                c.shutdown(grace, kill)
+                throw IllegalStateException("fallo simulado en shutdown")
+            },
+        ).use { g ->
+            val game = g.game
+            game.start()
+            assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+            ops.arm()
+            assertEquals(FlushResult.TimedOut, game.pause())
+            assertTrue(ops.awaitEntered())
+
+            assertTrue("sin lanzar", game.tryClose() is CloseResult.SaveThreadStuck)
+            Thread.sleep(500)
+            assertTrue("con el hilo vivo la huella SIGUE con dueño", ownership.isOwned(game.fingerprint))
+            assertNull("nadie puede abrir ni restaurar", ownership.tryAcquire(game.fingerprint, "intruso"))
+
+            ops.release()
+            assertTrue("solo al terminar de verdad el hilo se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+        }
+    }
+
     // ---- DeepSeek H1 / A5V3: el reaper suelta el lease también ante interrupción
 
     @Test
