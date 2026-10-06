@@ -88,6 +88,35 @@ struct LinkSessionTests {
         #expect(try listing().isEmpty)
     }
 
+    /// M9-H2: el índice de partidas lleva el título de cabecera (o el nombre de archivo), no el alias.
+    @Test func indexTitlesIgnoreTheAliasAndFallBackToTheFileName() throws {
+        let link = try open(Self.game(LinkTestROMs.exchange(title: "MAESTRO", key: 0x5A, sc: 0x81), title: "Mi alias"),
+                            Self.game(LinkTestROMs.romOnly(title: ""), name: "sin-titulo.gb", title: "Otro alias"))
+        #expect(link.titles == ["Mi alias", "Otro alias"])
+        #expect(link.indexTitles == [link.infos[0].title, "sin-titulo.gb"])
+        #expect(link.infos[0].title == "MAESTRO")
+        link.session.start()
+        link.session.pause()
+        link.session.stop()
+    }
+
+    /// Observación del auditor: la comprobación de `.sameGame` va antes de `open`. Con un `.sav` local y un
+    /// espejo más nuevo, abrir instalaría el espejo (con backup) y cambiaría la carpeta.
+    @Test func sameGameIsRefusedBeforeOpeningEvenWithANewerMirror() throws {
+        let rom = LinkTestROMs.exchange(title: "IGUAL", key: 0x11, sc: 0x81)
+        let sav = SaveStore(directory: dir, fingerprint: try Self.fingerprint(rom))
+        try sav.save(Data(repeating: 0x11, count: 8_192))
+        let before = try listing()
+        let bytes = try Data(contentsOf: sav.saveURL)
+        let mirror = SaveMirror(romURL: dir.appendingPathComponent("igual.gb"))
+        let newer = SaveMirror.Snapshot.read(Data(repeating: 0x22, count: 8_192), Date().addingTimeInterval(3_600))
+        #expect(throws: LinkSession.Refusal.sameGame(title: "IGUAL")) {
+            _ = try open(Self.game(rom, mirror: mirror, snapshot: newer), Self.game(rom))
+        }
+        #expect(try Data(contentsOf: sav.saveURL) == bytes)
+        #expect(try listing() == before)
+    }
+
     @Test func sameGameWithoutBatteryOpens() throws {
         let rom = LinkTestROMs.romOnly(title: "TETRIS")
         let link = try open(Self.game(rom), Self.game(rom))

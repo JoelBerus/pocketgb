@@ -72,6 +72,12 @@ final class LinkSession {
     let infos: [RomInfo]
     /// Títulos visibles, por lado.
     let titles: [String]
+    /// Títulos para `SavesIndex` (M9-H2): el de la cabecera, o el nombre de archivo si está vacío, como el
+    /// juego suelto; nunca el alias del usuario (`titles` es solo para la interfaz).
+    var indexTitles: [String] {
+        zip(infos, fileNames).map { $0.title.isEmpty ? $1 : $0.title }
+    }
+    private let fileNames: [String]
     /// Frames del juego que no está activo (la miniatura).
     let peerFrames: FrameBuffers
     private let selector: LinkSideSelector
@@ -142,6 +148,7 @@ final class LinkSession {
                                   onAudioInterrupted: onAudioInterrupted)
         self.infos = infos
         self.titles = titles
+        self.fileNames = games.map(\.fileName)
         self.selector = selector
         self.peerFrames = peerFrames
         notice = switch notices.count {

@@ -412,7 +412,7 @@ final class AppState {
             link.session.start()
             for (i, info) in link.infos.enumerated() {
                 SavesIndex(directory: savesDirectory).record(fingerprint: info.fingerprint,
-                                                            title: link.titles[i], fileName: games[i].fileName)
+                                                            title: link.indexTitles[i], fileName: games[i].fileName)
                 if let id = entryIDs[i] {
                     libraryPrefs.recordPlayed(id: id, fingerprint: info.fingerprint, at: Date())
                 }
