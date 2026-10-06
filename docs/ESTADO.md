@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-10-06 · rama `cierre-integracion` lista para la PR a `main`: D8.1, GBA G0–G9, M9 UI del cable y Android A1–A8, cada bloque con auditoría Opus (y DeepSeek en A6/A7) respondida; auditoría conjunta de cierre APROBAR CON CAMBIOS (documental) respondida ([CIERRE-opus](auditorias/CIERRE-opus.md), [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)). Fusiones en la rama: `4d085c9` D8.1, `94b53fa` GBA, `ad446d9` M9, `70592b2` Android. Lo único que falta son las pruebas en dispositivo de Joel y sus decisiones ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)).
+**Actualizado:** 2026-10-06 · PR abierta: https://github.com/JoelBerus/pocketgb/pull/18 · rama `cierre-integracion` lista para la PR a `main`: D8.1, GBA G0–G9, M9 UI del cable y Android A1–A8, cada bloque con auditoría Opus (y DeepSeek en A6/A7) respondida; auditoría conjunta de cierre APROBAR CON CAMBIOS (documental) respondida ([CIERRE-opus](auditorias/CIERRE-opus.md), [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)). Fusiones en la rama: `4d085c9` D8.1, `94b53fa` GBA, `ad446d9` M9, `70592b2` Android. Lo único que falta son las pruebas en dispositivo de Joel y sus decisiones ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)).
 
 
 ## Hecho
