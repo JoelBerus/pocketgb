@@ -47,4 +47,31 @@ class CoreBridgeTest {
 
         assertThrows(CoreError.Closed::class.java) { core.runFrame() }
     }
+
+    @Test
+    fun rejectsOutOfRangeCompatPaletteInKotlinAndInC() {
+        CoreBridge().use { core ->
+            assertThrows(CoreError.InvalidArgument::class.java) {
+                core.loadRom(SyntheticRom.romOnly(), CoreOptions(model = CoreModel.CGB, compatPalette = 13))
+            }
+            for (id in 1..12) {
+                CoreBridge().use { other -> assertTrue(other.loadRom(SyntheticRom.romOnly(), CoreOptions(CoreModel.CGB, compatPalette = id)).cgbCompat) }
+            }
+        }
+        val handle = NativeLibrary.nativeCreate()
+        try {
+            assertEquals(17, NativeLibrary.nativeLoadRom(handle, SyntheticRom.romOnly(), 2, 0, 0L, 13))
+            assertEquals(17, NativeLibrary.nativeLoadRom(handle, SyntheticRom.romOnly(), 3, 0, 0L, 0))
+        } finally {
+            NativeLibrary.nativeDestroy(handle)
+        }
+    }
+
+    @Test
+    fun cgbOnlyRomWithDmgModelIsCgbOnlyError() {
+        val rom = SyntheticRom.withCgbFlag(SyntheticRom.romOnly(), 0xC0)
+        CoreBridge().use { core ->
+            assertThrows(CoreError.CgbOnly::class.java) { core.loadRom(rom, CoreOptions(model = CoreModel.DMG)) }
+        }
+    }
 }

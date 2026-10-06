@@ -30,6 +30,23 @@ object SyntheticRom {
         return rom
     }
 
+    /** Copia de [rom] con `0x143 = flag` y el checksum de cabecera recalculado (0xC0 = solo CGB). */
+    fun withCgbFlag(rom: ByteArray, flag: Int): ByteArray {
+        val copy = rom.copyOf()
+        copy[0x143] = flag.toByte()
+        var header = 0
+        for (index in 0x134..0x14C) header = (header - (copy[index].toInt() and 0xFF) - 1) and 0xFF
+        copy[0x14D] = header.toByte()
+        return copy
+    }
+
+    /** Copia de [rom] con el checksum de cabecera (0x14D) incorrecto. */
+    fun withBadHeaderChecksum(rom: ByteArray): ByteArray {
+        val copy = rom.copyOf()
+        copy[0x14D] = (copy[0x14D] + 1).toByte()
+        return copy
+    }
+
     /** Tipo de cartucho 0x03: MBC1 + RAM + batería. */
     const val MBC1_RAM_BATTERY = 0x03
 

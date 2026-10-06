@@ -64,6 +64,23 @@ class NativeAudioTest {
         }
     }
 
+    @Test
+    fun volumeIsHotAppliedKeepsTheStreamAndRecoversAfterZero() {
+        EmulatorSession().use { session ->
+            session.load(SyntheticRom.romOnly())
+            session.start()
+            waitUntil { session.audioState in setOf(AudioState.Live, AudioState.ClockFallback) }
+            val state = session.audioState
+            session.setVolume(0f)
+            assertEquals(0f, session.volume, 0f)
+            val before = session.audioFramesProduced
+            waitUntil { session.audioFramesProduced > before + 1_024 }
+            assertEquals("no se reconstruye el stream", state, session.audioState)
+            session.setVolume(1f)
+            assertEquals(1f, session.volume, 0f)
+        }
+    }
+
     private fun waitUntil(condition: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 3_000
         while (!condition() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(10)
