@@ -100,12 +100,12 @@ class GameControlsViewTest {
             sectorFeedback = { ticks += 1 }
         }
         val dpad = view.controlGeometry.frames.getValue(ControlId.DPAD)
-        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, dpad.right, dpad.centerY))
-        assertEquals("sector derecha", 1, ticks)
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, dpad.left + 3f, dpad.centerY))
+        assertEquals("sector izquierda", 1, ticks)
         assertEquals("la cruceta no da impacto", 0, impacts)
-        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, dpad.right, dpad.centerY))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, dpad.left + 3f, dpad.centerY))
         assertEquals("mismo sector: sin háptica", 1, ticks)
-        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, dpad.centerX, dpad.top))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, dpad.centerX, dpad.top + 3f))
         assertEquals("sector arriba", 2, ticks)
         view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, dpad.centerX, dpad.centerY))
         assertEquals("zona muerta: sin háptica", 2, ticks)
@@ -147,9 +147,9 @@ class GameControlsViewTest {
             val view = view(masks)
             view.renderOptions = ControlsRenderOptions(dpadStyle = style)
             val dpad = view.controlGeometry.frames.getValue(ControlId.DPAD)
-            view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, dpad.centerX, dpad.top))
+            view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, dpad.centerX, dpad.top + 3f))
             assertEquals("$style", GameBoyButton.UP.mask, masks.last())
-            view.dispatchTouchEvent(event(MotionEvent.ACTION_UP, dpad.centerX, dpad.top))
+            view.dispatchTouchEvent(event(MotionEvent.ACTION_UP, dpad.centerX, dpad.top + 3f))
         }
     }
 
