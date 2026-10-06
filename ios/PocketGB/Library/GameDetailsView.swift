@@ -119,6 +119,18 @@ struct GameDetailsView: View {
                 }
                 .pocketGlassButton(prominent: true)
                 .accessibilityIdentifier("game-details-play")
+                if resumable {
+                    // Arranca con la SRAM vigente sin cargar el estado (SPEC §4).
+                    Button {
+                        state.open(entry: entry, mode: .fresh)
+                    } label: {
+                        Label("Jugar desde el inicio", systemImage: "arrow.counterclockwise")
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+                    }
+                    .pocketGlassButton()
+                    .accessibilityIdentifier("game-details-play-from-start")
+                }
             case .notDownloaded:
                 Button {
                     state.library.download(entry)
@@ -182,6 +194,11 @@ struct GameContextMenu: View {
             let resumable = state.canResume(entry)
             Button(resumable ? "Continuar" : "Jugar", systemImage: "play.fill") {
                 state.open(entry: entry, mode: resumable ? .resumeAutomatic : .fresh)
+            }
+            if resumable {
+                Button("Jugar desde el inicio", systemImage: "arrow.counterclockwise") {
+                    state.open(entry: entry, mode: .fresh)
+                }
             }
         }
         Button("Ver detalle", systemImage: "info.circle") { state.showDetails(entry, in: tab) }
