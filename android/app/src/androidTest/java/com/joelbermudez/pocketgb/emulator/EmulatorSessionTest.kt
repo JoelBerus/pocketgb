@@ -217,6 +217,21 @@ class EmulatorSessionTest {
     }
 
     @Test
+    fun copyFrameMatchesTheSavedStateFrameAndNeedsAPausedSession() {
+        EmulatorSession().use { session ->
+            session.load(SyntheticRom.romOnly())
+            assertThrows(SessionError.NotParked::class.java) { session.copyFrame() }
+            session.start()
+            waitUntil { session.frameCount >= 3 }
+            assertThrows(SessionError.NotParked::class.java) { session.copyFrame() }
+            session.pause()
+            val frame = session.copyFrame()
+            assertEquals(CoreBridge.FRAME_PIXELS, frame.size)
+            assertTrue(frame.contentEquals(session.saveState().pixels))
+        }
+    }
+
+    @Test
     fun volumeAndScaleModeValidateAndClampAndSurviveClose() {
         val session = EmulatorSession()
         session.load(SyntheticRom.romOnly())
