@@ -16,23 +16,26 @@ import com.joelbermudez.pocketgb.settings.AppearanceState
 @Composable
 fun PocketGBTheme(
     appearance: AppearanceState = AppearanceState.DEFAULT,
+    /** El juego siempre se muestra sobre fondo oscuro (K4); las barras del sistema las gestiona `ImmersiveMode`. */
+    forceDark: Boolean = false,
+    dynamicColor: Boolean = appearance.dynamicColor,
     content: @Composable () -> Unit,
 ) {
-    val darkTheme = appearance.themeMode.resolveDark(isSystemInDarkTheme())
+    val darkTheme = forceDark || appearance.themeMode.resolveDark(isSystemInDarkTheme())
     val context = LocalContext.current
     val view = LocalView.current
     val colorScheme = when {
-        appearance.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && darkTheme -> {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && darkTheme -> {
             dynamicDarkColorScheme(context)
         }
-        appearance.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             dynamicLightColorScheme(context)
         }
         darkTheme -> PocketDarkColorScheme
         else -> PocketLightColorScheme
     }
 
-    if (!view.isInEditMode) {
+    if (!view.isInEditMode && !forceDark) {
         SideEffect {
             val window = (context as Activity).window
             WindowCompat.getInsetsController(window, view).apply {

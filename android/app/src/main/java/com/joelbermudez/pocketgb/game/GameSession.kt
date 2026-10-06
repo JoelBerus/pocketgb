@@ -311,11 +311,11 @@ class GameSession(
     }
 
     /**
-     * Carga [slot] con la sesión en pausa. Si [saveCurrentFirst], antes guarda el estado actual en AUTO (si eso
+     * Carga [slot] con la sesión en pausa. Si [saveCurrentToAuto] (y [slot] no es AUTO), antes guarda el estado actual en AUTO (si eso
      * falla, no se carga nada). Después persiste la SRAM del estado cargado: si no se puede, el núcleo vuelve
      * a como estaba y se lanza [StateError.SaveFailed] (SPEC §5.4).
      */
-    fun loadState(slot: StateSlot, saveCurrentFirst: Boolean = slot != StateSlot.AUTO) {
+    fun loadState(slot: StateSlot, saveCurrentToAuto: Boolean = true) {
         if (session.state.value != SessionState.Paused) throw StateError.NotParked()
         val data = try {
             coordinator.runOnSaveThread { states.load(slot) }
@@ -324,7 +324,7 @@ class GameSession(
         } catch (error: TimeoutException) {
             throw StateError.Io(error)
         }
-        if (saveCurrentFirst) saveState(StateSlot.AUTO)
+        if (saveCurrentToAuto && slot != StateSlot.AUTO) saveState(StateSlot.AUTO)
         val previous = try {
             session.saveState()
         } catch (_: SessionError.NotParked) {
