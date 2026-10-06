@@ -88,3 +88,11 @@ Veredicto APROBAR CON CAMBIOS (tres bajos). Corregidos en `0b9f570`, `46d0f64` y
 ** TEST SUCCEEDED **
 ```
 **`LinkSessionTests` (M9-H2 y `.sameGame` con espejo):** `✔ Test run with 12 tests in 1 suite passed after 0.949 seconds.`
+
+**Suite unitaria completa y Release (HEAD `b19d0cb`):**
+```
+✔ Test run with 172 tests in 17 suites passed after 11.300 seconds.
+** TEST SUCCEEDED **
+$ xcodebuild … -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+** BUILD SUCCEEDED **
+```
