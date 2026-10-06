@@ -357,11 +357,23 @@ Nuevos: `game/{GameSession,GameLauncher,GameplayViewModel}.kt`, `saves/{SaveCoor
 
 ## Correcciones de la 4ª vuelta
 
-Auditado: `9b4e5b12b9fc43131bb206965aa08ad75a8a7604` (correcciones de la 3ª vuelta). Informes: `A5-android-codex-v4.md` (RECHAZAR, 1 bloqueante y 1 baja) y `A5-android-deepseek-v4.md` (APROBAR). Correcciones: commit que sigue a `9b4e5b1` en `codex/android-port` (`git log --oneline -3` para el SHA).
+Auditado: `9b4e5b12b9fc43131bb206965aa08ad75a8a7604` (correcciones de la 3ª vuelta). Informes: `A5-android-codex-v4.md` (RECHAZAR, 1 bloqueante y 1 baja) y `A5-android-deepseek-v4.md` (APROBAR). Correcciones: commit `8b30cfd730de4796f6148809efb04f378be5734e`.
 
 | ID | Corrección | Test |
 |---|---|---|
 | A5V4-H1 (bloqueante) | `pocketgb-save-reaper` ya NO libera el lease al ser interrumpido: una interrupción no confirma que la escritura antigua terminó. Sigue esperando `awaitThreadExit()`, restaura la marca de interrupción al final y solo suelta el lease tras la salida real del hilo y el cierre del handle. (La liberación ante interrupción la había sugerido el hallazgo H1 de la auditoría DeepSeek de la 3ª vuelta; era incorrecta y reabría la ventana del lease.) | `GameSessionHardeningTest.theSaveReaperKeepsTheLeaseWhenInterruptedUntilTheSaveThreadReallyExits` (interrumpe el reaper con el hilo atascado; la huella sigue con dueño, `tryAcquire` falla y el reaper sigue vivo; al liberar la operación antigua, el lease se libera). Sustituye al test anterior, que validaba el comportamiento inseguro. |
-| A5V4-H2 (baja) | Evidencia con SHAs explícitos. | — |
+| A5V4-H2 (baja) | Evidencia con SHAs explícitos (`8b30cfd`). | — |
 
 Verificación tras el cambio (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 188/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50. No se revirtió la corrección para comprobar que el test falla sin ella; sí se cubre por construcción (el test anterior afirmaba lo contrario). No verificado: escritura antigua tardía de extremo a extremo con una restauración o sesión nueva concurrentes, y la prueba manual J11 en teléfono.
+
+## Correcciones de la 5ª vuelta
+
+Auditado: `8b30cfd730de4796f6148809efb04f378be5734e`. Informe: `A5-android-codex-v5.md` (RECHAZAR: 1 bloqueante, 2 bajas; sin DeepSeek en esta vuelta). Correcciones: commit `0fe6c8045273ccc521909a83ad7829d81b6d970d`.
+
+| ID | Corrección | Test |
+|---|---|---|
+| A5V5-H1 (bloqueante) | Mismo patrón que A5V4-H1 en otra ruta: `pocketgb-save-repair` salía y soltaba su hold del lease al ser interrumpido. Ahora ignora las interrupciones (también durante el backoff), sigue esperando hasta confirmar la reparación y restaura la marca de interrupción al final. | `GameSessionHardeningTest.interruptingTheRepairThreadNeverReleasesTheLeaseNorCancelsTheRepair` (B bloqueada, sesión cerrada, se interrumpe el hilo de reparación: sigue vivo, la huella sigue con dueño, `tryAcquire` falla; al liberar B, el principal es A). **Comprobado revirtiendo la corrección: el test falla (1 de 14) y con ella pasa (14/14).** |
+| A5V5-H2 (baja) | Evidencia con SHA explícito de la 4ª vuelta (`8b30cfd`). | — |
+| A5V5-H3 (baja) | `docs/ESTADO.md` actualizado y sin contradicciones. | — |
+
+Verificación tras el cambio (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 189/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50; `core/` sin cambios. No verificado: prueba manual J11 en teléfono. Decisión de Joel (2026-10-06): corregir solo este hallazgo, sin barrido sistemático de otras rutas de liberación del lease.
