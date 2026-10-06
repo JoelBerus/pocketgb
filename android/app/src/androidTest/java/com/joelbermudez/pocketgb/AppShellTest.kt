@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performKeyInput
@@ -19,7 +20,25 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.joelbermudez.pocketgb.app.AppNavigationState
+import com.joelbermudez.pocketgb.app.AppScaffold
+import com.joelbermudez.pocketgb.app.TopLevelDestination
+import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -167,5 +186,73 @@ class AppShellTest {
         compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("licenses-body").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("about-version").assertExists()
+    }
+
+    // ---- A7 R14: barra inferior en compacta, rail en ≥ medium, mismo estado
+
+    private val size = mutableStateOf(DpSize(360.dp, 640.dp))
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun showShell(state: AppNavigationState) {
+        compose.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                PocketGBTheme {
+                    DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size.value)) {
+                        AppScaffold(state, Modifier.fillMaxSize()) { Text("contenido", Modifier.testTag("shell-content")) }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    private fun itemBounds() = TopLevelDestination.entries.map {
+        compose.onNodeWithTag("nav-item-${it.name}").getUnclippedBoundsInRoot()
+    }
+
+    @Test
+    fun compactWindowUsesTheBottomBar() {
+        size.value = DpSize(360.dp, 640.dp)
+        showShell(AppNavigationState())
+        compose.onNodeWithTag("app-nav-bar").assertExists()
+        compose.onAllNodesWithTag("app-nav-rail").assertCountEquals(0)
+        val bounds = itemBounds()
+        assertEquals("la barra reparte los destinos en horizontal", 1, bounds.map { it.top }.distinct().size)
+        assertEquals(3, bounds.map { it.left }.distinct().size)
+        compose.onNodeWithTag("shell-content").assertIsDisplayed()
+    }
+
+    @Test
+    fun wideWindowUsesTheRailWithTheSameDestinations() {
+        size.value = DpSize(1000.dp, 700.dp)
+        showShell(AppNavigationState())
+        compose.onNodeWithTag("app-nav-rail").assertExists()
+        compose.onAllNodesWithTag("app-nav-bar").assertCountEquals(0)
+        val bounds = itemBounds()
+        assertEquals("el rail apila los destinos en vertical", 1, bounds.map { it.left }.distinct().size)
+        assertEquals(3, bounds.map { it.top }.distinct().size)
+        for (label in listOf("Biblioteca", "Favoritos", "Ajustes")) {
+            compose.onNode(hasText(label) and hasClickAction()).assertIsDisplayed()
+        }
+        compose.onNodeWithTag("shell-content").assertIsDisplayed()
+    }
+
+    @Test
+    fun selectedDestinationSurvivesResizingBetweenBarAndRail() {
+        val state = AppNavigationState()
+        size.value = DpSize(360.dp, 640.dp)
+        showShell(state)
+        compose.onNodeWithTag("nav-item-SETTINGS").performClick()
+        assertEquals(TopLevelDestination.SETTINGS, state.selected)
+        compose.runOnUiThread { size.value = DpSize(1000.dp, 700.dp) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("app-nav-rail").assertExists()
+        assertEquals(TopLevelDestination.SETTINGS, state.selected)
+        compose.onNodeWithTag("nav-item-SETTINGS").assertIsSelected()
+        compose.onNodeWithTag("nav-item-FAVORITES").performClick()
+        compose.runOnUiThread { size.value = DpSize(360.dp, 640.dp) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("app-nav-bar").assertExists()
+        compose.onNodeWithTag("nav-item-FAVORITES").assertIsSelected()
     }
 }

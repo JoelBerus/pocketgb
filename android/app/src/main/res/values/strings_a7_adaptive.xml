@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A7-L3: adaptabilidad. Texto del panel lista-detalle (tras ENABLE_LIST_DETAIL). -->
+    <string name="a7_list_detail_empty">Elige un juego para ver su detalle</string>
+</resources>

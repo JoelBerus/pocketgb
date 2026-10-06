@@ -169,4 +169,54 @@ class ControlGeometryTest {
         assertEquals(400f, clipped.height, 0.01f)
         assertEquals(dpad.centerY, clipped.centerY, 0.01f)
     }
+
+    // ---- A7 R15: área segura con recorte de pantalla
+
+    @Test
+    fun safeAreaSubtractsCutoutAndNoControlTouchesIt() {
+        // Horizontal con recorte de 120 px a la izquierda y 90 a la derecha (cámara en el borde corto).
+        val insets = SafeInsets(left = 120, top = 0, right = 90, bottom = 40)
+        val safe = ControlGeometry.safeArea(2400f, 1080f, insets)
+        assertEquals(ControlBounds(120f, 0f, 2310f, 1040f), safe)
+        val geometry = ControlGeometry(ControlLayout.defaults(ControlsOrientation.LANDSCAPE), ControlsOrientation.LANDSCAPE, safe)
+        ControlId.entries.forEach { id ->
+            val frame = geometry.frames.getValue(id)
+            assertTrue("$id invade el recorte izquierdo", frame.left >= 120f)
+            assertTrue("$id invade el recorte derecho", frame.right <= 2310f)
+            assertTrue("$id invade la barra inferior", frame.bottom <= 1040f)
+        }
+    }
+
+    @Test
+    fun safeAreaUnionTakesTheLargestInsetPerSide() {
+        val cutout = SafeInsets(left = 100, top = 80)
+        val gestures = SafeInsets(left = 24, right = 24, top = 20)
+        assertEquals(SafeInsets(left = 100, top = 80, right = 24, bottom = 0), cutout.union(gestures))
+    }
+
+    @Test
+    fun safeAreaNeverCollapsesWhenInsetsExceedTheView() {
+        val safe = ControlGeometry.safeArea(100f, 100f, SafeInsets(left = 80, top = 80, right = 80, bottom = 80))
+        assertTrue(safe.width >= 1f)
+        assertTrue(safe.height >= 1f)
+    }
+
+    @Test
+    fun gestureExclusionStaysInsideTheSafeAreaAndWithin200DpPerEdge() {
+        val density = 2.5f
+        val safe = ControlGeometry.safeArea(2400f, 1080f, SafeInsets(left = 200, right = 200))
+        val geometry = ControlGeometry(
+            ControlLayout.defaults(ControlsOrientation.LANDSCAPE), ControlsOrientation.LANDSCAPE, safe, density = density,
+        )
+        val rects = GestureExclusion.rects(geometry, 2400f, density)
+        assertTrue(rects.isNotEmpty())
+        rects.forEach {
+            assertTrue("la exclusión invade el recorte izquierdo", it.left >= 200f)
+            assertTrue("la exclusión invade el recorte derecho", it.right <= 2200f)
+        }
+        listOf(false, true).forEach { right ->
+            val total = rects.filter { (it.centerX >= 1200f) == right }.sumOf { it.height.toDouble() }
+            assertTrue("lado derecho=$right supera 200 dp: $total px", total <= GestureExclusion.EDGE_BUDGET_DP * density + 0.5)
+        }
+    }
 }

@@ -82,4 +82,22 @@ class ManifestPolicyTest {
             assertFalse("$name no debe usar <include>", rules(name).contains("<include"))
         }
     }
+
+    /** A7 R12: rotar no recrea la actividad (y por tanto no pausa); `fontScale` no está: sigue recreando. */
+    @Test
+    fun mainActivityHandlesRotationAndSizeChangesItself() {
+        val activity = manifest.substringAfter("android:name=\".MainActivity\"").substringBefore(">")
+        val value = Regex("""android:configChanges="([^"]*)"""").find(activity)?.groupValues?.get(1)
+            ?: error("MainActivity sin configChanges")
+        val flags = value.split("|").toSet()
+        for (flag in listOf("orientation", "screenSize", "screenLayout", "smallestScreenSize", "uiMode", "density")) {
+            assertTrue("falta $flag", flag in flags)
+        }
+        assertFalse("fontScale debe seguir recreando", "fontScale" in flags)
+    }
+
+    @Test
+    fun manifestAddsNoPermissions() {
+        assertFalse(manifest.contains("<uses-permission"))
+    }
 }

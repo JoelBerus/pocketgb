@@ -133,4 +133,26 @@ class ArtworkStoreTest {
         s.removeAll()
         assertTrue(s.version.value > v1)
     }
+
+    /** A7 R13: memoria baja vacía solo la caché en memoria; el disco y la versión de la UI no cambian. */
+    @Test
+    fun trimMemoryNeverTouchesDiskOrVersion() {
+        val s = store()
+        assertTrue(s.save(fp, frame))
+        val version = s.version.value
+        val size = s.sizeBytes()
+        val files = dir().list()!!.toSet()
+        s.trimMemory()
+        assertEquals(files, dir().list()!!.toSet())
+        assertEquals(size, s.sizeBytes())
+        assertEquals(version, s.version.value)
+        assertArrayEquals(byteArrayOf(1, 2, 3), File(dir(), "$fp.png").readBytes())
+        assertTrue(s.has(fp))
+    }
+
+    @Test
+    fun trimMemoryOnAnEmptyStoreDoesNotCreateTheDirectory() {
+        store().trimMemory()
+        assertFalse(dir().exists())
+    }
 }

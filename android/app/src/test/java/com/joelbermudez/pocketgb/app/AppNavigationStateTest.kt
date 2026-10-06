@@ -87,4 +87,20 @@ class AppNavigationStateTest {
         assertEquals(state.snapshot(), restored.snapshot())
         assertEquals(SettingsRoute.SettingsLicenses, restored.currentBackStack.last())
     }
+
+    /** A7 R14: barra inferior y rail comparten el mismo estado; cambiar de tamaño no pierde pestaña ni pila. */
+    @Test
+    fun selectionAndStacksSurviveARestoreLikeAResize() {
+        val state = AppNavigationState()
+        state.select(TopLevelDestination.SETTINGS)
+        state.push(SettingsRoute.Appearance)
+        val restored = AppNavigationState(state.snapshot())
+        assertEquals(TopLevelDestination.SETTINGS, restored.selected)
+        assertEquals(listOf(SettingsRoute.Root, SettingsRoute.Appearance), restored.currentBackStack.toList())
+    }
+
+    @Test
+    fun navigationItemsCoverEveryTopLevelDestinationOnce() {
+        assertEquals(TopLevelDestination.entries, topLevelNavigationItems.map { it.destination })
+    }
 }

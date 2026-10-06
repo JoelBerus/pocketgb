@@ -2,7 +2,9 @@ package com.joelbermudez.pocketgb
 
 import android.os.Build
 import android.annotation.SuppressLint
+import android.content.ComponentCallbacks2
 import android.os.Bundle
+import android.view.WindowManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.joelbermudez.pocketgb.input.GamepadRouter
@@ -18,6 +20,7 @@ import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.game.GameplayViewModelFactory
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.LibraryViewModelFactory
+import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.app.PocketGBApp
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
@@ -36,6 +39,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // A7 R15: la imagen puede invadir el recorte del borde corto; los controles no (área segura de la partida).
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
         super.onCreate(savedInstanceState)
         val appearanceRepository = AppearanceRepository(applicationContext.appearanceDataStore)
@@ -74,5 +83,20 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         GamepadRouter.onWindowFocusChanged(hasFocus)
+    }
+
+    // Memoria baja (A7 R13). En segundo plano (UI_HIDDEN o peor) la partida se pausa por el mismo camino que ON_PAUSE;
+    // en primer plano solo se libera la caché de portadas. Nunca toca la ruta de guardado.
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) ArtworkStore.shared(applicationContext).trimMemory()
+        gameplay.onTrimMemory(level)
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onLowMemory() {
+        super.onLowMemory()
+        ArtworkStore.shared(applicationContext).trimMemory()
+        gameplay.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
     }
 }
