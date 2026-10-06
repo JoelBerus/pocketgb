@@ -28,9 +28,9 @@ final class EmulatorSession: @unchecked Sendable {
     /// Invalida el resultado de un arranque de audio que llegue tras pausar o parar.
     private let audioGeneration = Atomic<Int>(0)
     nonisolated(unsafe) private let audioScratch: UnsafeMutablePointer<Int16>
-    private let saves: SaveTarget?
-    private let localSaveQueue = DispatchQueue(label: "PocketGB.saves-local", qos: .utility)
-    private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "session")
+    /// Una por cada partida que se guarda: ninguna (cartucho sin batería), una (juego suelto)
+    /// o dos (cable link, M9).
+    private let persisters: [SRAMPersistence]
 
     // Estado de control compartido, protegido por `control`.
     private let control = NSCondition()
@@ -38,22 +38,12 @@ final class EmulatorSession: @unchecked Sendable {
     private var stopRequested = false
     private var parked = false
     private var finished = false
-    private var saveFailed = false
     private var flushRequested = false
     private var audioPrimed = false
-    private var confirmed: Data?           // último contenido que está en disco (o se cargó)
 
     // Solo del hilo de emulación.
     private var ticksPerSecond = 1.0
-    private var dirtyLast: UInt64?         // último "juego guardó" aún sin escribir
-    private var lastCheck: UInt64 = 0      // último flush (para la red de seguridad)
-    private var lastQueued: Data?          // último contenido encolado
-    #if DEBUG
-    private var failAsyncWrites = false    // `-failAsyncSaves`: toda escritura asíncrona falla (prueba H6)
-    #endif
 
-    private static let debounceSeconds = 1.0
-    private static let safetyNetSeconds = 60.0
     // 59,7275 Hz en las dos consolas: 70 224 / 4 194 304 = 280 896 / 16 777 216.
     private static let frameSeconds = Double(70224) / Double(4_194_304)
     // 2 frames son 1 607 muestras; 2 048 deja margen para un callback grande
@@ -66,6 +56,23 @@ final class EmulatorSession: @unchecked Sendable {
     private static let audioPriming = 1
     private static let audioLive = 2
 
+    /// Init designado: el núcleo ya tiene el ROM cargado y la SRAM de cada persistencia ya está
+    /// en él (`SRAMPersistence.open`). Lo usan el cable link y las pruebas con un núcleo falso.
+    @MainActor
+    init(core: any ConsoleCore, info: RomInfo, persisters: [SRAMPersistence],
+         loadWarning: SaveLoadWarning?, gameSettingsWarning: GameSettingsSaveWarning? = nil,
+         onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) {
+        self.core = core
+        self.info = info
+        self.persisters = persisters
+        self.loadWarning = loadWarning
+        self.gameSettingsWarning = gameSettingsWarning
+        frames = FrameBuffers(size: core.console.screen)
+        audioScratch = .allocate(capacity: Self.audioScratchFrames * 2)
+        audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
+                                  onPause: onAudioInterrupted)
+    }
+
     /// - Parameters:
     ///   - mirror: `<rom>.sav` junto al ROM en la carpeta de la biblioteca (nil para un
     ///     ROM suelto). La copia local sigue siendo la autoritativa.
@@ -74,14 +81,15 @@ final class EmulatorSession: @unchecked Sendable {
     ///   - bios: Game Boy Advance, BIOS del usuario ya validada; `nil` = BIOS HLE.
     /// - Throws: `SaveOpening.Refusal` si la única partida está en iCloud sin descargar.
     @MainActor
-    init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
-         mirrorSnapshot: SaveMirror.Snapshot = .absent,
-         mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
-         emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
-         console: Console = .gameBoy, bios: Data? = nil,
-         onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
+    convenience init(romData: Data, savesDirectory: URL, mirror: SaveMirror? = nil,
+                     mirrorSnapshot: SaveMirror.Snapshot = .absent,
+                     mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
+                     emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
+                     console: Console = .gameBoy, bios: Data? = nil,
+                     onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let now = Int64(Date().timeIntervalSince1970)
         let core: any ConsoleCore
+        let info: RomInfo
         switch console {
         case .gameBoy:
             let gb = try CoreBridge()
@@ -95,11 +103,6 @@ final class EmulatorSession: @unchecked Sendable {
                                    saveType: emulation.gbaSaveType, rtc: emulation.gbaRTC)
             core = gba
         }
-        self.core = core
-        frames = FrameBuffers(size: console.screen)
-        audioScratch = .allocate(capacity: Self.audioScratchFrames * 2)
-        audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
-                                  onPause: onAudioInterrupted)
 
         var forcedWarning: GameSettingsSaveWarning?
         if console == .gameBoyAdvance {
@@ -112,43 +115,11 @@ final class EmulatorSession: @unchecked Sendable {
                 forced: emulation.gbaSaveType != 0 || emulation.gbaRTC != 0,
                 validSizes: Self.validSaveSizes(info), existingSizes: sizes)
         }
-        var warning: SaveLoadWarning?
-        var saves: SaveTarget?
-        var initialSRAM: Data?
-        if info.hasBattery, core.sramSaveSize > 0 {
-            let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
-            do {
-                if console == .gameBoyAdvance {
-                    try store.recoverOrphans(validSizes: Self.validSaveSizes(info))
-                } else {
-                    try store.recoverOrphans(expectedSize: core.sramSaveSize)
-                }
-                let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirrorSnapshot,
-                                                      validSizes: Self.validSaveSizes(info),
-                                                      mirrorWriter: mirrorWriter)
-                if let data = outcome.data { try core.sramLoad(data) }
-                saves = outcome.target
-                warning = outcome.warning
-                // Lo que ya está en disco (o la RAM inicial): una reanudación con la misma
-                // SRAM no reescribe ni la copia local ni el espejo (D81-H7).
-                initialSRAM = try? core.sramSave()
-            } catch let refusal as SaveOpening.Refusal {
-                // `saves` y `loadWarning` aún no están inicializados, así que `deinit` no se
-                // ejecutará: el búfer se libera aquí. Si se inicializan antes, quitar esto.
-                audioScratch.deallocate()
-                throw refusal
-            } catch let e as CoreError where e == .sramSize {
-                // No se sobrescribe un .sav que no entendemos (no debería llegar: se valida el tamaño antes).
-                warning = .localWrongSize
-            } catch {
-                warning = .unreadable("No se pudo leer la partida (\(error.localizedDescription)).")
-            }
-        }
-        self.saves = saves
-        loadWarning = warning
-        confirmed = initialSRAM
-        lastQueued = initialSRAM
-        gameSettingsWarning = forcedWarning
+        let opened = try SRAMPersistence.open(core: core, info: info, savesDirectory: savesDirectory,
+                                              mirror: mirror, snapshot: mirrorSnapshot, mirrorWriter: mirrorWriter)
+        self.init(core: core, info: info, persisters: opened.persister.map { [$0] } ?? [],
+                  loadWarning: opened.warning, gameSettingsWarning: forcedWarning,
+                  onAudioInterrupted: onAudioInterrupted)
     }
 
     deinit { audioScratch.deallocate() }
@@ -189,9 +160,10 @@ final class EmulatorSession: @unchecked Sendable {
             // La RAM ya es la de disco: si solo cambia el pie del RTC no se persiste nada
             // (no rota backups ni reescribe el espejo, D81V2-H4). Sin copia confirmada
             // (lectura fallida al abrir) sí se pasa por el flush.
+            let confirmed = persisters.count == 1 ? persisters[0].confirmedSRAM : nil
             let ramOnDisk = confirmed.map { $0.dropLast(core.sramFooterBytes) == sramBefore }
             if ramOnDisk != true {
-                guard flushSRAM(sync: true) else {
+                guard flushAll(sync: true) else {
                     try? core.stateLoad(previous)
                     frames.publish { core.copyFramebuffer(to: $0) }
                     throw StateError.saveFailed
@@ -282,11 +254,19 @@ final class EmulatorSession: @unchecked Sendable {
     /// Llama a `callback` al terminar la escritura de espejo en vuelo. La copia local
     /// ya está cubierta por la barrera síncrona de `pause()`/`stop()`.
     func whenMirrorIdle(_ callback: @escaping @Sendable () -> Void) {
-        guard let saves else {
+        switch persisters.count {
+        case 0:
             callback()
-            return
+        case 1:
+            persisters[0].whenMirrorIdle(callback)
+        default:
+            let group = DispatchGroup()
+            for persister in persisters {
+                group.enter()
+                persister.whenMirrorIdle { group.leave() }
+            }
+            group.notify(queue: .global(qos: .utility), execute: callback)
         }
-        saves.whenMirrorIdle(callback)
     }
 
     /// Detiene el hilo; al volver, la SRAM ya está escrita en disco.
@@ -385,7 +365,7 @@ final class EmulatorSession: @unchecked Sendable {
             // (auditoría D2-D5 Codex, H2).
             let previous = try core.stateSave()
             try core.stateLoad(data)
-            guard flushSRAM(sync: true) else {
+            guard flushAll(sync: true) else {
                 try? core.stateLoad(previous)
                 frames.publish { core.copyFramebuffer(to: $0) }
                 throw StateError.saveFailed
@@ -431,26 +411,13 @@ final class EmulatorSession: @unchecked Sendable {
         let frameTicks = Self.frameSeconds * ticksPerSecond
         var deadline = Double(mach_absolute_time())
         var audioTimeouts = 0
-        if saves != nil {
-            // Lo que ya hay en disco (o la RAM inicial si no había .sav).
-            lastQueued = try? core.sramSave()
-            control.lock(); confirmed = lastQueued; control.unlock()
-            // Espejo ausente o desfasado al abrir: se pone al día en su propia cola.
-            if let initial = lastQueued, let saves {
-                saves.retryMirrorIfNeeded(initial)
-            }
-            lastCheck = mach_absolute_time()
-            #if DEBUG
-            let args = ProcessInfo.processInfo.arguments
-            failAsyncWrites = args.contains("-failAsyncSaves")
-            #endif
-        }
+        persisters.forEach { $0.prime() }
 
         while true {
             control.lock()
             if pauseRequested && !stopRequested {
                 control.unlock()
-                flushSRAM(sync: true)
+                flushAll(sync: true)
                 control.lock()
                 parked = true
                 control.broadcast()
@@ -468,13 +435,9 @@ final class EmulatorSession: @unchecked Sendable {
             }
             let flushNow = flushRequested
             flushRequested = false
-            if saveFailed {
-                saveFailed = false
-                lastQueued = nil // forzar la reescritura
-                dirtyLast = mach_absolute_time() // reintento tras el debounce
-            }
             control.unlock()
-            if flushNow { flushSRAM(sync: true) }
+            persisters.forEach { $0.retryIfFailed() }
+            if flushNow { flushAll(sync: true) }
 
             let mode = audioMode.load(ordering: .acquiring)
             if mode != Self.audioClock && audioRing.availableFrames >= Self.audioTargetFrames {
@@ -505,7 +468,7 @@ final class EmulatorSession: @unchecked Sendable {
             core.runFrame()
             drainAudio(discard: speed > 1)
             frames.publish { core.copyFramebuffer(to: $0) }
-            checkSRAM()
+            persisters.forEach { $0.check() }
             recordFrameDuration(from: frameStarted, to: mach_absolute_time())
 
             if mode == Self.audioPriming && audioRing.availableFrames >= Self.audioTargetFrames {
@@ -524,7 +487,8 @@ final class EmulatorSession: @unchecked Sendable {
             }
         }
 
-        flushSRAM(sync: true)
+        flushAll(sync: true)
+        core.shutdown()
         control.lock()
         finished = true
         control.broadcast()
@@ -557,84 +521,17 @@ final class EmulatorSession: @unchecked Sendable {
                                  ordering: .relaxed)
     }
 
-    /// Debounce de 1,0 s tras cada "juego guardó" y red de seguridad de 60 s
-    /// (docs/04 §Saves). La red no depende del flanco: un juego puede escribir la
-    /// SRAM y dejarla habilitada; `flushSRAM` compara y solo escribe si cambió.
-    private func checkSRAM() {
-        guard saves != nil else { return }
-        let now = mach_absolute_time()
-        if core.sramDirty {
-            core.clearSRAMDirty()
-            dirtyLast = now
-        }
-        if let last = dirtyLast, seconds(now - last) >= Self.debounceSeconds {
-            flushSRAM(sync: false)
-        } else if seconds(now - lastCheck) >= Self.safetyNetSeconds {
-            flushSRAM(sync: false)
-        }
-    }
-
     private func seconds(_ ticks: UInt64) -> Double { Double(ticks) / ticksPerSecond }
 
-    /// Copia la SRAM aquí (hilo de emulación) y la escribe en la cola de guardado.
-    /// - Asíncrono: se compara con lo último encolado.
-    /// - Síncrono (pausa, background, salida): primero se vacía la cola y se compara
-    ///   con lo último **confirmado en disco**, así una escritura asíncrona que falló
-    ///   justo antes se reintenta aquí y no se pierde (auditoría M4, H6).
-    /// - Returns: con `sync`, si la copia local quedó en disco (o ya lo estaba).
+    /// Guarda todas las partidas. **No cortocircuita**: si falla una, las demás se guardan igual
+    /// (primero el flush, luego `&&`). Con `sync`, devuelve si todas quedaron en disco.
     @discardableResult
-    private func flushSRAM(sync: Bool) -> Bool {
-        guard let saves else { return true }
-        if core.sramDirty { core.clearSRAMDirty() }
-        dirtyLast = nil
-        lastCheck = mach_absolute_time()
-        let data: Data
-        do {
-            data = try core.sramSave()
-        } catch {
-            log.error("gb_sram_save falló: \(String(describing: error), privacy: .public)")
-            return false
+    private func flushAll(sync: Bool) -> Bool {
+        var ok = true
+        for persister in persisters {
+            let flushed = persister.flush(sync: sync)
+            ok = ok && flushed
         }
-        if sync {
-            localSaveQueue.sync {}
-            control.lock()
-            let onDisk = confirmed
-            control.unlock()
-            guard data != onDisk else {
-                saves.retryMirrorIfNeeded(data)
-                return true
-            }
-        } else {
-            guard data != lastQueued else { return true }
-        }
-        lastQueued = data
-        #if DEBUG
-        let injectFailure = failAsyncWrites && !sync
-        #else
-        let injectFailure = false
-        #endif
-        let write: @Sendable () -> Void = { [self] in
-            do {
-                if injectFailure { throw CocoaError(.fileWriteUnknown) }
-                try saves.persistLocal(data)
-                control.lock()
-                confirmed = data
-                control.unlock()
-            } catch {
-                log.error("No se pudo guardar la partida: \(error.localizedDescription, privacy: .public)")
-                control.lock()
-                saveFailed = true // se reintenta en el próximo ciclo o en el próximo flush síncrono
-                control.unlock()
-            }
-        }
-        guard sync else {
-            localSaveQueue.async(execute: write)
-            return true
-        }
-        localSaveQueue.sync(execute: write)
-        control.lock()
-        let ok = confirmed == data
-        control.unlock()
         return ok
     }
 }
