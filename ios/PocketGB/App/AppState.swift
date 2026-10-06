@@ -58,6 +58,24 @@ enum SettingsRoute: Hashable {
     case backups(fingerprint: String)
 }
 
+enum GameLaunchMode: Sendable {
+    case fresh
+    case resumeAutomatic
+}
+
+private enum ContinuationOpenError: LocalizedError, Sendable {
+    case unavailable
+
+    var errorDescription: String? {
+        "El estado automático ya no está disponible o dejó de ser vigente. Tu partida guardada no se modificó."
+    }
+}
+
+private struct GameOpeningPayload: Sendable {
+    let rom: Data
+    let automaticState: Data?
+}
+
 /// Estado global de la app: shell de tabs, biblioteca y el juego abierto.
 @MainActor @Observable
 final class AppState {
@@ -103,6 +121,8 @@ final class AppState {
     private(set) var gameToast: String?
     /// Juego cuyos ajustes se están editando (sheet).
     var gameSettingsEntry: RomEntry?
+    /// Juego cuyo alias visual se está editando (sheet).
+    var renamingEntry: RomEntry?
     /// Juego pendiente de confirmar "Ocultar de PocketGB".
     var hideCandidate: RomEntry?
     /// Selector de carpeta de la biblioteca.
@@ -119,6 +139,9 @@ final class AppState {
     private(set) var opening = false
     var alertTitle: String?
     var alertMessage: String?
+    /// Permite recuperarse explícitamente de un autoestado ausente, dañado o ajeno.
+    var resumeFallbackEntry: RomEntry?
+    private(set) var resumableFingerprints: Set<String> = []
 
     private static let maxROMBytes = LibraryScanner.maxROMBytes
 
@@ -151,6 +174,7 @@ final class AppState {
         #else
         library.restore()
         #endif
+        refreshContinuations()
     }
 
     func chooseFolder() {
@@ -206,7 +230,7 @@ final class AppState {
 
     /// Abre un juego de la biblioteca: lectura coordinada fuera del hilo principal,
     /// y la partida con su espejo junto al ROM.
-    func open(entry: RomEntry) {
+    func open(entry: RomEntry, mode: GameLaunchMode = .fresh) {
         guard entry.problem == nil else {
             showAlert("No se puede abrir “\(entry.fileName)”", entry.problem?.message ?? "")
             return
@@ -226,27 +250,46 @@ final class AppState {
         let shared = library.entries.contains {
             $0.id != entry.id && SaveMirror(romURL: $0.url).url.path.lowercased() == key
         }
+        let fingerprint = libraryPrefs.fingerprint(of: entry)
         Task.detached(priority: .userInitiated) { [weak self] in
             // ROM y espejo se leen aquí, fuera del hilo principal: la lectura coordinada
             // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
-            let result = Result { try LibraryScanner.readROM(url) }
+            let result = Result<GameOpeningPayload, Error> {
+                let rom = try LibraryScanner.readROM(url)
+                guard mode == .resumeAutomatic else {
+                    return GameOpeningPayload(rom: rom, automaticState: nil)
+                }
+                guard let fingerprint else { throw ContinuationOpenError.unavailable }
+                let states = StateStore(root: try StateStore.defaultRoot(), fingerprint: fingerprint)
+                let saves = SaveStore(directory: try SaveStore.defaultDirectory(), fingerprint: fingerprint)
+                guard states.automaticEntry(newerThan: saves.modificationDate) != nil else {
+                    throw ContinuationOpenError.unavailable
+                }
+                return GameOpeningPayload(rom: rom, automaticState: try states.load(.auto))
+            }
             let snapshot: SaveMirror.Snapshot = shared ? .absent : mirror.snapshot()
             await self?.finishOpening(entry: entry, result: result, mirror: shared ? nil : mirror,
-                                      snapshot: snapshot, shared: shared)
+                                      snapshot: snapshot, shared: shared, mode: mode)
         }
     }
 
-    private func finishOpening(entry: RomEntry, result: Result<Data, Error>, mirror: SaveMirror?,
-                               snapshot: SaveMirror.Snapshot, shared: Bool) {
+    private func finishOpening(entry: RomEntry, result: Result<GameOpeningPayload, Error>, mirror: SaveMirror?,
+                               snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode) {
         opening = false
         switch result {
-        case .success(let data):
-            start(romData: data, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
-                  entryID: entry.id, extraWarning: shared ? .mirrorShared : nil)
+        case .success(let payload):
+            start(romData: payload.rom, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
+                  entryID: entry.id, restoring: payload.automaticState,
+                  resumeFallback: mode == .resumeAutomatic ? entry : nil,
+                  extraWarning: shared ? .mirrorShared : nil)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
             showAlert("No se puede abrir “\(entry.fileName)”", RomEntry.Problem.tooLarge.message)
         case .failure(let error):
-            showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
+            if mode == .resumeAutomatic {
+                showResumeFailure(entry, message: error.localizedDescription)
+            } else {
+                showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
+            }
         }
     }
 
@@ -255,9 +298,31 @@ final class AppState {
         alertMessage = message
     }
 
+    private func discardStaleAutomaticState(of entry: RomEntry) {
+        guard let fingerprint = libraryPrefs.fingerprint(of: entry) else { return }
+        resumableFingerprints.remove(fingerprint)
+        if let root = try? StateStore.defaultRoot() {
+            try? StateStore(root: root, fingerprint: fingerprint).delete(.auto)
+        }
+    }
+
+    private func showResumeFailure(_ entry: RomEntry, message: String) {
+        resumeFallbackEntry = entry
+        showAlert("No se pudo continuar", "\(message) Puedes conservar tu partida y jugar desde el inicio.")
+    }
+
+    func playFromBeginningAfterResumeError() {
+        guard let entry = resumeFallbackEntry else { return }
+        resumeFallbackEntry = nil
+        alertTitle = nil
+        alertMessage = nil
+        open(entry: entry, mode: .fresh)
+    }
+
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
     private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
-                       fileName: String, entryID: String? = nil, extraWarning: SaveLoadWarning? = nil) {
+                       fileName: String, entryID: String? = nil, restoring automaticState: Data? = nil,
+                       resumeFallback: RomEntry? = nil, extraWarning: SaveLoadWarning? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
@@ -266,13 +331,13 @@ final class AppState {
                                               emulation: gameplay.data.emulation(for: entryID)) { [weak self] in
                 self?.enterBackground()
             }
+            session.applyAudioPreferences(audioPreferences)
+            try session.start(restoring: automaticState)
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
                                                         title: session.info.title, fileName: fileName)
             if let entryID {
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
-            session.applyAudioPreferences(audioPreferences)
-            session.start()
             self.session = session
             gamepad.target = session.padButtons
             gameSpeed = 1
@@ -290,10 +355,21 @@ final class AppState {
         } catch SaveOpening.Refusal.mirrorNotDownloaded {
             showAlert("Partida de iCloud sin descargar",
                       "La partida de “\(fileName)” está en iCloud y no se pudo descargar. Para no empezar de cero ni pisarla, el juego no se abre. Vuelve a intentarlo con conexión.")
+        } catch EmulatorSession.StateError.notCurrent {
+            // El .auto quedó obsoleto (partida más nueva): se retira para que «Continuar»
+            // deje de ofrecerse y fallar en cada intento (D81V2-H2). La partida no se toca.
+            if let resumeFallback {
+                discardStaleAutomaticState(of: resumeFallback)
+                showResumeFailure(resumeFallback, message: EmulatorSession.StateError.notCurrent.localizedDescription)
+            } else {
+                showAlert("No se puede abrir “\(fileName)”", EmulatorSession.StateError.notCurrent.localizedDescription)
+            }
         } catch let e as CoreError {
-            showAlert("No se puede abrir “\(fileName)”", e.description)
+            if let resumeFallback { showResumeFailure(resumeFallback, message: e.description) }
+            else { showAlert("No se puede abrir “\(fileName)”", e.description) }
         } catch {
-            showAlert("No se puede abrir “\(fileName)”", error.localizedDescription)
+            if let resumeFallback { showResumeFailure(resumeFallback, message: error.localizedDescription) }
+            else { showAlert("No se puede abrir “\(fileName)”", error.localizedDescription) }
         }
     }
 
@@ -339,9 +415,7 @@ final class AppState {
             // Estado automático al salir (SPEC §12). La pausa hace antes el flush síncrono
             // de la SRAM; un fallo del estado nunca impide salir ni guardar la partida.
             if !paused && !editingControls { session.pause() }
-            if let stateStore, let saved = try? session.saveState() {
-                try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)
-            }
+            saveAutomaticState(of: session)
             session.stop()
             saveArtwork(session)
         }
@@ -356,6 +430,44 @@ final class AppState {
         showingGameMenu = false
     }
 
+    /// Guarda el estado `.auto` con la sesión aparcada (después del flush de la SRAM, para
+    /// que su fecha quede posterior a la de la partida). Un fallo nunca impide salir.
+    private func saveAutomaticState(of session: EmulatorSession) {
+        guard let stateStore, let saved = try? session.saveState(),
+              (try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)) != nil
+        else { return }
+        resumableFingerprints.insert(session.info.fingerprint)
+    }
+
+    func canResume(_ entry: RomEntry) -> Bool {
+        #if DEBUG
+        if DebugArguments.screen != nil { return libraryPrefs.lastPlayed(entry) != nil }
+        #endif
+        guard let fingerprint = libraryPrefs.fingerprint(of: entry) else { return false }
+        return resumableFingerprints.contains(fingerprint)
+    }
+
+    /// Revisa fuera del actor principal la fecha y la cabecera de 4 bytes del estado `.auto`
+    /// (sin leer miniaturas); el contenido se valida al reanudar, en `EmulatorSession`.
+    func refreshContinuations() {
+        let fingerprints = Set(libraryPrefs.data.fingerprints.values)
+        Task.detached(priority: .utility) { [weak self] in
+            guard let statesRoot = try? StateStore.defaultRoot(),
+                  let savesDirectory = try? SaveStore.defaultDirectory() else { return }
+            let valid = Set(fingerprints.filter { fingerprint in
+                let states = StateStore(root: statesRoot, fingerprint: fingerprint)
+                let saves = SaveStore(directory: savesDirectory, fingerprint: fingerprint)
+                return states.automaticEntry(newerThan: saves.modificationDate) != nil
+            })
+            await MainActor.run { self?.resumableFingerprints = valid }
+        }
+    }
+
+    func didRestoreSave(fingerprint: String) {
+        resumableFingerprints.remove(fingerprint)
+        refreshContinuations()
+    }
+
     /// El último frame de la sesión como portada (SPEC §11). El hilo de emulación ya está
     /// parado y el render corre en el hilo principal, así que el frame no cambia al copiarlo;
     /// la codificación PNG va en la cola del almacén de portadas.
@@ -365,12 +477,20 @@ final class AppState {
         artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 
-    /// `.inactive`/`.background`: pausar y hacer flush síncrono de la SRAM.
+    /// `.inactive`/`.background`: pausar, flush síncrono de la SRAM y después el estado
+    /// automático, todo dentro de la tarea de fondo (iOS puede matar la app sin más aviso).
     func enterBackground() {
-        guard let session, !paused else { return }
+        guard let session else { return }
+        if paused {
+            // Sheet de pausa abierta: la sesión ya está aparcada y su SRAM volcada, pero el
+            // .auto puede ser anterior a la posición actual (D81V2-H3).
+            if !editingControls { saveAutomaticState(of: session) }
+            return
+        }
         let backgroundTask = LocalSaveBackgroundTask()
         backgroundTask.begin()
         session.pause()
+        if !editingControls { saveAutomaticState(of: session) }
         session.whenMirrorIdle(LocalSaveBackgroundTask.makeEndHandler(backgroundTask))
         paused = true
     }

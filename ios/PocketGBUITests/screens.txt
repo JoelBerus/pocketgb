@@ -46,6 +46,7 @@ library-list        portrait  light  -screen library-list -demoLibrary standard
 library-list        portrait  dark   -screen library-list -demoLibrary standard
 library-continue    portrait  light  -screen library-continue -demoLibrary standard
 library-continue    portrait  dark   -screen library-continue -demoLibrary standard
+library-continue-reduce-motion portrait dark -screen library-continue-reduce-motion -demoLibrary standard -reduceMotion -uiSwipeUp
 favorites           portrait  light  -screen favorites -demoLibrary standard
 favorites           portrait  dark   -screen favorites -demoLibrary standard
 search-active       portrait  light  -screen search-active -demoLibrary standard

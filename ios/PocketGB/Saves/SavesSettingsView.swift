@@ -43,6 +43,7 @@ struct SavesSettingsView: View {
 
 /// Backups de un juego, con fecha, y restauración que respalda antes la partida actual.
 struct SaveBackupsView: View {
+    @Environment(AppState.self) private var state
     let fingerprint: String
     @State private var backups: [(index: Int, date: Date?)] = []
     @State private var currentDate: Date?
@@ -120,6 +121,7 @@ struct SaveBackupsView: View {
         guard let store = store() else { return }
         do {
             try store.restore(backup: n)
+            state.didRestoreSave(fingerprint: fingerprint)
             message = "Copia restaurada. La partida anterior quedó como copia más reciente."
         } catch {
             message = "No se pudo restaurar: \(error.localizedDescription). No se ha cambiado nada."

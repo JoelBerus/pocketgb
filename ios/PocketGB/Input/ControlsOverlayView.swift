@@ -319,6 +319,8 @@ final class ControlVisualView: UIView {
     private let effectView = UIVisualEffectView(effect: nil)
     /// Vidrio de cada flecha en el estilo separado (arriba, derecha, abajo, izquierda).
     private let arrowViews = (0..<4).map { _ in UIVisualEffectView(effect: nil) }
+    private let arrowSymbols = ["chevron.up", "chevron.right", "chevron.down", "chevron.left"]
+        .map { UIImageView(image: UIImage(systemName: $0)) }
     private let solid = CAShapeLayer()
     private let ring = CAShapeLayer()
     private let glyph = CAShapeLayer()
@@ -335,10 +337,14 @@ final class ControlVisualView: UIView {
         layer.addSublayer(scrim)
         addSubview(effectView)
         effectView.isUserInteractionEnabled = false
-        for v in arrowViews {
+        for (v, arrow) in zip(arrowViews, arrowSymbols) {
             v.isUserInteractionEnabled = false
             v.clipsToBounds = true
             v.isHidden = true
+            arrow.tintColor = .white
+            arrow.contentMode = .center
+            arrow.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
+            v.contentView.addSubview(arrow)
             addSubview(v)
         }
         layer.addSublayer(solid)
@@ -397,24 +403,6 @@ final class ControlVisualView: UIView {
             .map { CGRect(x: c.x + $0.x - d / 2, y: c.y + $0.y - d / 2, width: d, height: d) }
     }
 
-    /// Triángulos de las flechas, apuntando hacia fuera.
-    private static func arrowGlyphs(in rect: CGRect) -> UIBezierPath {
-        let path = UIBezierPath()
-        for (i, r) in arrowRects(in: rect).enumerated() {
-            let s = r.width * 0.2
-            let c = CGPoint(x: r.midX, y: r.midY)
-            let angle = CGFloat(i) * .pi / 2 - .pi / 2   // arriba, derecha, abajo, izquierda
-            func point(_ a: CGFloat, _ len: CGFloat) -> CGPoint {
-                CGPoint(x: c.x + cos(angle + a) * len, y: c.y + sin(angle + a) * len)
-            }
-            path.move(to: point(0, s))
-            path.addLine(to: point(2.3, s))
-            path.addLine(to: point(-2.3, s))
-            path.close()
-        }
-        return path
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         let rect = bounds
@@ -430,15 +418,20 @@ final class ControlVisualView: UIView {
             v.layer.cornerRadius = r.width / 2
             v.isHidden = !arrowsMode
         }
+        for (view, arrow) in zip(arrowViews, arrowSymbols) {
+            arrow.frame = view.bounds
+            arrow.isHidden = !arrowsMode
+        }
         solid.frame = rect
         solid.path = shapePath(rect.insetBy(dx: 0.75, dy: 0.75)).cgPath
         ring.frame = rect
         ring.path = shapePath(rect.insetBy(dx: 2, dy: 2)).cgPath
         glyph.frame = rect
         if id == .dpad {
-            glyph.path = (arrowsMode ? Self.arrowGlyphs(in: rect) : Self.cross(in: rect)).cgPath
+            glyph.path = arrowsMode ? nil : Self.cross(in: rect).cgPath
             glyph.lineWidth = max(2, rect.width * 0.02)
-            glyph.fillColor = arrowsMode ? UIColor.white.cgColor : UIColor.clear.cgColor
+            glyph.fillColor = arrowsMode ? UIColor.clear.cgColor : UIColor.white.cgColor
+            glyph.strokeColor = UIColor.clear.cgColor
         }
         let size: CGFloat = switch id {
         case .a, .b: 24
@@ -451,21 +444,19 @@ final class ControlVisualView: UIView {
         symbol.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
     }
 
-    /// Cruz del D-pad con los brazos marcados y un hueco central.
+    /// Cruz continua y rellena; la unión de dos rectángulos redondeados elimina
+    /// los vértices agresivos sin cambiar el área táctil ni las diagonales.
     private static func cross(in rect: CGRect) -> UIBezierPath {
-        let arm = rect.width * 0.3, len = rect.width * 0.4
-        let c = CGPoint(x: rect.midX, y: rect.midY)
-        let outer = UIBezierPath()
-        let h = arm / 2
-        let points = [
-            CGPoint(x: -h, y: -len), CGPoint(x: h, y: -len), CGPoint(x: h, y: -h), CGPoint(x: len, y: -h),
-            CGPoint(x: len, y: h), CGPoint(x: h, y: h), CGPoint(x: h, y: len), CGPoint(x: -h, y: len),
-            CGPoint(x: -h, y: h), CGPoint(x: -len, y: h), CGPoint(x: -len, y: -h), CGPoint(x: -h, y: -h),
-        ]
-        outer.move(to: CGPoint(x: c.x + points[0].x, y: c.y + points[0].y))
-        for p in points.dropFirst() { outer.addLine(to: CGPoint(x: c.x + p.x, y: c.y + p.y)) }
-        outer.close()
-        return outer
+        let length = rect.width * 0.76
+        let thickness = rect.width * 0.29
+        let radius = thickness * 0.3
+        let horizontal = CGRect(x: rect.midX - length / 2, y: rect.midY - thickness / 2,
+                                width: length, height: thickness)
+        let vertical = CGRect(x: rect.midX - thickness / 2, y: rect.midY - length / 2,
+                              width: thickness, height: length)
+        let path = UIBezierPath(roundedRect: horizontal, cornerRadius: radius)
+        path.append(UIBezierPath(roundedRect: vertical, cornerRadius: radius))
+        return path
     }
 
     func configure(style: Style, opacity: CGFloat, reduceTransparency: Bool, pressed: Bool, editing: Bool,
@@ -521,6 +512,7 @@ final class ControlVisualView: UIView {
             ring.strokeColor = UIColor.clear.cgColor
         }
         glyph.opacity = Float(labelAlpha)
+        for arrow in arrowSymbols { arrow.alpha = labelAlpha }
         CATransaction.commit()
         label.alpha = labelAlpha
         symbol.alpha = labelAlpha

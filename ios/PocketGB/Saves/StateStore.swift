@@ -61,17 +61,33 @@ struct StateStore: Sendable {
     func entries() -> [StateSlot: Entry] {
         var result: [StateSlot: Entry] = [:]
         for slot in StateSlot.allCases {
-            let url = stateURL(slot)
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { continue }
-            let date = attrs[.modificationDate] as? Date ?? .distantPast
-            let head = (try? FileHandle(forReadingFrom: url)).flatMap { h in
-                defer { try? h.close() }
-                return try? h.read(upToCount: 4)
-            }
-            result[slot] = Entry(slot: slot, date: date, thumbnail: try? Data(contentsOf: thumbnailURL(slot)),
-                                 corrupt: head != Data("PGBS".utf8))
+            if let entry = entry(slot, withThumbnail: true) { result[slot] = entry }
         }
         return result
+    }
+
+    /// Una ranura: fecha y cabecera de 4 bytes; la miniatura PNG solo si se pide.
+    private func entry(_ slot: StateSlot, withThumbnail: Bool) -> Entry? {
+        let url = stateURL(slot)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        let date = attrs[.modificationDate] as? Date ?? .distantPast
+        let head = (try? FileHandle(forReadingFrom: url)).flatMap { h in
+            defer { try? h.close() }
+            return try? h.read(upToCount: 4)
+        }
+        return Entry(slot: slot, date: date,
+                     thumbnail: withThumbnail ? try? Data(contentsOf: thumbnailURL(slot)) : nil,
+                     corrupt: head != Data("PGBS".utf8))
+    }
+
+    /// Estado automático utilizable para “Continuar”. Una SRAM guardada después del
+    /// estado lo invalida: restaurar un backup nunca debe quedar revertido al reanudar.
+    /// Solo lee metadatos y la cabecera, nunca la miniatura (la biblioteca lo consulta
+    /// por cada juego).
+    func automaticEntry(newerThan saveDate: Date?) -> Entry? {
+        guard let entry = entry(.auto, withThumbnail: false), !entry.corrupt else { return nil }
+        if let saveDate, entry.date < saveDate { return nil }
+        return entry
     }
 
     /// Escribe el estado (atómico) y después su captura. Si la captura falla, el estado vale igual.

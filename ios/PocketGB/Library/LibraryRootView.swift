@@ -24,5 +24,9 @@ struct LibraryRootView: View {
             GameSettingsView(entry: entry)
                 .environment(state)
         }
+        .sheet(item: Binding(get: { state.renamingEntry }, set: { state.renamingEntry = $0 })) { entry in
+            RenameGameView(entry: entry)
+                .environment(state)
+        }
     }
 }
