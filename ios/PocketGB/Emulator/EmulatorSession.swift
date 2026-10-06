@@ -148,10 +148,16 @@ final class EmulatorSession: @unchecked Sendable {
                 frames.publish { core.copyFramebuffer(to: $0) }
                 throw StateError.notCurrent
             }
-            guard flushSRAM(sync: true) else {
-                try? core.stateLoad(previous)
-                frames.publish { core.copyFramebuffer(to: $0) }
-                throw StateError.saveFailed
+            // La RAM ya es la de disco: si solo cambia el pie del RTC no se persiste nada
+            // (no rota backups ni reescribe el espejo, D81V2-H4). Sin copia confirmada
+            // (lectura fallida al abrir) sí se pasa por el flush.
+            let ramOnDisk = confirmed.map { $0.prefix(info.sramBytes) == sramBefore }
+            if ramOnDisk != true {
+                guard flushSRAM(sync: true) else {
+                    try? core.stateLoad(previous)
+                    frames.publish { core.copyFramebuffer(to: $0) }
+                    throw StateError.saveFailed
+                }
             }
             // El RTC del MBC3 vuelve a la hora real (el estado trae la del momento de guardarlo).
             core.setRTCTime(Int64(Date().timeIntervalSince1970))

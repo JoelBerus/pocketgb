@@ -298,6 +298,14 @@ final class AppState {
         alertMessage = message
     }
 
+    private func discardStaleAutomaticState(of entry: RomEntry) {
+        guard let fingerprint = libraryPrefs.fingerprint(of: entry) else { return }
+        resumableFingerprints.remove(fingerprint)
+        if let root = try? StateStore.defaultRoot() {
+            try? StateStore(root: root, fingerprint: fingerprint).delete(.auto)
+        }
+    }
+
     private func showResumeFailure(_ entry: RomEntry, message: String) {
         resumeFallbackEntry = entry
         showAlert("No se pudo continuar", "\(message) Puedes conservar tu partida y jugar desde el inicio.")
@@ -347,6 +355,15 @@ final class AppState {
         } catch SaveOpening.Refusal.mirrorNotDownloaded {
             showAlert("Partida de iCloud sin descargar",
                       "La partida de “\(fileName)” está en iCloud y no se pudo descargar. Para no empezar de cero ni pisarla, el juego no se abre. Vuelve a intentarlo con conexión.")
+        } catch EmulatorSession.StateError.notCurrent {
+            // El .auto quedó obsoleto (partida más nueva): se retira para que «Continuar»
+            // deje de ofrecerse y fallar en cada intento (D81V2-H2). La partida no se toca.
+            if let resumeFallback {
+                discardStaleAutomaticState(of: resumeFallback)
+                showResumeFailure(resumeFallback, message: EmulatorSession.StateError.notCurrent.localizedDescription)
+            } else {
+                showAlert("No se puede abrir “\(fileName)”", EmulatorSession.StateError.notCurrent.localizedDescription)
+            }
         } catch let e as CoreError {
             if let resumeFallback { showResumeFailure(resumeFallback, message: e.description) }
             else { showAlert("No se puede abrir “\(fileName)”", e.description) }
@@ -463,7 +480,13 @@ final class AppState {
     /// `.inactive`/`.background`: pausar, flush síncrono de la SRAM y después el estado
     /// automático, todo dentro de la tarea de fondo (iOS puede matar la app sin más aviso).
     func enterBackground() {
-        guard let session, !paused else { return }
+        guard let session else { return }
+        if paused {
+            // Sheet de pausa abierta: la sesión ya está aparcada y su SRAM volcada, pero el
+            // .auto puede ser anterior a la posición actual (D81V2-H3).
+            if !editingControls { saveAutomaticState(of: session) }
+            return
+        }
         let backgroundTask = LocalSaveBackgroundTask()
         backgroundTask.begin()
         session.pause()
