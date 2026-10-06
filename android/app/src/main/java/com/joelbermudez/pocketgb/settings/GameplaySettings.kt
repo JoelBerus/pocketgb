@@ -10,6 +10,10 @@ import com.joelbermudez.pocketgb.input.PadAction
 import android.view.KeyEvent
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 
 /** Máximo id de paleta de compatibilidad (`GB_COMPAT_PALETTES` en `core/include/pocketgb.h`); 0 = automática. */
@@ -223,6 +227,13 @@ data class GameplaySettingsData(
     }
 
 }
+
+/**
+ * Cambios de paleta (global o del juego [fingerprint]) posteriores al valor actual, sin repetidos (A6-H2). Un `StateFlow`
+ * no es estado de snapshot de Compose: se observa como flujo, no con `snapshotFlow`.
+ */
+fun Flow<GameplaySettingsData>.compatPaletteChanges(fingerprint: String): Flow<Int> =
+    map { it.emulation(fingerprint, false).compatPalette }.distinctUntilChanged().drop(1)
 
 private const val EPSILON = 1e-4f
 
