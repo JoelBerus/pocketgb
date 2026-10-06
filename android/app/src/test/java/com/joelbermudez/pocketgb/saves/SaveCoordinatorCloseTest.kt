@@ -159,6 +159,22 @@ class SaveCoordinatorCloseTest {
         assertFalse(c.isSaveThreadAlive)
     }
 
+    /** A5V7-H1: `forceStop` no lanza, es idempotente y deja el hilo terminando aunque nadie haya llamado a `shutdown`. */
+    @Test fun forceStopClosesTheExecutorWithoutThrowingAndIsIdempotent() {
+        val sram = HandleSram(version(0))
+        val c = newCoordinator(sram, PosixSaveFileOps)
+        assertTrue(c.flushSync().isSafe) // asegura que el hilo de guardado existe
+        assertTrue(c.isSaveThreadAlive)
+
+        c.forceStop()
+        c.forceStop()
+
+        c.awaitThreadExit()
+        assertFalse("el hilo salió", c.isSaveThreadAlive)
+        assertTrue("tras forzar el cierre nadie acepta trabajo", c.flushSync() is FlushResult.Failed)
+        assertEquals(CloseResult.Closed, c.shutdown(150, 150))
+    }
+
     @Test fun flushSyncHonorsAnExplicitShorterTimeout() {
         val ops = UninterruptibleOps()
         val sram = HandleSram(version(0))

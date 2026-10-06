@@ -153,6 +153,12 @@ class GameSession(
     /** Cierre del hilo de guardado; inyectable en pruebas para simular un fallo en pleno cierre (A5V6-H2). */
     private val shutdownCoordinator: (SaveCoordinator, Long, Long) -> CloseResult =
         { coordinator, graceMs, killWaitMs -> coordinator.shutdown(graceMs, killWaitMs) },
+    /** Encolado de la reparación en el hilo de guardado; inyectable en pruebas (A5V6-H1). */
+    private val repairSubmit: (SaveCoordinator, () -> Unit) -> java.util.concurrent.Future<Unit> =
+        { coordinator, block -> coordinator.submitOnSaveThread(block) },
+    /** Fábrica del hilo de reparación; inyectable en pruebas para simular un fallo al arrancarlo (A5V6-H3). */
+    private val repairThreadFactory: (Runnable, String) -> Thread =
+        { body, name -> Thread(body, name).apply { isDaemon = true } },
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -372,59 +378,120 @@ class GameSession(
         // La sesión ya posee la huella; la reparación la mantiene aunque la sesión se cierre antes de terminar.
         holdLease()
         val done = java.util.concurrent.CountDownLatch(1)
-        val first = try { coordinator.submitOnSaveThread { target.persistLocal(sram) } } catch (_: IOException) { null }
-        Thread({
-            var future: java.util.concurrent.Future<Unit>? = first
-            var delay = REPAIR_BACKOFF_START_MS
-            // Una interrupción NO confirma que la reparación terminó ni que B dejó de escribir (A5V5-H1): se ignora,
-            // se sigue esperando y la marca de interrupción se restaura al final.
-            var interrupted = false
-            try {
-                while (true) {
-                    try {
-                        val pending = future
-                        if (pending != null) {
-                            try {
-                                pending.get(REPAIR_POLL_MS, TimeUnit.MILLISECONDS)
-                                return@Thread
-                            } catch (_: TimeoutException) {
-                                // La tarea encolada pudo descartarse en un cierre forzado: no se espera para siempre.
-                                if (coordinator.isFinished && !pending.isDone) future = null
-                                continue
-                            } catch (error: java.util.concurrent.ExecutionException) {
-                                throw error.cause ?: error
-                            }
-                        } else {
-                            // Sin cola (cerrada): con el hilo de guardado ya salido, ningún B rezagado puede escribir.
-                            coordinator.awaitThreadExit()
-                            target.persistLocal(sram)
-                            return@Thread
-                        }
-                    } catch (_: InterruptedException) {
-                        interrupted = true
-                    } catch (error: Throwable) {
-                        Log.w(TAG, "Reparación de la partida anterior fallida; se reintenta", error)
-                        val end = System.nanoTime() + delay * 1_000_000L
-                        while (true) {
-                            val left = (end - System.nanoTime()) / 1_000_000L
-                            if (left <= 0) break
-                            try { Thread.sleep(left) } catch (_: InterruptedException) { interrupted = true }
-                        }
-                        delay = minOf(delay * 2, REPAIR_BACKOFF_MAX_MS)
-                        future = try { coordinator.submitOnSaveThread { target.persistLocal(sram) } } catch (_: IOException) { null }
-                    }
-                }
-            } finally {
-                // Solo se suelta la huella cuando la reparación terminó con éxito.
-                try { dropLease() } finally {
-                    done.countDown()
-                    if (interrupted) Thread.currentThread().interrupt()
-                }
-            }
-        }, "pocketgb-save-repair").apply { isDaemon = true }.start()
+        var first: java.util.concurrent.Future<Unit>? = null
+        try {
+            first = try { repairSubmit(coordinator) { target.persistLocal(sram) } } catch (_: IOException) { null }
+            val body = repairBody(target, sram, first, done)
+            repairThreadFactory(body, "pocketgb-save-repair").start()
+        } catch (error: Throwable) {
+            // A5V6-H3: sin hilo de reparación el hold extra no puede quedarse sin dueño. Nunca lanza: quien llamó
+            // debe ver el RollbackFailed, no este fallo.
+            Log.w(TAG, "No se pudo arrancar el hilo de reparación; se resuelve en línea o al cerrar la sesión", error)
+            return repairWithoutThread(target, sram, first)
+        }
         return try { done.await(repairWaitMs, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             false
+        }
+    }
+
+    /**
+     * Cuerpo del hilo de reparación. Invariante (A5V6-H1): el hold solo se suelta tras una reparación CONFIRMADA;
+     * cualquier `Throwable` (incluso dentro del propio manejador de reintentos) vuelve a reintentar con backoff.
+     */
+    private fun repairBody(
+        target: SaveTarget,
+        sram: ByteArray,
+        first: java.util.concurrent.Future<Unit>?,
+        done: java.util.concurrent.CountDownLatch,
+    ) = Runnable {
+        var future: java.util.concurrent.Future<Unit>? = first
+        var delay = REPAIR_BACKOFF_START_MS
+        // Una interrupción NO confirma que la reparación terminó ni que B dejó de escribir (A5V5-H1): se ignora,
+        // se sigue esperando y la marca de interrupción se restaura al final.
+        var interrupted = false
+        var confirmed = false
+        try {
+            while (!confirmed) {
+                try {
+                    val pending = future
+                    if (pending != null) {
+                        try {
+                            pending.get(REPAIR_POLL_MS, TimeUnit.MILLISECONDS)
+                            confirmed = true
+                        } catch (_: TimeoutException) {
+                            // La tarea encolada pudo descartarse en un cierre forzado: no se espera para siempre.
+                            if (coordinator.isFinished && !pending.isDone) future = null
+                        } catch (error: java.util.concurrent.ExecutionException) {
+                            throw error.cause ?: error
+                        }
+                    } else {
+                        // Sin cola (cerrada): con el hilo de guardado ya salido, ningún B rezagado puede escribir.
+                        coordinator.awaitThreadExit()
+                        target.persistLocal(sram)
+                        confirmed = true
+                    }
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                } catch (error: Throwable) {
+                    // Todo el manejador es a prueba de `Error` (A5V6-H1): lo que falle aquí solo provoca otra vuelta.
+                    try { Log.w(TAG, "Reparación de la partida anterior fallida; se reintenta", error) } catch (_: Throwable) {}
+                    val end = System.nanoTime() + delay * 1_000_000L
+                    while (true) {
+                        val left = (end - System.nanoTime()) / 1_000_000L
+                        if (left <= 0) break
+                        try { Thread.sleep(left) } catch (_: InterruptedException) { interrupted = true }
+                    }
+                    delay = minOf(delay * 2, REPAIR_BACKOFF_MAX_MS)
+                    try {
+                        future = try { repairSubmit(coordinator) { target.persistLocal(sram) } } catch (_: IOException) { null }
+                    } catch (_: Throwable) {
+                        // El reencolado falló (p. ej. OOM): se conserva el futuro fallido y se reintenta tras otra espera.
+                    }
+                }
+            }
+        } finally {
+            // Solo se suelta la hold con la reparación confirmada; si el hilo muere sin ella, se conserva (la
+            // huella queda bloqueada antes que arriesgar la partida).
+            try { if (confirmed) dropLease() } finally {
+                done.countDown()
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+        }
+    }
+
+    /** Reparación pendiente sin hilo propio: el hold lo resuelve [settleDeferredRepair] al cerrar de verdad. */
+    private class DeferredRepair(val target: SaveTarget, val sram: ByteArray)
+
+    private val deferredRepair = java.util.concurrent.atomic.AtomicReference<DeferredRepair?>(null)
+
+    /** Fallback de [repairPrevious] cuando no hay hilo: intenta confirmar en [repairWaitMs]; si no, difiere al cierre. */
+    private fun repairWithoutThread(target: SaveTarget, sram: ByteArray, first: java.util.concurrent.Future<Unit>?): Boolean {
+        val confirmed = try {
+            (first ?: repairSubmit(coordinator) { target.persistLocal(sram) }).get(repairWaitMs, TimeUnit.MILLISECONDS)
+            true
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        } catch (_: Throwable) {
+            false
+        }
+        if (confirmed) dropLease() else deferredRepair.set(DeferredRepair(target, sram))
+        return confirmed
+    }
+
+    /**
+     * Llamado SOLO con el hilo de guardado ya salido (B no puede escribir): escribe A directamente y suelta el hold
+     * extra de una reparación que no pudo tener hilo. Si falla, el hold se conserva.
+     */
+    private fun settleDeferredRepair() {
+        val deferred = deferredRepair.getAndSet(null) ?: return
+        try {
+            deferred.target.persistLocal(deferred.sram)
+            dropLease()
+        } catch (error: Throwable) {
+            Log.w(TAG, "No se pudo reponer la partida anterior al cerrar; la huella sigue bloqueada", error)
+            deferredRepair.set(deferred)
         }
     }
 
@@ -524,11 +591,12 @@ class GameSession(
             shutdownCoordinator(coordinator, closeGraceMs, closeKillWaitMs)
         } catch (error: Throwable) {
             Log.w(TAG, "El cierre del hilo de guardado falló; se espera a su salida real antes de liberar la huella", error)
+            coordinator.forceStop()
             CloseResult.SaveThreadStuck(SaveCoordinator.THREAD_NAME)
         }
         closeResult = result
         when (result) {
-            CloseResult.Closed -> try { session.close() } finally { dropLease() }
+            CloseResult.Closed -> try { settleDeferredRepair() } finally { try { session.close() } finally { dropLease() } }
             is CloseResult.SaveThreadStuck -> {
                 Log.w(TAG, "El hilo de guardado no terminó (${result.threadName}); el handle nativo se libera cuando salga")
                 Thread({
@@ -537,6 +605,8 @@ class GameSession(
                     // esperando y se restaura la marca de interrupción al final.
                     var interrupted = false
                     try {
+                        // A5V7-H1: el cierre pudo fallar antes de llegar al ejecutor; se vuelve a pedir sin lanzar.
+                        coordinator.forceStop()
                         while (true) {
                             try {
                                 coordinator.awaitThreadExit()
@@ -545,7 +615,7 @@ class GameSession(
                                 interrupted = true
                             }
                         }
-                        try { session.close() } finally { dropLease() }
+                        try { settleDeferredRepair() } finally { try { session.close() } finally { dropLease() } }
                     } finally {
                         if (interrupted) Thread.currentThread().interrupt()
                     }
