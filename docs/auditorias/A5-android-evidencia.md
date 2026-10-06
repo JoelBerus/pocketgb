@@ -377,3 +377,16 @@ Auditado: `8b30cfd730de4796f6148809efb04f378be5734e`. Informe: `A5-android-codex
 | A5V5-H3 (baja) | `docs/ESTADO.md` actualizado y sin contradicciones. | — |
 
 Verificación tras el cambio (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 189/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50; `core/` sin cambios. No verificado: prueba manual J11 en teléfono. Decisión de Joel (2026-10-06): corregir solo este hallazgo, sin barrido sistemático de otras rutas de liberación del lease.
+
+## Correcciones de la 6ª vuelta
+
+Auditado: `73de293` (5ª vuelta documentada; código `0fe6c80`). Informe: `A5-android-codex-v6.md` (RECHAZAR: A5V6-H1 y H2 bloqueantes, H3 y H4 altas; Codex confirmó válida la corrección de A5V5-H1). Decisión de Joel (2026-10-06): corregir solo H2 y H4 (los más plausibles) y dejar H1 y H3 como riesgo residual documentado. Correcciones: commit `7c6ef8c01f59e02118486cf17c90da788453b318`.
+
+| ID | Corrección | Test (comprobado revirtiendo la corrección) |
+|---|---|---|
+| A5V6-H2 (bloqueante) | Si `SaveCoordinator.shutdown()` lanza a medias, `tryClose()` ya no suelta el lease: lo trata como `SaveThreadStuck` y el reaper espera la salida real del hilo (sin plazo y sin abandonar ante interrupciones) antes de cerrar la sesión y soltar la huella. `GameSession` acepta un `shutdownCoordinator` inyectable para probarlo. | `GameSessionHardeningTest.aFailingCoordinatorShutdownNeverReleasesTheLeaseWhileTheSaveThreadIsAlive`: **falla sin la corrección (1 de 15) y pasa con ella.** |
+| A5V6-H4 (alta) | Si el rescate de `onCleared()` no puede encolarse (`RejectedExecutionException`, `Error`), la sesión ya reclamada pasa de inmediato al reintento del `OrphanSessionRegistry`: nunca queda retenida sin nadie que la cierre. | `GameplayViewModelDestroyTest.onClearedWhenTheRescueCannotBeQueuedStillHandsTheSessionToTheRegistry`: **falla sin la corrección (1 de 4) y pasa con ella.** |
+| A5V6-H1 (bloqueante) | **No corregido (riesgo residual aceptado por Joel).** Un `Error` dentro del manejador de reintentos del hilo de reparación llega al `finally` y suelta el hold sin confirmar la reparación. Solo ocurre con un `Error` (p. ej. `OutOfMemoryError`) dentro de una ruta ya excepcional. | — |
+| A5V6-H3 (alta) | **No corregido (riesgo residual aceptado por Joel).** Si falla la creación o el arranque del hilo de reparación (`OutOfMemoryError`, `SecurityException`) tras `holdLease()`, el hold extra no se libera. | — |
+
+Verificación tras los cambios (emulador sin ventana, `--max-workers=1`): JVM 241/0; instrumentados 191/0 (por XML); `assembleRelease` y `lintDebug` verdes; `tools/android-save-kill-test.sh 50`: 50/50; `core/` sin cambios. No verificado: prueba manual J11 en teléfono. H1 y H3 quedan como pendientes antes de A8 (auditoría conjunta final).
