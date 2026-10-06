@@ -399,6 +399,111 @@ class GameSessionHardeningTest {
         }
     }
 
+    /**
+     * A5V6-H1: un `Error` DENTRO del manejador de reintentos de la reparación no puede soltar el hold sin que la
+     * reparación esté confirmada. Primer intento fallido, reencolado con OOM, y después un futuro que no termina: con
+     * la sesión ya cerrada el hold de la reparación es lo único que retiene la huella.
+     */
+    @Test
+    fun anErrorInsideTheRepairRetryHandlerNeverReleasesTheHoldBeforeTheRepairIsConfirmed() {
+        val ops = StallingOps()
+        val session = RollbackFailsSession()
+        val ownership = FingerprintOwnership()
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        val neverDone = java.util.concurrent.CompletableFuture<Unit>()
+        var captured: com.joelbermudez.pocketgb.saves.SaveCoordinator? = null
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
+            ownership = ownership, repairWaitMs = 300,
+            // La sesión se "cierra" sin tocar el coordinador: solo la reparación conserva la huella.
+            shutdownCoordinator = { c, _, _ -> captured = c; CloseResult.Closed },
+            repairSubmit = { _, _ ->
+                when (calls.incrementAndGet()) {
+                    1 -> java.util.concurrent.CompletableFuture<Unit>().also { it.completeExceptionally(IllegalStateException("fallo del intento")) }
+                    2 -> throw OutOfMemoryError("simulado dentro del manejador")
+                    else -> neverDone
+                }
+            },
+        ).use { g ->
+            val game = g.game
+            assertEquals(FlushResult.Saved, playAndPause(game))
+            game.saveState(StateSlot.MANUAL1)
+            assertEquals(FlushResult.Saved, playAndPause(game, 300))
+            ops.arm()
+            try {
+                assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+                assertTrue(ops.awaitEntered())
+                game.tryClose() // suelta el hold de la propia sesión; queda el de la reparación
+                assertTrue("la reparación llegó a reencolar", waitUntil(5_000) { calls.get() >= 3 })
+                Thread.sleep(500) // margen para que una liberación indebida ocurriera
+                assertTrue("sin reparación confirmada la huella SIGUE con dueño", ownership.isOwned(game.fingerprint))
+                assertNull("nadie puede abrir ni restaurar", ownership.tryAcquire(game.fingerprint, "intruso"))
+
+                neverDone.complete(Unit) // la reparación se confirma
+                assertTrue("confirmada, se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            } finally {
+                ops.release()
+                captured?.shutdown(300, 300) // el cierre simulado no paró el hilo: se limpia para no contaminar otras pruebas
+            }
+        }
+    }
+
+    /**
+     * A5V6-H3: si el hilo de reparación no puede ni arrancar (OOM en `pthread_create`), quien llama sigue viendo
+     * `RollbackFailed` (no el OOM), el hold no queda sin dueño y la partida anterior acaba como principal.
+     */
+    @Test
+    fun aRepairThreadThatCannotStartKeepsRollbackFailedAndTheHoldHasAnOwner() {
+        val ops = StallingOps()
+        val session = RollbackFailsSession()
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), ops = ops, session = session, autoTick = false, flushTimeoutMs = 400,
+            closeGraceMs = 300, closeKillWaitMs = 300, ownership = ownership, repairWaitMs = 300,
+            repairThreadFactory = { _, _ -> throw OutOfMemoryError("pthread_create simulado") },
+        ).use { g ->
+            val game = g.game
+            val store = g.store!!
+            assertEquals(FlushResult.Saved, playAndPause(game))
+            game.saveState(StateSlot.MANUAL1)
+            assertEquals(FlushResult.Saved, playAndPause(game, 300))
+            val a = store.load()!!
+            ops.arm()
+            try {
+                val error = assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+                assertFalse("no estaba confirmado", error.restored)
+                assertTrue(ops.awaitEntered())
+                game.tryClose()
+                assertTrue("con B en vuelo la huella sigue con dueño", ownership.isOwned(game.fingerprint))
+            } finally {
+                ops.release()
+            }
+            assertTrue("el cierre acaba liberando la huella (el hold tenía dueño)", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            assertArrayEquals("y el principal es A", a, store.load())
+        }
+    }
+
+    /**
+     * A5V7-H1: el cierre del coordinador lanza ANTES de que el ejecutor reciba `shutdown`. El reaper debe forzar el
+     * cierre por su cuenta: el hilo termina y la huella se libera (antes esperaba para siempre).
+     */
+    @Test
+    fun aShutdownThatThrowsBeforeTouchingTheExecutorStillEndsTheSaveThreadAndReleasesTheLease() {
+        val ownership = FingerprintOwnership()
+        openGame(
+            SyntheticRom.sramCounter(), autoTick = true, closeGraceMs = 200, closeKillWaitMs = 200, ownership = ownership,
+            shutdownCoordinator = { _, _, _ -> throw SecurityException("fallo simulado antes del executor") },
+        ).use { g ->
+            val game = g.game
+            game.start()
+            assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+            assertTrue("sin lanzar", game.tryClose() is CloseResult.SaveThreadStuck)
+            assertTrue("el hilo de guardado termina", waitUntil(15_000) { Thread.getAllStackTraces().keys.none { it.name == com.joelbermudez.pocketgb.saves.SaveCoordinator.THREAD_NAME && it.isAlive } })
+            assertTrue("y la huella se libera", waitUntil(15_000) { !ownership.isOwned(game.fingerprint) })
+            assertFalse(game.holdsLease)
+        }
+    }
+
     // ---- DeepSeek H1 / A5V3: el reaper suelta el lease también ante interrupción
 
     @Test

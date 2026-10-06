@@ -315,7 +315,8 @@ class SaveCoordinator(
      */
     fun shutdown(graceMs: Long = 10_000, killWaitMs: Long = 5_000): CloseResult {
         synchronized(sourceGate) { closed = true }
-        executor.shutdown()
+        // A5V7-H1: si pedir el cierre falla, al menos se fuerza `shutdownNow()` antes de propagar el fallo.
+        try { executor.shutdown() } catch (error: Throwable) { forceStop(); throw error }
         if (!awaitQuietly(graceMs)) {
             executor.shutdownNow()
             awaitQuietly(killWaitMs)
@@ -327,6 +328,20 @@ class SaveCoordinator(
             try { thread.join(killWaitMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         }
         return if (thread != null && thread.isAlive) CloseResult.SaveThreadStuck(thread.name) else CloseResult.Closed
+    }
+
+    /**
+     * Cierre forzado que NO lanza (A5V7-H1): marca cerrado y garantiza al menos `shutdownNow()` (cancela la tarea
+     * periódica e interrumpe el hilo). Idempotente; lo usan [shutdown] ante un fallo y el "reaper" de la sesión.
+     */
+    fun forceStop() {
+        try {
+            synchronized(sourceGate) { closed = true }
+            executor.shutdown()
+        } catch (_: Throwable) {
+        } finally {
+            try { executor.shutdownNow() } catch (_: Throwable) {}
+        }
     }
 
     private fun awaitQuietly(ms: Long): Boolean = try {

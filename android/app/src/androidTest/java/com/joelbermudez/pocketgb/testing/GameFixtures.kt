@@ -108,6 +108,8 @@ fun openGame(
     ownership: FingerprintOwnership = FingerprintOwnership(),
     repairWaitMs: Long = 3_000,
     shutdownCoordinator: ((com.joelbermudez.pocketgb.saves.SaveCoordinator, Long, Long) -> com.joelbermudez.pocketgb.saves.CloseResult)? = null,
+    repairSubmit: ((com.joelbermudez.pocketgb.saves.SaveCoordinator, () -> Unit) -> java.util.concurrent.Future<Unit>)? = null,
+    repairThreadFactory: ((Runnable, String) -> Thread)? = null,
 ): OpenedGame {
     val info = session.load(rom, 1_700_000_000)
     val fingerprint = info.fingerprintHex
@@ -124,20 +126,14 @@ fun openGame(
         baseline = session.copySram()
     }
     val lease = ownership.tryAcquire(fingerprint, "prueba") ?: error("la huella ya tiene dueño")
-    val game = if (shutdownCoordinator == null) {
-        GameSession(
-            session, info, states, target, baseline,
-            autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
-            closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
-            lease = lease, repairWaitMs = repairWaitMs,
-        )
-    } else {
-        GameSession(
-            session, info, states, target, baseline,
-            autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
-            closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
-            lease = lease, repairWaitMs = repairWaitMs, shutdownCoordinator = shutdownCoordinator,
-        )
-    }
+    val game = GameSession(
+        session, info, states, target, baseline,
+        autoTick = autoTick, flushTimeoutMs = flushTimeoutMs,
+        closeGraceMs = closeGraceMs, closeKillWaitMs = closeKillWaitMs,
+        lease = lease, repairWaitMs = repairWaitMs,
+        shutdownCoordinator = shutdownCoordinator ?: { c, grace, kill -> c.shutdown(grace, kill) },
+        repairSubmit = repairSubmit ?: { c, block -> c.submitOnSaveThread(block) },
+        repairThreadFactory = repairThreadFactory ?: { body, name -> Thread(body, name).apply { isDaemon = true } },
+    )
     return OpenedGame(game, store, states, root)
 }
