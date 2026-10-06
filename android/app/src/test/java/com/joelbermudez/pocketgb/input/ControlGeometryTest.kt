@@ -219,4 +219,20 @@ class ControlGeometryTest {
             assertTrue("lado derecho=$right supera 200 dp: $total px", total <= GestureExclusion.EDGE_BUDGET_DP * density + 0.5)
         }
     }
+
+    @Test
+    fun gestureExclusionNeverLeavesTheSafeAreaVertically() {
+        // Ventana muy baja (multiventana): el control ocupa todo el alto y su área táctil mínima de 48 dp (144 px a
+        // densidad 3) sobresale del área segura si no se recorta también en vertical.
+        for (height in listOf(60f, 100f, 120f, 600f)) {
+            val safe = ControlBounds(0f, 300f, 1000f, 300f + height)
+            val layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT)
+
+            val geometry = ControlGeometry(layout, ControlsOrientation.PORTRAIT, safe, density = 3f)
+            GestureExclusion.rects(geometry, safe.width, density = 3f).forEach {
+                assertTrue("alto $height: sale por arriba ${it.top}", it.top >= safe.top - 0.01f)
+                assertTrue("alto $height: sale por abajo ${it.bottom}", it.bottom <= safe.bottom + 0.01f)
+            }
+        }
+    }
 }
