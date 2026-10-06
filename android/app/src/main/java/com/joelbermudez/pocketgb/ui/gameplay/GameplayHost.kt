@@ -27,26 +27,49 @@ import com.joelbermudez.pocketgb.emulator.SessionState
 import com.joelbermudez.pocketgb.game.GameMenu
 import com.joelbermudez.pocketgb.game.GameSession
 import com.joelbermudez.pocketgb.game.GameplayViewModel
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
+import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
+import androidx.compose.foundation.background
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 
 /**
  * Raíz del juego: pinta la partida a pantalla completa si hay sesión (sin ruta en el back stack), o
  * [content] si no; encima, la cortina de apertura y los diálogos. La sesión vive en el ViewModel.
  */
 @Composable
-fun GameplayRoot(viewModel: GameplayViewModel, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun GameplayRoot(
+    viewModel: GameplayViewModel,
+    modifier: Modifier = Modifier,
+    settings: GameplaySettingsRepository = GameplaySettingsRepository.shared(LocalContext.current),
+    content: @Composable () -> Unit,
+) {
     val game by viewModel.game.collectAsStateWithLifecycle()
     val opening by viewModel.opening.collectAsStateWithLifecycle()
     Box(modifier.fillMaxSize()) {
         val current = game
-        if (current != null) GameplayHost(viewModel, current) else content()
+        // El juego siempre es oscuro (K4): superficie, HUD, hojas y diálogos, sea cual sea el tema de la app.
+        if (current != null) GameplayTheme { GameplayHost(viewModel, current, settings = settings) } else content()
         if (opening) OpeningOverlay()
-        GameDialogs(viewModel)
+        GameplayTheme { GameDialogs(viewModel) }
     }
 }
 
+@Composable
+private fun GameplayTheme(content: @Composable () -> Unit) =
+    PocketGBTheme(forceDark = true, dynamicColor = false, content = content)
+
 /** Partida en curso: gameplay, ciclo de vida, foco de audio, atrás, menú de pausa, estados y avisos. */
 @Composable
-fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modifier = Modifier) {
+fun GameplayHost(
+    viewModel: GameplayViewModel,
+    game: GameSession,
+    modifier: Modifier = Modifier,
+    settings: GameplaySettingsRepository = GameplaySettingsRepository.shared(LocalContext.current),
+) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val menu by viewModel.menu.collectAsStateWithLifecycle()
@@ -57,6 +80,18 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
     val saveProblem by game.saveProblem.collectAsStateWithLifecycle()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val snackbar = remember { SnackbarHostState() }
+    val prefs by settings.state.collectAsStateWithLifecycle()
+
+    ImmersiveMode()
+    // Volumen y paleta CGB en caliente (K2, K8): la paleta solo si la sesión ya está en compatibilidad CGB; el modelo
+    // nunca cambia con la sesión abierta. La escala la aplica GameSurface (K3).
+    LaunchedEffect(game, prefs.volume) { game.setVolume(prefs.volume) }
+    LaunchedEffect(game) {
+        snapshotFlow { settings.state.value.emulation(game.fingerprint, false).compatPalette }
+            .distinctUntilChanged()
+            .drop(1)
+            .collect { palette -> runCatching { game.setCompatPalette(palette) } }
+    }
 
     val observer = remember(game) { SessionLifecycleObserver(game, viewModel::onFlushResult) }
     DisposableEffect(game, lifecycle) {
@@ -79,9 +114,22 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
     }
 
     BackHandler(enabled = menu == GameMenu.None && dialog == null) { viewModel.showPauseMenu() }
+    BackHandler(enabled = menu == GameMenu.Editor) { viewModel.closeControlsEditor() }
 
     Box(modifier.fillMaxSize()) {
-        GameplayScreen(game.session, onMenu = viewModel::showPauseMenu, showPausedOverlay = false)
+        GameplayScreen(
+            game.session,
+            onMenu = viewModel::showPauseMenu,
+            showPausedOverlay = false,
+            settings = prefs,
+            editing = menu == GameMenu.Editor,
+            onEditingDone = viewModel::closeControlsEditor,
+            onSettingsChange = { change -> settings.update(change) },
+        )
+        // Último fotograma atenuado detrás de las hojas de pausa y de estados.
+        if (menu == GameMenu.Pause || menu == GameMenu.States) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)).testTag("pause-dim"))
+        }
         SaveProblemBanner(
             saveProblem,
             Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp, start = 16.dp, end = 16.dp),
@@ -90,12 +138,14 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
         }
         when (menu) {
-            GameMenu.None -> Unit
+            GameMenu.None, GameMenu.Editor -> Unit
             GameMenu.Pause -> PauseSheet(
                 landscape = landscape,
                 busy = busy,
+                title = game.info.title,
                 onContinue = viewModel::continueGame,
                 onStates = viewModel::openStates,
+                onCustomize = viewModel::openControlsEditor,
                 onExit = { viewModel.exit(force = false) },
             )
             GameMenu.States -> StatesSheet(
@@ -104,7 +154,7 @@ fun GameplayHost(viewModel: GameplayViewModel, game: GameSession, modifier: Modi
                 snackbar = snackbar,
                 onBack = viewModel::closeStates,
                 onSave = viewModel::saveState,
-                onLoad = viewModel::loadState,
+                onLoad = { slot, saveCurrent -> viewModel.loadState(slot, saveCurrent) },
                 onDelete = viewModel::deleteState,
             )
         }

@@ -60,7 +60,7 @@ class GameControlsView(
             if (menuChanged) rebuild() else invalidate()
         }
 
-    var visibility: ControlsVisibility
+    var controlsVisibility: ControlsVisibility
         get() = fade.visibility
         set(value) {
             if (fade.visibility == value) return

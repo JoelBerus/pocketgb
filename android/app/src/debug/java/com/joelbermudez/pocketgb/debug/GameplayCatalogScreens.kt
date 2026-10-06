@@ -63,13 +63,13 @@ private fun demoStates() = StatesUi(
 
 @Composable
 internal fun PauseSheetCatalog(landscape: Boolean) = GameBackdrop {
-    PauseSheet(landscape = landscape, busy = false, onContinue = {}, onStates = {}, onExit = {})
+    PauseSheet(landscape = landscape, busy = false, title = "CONTADOR", onContinue = {}, onStates = {}, onCustomize = {}, onExit = {})
 }
 
 @Composable
 internal fun StatesSheetCatalog(landscape: Boolean) = GameBackdrop {
     val states = remember { demoStates() }
-    StatesSheet(landscape, states, remember { SnackbarHostState() }, {}, {}, {}, {})
+    StatesSheet(landscape, states, remember { SnackbarHostState() }, {}, {}, { _, _ -> }, {})
 }
 
 @Composable
@@ -120,7 +120,7 @@ internal fun StatesRescueCatalog() = GameBackdrop {
                 .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow)
                 .verticalScroll(scroll),
         ) {
-            StatesContent(states, remember { SnackbarHostState() }, {}, {}, {}, {})
+            StatesContent(states, remember { SnackbarHostState() }, {}, {}, { _, _ -> }, {})
         }
         Snackbar(Modifier.align(androidx.compose.ui.Alignment.TopCenter).statusBarsPadding().padding(16.dp)) {
             Text(noticeText(context, GameNotice.RescueStateExists))

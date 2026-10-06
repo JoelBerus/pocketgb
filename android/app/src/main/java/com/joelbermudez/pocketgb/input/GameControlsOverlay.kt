@@ -41,7 +41,7 @@ fun GameControlsOverlay(
             view.onMenu = onMenu
             view.hapticsEnabled = settings.haptics
             view.renderOptions = ControlsRenderOptions.from(settings)
-            view.visibility = if (editor != null) ControlsVisibility.ALWAYS else settings.visibility
+            view.controlsVisibility = if (editor != null) ControlsVisibility.ALWAYS else settings.visibility
             view.sizeScale = settings.sizeScale
             view.safeInsets = safeInsets
             view.orientationOverride = orientation

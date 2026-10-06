@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,39 +74,58 @@ fun SheetOrDialog(
     }
 }
 
-/** Menú de pausa: Continuar, Estados y Salir. ("Editar controles" llega en A6.) */
+/**
+ * Menú de pausa (iOS `PauseView`): título = nombre del juego, Continuar, Estados guardados, Personalizar controles
+ * y Salir (destructivo), con pies. Detrás queda el último fotograma atenuado.
+ */
 @Composable
 fun PauseSheet(
     landscape: Boolean,
     busy: Boolean,
+    title: String,
     onContinue: () -> Unit,
     onStates: () -> Unit,
+    onCustomize: () -> Unit,
     onExit: () -> Unit,
 ) {
     SheetOrDialog(landscape = landscape, onDismiss = onContinue, modifier = Modifier.testTag("pause-sheet")) {
-        PauseMenuContent(busy = busy, onContinue = onContinue, onStates = onStates, onExit = onExit)
+        PauseMenuContent(
+            busy = busy,
+            title = title,
+            onContinue = onContinue,
+            onStates = onStates,
+            onCustomize = onCustomize,
+            onExit = onExit,
+        )
     }
 }
 
 @Composable
 fun PauseMenuContent(
     busy: Boolean,
+    title: String,
     onContinue: () -> Unit,
     onStates: () -> Unit,
+    onCustomize: () -> Unit,
     onExit: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.pause_title), style = MaterialTheme.typography.titleLarge)
+        Text(
+            title.ifBlank { stringResource(R.string.gameplay_pause_fallback_title) },
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 2,
+            modifier = Modifier.testTag("pause-title"),
+        )
         Button(
             onClick = onContinue,
             enabled = !busy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-continue"),
         ) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(stringResource(R.string.pause_continue), modifier = Modifier.padding(start = 8.dp))
+            Text(stringResource(R.string.gameplay_pause_continue), modifier = Modifier.padding(start = 8.dp))
         }
         OutlinedButton(
             onClick = onStates,
@@ -113,8 +133,21 @@ fun PauseMenuContent(
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-states"),
         ) {
             Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(stringResource(R.string.pause_states), modifier = Modifier.padding(start = 8.dp))
+            Text(stringResource(R.string.gameplay_pause_states), modifier = Modifier.padding(start = 8.dp))
         }
+        OutlinedButton(
+            onClick = onCustomize,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-customize"),
+        ) {
+            Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(stringResource(R.string.gameplay_pause_customize), modifier = Modifier.padding(start = 8.dp))
+        }
+        Text(
+            stringResource(R.string.gameplay_pause_states_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         OutlinedButton(
             onClick = onExit,
             enabled = !busy,
@@ -122,8 +155,13 @@ fun PauseMenuContent(
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-exit"),
         ) {
             Icon(Icons.AutoMirrored.Outlined.ExitToApp, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(stringResource(R.string.pause_exit), modifier = Modifier.padding(start = 8.dp))
+            Text(stringResource(R.string.gameplay_pause_exit), modifier = Modifier.padding(start = 8.dp))
         }
+        Text(
+            stringResource(R.string.gameplay_pause_exit_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (busy) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),

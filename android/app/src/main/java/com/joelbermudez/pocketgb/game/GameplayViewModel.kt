@@ -35,7 +35,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Qué hoja del menú de pausa está abierta. */
-enum class GameMenu { None, Pause, States }
+/** [Editor]: editor de disposición de los controles (A6-L4); el juego sigue en pausa. */
+enum class GameMenu { None, Pause, States, Editor }
 
 /** Diálogos de la partida y de la apertura. */
 sealed interface GameDialog {
@@ -243,6 +244,15 @@ class GameplayViewModel(
         if (_menu.value == GameMenu.States) _menu.value = GameMenu.Pause
     }
 
+    /** «Personalizar controles»: el juego sigue en pausa y el menú deja paso al editor. */
+    fun openControlsEditor() {
+        if (_game.value != null && _menu.value == GameMenu.Pause) _menu.value = GameMenu.Editor
+    }
+
+    fun closeControlsEditor() {
+        if (_menu.value == GameMenu.Editor) _menu.value = GameMenu.Pause
+    }
+
     fun refreshStates() {
         val game = _game.value ?: return
         scope.launch {
@@ -262,8 +272,9 @@ class GameplayViewModel(
         GameNotice.StateSaved(slot)
     }
 
-    fun loadState(slot: StateSlot) = stateOperation { game ->
-        game.loadState(slot)
+    /** [saveCurrentToAuto] `false` = «Cargar sin guardar» (K14): no toca la ranura automática. */
+    fun loadState(slot: StateSlot, saveCurrentToAuto: Boolean = true) = stateOperation { game ->
+        game.loadState(slot, saveCurrentToAuto)
         GameNotice.StateLoaded(slot)
     }
 

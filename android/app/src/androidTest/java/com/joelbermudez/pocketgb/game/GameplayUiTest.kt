@@ -1,5 +1,8 @@
 package com.joelbermudez.pocketgb.game
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -139,9 +142,9 @@ class GameplayUiTest {
 
         // Cargar: confirmación, y el estado actual se guarda antes en AUTO.
         compose.onNodeWithTag("state-load-slot1").performClick()
-        waitTag("state-confirm")
-        compose.onNodeWithTag("state-confirm").performClick()
-        waitGone("state-confirm")
+        waitTag("state-confirm-save")
+        compose.onNodeWithTag("state-confirm-save").performClick()
+        waitGone("state-confirm-save")
         assertTrue(waitUntil(8_000) { vm.states.value.entries.containsKey(StateSlot.AUTO) && !vm.states.value.busy })
         assertEquals("tras cargar sigue en pausa", SessionState.Paused, game.state.value)
 
@@ -273,5 +276,45 @@ class GameplayUiTest {
         collector.cancel()
         ops.failSav = false
         compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+    }
+
+    @Test
+    fun theHudCyclesTheSpeedOneTwoFourAndShowsItsValue() {
+        val game = openGame()
+        assertEquals(1, game.session.speed)
+        compose.onNodeWithTag("hud-pause").assertIsDisplayed()
+        compose.onNodeWithTag("hud-speed").assertIsDisplayed()
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Desactivado"))
+
+        compose.onNodeWithTag("hud-speed").performClick()
+        assertTrue(waitUntil { game.session.speed == 2 })
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "×2"))
+        compose.onNodeWithTag("hud-speed").performClick()
+        assertTrue(waitUntil { game.session.speed == 4 })
+        compose.onNodeWithTag("hud-speed").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "×4"))
+        compose.onNodeWithTag("hud-speed").performClick()
+        assertTrue(waitUntil { game.session.speed == 1 })
+    }
+
+    @Test
+    fun theHudPauseButtonOpensThePauseMenu() {
+        val game = openGame()
+        compose.onNodeWithTag("hud-pause").performClick()
+        waitTag("pause-sheet")
+        assertEquals(SessionState.Paused, game.state.value)
+    }
+
+    @Test
+    fun thePauseMenuShowsTheGameTitleAndCustomizeControls() {
+        val game = openGame()
+        pressBackViaDispatcher()
+        waitTag("pause-sheet")
+        compose.onNodeWithTag("pause-title").assertIsDisplayed()
+        compose.onNode(hasText(game.info.title)).assertIsDisplayed()
+        compose.onNodeWithTag("pause-customize").assertIsDisplayed()
+        compose.onNode(hasText("Personalizar controles")).assertIsDisplayed()
+        compose.onNode(hasText("Estados guardados")).assertIsDisplayed()
+        compose.onNode(hasText("Salir del juego")).assertIsDisplayed()
+        compose.onNodeWithTag("pause-dim").assertExists()
     }
 }
