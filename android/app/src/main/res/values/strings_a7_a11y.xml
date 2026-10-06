@@ -12,6 +12,7 @@
     <string name="controls_a11y_left">Izquierda</string>
     <string name="controls_a11y_right">Derecha</string>
     <string name="controls_a11y_open_menu">Abrir menú</string>
+    <string name="controls_a11y_hidden">Oculto</string>
 
     <!-- HUD (R8) -->
     <string name="hud_a11y_pause">Pausa</string>

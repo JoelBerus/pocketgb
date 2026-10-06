@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joelbermudez.pocketgb.R
 import java.util.concurrent.CopyOnWriteArrayList
+import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,19 @@ class ControlsTalkBackTest {
     private fun node(id: ControlId): AccessibilityNodeInfo = onMain { provider.createAccessibilityNodeInfo(id.ordinal)!! }
 
     private fun settle() = Thread.sleep(250)
+
+    @Test
+    fun hiddenControlsAnnounceTheirHiddenStateToTalkBack() {
+        assertNull("visibles: sin estado", node(ControlId.A).stateDescription)
+        onMain { view.controlsVisibility = ControlsVisibility.HIDDEN }
+        settle()
+        ControlId.entries.filter { it != ControlId.MENU }.forEach {
+            assertEquals("$it oculto", view.context.getString(R.string.controls_a11y_hidden), node(it).stateDescription)
+        }
+        onMain { view.controlsVisibility = ControlsVisibility.ALWAYS }
+        settle()
+        assertNull(node(ControlId.A).stateDescription)
+    }
 
     @Test
     fun hostExposesOneChildPerVisibleControl() {

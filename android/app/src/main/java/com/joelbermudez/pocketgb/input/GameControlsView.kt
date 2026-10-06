@@ -75,6 +75,7 @@ class GameControlsView(
         set(value) {
             if (fade.visibility == value) return
             fade.visibility = value
+            a11yHelper.invalidateRoot() // el estado «oculto» de los nodos cambia (A7-H4)
             invalidate()
         }
 
