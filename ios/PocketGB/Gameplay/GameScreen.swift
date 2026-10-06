@@ -11,6 +11,8 @@ struct GameScreen: View {
     @State private var showDebugHUD = DebugArguments.debugHUD
     #endif
 
+    private var isAdvance: Bool { session.info.console == .gameBoyAdvance }
+
     private var reduceTransparency: Bool {
         #if DEBUG
         if DebugArguments.reduceTransparency { return true }
@@ -52,7 +54,7 @@ struct GameScreen: View {
                         .transition(.opacity)
                 }
                 if state.editingControls {
-                    ControlsEditorBar(orientation: orientation)
+                    ControlsEditorBar(orientation: orientation, shoulders: isAdvance)
                 }
                 #if DEBUG
                 if showDebugHUD {
@@ -93,11 +95,11 @@ struct GameScreen: View {
 
     private func controls(_ orientation: ControlsOrientation) -> some View {
         ControlsOverlay(buttons: session.buttons, orientation: orientation, settings: state.gameplay.data,
-                        showsShoulders: session.info.console == .gameBoyAdvance,
+                        showsShoulders: isAdvance,
                         controllerConnected: state.gamepad.connected,
                         editing: state.editingControls, reduceTransparency: reduceTransparency,
                         onMenu: { state.pauseGame() },
-                        onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation) },
+                        onMove: { id, point in state.gameplay.move(id, to: point, orientation: orientation, shoulders: isAdvance) },
                         selected: state.editorSelection,
                         onSelect: { state.editorSelection = $0 })
     }
@@ -108,16 +110,17 @@ struct GameScreen: View {
 struct ControlsEditorBar: View {
     @Environment(AppState.self) private var state
     let orientation: ControlsOrientation
+    let shoulders: Bool
 
     var body: some View {
         VStack(spacing: PocketSpacing.xs) {
             GlassEffectContainer(spacing: PocketSpacing.xs) {
                 HStack(spacing: PocketSpacing.xs) {
                     Button("Restablecer", systemImage: "arrow.counterclockwise") {
-                        state.gameplay.resetLayout(orientation)
+                        state.gameplay.resetLayout(orientation, shoulders: shoulders)
                     }
                     .buttonStyle(.glass)
-                    Text("Controles · \(orientation.title)")
+                    Text("Controles · \(shoulders ? "GBA" : "GB") · \(orientation.title)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, PocketSpacing.sm)
@@ -128,9 +131,9 @@ struct ControlsEditorBar: View {
                 }
             }
             if let id = state.editorSelection {
-                SizeStepper(id: id, orientation: orientation)
+                SizeStepper(id: id, orientation: orientation, shoulders: shoulders)
             }
-            Text("Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo en \(orientation.title.lowercased()).")
+            Text("Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo para \(shoulders ? "Game Boy Advance" : "Game Boy") en \(orientation.title.lowercased()).")
                 .font(.footnote)
                 .foregroundStyle(.white)
                 .padding(.horizontal, PocketSpacing.sm)
@@ -149,14 +152,15 @@ private struct SizeStepper: View {
     @Environment(AppState.self) private var state
     let id: ControlID
     let orientation: ControlsOrientation
+    let shoulders: Bool
 
-    private var scale: CGFloat { state.gameplay.data.layout(orientation).scale(id) }
+    private var scale: CGFloat { state.gameplay.data.layout(orientation, shoulders: shoulders).scale(id) }
 
     var body: some View {
         GlassEffectContainer(spacing: PocketSpacing.xs) {
             HStack(spacing: PocketSpacing.xs) {
                 Button("Más pequeño", systemImage: "minus") {
-                    state.gameplay.resize(id, by: -0.1, orientation: orientation)
+                    state.gameplay.resize(id, by: -0.1, orientation: orientation, shoulders: shoulders)
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.glass)
@@ -169,7 +173,7 @@ private struct SizeStepper: View {
                     .glassEffect(.regular.tint(PocketColor.controlScrim.opacity(0.6)), in: Capsule())
                     .accessibilityLabel("Tamaño de \(id.editorTitle): \(Int((scale * 100).rounded())) por ciento")
                 Button("Más grande", systemImage: "plus") {
-                    state.gameplay.resize(id, by: 0.1, orientation: orientation)
+                    state.gameplay.resize(id, by: 0.1, orientation: orientation, shoulders: shoulders)
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.glass)

@@ -115,7 +115,7 @@ final class ControlsOverlayView: UIView {
         area = bounds.inset(by: safeAreaInsets)
         backgroundColor = orientation == .portrait ? UIColor(named: "GameplayBackground") : .clear
         let metrics = ControlMetrics(scale: settings.sizeScale)
-        let geometry = ControlsGeometry(layout: settings.layout(orientation), orientation: orientation,
+        let geometry = ControlsGeometry(layout: settings.layout(orientation, shoulders: showsShoulders), orientation: orientation,
                                         area: area, metrics: metrics, shoulders: showsShoulders)
         engine.geometry = geometry
         for (id, visual) in visuals where drags.values.first(where: { $0.id == id }) == nil {

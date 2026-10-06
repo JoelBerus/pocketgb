@@ -41,25 +41,40 @@ struct ControlsLayout: Codable, Equatable, Sendable {
         min(max(scales[id] ?? 1, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
     }
 
-    static func defaults(_ orientation: ControlsOrientation) -> ControlsLayout {
-        switch orientation {
-        case .portrait:
+    /// Disposición por defecto. Game Boy: imagen 10:9. Game Boy Advance (`shoulders`): imagen 3:2,
+    /// mucho más ancha; en horizontal (iPhone 17 Pro, imagen a escala entera ≈560×373 pt) la cruceta,
+    /// A, B, Start y Select van en los márgenes laterales y L/R arriba, a los lados de la imagen.
+    static func defaults(_ orientation: ControlsOrientation, shoulders: Bool = false) -> ControlsLayout {
+        switch (orientation, shoulders) {
+        case (.portrait, false):
+            ControlsLayout(centers: [
+                .dpad: CGPoint(x: 0.25, y: 0.44), .a: CGPoint(x: 0.84, y: 0.36), .b: CGPoint(x: 0.64, y: 0.52),
+                .start: CGPoint(x: 0.59, y: 0.86), .select: CGPoint(x: 0.41, y: 0.86), .menu: CGPoint(x: 0.5, y: 0.07),
+            ])
+        case (.landscape, false):
+            ControlsLayout(centers: [
+                .dpad: CGPoint(x: 0.12, y: 0.62), .a: CGPoint(x: 0.91, y: 0.52), .b: CGPoint(x: 0.81, y: 0.72),
+                .start: CGPoint(x: 0.56, y: 0.93), .select: CGPoint(x: 0.44, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
+            ])
+        case (.portrait, true):
             ControlsLayout(centers: [
                 .dpad: CGPoint(x: 0.25, y: 0.44), .a: CGPoint(x: 0.84, y: 0.36), .b: CGPoint(x: 0.64, y: 0.52),
                 .start: CGPoint(x: 0.59, y: 0.86), .select: CGPoint(x: 0.41, y: 0.86), .menu: CGPoint(x: 0.5, y: 0.07),
                 .l: CGPoint(x: 0.17, y: 0.14), .r: CGPoint(x: 0.83, y: 0.14),
             ])
-        case .landscape:
+        case (.landscape, true):
+            // Márgenes de ≈97 pt a cada lado de la imagen: la cruceta se reduce al mínimo (0,6)
+            // y A y B se apilan en vertical; L/R arriba en los márgenes.
             ControlsLayout(centers: [
-                .dpad: CGPoint(x: 0.12, y: 0.62), .a: CGPoint(x: 0.91, y: 0.52), .b: CGPoint(x: 0.81, y: 0.72),
-                .start: CGPoint(x: 0.56, y: 0.93), .select: CGPoint(x: 0.44, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
-                .l: CGPoint(x: 0.1, y: 0.1), .r: CGPoint(x: 0.9, y: 0.1),
-            ])
+                .dpad: CGPoint(x: 0.065, y: 0.62), .a: CGPoint(x: 0.94, y: 0.45), .b: CGPoint(x: 0.94, y: 0.74),
+                .start: CGPoint(x: 0.94, y: 0.93), .select: CGPoint(x: 0.065, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
+                .l: CGPoint(x: 0.065, y: 0.1), .r: CGPoint(x: 0.94, y: 0.1),
+            ], scales: [.dpad: 0.6, .l: 0.9, .r: 0.9])
         }
     }
 
-    func center(_ id: ControlID, orientation: ControlsOrientation) -> CGPoint {
-        centers[id] ?? Self.defaults(orientation).centers[id] ?? CGPoint(x: 0.5, y: 0.5)
+    func center(_ id: ControlID, orientation: ControlsOrientation, shoulders: Bool = false) -> CGPoint {
+        centers[id] ?? Self.defaults(orientation, shoulders: shoulders).centers[id] ?? CGPoint(x: 0.5, y: 0.5)
     }
 }
 
@@ -109,7 +124,7 @@ struct ControlsGeometry: Equatable, Sendable {
             let base = metrics.size(id)
             let k = layout.scale(id)
             let size = CGSize(width: base.width * k, height: base.height * k)
-            let rel = layout.center(id, orientation: orientation)
+            let rel = layout.center(id, orientation: orientation, shoulders: shoulders)
             let center = Self.clamp(CGPoint(x: area.minX + area.width * rel.x, y: area.minY + area.height * rel.y),
                                     size: size, in: area)
             frames[id] = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
@@ -141,14 +156,19 @@ struct ControlsGeometry: Equatable, Sendable {
         return r.insetBy(dx: -dx, dy: -dy)
     }
 
-    /// A+B primero (zona pequeña entre ambos); luego los círculos por distancia y las
-    /// píldoras por rectángulo.
+    /// Menú y hombros L/R primero (así nunca quedan inalcanzables aunque otro control se
+    /// mueva encima); luego A+B (zona pequeña entre ambos), los círculos por distancia y
+    /// Start/Select por rectángulo.
     func hit(at p: CGPoint) -> ControlHit? {
-        if Self.inCircle(p, abFrame) { return .ab }
-        for id in [ControlID.a, .b, .dpad, .menu] where Self.inCircle(p, touchFrame(id)) {
+        if Self.inCircle(p, touchFrame(.menu)) { return .control(.menu) }
+        for id in [ControlID.l, .r] where frames[id] != nil && touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
             return .control(id)
         }
-        for id in [ControlID.start, .select, .l, .r] where frames[id] != nil && touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
+        if Self.inCircle(p, abFrame) { return .ab }
+        for id in [ControlID.a, .b, .dpad] where Self.inCircle(p, touchFrame(id)) {
+            return .control(id)
+        }
+        for id in [ControlID.start, .select] where touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
             return .control(id)
         }
         return nil
