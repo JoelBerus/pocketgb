@@ -31,6 +31,17 @@ enum native_audio_state {
 /* El hilo nativo no atendió la petición de instantánea de la SRAM en 1 s. */
 #define NS_TIMEOUT (-2)
 
+/* Argumento fuera de rango (paleta). */
+#define NS_INVALID (-3)
+/* La sesión no está en modo compatibilidad CGB: no hay paleta que cambiar. */
+#define NS_NOT_COMPAT (-4)
+
+/* Modo de escalado de la superficie (= ScaleMode de Kotlin). */
+enum native_scale_mode {
+    NATIVE_SCALE_INTEGER = 0,
+    NATIVE_SCALE_FILL = 1
+};
+
 native_session *native_session_create(void);
 void native_session_destroy(native_session *session);
 /* `options->unix_time` inicializa el RTC del MBC3. Reserva aquí (nunca en el bucle) la instantánea de la SRAM. */
@@ -52,6 +63,16 @@ uint8_t native_session_requested_buttons(native_session *session);
 uint8_t native_session_applied_buttons(native_session *session);
 void native_session_set_speed(native_session *session, unsigned speed);
 unsigned native_session_speed(native_session *session);
+/* Paleta de compatibilidad en caliente (0 = automática, 1..GB_COMPAT_PALETTES). La aplica el hilo nativo entre
+ * frames; NS_INVALID si está fuera de rango, NS_NOT_COMPAT si la ROM no corre en compatibilidad CGB. */
+int native_session_set_compat_palette(native_session *session, int id);
+int native_session_compat_palette(native_session *session);
+/* Ganancia lineal del audio, recortada a [0,1] (NaN/inf se ignoran). Atómica; no reconstruye el stream. */
+void native_session_set_volume(native_session *session, float gain);
+float native_session_volume(native_session *session);
+/* Modo fuera de {INTEGER, FILL} se ignora. Se aplica en el siguiente frame dibujado. */
+void native_session_set_scale_mode(native_session *session, int mode);
+int native_session_scale_mode(native_session *session);
 enum native_audio_state native_session_audio_state(native_session *session);
 uint64_t native_session_audio_frames_produced(native_session *session);
 uint64_t native_session_audio_frames_consumed(native_session *session);

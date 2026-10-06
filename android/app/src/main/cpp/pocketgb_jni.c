@@ -7,6 +7,15 @@
 #include "pocketgb.h"
 #include "native_session.h"
 
+/* gb_result no tiene "argumento inválido" (core/ no se toca): el puente usa el siguiente código libre
+ * y CoreError.fromResult lo traduce a CoreError.InvalidArgument. */
+#define JNI_ERR_INVALID_ARGUMENT 17
+
+static bool options_valid(jint model, jint compat_palette) {
+    return model >= (jint)GB_MODEL_AUTO && model <= (jint)GB_MODEL_CGB &&
+        compat_palette >= 0 && compat_palette <= (jint)GB_COMPAT_PALETTES;
+}
+
 JNIEXPORT jlong JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeCreate(
     JNIEnv *env,
@@ -55,6 +64,9 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeLoadRom(
     gb *core = core_from_handle(handle);
     if (core == NULL || rom == NULL) {
         return GB_ERR_NULL_ARG;
+    }
+    if (!options_valid(model, compat_palette)) {
+        return JNI_ERR_INVALID_ARGUMENT;
     }
     const jsize length = (*env)->GetArrayLength(env, rom);
     jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
@@ -202,12 +214,17 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     jclass clazz,
     jlong handle,
     jbyteArray rom,
-    jlong unix_time
+    jlong unix_time,
+    jint model,
+    jint compat_palette
 ) {
     (void)clazz;
     native_session *session = (native_session *)(uintptr_t)handle;
     if (session == NULL || rom == NULL) {
         return GB_ERR_NULL_ARG;
+    }
+    if (!options_valid(model, compat_palette)) {
+        return JNI_ERR_INVALID_ARGUMENT;
     }
     const jsize length = (*env)->GetArrayLength(env, rom);
     jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
@@ -217,6 +234,8 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     gb_options options;
     gb_options_default(&options);
     options.unix_time = (int64_t)unix_time;
+    options.model = (gb_model)model;
+    options.compat_palette = (uint8_t)compat_palette;
     const gb_result result = native_session_load(
         session,
         (const uint8_t *)bytes,
@@ -325,6 +344,61 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetSpeed(
     (void)env;
     (void)clazz;
     native_session_set_speed((native_session *)(uintptr_t)handle, (unsigned)speed);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetCompatPalette(
+    JNIEnv *env, jclass clazz, jlong handle, jint id
+) {
+    (void)env;
+    (void)clazz;
+    const int result = native_session_set_compat_palette((native_session *)(uintptr_t)handle, (int)id);
+    return result == NS_INVALID ? JNI_ERR_INVALID_ARGUMENT : result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCompatPalette(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_compat_palette((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetVolume(
+    JNIEnv *env, jclass clazz, jlong handle, jfloat gain
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_volume((native_session *)(uintptr_t)handle, (float)gain);
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionVolume(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_volume((native_session *)(uintptr_t)handle);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetScaleMode(
+    JNIEnv *env, jclass clazz, jlong handle, jint mode
+) {
+    (void)env;
+    (void)clazz;
+    native_session_set_scale_mode((native_session *)(uintptr_t)handle, (int)mode);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionScaleMode(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return native_session_scale_mode((native_session *)(uintptr_t)handle);
 }
 
 JNIEXPORT jint JNICALL

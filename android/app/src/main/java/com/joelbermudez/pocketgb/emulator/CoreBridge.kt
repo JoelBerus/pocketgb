@@ -6,6 +6,7 @@ class CoreBridge : AutoCloseable {
     }
 
     fun loadRom(rom: ByteArray, options: CoreOptions = CoreOptions()): RomInfo {
+        if (options.compatPalette !in 0..COMPAT_PALETTES) throw CoreError.InvalidArgument()
         if (rom.size < MIN_ROM_BYTES) throw CoreError.RomTooSmall()
         if (rom.size > MAX_ROM_BYTES) throw CoreError.RomTooLarge()
         val nativeHandle = requireHandle()
@@ -60,6 +61,7 @@ class CoreBridge : AutoCloseable {
         const val SCREEN_HEIGHT = 144
         const val FRAME_PIXELS = SCREEN_WIDTH * SCREEN_HEIGHT
         const val MIN_ROM_BYTES = 0x150
+        const val COMPAT_PALETTES = 12
         const val MAX_ROM_BYTES = 8 * 1024 * 1024
         private const val METADATA_FIELDS = 10
     }

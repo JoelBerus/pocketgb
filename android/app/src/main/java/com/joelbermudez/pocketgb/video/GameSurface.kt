@@ -4,9 +4,11 @@ import android.content.Context
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
+import com.joelbermudez.pocketgb.emulator.ScaleMode
 
 private class SessionSurfaceView(
     context: Context,
@@ -36,7 +38,10 @@ private class SessionSurfaceView(
 fun GameSurface(
     session: EmulatorSession,
     modifier: Modifier = Modifier,
+    /** Escalado; `null` deja el que tenga la sesión. Se aplica en caliente (K3). */
+    scaleMode: ScaleMode? = null,
 ) {
+    LaunchedEffect(session, scaleMode) { scaleMode?.let(session::setScaleMode) }
     AndroidView(
         factory = { context -> SessionSurfaceView(context, session) },
         modifier = modifier,

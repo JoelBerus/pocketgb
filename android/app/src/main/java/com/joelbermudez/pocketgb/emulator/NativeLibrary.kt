@@ -45,7 +45,7 @@ internal object NativeLibrary {
     external fun nativeSessionDestroy(handle: Long)
 
     @JvmStatic
-    external fun nativeSessionLoad(handle: Long, rom: ByteArray, unixTime: Long): Int
+    external fun nativeSessionLoad(handle: Long, rom: ByteArray, unixTime: Long, model: Int, compatPalette: Int): Int
 
     /** Rellena [ints] (10 campos), [fingerprint] (32) y [title] (17, ASCII terminado en NUL). Solo sesión sin arrancar. */
     @JvmStatic
@@ -105,6 +105,27 @@ internal object NativeLibrary {
 
     @JvmStatic
     external fun nativeSessionSpeed(handle: Long): Int
+
+    /** Paleta de compatibilidad en caliente; 0 = automática. Devuelve 0, 17 (rango) o -4 (la ROM no está en compatibilidad CGB). */
+    @JvmStatic
+    external fun nativeSessionSetCompatPalette(handle: Long, id: Int): Int
+
+    @JvmStatic
+    external fun nativeSessionCompatPalette(handle: Long): Int
+
+    /** Ganancia lineal; el nativo ignora no finitos y recorta a [0,1]. */
+    @JvmStatic
+    external fun nativeSessionSetVolume(handle: Long, gain: Float)
+
+    @JvmStatic
+    external fun nativeSessionVolume(handle: Long): Float
+
+    /** 0 = entero, 1 = llenar; otro valor se ignora. */
+    @JvmStatic
+    external fun nativeSessionSetScaleMode(handle: Long, mode: Int)
+
+    @JvmStatic
+    external fun nativeSessionScaleMode(handle: Long): Int
 
     @JvmStatic
     external fun nativeSessionAudioState(handle: Long): Int

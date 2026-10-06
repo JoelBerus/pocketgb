@@ -1,5 +1,6 @@
 #include "audio_output.h"
 
+#include <math.h>
 #include <stdint.h>
 
 static aaudio_data_callback_result_t render_audio(
@@ -10,7 +11,14 @@ static aaudio_data_callback_result_t render_audio(
 ) {
     (void)stream;
     audio_output *output = user_data;
-    (void)audio_ring_read(output->ring, audio_data, (size_t)frame_count);
+    int16_t *samples = audio_data;
+    const size_t frames = audio_ring_read(output->ring, samples, (size_t)frame_count);
+    const float gain = atomic_load_explicit(&output->volume, memory_order_relaxed);
+    if (gain < 1.0f) {
+        for (size_t i = 0; i < frames * 2u; ++i) {
+            samples[i] = (int16_t)((float)samples[i] * gain);
+        }
+    }
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
 
@@ -26,6 +34,17 @@ void audio_output_init(audio_output *output, audio_ring *ring) {
     output->stream = NULL;
     output->ring = ring;
     atomic_init(&output->failed, false);
+    atomic_init(&output->volume, 1.0f);
+}
+
+void audio_output_set_volume(audio_output *output, float gain) {
+    if (output == NULL || !isfinite(gain)) return;
+    atomic_store_explicit(&output->volume, gain < 0.0f ? 0.0f : (gain > 1.0f ? 1.0f : gain), memory_order_relaxed);
+}
+
+float audio_output_volume(const audio_output *output) {
+    if (output == NULL) return 1.0f;
+    return atomic_load_explicit(&output->volume, memory_order_relaxed);
 }
 
 bool audio_output_start(audio_output *output) {

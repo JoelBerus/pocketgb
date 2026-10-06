@@ -18,6 +18,8 @@ sealed class CoreError(message: String) : RuntimeException(message) {
     class StateRomMismatch : CoreError("El estado pertenece a otro ROM o modelo.")
     class StateCorrupt : CoreError("El estado está dañado.")
     class BufferTooSmall : CoreError("El búfer de destino es demasiado pequeño.")
+    class InvalidArgument : CoreError("El núcleo recibió una opción fuera de rango.")
+    class NotCompatibilityMode : CoreError("El juego no corre en modo compatibilidad de Game Boy Color.")
     class Unknown(val code: Int) : CoreError("Error desconocido del núcleo: $code")
 
     companion object {
@@ -39,6 +41,7 @@ sealed class CoreError(message: String) : RuntimeException(message) {
             14 -> StateRomMismatch()
             15 -> StateCorrupt()
             16 -> BufferTooSmall()
+            17 -> InvalidArgument()
             else -> Unknown(code)
         }
     }
