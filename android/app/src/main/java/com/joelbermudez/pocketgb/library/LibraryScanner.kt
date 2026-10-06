@@ -12,6 +12,8 @@ data class TreeNode(
     val sizeBytes: Long,
     /** El proveedor marca el documento como virtual: no tiene bytes locales. */
     val isVirtual: Boolean = false,
+    /** Fecha de modificación (epoch ms) si el proveedor la da; solo se usa para el `.sav` junto al ROM (K20). */
+    val lastModified: Long? = null,
 )
 
 /** Fallo de lectura de un documento; distingue "no disponible aún" de "ilegible". */
@@ -43,18 +45,24 @@ object LibraryScanner {
 
     fun scan(tree: DocumentTree, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): List<RomEntry> {
         val candidates = uniqueIds(candidates(tree))
-        val entries = candidates.mapIndexed { index, (relative, node, folderId) ->
-            entry(tree, relative, node, folderId).also { progress(index + 1, candidates.size) }
+        val entries = candidates.mapIndexed { index, (relative, node, folderId, saveDate) ->
+            entry(tree, relative, node, folderId, saveDate).also { progress(index + 1, candidates.size) }
         }
         return entries.sortedWith(titleOrder)
     }
 
     /** Ruta relativa, documento y carpeta que lo contiene (id de documento; `null` si se desconoce la raíz). */
-    private data class Candidate(val relative: String, val node: TreeNode, val folderId: String?)
+    private data class Candidate(
+        val relative: String,
+        val node: TreeNode,
+        val folderId: String?,
+        val saveDate: Long? = null,
+    )
 
     private fun candidates(tree: DocumentTree): List<Candidate> {
         val result = mutableListOf<Candidate>()
-        for (item in tree.children(null)) {
+        val rootItems = tree.children(null)
+        for (item in rootItems) {
             if (item.name.startsWith(".")) continue
             if (item.isDirectory) {
                 // Una subcarpeta que falla de forma recuperable no tira el escaneo entero, pero perder el
@@ -67,12 +75,19 @@ object LibraryScanner {
                     continue
                 }
                 inner.filter { !it.isDirectory && isRom(it.name) }
-                    .forEach { result += Candidate("${item.name}/${it.name}", it, item.id) }
+                    .forEach { result += Candidate("${item.name}/${it.name}", it, item.id, saveDateOf(inner, it.name)) }
             } else if (isRom(item.name)) {
-                result += Candidate(item.name, item, tree.rootId)
+                result += Candidate(item.name, item, tree.rootId, saveDateOf(rootItems, item.name))
             }
         }
         return result
+    }
+
+    /** K20: fecha del `<base>.sav` hermano del ROM (sin distinguir mayúsculas), sin abrir el archivo. */
+    private fun saveDateOf(siblings: List<TreeNode>, romName: String): Long? {
+        val wanted = romName.substringBeforeLast('.') + ".sav"
+        return siblings.firstOrNull { !it.isDirectory && it.name.equals(wanted, ignoreCase = true) }
+            ?.lastModified?.takeIf { it > 0 }
     }
 
     /**
@@ -105,7 +120,13 @@ object LibraryScanner {
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions
 
-    private fun entry(tree: DocumentTree, relative: String, node: TreeNode, folderId: String?): RomEntry {
+    private fun entry(
+        tree: DocumentTree,
+        relative: String,
+        node: TreeNode,
+        folderId: String?,
+        saveDate: Long?,
+    ): RomEntry {
         val fallbackTitle = node.name.substringBeforeLast('.')
         val colorByName = node.name.substringAfterLast('.').equals("gbc", ignoreCase = true)
 
@@ -124,6 +145,7 @@ object LibraryScanner {
             headerChecksumOk = checksumOk,
             problem = problem,
             folderDocumentId = folderId,
+            mirrorSaveDate = saveDate,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)

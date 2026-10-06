@@ -61,6 +61,13 @@ class LibraryViewModel(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
+    /** Juegos nuevos por anunciar (K19); 0 = nada que mostrar. La UI lo muestra una vez y llama a [dismissNewGamesSummary]. */
+    private val _newGamesSummary = MutableStateFlow(0)
+    val newGamesSummary: StateFlow<Int> = _newGamesSummary.asStateFlow()
+
+    /** Nuevos ya anunciados en esta ejecución: un reescaneo al volver a primer plano no repite el aviso. */
+    private val announcedNew = HashSet<String>()
+
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
 
@@ -138,6 +145,9 @@ class LibraryViewModel(
     fun chooseFolder(uri: String) = launchFolderOperation { isCurrent ->
         try {
             folders.select(uri)
+            // Otra carpeta: el primer escaneo no marca nada como nuevo (K19).
+            mutate { it.copy(knownIds = emptySet()) }
+            announcedNew.clear()
         } catch (error: CancellationException) {
             throw error
         } catch (_: SecurityException) {
@@ -164,6 +174,8 @@ class LibraryViewModel(
         } catch (_: Exception) {
             // Olvidar es local; si falla, el siguiente escaneo lo reflejará.
         }
+        mutate { it.copy(knownIds = emptySet()) }
+        announcedNew.clear()
         if (isCurrent()) {
             _folderName.value = null
             _state.value = LibraryState.NoFolder
@@ -196,8 +208,14 @@ class LibraryViewModel(
                 else -> emptyList()
             }
             publish(LibraryState.Scanning(previous, name))
-            val entries = LibraryScanner.scan(openTree(uri)) { _, _ -> context.ensureActive() }
-            LibraryState.Ready(entries, name)
+            val entries = LibraryScanner.scan(openTree(uri)) { done, total ->
+                context.ensureActive()
+                // Sin inundar a la UI: el primero, cada cinco y el último.
+                if (isCurrent() && (done == 1 || done == total || done % PROGRESS_STEP == 0)) {
+                    _state.value = LibraryState.Scanning(previous, name, done, total)
+                }
+            }
+            LibraryState.Ready(markNew(entries), name)
         } catch (error: CancellationException) {
             throw error
         } catch (_: TreePermissionException) {
@@ -213,6 +231,49 @@ class LibraryViewModel(
             LibraryState.Failed(LibraryError.Unreadable)
         }
         publish(outcome)
+    }
+
+    /**
+     * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
+     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]).
+     */
+    private fun markNew(entries: List<RomEntry>): List<RomEntry> {
+        synchronized(persistLock) {
+            if (!loaded) {
+                try {
+                    loadNow()
+                } catch (_: IOException) {
+                } catch (_: RuntimeException) {
+                }
+            }
+        }
+        if (!loaded) return entries // sin preferencias no se sabe qué era conocido: no se marca nada
+        val ids = entries.map { it.id }.toSet()
+        val known = _prefs.value.knownIds
+        if (known.isEmpty()) {
+            if (ids.isNotEmpty()) mutate { it.acknowledge(ids) }
+            return entries
+        }
+        val fresh = ids - known
+        val toAnnounce = fresh - announcedNew
+        if (toAnnounce.isNotEmpty()) {
+            announcedNew += toAnnounce
+            _newGamesSummary.value = toAnnounce.size
+        }
+        return entries.map { if (it.id in fresh) it.copy(isNew = true) else it }
+    }
+
+    fun dismissNewGamesSummary() {
+        _newGamesSummary.value = 0
+    }
+
+    private fun clearNewMark(id: String) = _state.update { current ->
+        fun List<RomEntry>.cleared() = map { if (it.id == id && it.isNew) it.copy(isNew = false) else it }
+        when (current) {
+            is LibraryState.Ready -> current.copy(entries = current.entries.cleared())
+            is LibraryState.Scanning -> current.copy(previous = current.previous.cleared())
+            else -> current
+        }
     }
 
     // ---- Búsqueda y filtro ----
@@ -238,8 +299,10 @@ class LibraryViewModel(
     fun setSort(sort: LibrarySort) = mutate { it.copy(sort = sort) }
 
     /** Registra que se abrió [entry] (para "Continuar jugando" y la huella). */
-    fun recordPlayed(entry: RomEntry, fingerprint: String, at: Long) =
-        mutate { it.recordPlayed(entry.id, fingerprint, at) }
+    fun recordPlayed(entry: RomEntry, fingerprint: String, at: Long) {
+        mutate { it.recordPlayed(entry.id, fingerprint, at).acknowledge(setOf(entry.id)) }
+        clearNewMark(entry.id)
+    }
 
     /**
      * Espera a que lo último en memoria esté en disco. Devuelve [PersistResult.Failed] si no se pudo;
@@ -310,6 +373,10 @@ class LibraryViewModel(
             }
             DetailsLoad.Loaded(GameDetails.from(entry, info))
         }
+    }
+
+    private companion object {
+        const val PROGRESS_STEP = 5
     }
 
     private fun entryFor(id: String): RomEntry? = when (val current = _state.value) {

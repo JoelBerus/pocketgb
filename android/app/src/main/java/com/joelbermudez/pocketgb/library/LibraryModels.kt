@@ -26,7 +26,13 @@ sealed interface LibraryState {
     data object NoFolder : LibraryState
 
     /** Escaneando; [previous] es lo último conocido, para no vaciar la pantalla al volver a primer plano. */
-    data class Scanning(val previous: List<RomEntry>, val folderName: String?) : LibraryState
+    data class Scanning(
+        val previous: List<RomEntry>,
+        val folderName: String?,
+        /** Avance real del escaneo («X de Y»); `total == 0` mientras aún no se conoce. */
+        val done: Int = 0,
+        val total: Int = 0,
+    ) : LibraryState
 
     data class Ready(val entries: List<RomEntry>, val folderName: String?) : LibraryState
 

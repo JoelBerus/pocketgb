@@ -249,4 +249,34 @@ class LibraryScannerTest {
         val sorted = listOf("juego 10", "Juego 2", "juego 1", "Zelda", "álbum").sortedWith(NaturalOrder::compare)
         assertEquals(listOf("álbum", "juego 1", "Juego 2", "juego 10", "Zelda"), sorted)
     }
+
+    // ---- A6-L3 (K20): fecha del .sav junto al ROM ----
+
+    private fun sav(id: String, name: String, modified: Long?) =
+        TreeNode(id, name, isDirectory = false, sizeBytes = 8192, lastModified = modified)
+
+    @Test
+    fun mirrorSaveDateComesFromTheSiblingSavInRootAndSubfolder() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(file("a", "Rojo.gb"), sav("as", "Rojo.sav", 1_000L), dir("d", "Sub"), file("n", "Sin.gb")),
+                "d" to listOf(file("b", "Azul.GBC"), sav("bs", "AZUL.SAV", 2_000L)),
+            ),
+            heads = mapOf("a" to rom("RED"), "b" to rom("BLUE", cgb = 0x80), "n" to rom("NONE")),
+        )
+        val byId = LibraryScanner.scan(tree).associateBy { it.id }
+        assertEquals(1_000L, byId.getValue("Rojo.gb").mirrorSaveDate)
+        assertEquals(2_000L, byId.getValue("Sub/Azul.GBC").mirrorSaveDate)
+        assertNull(byId.getValue("Sin.gb").mirrorSaveDate)
+        assertEquals(3, byId.size) // el .sav no es una entrada de la biblioteca
+    }
+
+    @Test
+    fun mirrorSaveDateIsNullWhenTheProviderHidesTheModificationDate() {
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Rojo.gb"), sav("as", "Rojo.sav", null))),
+            heads = mapOf("a" to rom("RED")),
+        )
+        assertNull(LibraryScanner.scan(tree).single().mirrorSaveDate)
+    }
 }

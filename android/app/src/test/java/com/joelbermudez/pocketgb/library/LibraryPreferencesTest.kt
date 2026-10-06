@@ -215,4 +215,54 @@ class LibraryPreferencesTest {
         assertEquals(LibraryLayout.LIST, data.layout)
         assertEquals(LibrarySort.TITLE, data.sort)
     }
+
+    // ---- A6-L3 ----
+
+    @Test
+    fun jsonFromA5WithoutKnownIdsDecodesWithAnEmptySet() {
+        val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+        val a5 = """{"favorites":["Rojo"],"lastPlayed":{"Rojo":5},"layout":"LIST"}"""
+        val data = json.decodeFromString(LibraryPreferencesData.serializer(), a5)
+        assertEquals(emptySet<String>(), data.knownIds)
+        assertEquals(setOf("Rojo"), data.favorites)
+    }
+
+    @Test
+    fun knownIdsSurviveARoundTrip() {
+        val file = LibraryPreferencesFile(File(tmp.root, "p.json"))
+        file.save(LibraryPreferencesData(knownIds = setOf("Rojo", "Sub/Amarillo.gbc")))
+        assertEquals(setOf("Rojo", "Sub/Amarillo.gbc"), file.load().knownIds)
+    }
+
+    @Test
+    fun recentKeepsAtMostFiveAndOnlyGamesWithCapturedArtwork() {
+        val games = (1..8).map { rom("G$it", "GAME $it") }
+        var prefs = LibraryPreferencesData()
+        games.forEachIndexed { i, g -> prefs = prefs.recordPlayed(g.id, "%064x".format(i + 1), at = (i + 1) * 10L) }
+        // Sin filtro de portada: los 5 más recientes.
+        assertEquals(listOf("G8", "G7", "G6", "G5", "G4"), LibraryQuery.recent(games, prefs).map { it.id })
+        // Solo G2, G3, G6 y G8 tienen portada.
+        val withArt = setOf("%064x".format(2), "%064x".format(3), "%064x".format(6), "%064x".format(8))
+        assertEquals(
+            listOf("G8", "G6", "G3", "G2"),
+            LibraryQuery.recent(games, prefs, hasArtwork = { it in withArt }).map { it.id },
+        )
+        assertEquals(emptyList<String>(), LibraryQuery.recent(games, prefs, hasArtwork = { false }).map { it.id })
+    }
+
+    @Test
+    fun recentSkipsUnplayableAndHiddenGamesWhenFilteringByArtwork() {
+        val broken = rom("Roto", "ROTO", problem = RomProblem.INVALID_HEADER)
+        val prefs = LibraryPreferencesData()
+            .recordPlayed("Roto", "%064x".format(1), 10)
+            .recordPlayed("Rojo", "%064x".format(2), 5)
+        val shown = LibraryQuery.recent(listOf(broken, red), prefs, hasArtwork = { true }).map { it.id }
+        assertEquals(listOf("Rojo"), shown)
+    }
+
+    @Test
+    fun knownIdsHelpersAcknowledgeAndKeepTheRest() {
+        val prefs = LibraryPreferencesData(knownIds = setOf("A")).acknowledge(setOf("B"))
+        assertEquals(setOf("A", "B"), prefs.knownIds)
+    }
 }

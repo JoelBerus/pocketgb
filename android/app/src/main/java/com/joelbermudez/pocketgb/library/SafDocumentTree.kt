@@ -61,6 +61,7 @@ class SafDocumentTree(
             val mimeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
             val sizeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             val flagsColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
+            val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
             val result = ArrayList<TreeNode>(it.count)
             while (it.moveToNext()) {
                 val name = it.getString(nameColumn) ?: continue
@@ -70,6 +71,7 @@ class SafDocumentTree(
                     isDirectory = mimeColumn >= 0 && it.getString(mimeColumn) == DocumentsContract.Document.MIME_TYPE_DIR,
                     sizeBytes = knownSize(it, sizeColumn),
                     isVirtual = flagsColumn >= 0 && safeInt(it, flagsColumn) and DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT != 0,
+                    lastModified = knownTime(it, modifiedColumn),
                 )
             }
             return result
@@ -83,6 +85,16 @@ class SafDocumentTree(
             cursor.getLong(column).coerceAtLeast(0L)
         } catch (_: RuntimeException) {
             0L
+        }
+    }
+
+    /** Fecha de modificación, o `null` si falta la columna, es nula, no es numérica o no es positiva. */
+    private fun knownTime(cursor: Cursor, column: Int): Long? {
+        if (column < 0 || cursor.isNull(column)) return null
+        return try {
+            cursor.getLong(column).takeIf { it > 0 }
+        } catch (_: RuntimeException) {
+            null
         }
     }
 
@@ -150,6 +162,7 @@ class SafDocumentTree(
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_FLAGS,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
     }
 }
