@@ -41,6 +41,7 @@ import com.joelbermudez.pocketgb.ui.favorites.FavoritesScreen
 import com.joelbermudez.pocketgb.ui.library.LibraryScreen
 import com.joelbermudez.pocketgb.ui.settings.AppearanceScreen
 import com.joelbermudez.pocketgb.ui.settings.AudioSettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.ControllerMappingScreen
 import com.joelbermudez.pocketgb.ui.settings.ControlsSettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.DisplaySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.EmulationSettingsScreen
@@ -189,7 +190,14 @@ private fun AppScaffold(
                             )
                         }
                         SettingsRoute.SettingsControls -> NavEntry(route) {
-                            ControlsSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                            ControlsSettingsScreen(
+                                gameplaySettings,
+                                onBack = { navigationState.pop() },
+                                onController = { navigationState.push(SettingsRoute.SettingsController) },
+                            )
+                        }
+                        SettingsRoute.SettingsController -> NavEntry(route) {
+                            ControllerMappingScreen(gameplaySettings, onBack = { navigationState.pop() })
                         }
                         SettingsRoute.SettingsDisplay -> NavEntry(route) {
                             DisplaySettingsScreen(gameplaySettings, onBack = { navigationState.pop() })

@@ -4,6 +4,8 @@ import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.input.NormalizedPoint
+import com.joelbermudez.pocketgb.input.PadAction
+import android.view.KeyEvent
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
@@ -28,9 +30,64 @@ enum class ControlsVisibility { ALWAYS, ON_TOUCH, HIDDEN }
 @Serializable
 enum class DpadStyle { CROSS, ARROWS }
 
-/** Reservado para A7 (mando físico): hoy siempre `null`; A7 lo rellena sin migración. */
+/**
+ * Mapeo del mando físico (A7): `bindings` va de `PadAction.name` a `KeyEvent.KEYCODE_*`. Lo que no esté en `bindings`
+ * conserva su botón por defecto (ver [resolved]); `controllerMapping == null` o [DEFAULT] = todo por defecto.
+ */
 @Serializable
-data class ControllerMappingData(val bindings: Map<String, Int> = emptyMap())
+data class ControllerMappingData(val bindings: Map<String, Int> = emptyMap()) {
+    /** Descarta acciones desconocidas, teclas inválidas (≤ 0, cruceta, atrás) y duplicados (gana la última). */
+    fun sanitized(): ControllerMappingData {
+        val clean = LinkedHashMap<String, Int>()
+        for ((name, code) in bindings) {
+            if (PadAction.entries.none { it.name == name } || !isAssignableKey(code)) continue
+            clean.values.removeAll { it == code }
+            clean.remove(name)
+            clean[name] = code
+        }
+        return ControllerMappingData(clean)
+    }
+
+    /** Tecla → acción efectiva: lo personalizado, más los valores por defecto de las acciones sin personalizar. */
+    fun resolved(): Map<Int, PadAction> {
+        val custom = sanitized().bindings
+        val result = LinkedHashMap<Int, PadAction>()
+        for ((name, code) in custom) result[code] = PadAction.valueOf(name)
+        for ((code, action) in DEFAULT_PAIRS) {
+            if (action.name !in custom && code !in result) result[code] = action
+        }
+        return result
+    }
+
+    companion object {
+        /** Todo por defecto. */
+        val DEFAULT = ControllerMappingData()
+
+        /** Por defecto (R1/R3): por posición, A de Game Boy en el botón derecho y B en el inferior. */
+        val DEFAULT_PAIRS: List<Pair<Int, PadAction>> = listOf(
+            KeyEvent.KEYCODE_BUTTON_B to PadAction.A,
+            KeyEvent.KEYCODE_BUTTON_A to PadAction.B,
+            KeyEvent.KEYCODE_BUTTON_START to PadAction.START,
+            KeyEvent.KEYCODE_BUTTON_SELECT to PadAction.SELECT,
+            KeyEvent.KEYCODE_BUTTON_MODE to PadAction.MENU,
+            KeyEvent.KEYCODE_BUTTON_L1 to PadAction.MENU,
+            KeyEvent.KEYCODE_BUTTON_R1 to PadAction.FAST_FORWARD,
+        )
+
+        fun isAssignableKey(code: Int): Boolean =
+            code > 0 && code != KeyEvent.KEYCODE_BACK && code !in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_CENTER
+
+        /** Asigna [code] a [action] partiendo de lo que hoy vale [current]; quien tuviera esa tecla la pierde. */
+        fun assign(current: ControllerMappingData?, action: PadAction, code: Int): ControllerMappingData {
+            val base = LinkedHashMap<String, Int>()
+            for ((key, owner) in (current ?: DEFAULT).resolved()) base.putIfAbsent(owner.name, key)
+            base.values.removeAll { it == code }
+            base.remove(action.name)
+            base[action.name] = code
+            return ControllerMappingData(base).sanitized()
+        }
+    }
+}
 
 /** Espejo serializable de `ControlLayout`: posiciones 0..1 relativas a la zona de controles y escalas 0,6..1,6. */
 @Serializable
@@ -74,6 +131,8 @@ data class GameplaySettingsData(
     /** Clave: huella SHA-256 hex minúscula de 64 caracteres. Nunca por ruta. */
     val perGame: Map<String, GameOverrides> = emptyMap(),
     val controllerMapping: ControllerMappingData? = null,
+    /** Con un mando conectado los controles táctiles se ocultan salvo que esto sea `true`. */
+    val showTouchControlsWithController: Boolean = false,
 ) {
     /** Normaliza lo que haya venido del disco o de un cambio: ningún valor fuera de rango sale de aquí. */
     fun sanitized(): GameplaySettingsData = copy(
@@ -83,6 +142,7 @@ data class GameplaySettingsData(
         landscapeLayout = landscapeLayout.sanitized(),
         volume = volume.finiteOr(1f).coerceIn(0f, 1f),
         compatPalette = if (compatPalette in 0..MAX_COMPAT_PALETTE) compatPalette else 0,
+        controllerMapping = controllerMapping?.sanitized(),
         perGame = perGame.mapNotNull { (key, value) ->
             if (!isValidFingerprint(key)) return@mapNotNull null
             val clean = value.sanitized()

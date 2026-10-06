@@ -101,6 +101,9 @@ class GameplaySettingsFile(
             compatPalette = field("compatPalette", Int.serializer(), d.compatPalette),
             perGame = perGame,
             controllerMapping = field("controllerMapping", ControllerMappingData.serializer().nullable, null),
+            showTouchControlsWithController = field(
+                "showTouchControlsWithController", Boolean.serializer(), d.showTouchControlsWithController,
+            ),
         ).sanitized()
     }
 

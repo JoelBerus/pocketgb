@@ -1,7 +1,11 @@
 package com.joelbermudez.pocketgb
 
 import android.os.Build
+import android.annotation.SuppressLint
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
+import com.joelbermudez.pocketgb.input.GamepadRouter
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -56,5 +60,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // El mando llega al juego antes que a Compose (la cruceta no mueve el foco durante la partida).
+    // `ComponentActivity.dispatchKeyEvent` está marcado RestrictedApi (androidx.core), pero es el gancho oficial de la vista.
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = GamepadRouter.dispatchKey(event) || super.dispatchKeyEvent(event)
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        GamepadRouter.dispatchMotion(event) || super.dispatchGenericMotionEvent(event)
+
+    // Sin foco de ventana no se queda ningún botón físico pulsado.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        GamepadRouter.onWindowFocusChanged(hasFocus)
     }
 }
