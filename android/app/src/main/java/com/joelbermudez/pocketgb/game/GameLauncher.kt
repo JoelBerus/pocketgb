@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb.game
 import android.content.ContentResolver
 import android.net.Uri
 import com.joelbermudez.pocketgb.emulator.CoreError
+import com.joelbermudez.pocketgb.emulator.EmulationOptions
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.library.DocumentReadException
 import com.joelbermudez.pocketgb.library.FolderStore
@@ -72,7 +73,8 @@ sealed interface OpenError {
 }
 
 sealed interface OpenResult {
-    class Opened(val game: GameSession) : OpenResult {
+    /** [notices]: avisos para mostrar al empezar (p. ej. [GameNotice.HeaderDamaged]); el juego se puede jugar igual. */
+    class Opened(val game: GameSession, val notices: List<GameNotice> = emptyList()) : OpenResult {
         val warning: SaveLoadWarning? get() = game.warning
     }
 
@@ -133,9 +135,14 @@ class GameLauncher(
     /** Propiedad exclusiva por huella: una partida solo la tiene una sesión, huérfana, reparación o restauración (A5V3-H1). */
     private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
 ) {
-    suspend fun open(entry: RomEntry): OpenResult = withContext(io + NonCancellable) { openBlocking(entry) }
+    /**
+     * [options] se fijan al abrir (modelo y paleta). L3/L4 las resuelven con `GameplaySettingsData.emulation(huella, esCgb)`
+     * (L1) y las pasan aquí; volumen, escala y paleta en caliente los aplica el ViewModel sobre `GameSession`.
+     */
+    suspend fun open(entry: RomEntry, options: EmulationOptions = EmulationOptions()): OpenResult =
+        withContext(io + NonCancellable) { openBlocking(entry, options) }
 
-    fun openBlocking(entry: RomEntry): OpenResult {
+    fun openBlocking(entry: RomEntry, options: EmulationOptions = EmulationOptions()): OpenResult {
         entry.problem?.let { return OpenResult.Failed(OpenError.Unplayable(it)) }
         if (!hasFolderPermission()) return OpenResult.Failed(OpenError.PermissionRevoked)
         val rom = try {
@@ -169,7 +176,7 @@ class GameLauncher(
         var lease: FingerprintOwnership.Lease? = null
         try {
             val info = try {
-                session.load(rom, now() / 1000)
+                session.load(rom, now() / 1000, options)
             } catch (error: CoreError) {
                 return OpenResult.Failed(OpenError.RomRejected(error))
             }
@@ -247,7 +254,9 @@ class GameLauncher(
                 lease = lease,
             )
             handedOver = true
-            return OpenResult.Opened(game)
+            // Cabecera con checksum incorrecto (K15): se abre igual y se avisa al empezar.
+            val notices = if (info.headerChecksumOk) emptyList() else listOf(GameNotice.HeaderDamaged)
+            return OpenResult.Opened(game, notices)
         } catch (error: CoreError) {
             return OpenResult.Failed(OpenError.Core(error))
         } catch (error: RuntimeException) {

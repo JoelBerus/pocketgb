@@ -87,6 +87,7 @@ fun noticeText(context: Context, notice: GameNotice): String {
         is GameNotice.StateFailed -> context.getString(R.string.notice_state_failed, causeText(notice.error))
         GameNotice.SavePending -> context.getString(R.string.notice_save_pending)
         GameNotice.RescueStateExists -> context.getString(R.string.notice_rescue_state)
+        GameNotice.HeaderDamaged -> context.getString(R.string.notice_header_damaged)
     }
 }
 
