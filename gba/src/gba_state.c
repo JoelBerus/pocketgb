@@ -15,7 +15,7 @@
 #include "gba_internal.h"
 #include <stdlib.h>
 
-enum { STATE_VERSION = 1, HEADER_BYTES = 4 + 4 + 32 + 4, CRC_BYTES = 4 };
+enum { STATE_VERSION = 2, HEADER_BYTES = 4 + 4 + 32 + 4, CRC_BYTES = 4 };
 enum { V_MEASURE, V_SAVE, V_LOAD };
 
 static uint32_t gba_crc32(const uint8_t *p, size_t n)
@@ -168,6 +168,7 @@ static void visit(visitor *v, gba *g)
     { unsigned t = g->save_type; U32(t, GBA_SAVE_EEPROM8K); g->save_type = (gba_save_type)t; }
     U32(g->save_bytes, 128u * 1024u);
     B(g->save_dirty); B(g->has_rtc);
+    B(g->bios_loaded);   /* v2: un estado con la BIOS real no corre con la emulada ni al revés */
     RAW(g->save);
     U8(g->flash.state, 4); B(g->flash.erase_armed); B(g->flash.id_mode); U8(g->flash.bank, 1);
     gba_eeprom *e = &g->eeprom;
@@ -266,11 +267,20 @@ gba_result gba_state_load(gba *g, const uint8_t *data, size_t len)
     memcpy(tmp, g, sizeof *tmp);
     visitor v = {V_LOAD, NULL, data + HEADER_BYTES, 0, payload, false};
     visit(&v, tmp);
-    /* El medio de guardado debe coincidir con el de la sesión: un estado de otra
-     * configuración cambiaría el tamaño del .sav que la app escribe. */
-    bool same_media = tmp->save_type == g->save_type && tmp->save_bytes == g->save_bytes &&
-                      tmp->has_rtc == g->has_rtc;
-    if (v.bad || v.pos != payload || !same_media || !consistent(tmp)) {
+    if (v.bad || v.pos != payload) {
+        free(tmp);
+        return GBA_ERR_STATE_CORRUPT;
+    }
+    /* El medio de guardado y la BIOS deben coincidir con los de la sesión: un estado de otra
+     * configuración cambiaría el tamaño del .sav que la app escribe, o ejecutaría el stub HLE
+     * dentro de la BIOS real (o al revés). Es un estado válido, no uno dañado. */
+    bool same_config = tmp->save_type == g->save_type && tmp->save_bytes == g->save_bytes &&
+                       tmp->has_rtc == g->has_rtc && tmp->bios_loaded == g->bios_loaded;
+    if (!same_config) {
+        free(tmp);
+        return GBA_ERR_STATE_CONFIG;
+    }
+    if (!consistent(tmp)) {
         free(tmp);
         return GBA_ERR_STATE_CORRUPT;
     }

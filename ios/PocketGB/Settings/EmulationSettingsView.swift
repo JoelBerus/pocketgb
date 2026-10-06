@@ -108,13 +108,24 @@ struct GameSettingsView: View {
 }
 
 extension GameSettingsView {
-    /// Tipos de partida que se pueden forzar (`GBA_SAVE_*`; 0 = automático).
+    /// Tipos de partida que se pueden forzar (`GBA_SAVE_*`); sin forzar, el núcleo detecta el tipo.
     static let gbaSaveTypes: [(value: UInt8, title: String)] = [
-        (0, "Automático"), (1, "Sin partida"), (2, "SRAM 32 KiB"), (3, "Flash 64 KiB"),
+        (1, "Sin partida"), (2, "SRAM 32 KiB"), (3, "Flash 64 KiB"),
         (4, "Flash 128 KiB"), (5, "EEPROM 512 B"), (6, "EEPROM 8 KiB"),
     ]
 
+    /// «Detectado (Flash 64 KiB)» con lo que el núcleo detectó la última vez que se abrió el juego
+    /// sin ajustes forzados; solo «Detectado» si aún no se conoce.
+    private var detectedRecord: SavesIndex.Record? {
+        guard let fingerprint = state.libraryPrefs.fingerprint(of: entry),
+              let dir = try? SaveStore.defaultDirectory() else { return nil }
+        return SavesIndex(directory: dir).load()[fingerprint]
+    }
+
     @ViewBuilder func gbaSection(_ overrides: GameOverrides, _ gameplay: GameplaySettings) -> some View {
+        let record = detectedRecord
+        let detectedMedia = record?.gbaMedia.map { "Detectado (\($0))" } ?? "Detectado"
+        let detectedRTC = record?.gbaHasRTC.map { "Detectado (\($0 ? "con reloj" : "sin reloj"))" } ?? "Detectado"
         Section {
             Picker(selection: Binding(
                 get: { overrides.gbaSaveType.map(Int.init) ?? -1 },
@@ -123,7 +134,7 @@ extension GameSettingsView {
                     o.gbaSaveType = v < 0 ? nil : UInt8(v)
                     gameplay.setOverrides(o, for: entry.id)
                 })) {
-                Text("Detectado").tag(-1)
+                Text(detectedMedia).tag(-1)
                 ForEach(Self.gbaSaveTypes, id: \.value) { Text($0.title).tag(Int($0.value)) }
             } label: {
                 SettingRowLabel(title: "Tipo de partida", customized: overrides.gbaSaveType != nil)
@@ -135,21 +146,20 @@ extension GameSettingsView {
                     o.gbaRTC = v < 0 ? nil : UInt8(v)
                     gameplay.setOverrides(o, for: entry.id)
                 })) {
-                Text("Detectado").tag(-1)
+                Text(detectedRTC).tag(-1)
                 Text("Con reloj").tag(1)
                 Text("Sin reloj").tag(2)
             } label: {
                 SettingRowLabel(title: "Reloj (RTC)", customized: overrides.gbaRTC != nil)
             }
             Picker(selection: Binding(
-                get: { overrides.gbaUseBIOS.map { $0 ? 1 : 2 } ?? 0 },
+                get: { overrides.gbaUseBIOS == false ? 2 : 0 },
                 set: { v in
                     var o = overrides
-                    o.gbaUseBIOS = v == 0 ? nil : v == 1
+                    o.gbaUseBIOS = v == 2 ? false : nil
                     gameplay.setOverrides(o, for: entry.id)
                 })) {
                 Text("Global (la tuya si existe)").tag(0)
-                Text("Usar la tuya").tag(1)
                 Text("Emulada").tag(2)
             } label: {
                 SettingRowLabel(title: "BIOS", customized: overrides.gbaUseBIOS != nil)

@@ -285,14 +285,20 @@ final class AppState {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
+            let emulation = gameplay.data.emulation(for: entryID)
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
-                                              emulation: gameplay.data.emulation(for: entryID),
+                                              emulation: emulation,
                                               console: console, bios: bios) { [weak self] in
                 self?.enterBackground()
             }
+            // Game Boy Advance sin tipo ni reloj forzados: lo detectado se recuerda para los ajustes.
+            let forced = emulation.gbaSaveType != 0 || emulation.gbaRTC != 0
+            let detected = console == .gameBoyAdvance && !forced
+                ? (media: session.info.gbaMediaDescription, hasRTC: session.info.hasRTC) : nil
             SavesIndex(directory: savesDirectory).record(fingerprint: session.info.fingerprint,
-                                                        title: session.info.title, fileName: fileName)
+                                                        title: session.info.title, fileName: fileName,
+                                                        detected: detected)
             if let entryID {
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
@@ -307,7 +313,9 @@ final class AppState {
             #endif
             reloadStates()
             paused = false
-            if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
+            if let forced = session.gameSettingsWarning {
+                showAlert(forced.title, forced.message)
+            } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
                 showAlert(warning.title, warning.message)
             } else if !session.info.headerChecksumOK {
                 showAlert("Cabecera dañada", "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado.")

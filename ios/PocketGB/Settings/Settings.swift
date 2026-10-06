@@ -27,6 +27,24 @@ struct GameOverrides: Codable, Equatable, Sendable {
     }
 }
 
+extension GameOverrides {
+    /// Los ajustes guardados se validan: valores fuera de rango (`save_type` 0…6, `rtc` 0…2) se
+    /// descartan, y "Automático" (0), "con la BIOS propia" (true) o "Detectado" ya no se guardan:
+    /// equivalen a no personalizar.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        colorForGameBoy = try? c.decodeIfPresent(Bool.self, forKey: .colorForGameBoy)
+        let palette = try? c.decodeIfPresent(UInt8.self, forKey: .compatPalette)
+        compatPalette = palette.flatMap { Int($0) <= CompatPalette.count ? $0 : nil }
+        let type = try? c.decodeIfPresent(UInt8.self, forKey: .gbaSaveType)
+        gbaSaveType = type.flatMap { (1...6).contains($0) ? $0 : nil }
+        let rtc = try? c.decodeIfPresent(UInt8.self, forKey: .gbaRTC)
+        gbaRTC = rtc.flatMap { (1...2).contains($0) ? $0 : nil }
+        let bios = try? c.decodeIfPresent(Bool.self, forKey: .gbaUseBIOS)
+        gbaUseBIOS = bios == false ? false : nil
+    }
+}
+
 /// Opciones de emulación resueltas para abrir un juego.
 struct EmulationOptions: Equatable, Sendable {
     /// Juegos de Game Boy (DMG) en una Game Boy Color, con paleta de color.

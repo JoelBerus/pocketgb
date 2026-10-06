@@ -7,6 +7,10 @@ struct SavesIndex: Sendable {
     struct Record: Codable, Equatable, Sendable {
         var title: String
         var fileName: String
+        /// Game Boy Advance: medio de guardado y reloj que detectó el núcleo al abrir el juego sin
+        /// ajustes forzados (para mostrar "Detectado (…)" en los ajustes del juego).
+        var gbaMedia: String?
+        var gbaHasRTC: Bool?
     }
 
     let directory: URL
@@ -18,9 +22,13 @@ struct SavesIndex: Sendable {
         return records
     }
 
-    func record(fingerprint: String, title: String, fileName: String) {
+    /// - Parameter detected: medio y reloj detectados (solo Game Boy Advance sin ajustes forzados);
+    ///   `nil` conserva lo que ya hubiera.
+    func record(fingerprint: String, title: String, fileName: String, detected: (media: String, hasRTC: Bool)? = nil) {
         var records = load()
-        let new = Record(title: title, fileName: fileName)
+        var new = Record(title: title, fileName: fileName,
+                         gbaMedia: records[fingerprint]?.gbaMedia, gbaHasRTC: records[fingerprint]?.gbaHasRTC)
+        if let detected { new.gbaMedia = detected.media; new.gbaHasRTC = detected.hasRTC }
         guard records[fingerprint] != new else { return }
         records[fingerprint] = new
         if let data = try? JSONEncoder().encode(records) {

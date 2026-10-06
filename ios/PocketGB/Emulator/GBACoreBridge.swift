@@ -19,6 +19,7 @@ extension CoreError {
         case GBA_ERR_STATE_ROM_MISMATCH: self = .stateROMMismatch
         case GBA_ERR_STATE_CORRUPT: self = .stateCorrupt
         case GBA_ERR_BUFFER_TOO_SMALL: self = .bufferTooSmall
+        case GBA_ERR_STATE_CONFIG: self = .stateConfig
         default: self = .unknown(r.rawValue)
         }
     }
@@ -196,5 +197,19 @@ final class GBACoreBridge: ConsoleCore {
             gba_state_load(g, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
         }
         if let e = CoreError(gba: r) { throw e }
+    }
+}
+
+extension RomInfo {
+    /// Medio de guardado del cartucho GBA en texto ("SRAM 32 KiB", "Flash 64 KiB", "EEPROM"…).
+    var gbaMediaDescription: String {
+        if eeprom { return eepromSizeFixed ? (sramBytes >= 8192 ? "EEPROM 8 KiB" : "EEPROM 512 B") : "EEPROM" }
+        switch sramBytes {
+        case 0: return "sin partida"
+        case 32 * 1024: return "SRAM 32 KiB"
+        case 64 * 1024: return "Flash 64 KiB"
+        case 128 * 1024: return "Flash 128 KiB"
+        default: return "\(sramBytes) B"
+        }
     }
 }

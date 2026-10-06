@@ -175,7 +175,8 @@ struct SaveStore: Sendable {
     }
 
     /// Paso 6 de docs/04 §Saves: un `.sav.tmp` huérfano se instala si no hay
-    /// `.sav` y tiene el tamaño esperado; si no, se borra. Los `.1.tmp` se borran.
+    /// `.sav` y tiene el tamaño esperado; si no hay `.sav` y el tamaño no vale, se aparta en
+    /// `backups/` (nunca se borra); si ya hay `.sav`, se descarta. Los `.1.tmp` se borran.
     func recoverOrphans(expectedSize: Int) throws {
         try recoverOrphans(validSizes: [expectedSize])
     }
@@ -190,8 +191,15 @@ struct SaveStore: Sendable {
             if !fm.fileExists(atPath: saveURL.path) && validSizes.contains(size) {
                 try AtomicFile.rename(tmp, saveURL)
                 try AtomicFile.syncDirectory(directory)
+            } else if !fm.fileExists(atPath: saveURL.path) {
+                // Sin `.sav` y con un tamaño que ahora no vale (p. ej. porque cambió un ajuste
+                // por juego): puede ser la única copia, así que se aparta y nunca se borra.
+                try fm.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+                try AtomicFile.rename(tmp, quarantineURL(Date()))
+                try AtomicFile.syncDirectory(backupsDirectory)
+                try AtomicFile.syncDirectory(directory)
             } else {
-                try fm.removeItem(at: tmp)
+                try fm.removeItem(at: tmp)   // el `.sav` existe y es el autoritativo
             }
         }
         let backupTmp = backupURL(1).deletingPathExtension().appendingPathExtension("tmp")

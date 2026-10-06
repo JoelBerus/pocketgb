@@ -499,6 +499,28 @@ static void test_apu(void)
     gba_destroy(g);
 }
 
+/* G8-H8: tipo de partida y RTC fuera de rango se tratan como automáticos. */
+static void test_options_out_of_range(void)
+{
+    uint8_t rom[0x400] = {0};
+    rom[0xB2] = 0x96;
+    memcpy(rom + 0x200, "SRAM_V113", 9);
+    gba *g = gba_create();
+    gba_options o;
+    gba_options_default(&o);
+    o.save_type = (gba_save_type)200;
+    o.rtc = 77;
+    CHECK(gba_load_rom(g, rom, sizeof rom, &o) == GBA_OK);
+    gba_rom_info info;
+    CHECK(gba_rom_info_get(g, &info) == GBA_OK);
+    CHECK(info.save_type == GBA_SAVE_SRAM && info.save_bytes == 32u * 1024u && !info.has_rtc);
+    uint8_t *st = malloc(gba_state_size(g));
+    CHECK(gba_state_save(g, st, gba_state_size(g)) == GBA_OK);
+    CHECK(gba_state_load(g, st, gba_state_size(g)) == GBA_OK);   /* y sus estados se aceptan */
+    free(st);
+    gba_destroy(g);
+}
+
 static void test_states(void)
 {
     gba *g = rom_with_tag("FLASH1M_V103", NULL);
@@ -569,7 +591,13 @@ static void test_states(void)
     g->has_rtc = !rtc;                           /* otra configuración de RTC */
     CHECK(gba_state_save(g, st2, sz) == GBA_OK);
     g->has_rtc = rtc;
-    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CORRUPT);
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CONFIG);
+    /* G8-H9: la BIOS real y la emulada no comparten estados (error propio, no "dañado"). */
+    bool bios = g->bios_loaded;
+    g->bios_loaded = !bios;
+    CHECK(gba_state_save(g, st2, sz) == GBA_OK);
+    g->bios_loaded = bios;
+    CHECK(gba_state_load(g, st2, sz) == GBA_ERR_STATE_CONFIG);
     CHECK(gba_state_load(g, st, sz) == GBA_OK);
     free(st);
     free(st2);
@@ -590,6 +618,7 @@ int gba_unit_run(void)
     test_dma_self_retrigger();
     test_save_api();
     test_apu();
+    test_options_out_of_range();
     test_states();
     printf("%s unit: %d fallos\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;

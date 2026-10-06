@@ -88,6 +88,9 @@ gba_result gba_load_rom(gba *g, const uint8_t *data, size_t len, const gba_optio
     /* Frecuencia de salida acotada (0 = sin audio): fuera de rango, la más cercana. */
     if (g->opts.sample_rate && g->opts.sample_rate < 8000) g->opts.sample_rate = 8000;
     if (g->opts.sample_rate > 192000) g->opts.sample_rate = 192000;
+    /* Ajustes fuera de rango (p. ej. de un archivo de ajustes dañado): automático. */
+    if ((unsigned)g->opts.save_type > (unsigned)GBA_SAVE_EEPROM8K) g->opts.save_type = GBA_SAVE_AUTO;
+    if (g->opts.rtc > GBA_RTC_OFF) g->opts.rtc = GBA_RTC_AUTO;
     sha256(rom, len, g->fingerprint);
     gba_cart_init(g);
     gba_power_on(g);
@@ -229,6 +232,7 @@ const char *gba_result_str(gba_result r)
     case GBA_ERR_STATE_ROM_MISMATCH: return "el estado es de otro juego";
     case GBA_ERR_STATE_CORRUPT: return "estado corrupto";
     case GBA_ERR_BUFFER_TOO_SMALL: return "búfer demasiado pequeño";
+    case GBA_ERR_STATE_CONFIG: return "el estado es de otra configuración (partida, reloj o BIOS)";
     }
     return "error desconocido";
 }

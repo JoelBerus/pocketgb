@@ -14,6 +14,8 @@ final class EmulatorSession: @unchecked Sendable {
     let audioRing = AudioRingBuffer()
     /// Aviso para mostrar al abrir (p. ej. .sav con tamaño inesperado).
     let loadWarning: SaveLoadWarning?
+    /// Game Boy Advance: el `.sav` existente no coincide con el tipo o el reloj forzados por juego.
+    let gameSettingsWarning: GameSettingsSaveWarning?
 
     private let core: any ConsoleCore
     private let audioOutput: AudioOutput
@@ -99,6 +101,17 @@ final class EmulatorSession: @unchecked Sendable {
         audioOutput = AudioOutput(ring: audioRing, consumed: audioConsumed,
                                   onPause: onAudioInterrupted)
 
+        var forcedWarning: GameSettingsSaveWarning?
+        if console == .gameBoyAdvance {
+            var sizes: [Int] = []
+            if let local = try? SaveStore(directory: savesDirectory, fingerprint: info.fingerprint).load() {
+                sizes.append(local.count)
+            }
+            if case let .read(data, _) = mirrorSnapshot, mirror != nil { sizes.append(data.count) }
+            forcedWarning = GameSettingsSaveWarning.check(
+                forced: emulation.gbaSaveType != 0 || emulation.gbaRTC != 0,
+                validSizes: Self.validSaveSizes(info), existingSizes: sizes)
+        }
         var warning: SaveLoadWarning?
         var saves: SaveTarget?
         if info.hasBattery, core.sramSaveSize > 0 {
@@ -129,6 +142,7 @@ final class EmulatorSession: @unchecked Sendable {
         }
         self.saves = saves
         loadWarning = warning
+        gameSettingsWarning = forcedWarning
     }
 
     deinit { audioScratch.deallocate() }

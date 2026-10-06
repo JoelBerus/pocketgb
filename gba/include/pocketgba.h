@@ -44,7 +44,8 @@ typedef enum gba_result {
     GBA_ERR_STATE_VERSION,
     GBA_ERR_STATE_ROM_MISMATCH,
     GBA_ERR_STATE_CORRUPT,
-    GBA_ERR_BUFFER_TOO_SMALL
+    GBA_ERR_BUFFER_TOO_SMALL,
+    GBA_ERR_STATE_CONFIG        /* estado de otra configuración: medio de guardado, RTC o BIOS distintos */
 } gba_result;
 
 /* Medio de guardado del cartucho. AUTO = se detecta por las cadenas de la

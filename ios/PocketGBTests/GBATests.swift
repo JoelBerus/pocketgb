@@ -256,6 +256,64 @@ struct GBATests {
                                     local: local, mirrorData: mirrorData)
         #expect(result.before.values.contains(local) && result.before.values.contains(mirrorData), "\(name)")
         #expect(result.after == result.before, "\(name): el disco cambió")
+        // G8-H5: el aviso nombra «Ajustes del juego», también con «Sin partida» (sin batería).
+        let warning = try #require(result.session.gameSettingsWarning, "\(name): sin aviso")
+        #expect(warning.message.contains("Ajustes del juego"))
+    }
+
+    /// «Sin partida» + reloj: el `.sav` de solo 16 bytes del RTC es válido y se carga (G8-H5, b).
+    @Test func noSaveWithClockAcceptsAndLoadsTheClockOnlySave() throws {
+        let forced = EmulationOptions(colorForGameBoy: false, compatPalette: 0, gbaSaveType: 1, gbaRTC: 1)
+        let core = try GBACoreBridge()
+        let info = try core.loadROM(Self.rom(), bios: nil, unixTime: 0, saveType: 1, rtc: 1)
+        #expect(info.sramBytes == 0 && info.hasRTC && info.hasBattery)
+        #expect(EmulatorSession.validSaveSizes(info) == [16])
+        try core.sramLoad(try core.sramSave())
+        #expect(throws: CoreError.sramSize) { try core.sramLoad(Data()) }
+        #expect(throws: CoreError.sramSize) { try core.sramLoad(Data(count: 17)) }
+        // Y sin reloj, «Sin partida» no acepta ningún .sav.
+        let plain = try GBACoreBridge().loadROM(Self.rom(), bios: nil, unixTime: 0, saveType: 1)
+        #expect(EmulatorSession.validSaveSizes(plain).isEmpty)
+
+        // Sin espejo previo, la sesión lo crea con la misma partida; la local no cambia.
+        let clockOnly = try core.sramSave()
+        let result = try runSession(emulation: forced, local: clockOnly, mirrorData: nil)
+        #expect(result.session.loadWarning == nil && result.session.gameSettingsWarning == nil)
+        let localPath = "/\(result.session.info.fingerprint).sav"
+        #expect(result.after[localPath] == clockOnly && result.before[localPath] == clockOnly)
+        #expect(result.after["/juego.sav"] == clockOnly)
+    }
+
+    /// G8-H9: un estado de otra configuración (tipo de partida, reloj o BIOS) no se carga y el
+    /// error no dice «dañado».
+    @Test func statesOfAnotherConfigurationAreRejectedWithTheirOwnError() throws {
+        let bios = Data(count: GBACoreBridge.biosBytes)
+        let real = try GBACoreBridge(), emulated = try GBACoreBridge(), flash = try GBACoreBridge()
+        _ = try real.loadROM(Self.rom(), bios: bios, unixTime: 0)
+        _ = try emulated.loadROM(Self.rom(), bios: nil, unixTime: 0)
+        _ = try flash.loadROM(Self.rom(), bios: nil, unixTime: 0, saveType: 3)
+        let withBIOS = try real.stateSave(), withoutBIOS = try emulated.stateSave(), asFlash = try flash.stateSave()
+        #expect(throws: CoreError.stateConfig) { try emulated.stateLoad(withBIOS) }
+        #expect(throws: CoreError.stateConfig) { try real.stateLoad(withoutBIOS) }
+        #expect(throws: CoreError.stateConfig) { try emulated.stateLoad(asFlash) }
+        try emulated.stateLoad(withoutBIOS)
+        try real.stateLoad(withBIOS)
+        #expect(!CoreError.stateConfig.description.contains("dañado"))
+    }
+
+    /// G8-H8 y H7: los ajustes por juego fuera de rango se descartan al leerlos y «Automático»
+    /// ya no existe como valor guardado.
+    @Test func storedPerGameSettingsOutOfRangeAreDiscarded() throws {
+        let json = #"""
+        {"perGame":{"a.gba":{"gbaSaveType":200,"gbaRTC":9,"gbaUseBIOS":true},
+                    "b.gba":{"gbaSaveType":0,"gbaRTC":0},
+                    "c.gba":{"gbaSaveType":6,"gbaRTC":2,"gbaUseBIOS":false}}}
+        """#
+        let data = try JSONDecoder().decode(GameplaySettingsData.self, from: Data(json.utf8))
+        #expect(data.perGame["a.gba"]?.isEmpty == true)
+        #expect(data.perGame["b.gba"]?.isEmpty == true)
+        #expect(data.perGame["c.gba"] == GameOverrides(gbaSaveType: 6, gbaRTC: 2, gbaUseBIOS: false))
+        #expect(data.emulation(for: "a.gba").gbaSaveType == 0 && data.emulation(for: "a.gba").gbaRTC == 0)
     }
 
     /// Caso de G8-H2: EEPROM 512 B forzada, local de 512 B y espejo de 8 KiB más reciente. Antes

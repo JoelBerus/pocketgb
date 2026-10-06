@@ -9,6 +9,8 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
     case bufferTooSmall
     /// Solo Game Boy Advance (`GBACoreBridge`).
     case gbaRomTooLarge, gbaBadHeader, biosSize
+    /// Game Boy Advance: estado guardado con otro tipo de partida, reloj o BIOS.
+    case stateConfig
     case unknown(UInt32)
 
     /// `nil` si `r == GB_OK`.
@@ -50,6 +52,8 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .unknown(let code): return "Error desconocido del núcleo (\(code))."
         case .stateMagic, .stateCorrupt: return "El estado está dañado."
         case .stateVersion: return "El estado es de una versión anterior de PocketGB."
+        case .stateConfig:
+            return "El estado se guardó con otra configuración (tipo de partida, reloj o BIOS) y no se puede cargar con la actual."
         case .stateROMMismatch: return "El estado es de otro juego, o de otro modo (Game Boy o Game Boy Color)."
         case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
