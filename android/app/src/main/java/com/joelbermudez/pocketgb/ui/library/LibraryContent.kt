@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -392,12 +393,18 @@ private fun ResultsCount(count: Int) {
     )
 }
 
+/** `true` enfoca el campo de búsqueda al abrirse (teclado visible); solo lo fija el catálogo de capturas. */
+val LocalAutoFocusSearch = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (LocalAutoFocusSearch.current) LaunchedEffect(Unit) { focus.requestFocus() }
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("library-search"),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .focusRequester(focus).testTag("library-search"),
         singleLine = true,
         label = { Text("Buscar juegos") },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },

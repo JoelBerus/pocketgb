@@ -14,6 +14,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -68,9 +69,13 @@ class GameMenuController internal constructor(private val actions: GameActions) 
     }
 }
 
+/** Id del juego cuyo menú contextual arranca abierto; solo lo fija el catálogo de capturas (en la app es `null`). */
+val LocalInitialMenuFor = staticCompositionLocalOf<String?> { null }
+
 @Composable
 fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController) -> Unit) {
-    val controller = remember(actions) { GameMenuController(actions) }
+    val initialMenu = LocalInitialMenuFor.current
+    val controller = remember(actions) { GameMenuController(actions).also { it.menuFor = initialMenu } }
     content(controller)
     controller.hideCandidate?.let { entry ->
         HideGameDialog(

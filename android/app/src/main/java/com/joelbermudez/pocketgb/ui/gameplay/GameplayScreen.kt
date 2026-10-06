@@ -62,10 +62,12 @@ fun GameplayScreen(
     onEditingDone: () -> Unit = {},
     /** Guarda un cambio de ajustes (el editor persiste con esto en la orientación actual). */
     onSettingsChange: ((GameplaySettingsData) -> GameplaySettingsData) -> Unit = {},
+    /** Control seleccionado al abrir el editor; solo lo usa el catálogo de capturas. */
+    initialSelected: ControlId? = null,
 ) {
     var speed by remember { mutableIntStateOf(session.speed) }
     val sessionState by session.state.collectAsStateWithLifecycle()
-    var selected by remember(editing) { mutableStateOf<ControlId?>(null) }
+    var selected by remember(editing) { mutableStateOf(initialSelected) }
     val pause = {
         if (onMenu != null) onMenu()
         else if (session.state.value == SessionState.Running) session.pause()
