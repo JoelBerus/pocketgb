@@ -16,3 +16,15 @@ Informe: [G8-opus.md](G8-opus.md) (APROBAR CON CAMBIOS, sobre `c5d8286`). Rama `
 | G8-H10 | **Corregido (8f46a92 y commit del grupo 4).** Deslizamientos con un solo dedo, área vertical 3:2 (≈510 pt) con marcos táctiles y HUD de ≈100×44 pt; `gameBoyCoreIgnoresShoulderBits` prueba `CoreBridge.setButtons` (estado idéntico con L/R, distinto con A). |
 | G8-H11 | **Diferido (G9, docs):** `docs/diseno/SPEC.md`, `10-gba-spec` (`.rtc` aparte) y `04-ios-spec` (textura 160×144) se actualizan en el cierre. Solo se tocó en `10-gba-spec.md` lo del formato de estado. |
 | G8-H12 | **Corregido en lo que depende del repo.** `.g7-codex.err` borrado; run verde de `c5d8286` enlazado en la evidencia. **Pendiente de Joel:** la aprobación del descarte de G7-1 (exigida por `docs/auditorias/README.md` §4) y su decisión sobre G7-3 (`.rtc` aparte o RTC al final del `.sav`): no constan en ningún documento y no se inventan. |
+
+## Auditoría final del bloque GBA (G9, Opus): APROBAR CON CAMBIOS
+
+Informe: [G9-opus.md](G9-opus.md) sobre `b02f914`. Sin hallazgos de código; tres precisiones documentales, corregidas en el commit siguiente:
+
+| ID | Estado |
+|---|---|
+| G9-H1 (media, doc) | corregido: `10-gba-spec.md` ya distingue el `.sav` de solo 16 bytes (solo con medio de 0 B) del caso con medio, donde 16 bytes es tamaño incorrecto y no se toca. |
+| G9-H2 (baja, doc) | corregido: `04-ios-spec.md` y `diseno/SPEC.md` describen la BIOS por juego como «Global (la tuya si existe) / Emulada». |
+| G9-H3 (baja, evidencia) | corregido: `G9-evidencia.md` separa la ejecución local (117/94) del último CI verde (`c5d8286`, 105/92) y declara que no hay CI sobre `b02f914`. |
+
+Sigue pendiente de Joel: G7-1/G7-3, los criterios 🍎 y confirmar la compatibilidad del `.sav` (medio + 16 B de RTC) con un `.sav` real de mGBA/VBA.

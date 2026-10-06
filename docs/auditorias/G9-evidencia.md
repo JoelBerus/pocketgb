@@ -57,7 +57,7 @@ $ ... xcodebuild build -configuration Release -destination 'generic/platform=iOS
 ** BUILD SUCCEEDED **
 ```
 Una primera ejecución completa con el Mac a carga ~120 falló 7 tests de temporizadores de 2 s (`SaveMirrorTests`, `StateSRAMTests`, `GBATests.noSaveWithClock…`: `timedOut`); repetidas esas tres suites con menos carga: 43 tests en verde, y después la suite completa: verde. Es flakiness por carga, no un cambio de código (este lote no toca código).
-El catálogo de UI no se repitió: el último ejecutado fue el de G8 (117 tests, 94 capturas; CI verde de `c5d8286`, [G8-evidencia](G8-evidencia.md)).
+El catálogo de UI no se repitió: el último ejecutado fue el local de G8 tras `92ff6e2` (117 tests, 94 capturas, [G8-evidencia](G8-evidencia.md)). El último run de CI verde es el de `c5d8286` (105 tests, 92 capturas); no hay run de CI sobre `b02f914` todavía.
 
 ## Documentación
 Actualizados: 10-gba-spec (RTC al final del `.sav`, estado v2, known-fail/límites), 02-arquitectura, 04-ios-spec (textura por consola, GBA, L/R, ajustes por juego, BIOS), 06-testing, 08-roms-legal, 09-referencias, diseno/SPEC (H11), hitos/README, hitos/G-README, ESTADO.
