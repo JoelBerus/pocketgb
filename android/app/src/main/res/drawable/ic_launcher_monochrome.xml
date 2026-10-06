@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Derivado de docs/diseno/icon-assets/app-icon-mono.svg (pantalla recortada con evenOdd). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="1024" android:viewportHeight="1024">
+    <group android:scaleX="0.85" android:scaleY="0.85" android:pivotX="512" android:pivotY="512">
+        <path android:fillColor="#FF292929" android:fillType="evenOdd"
+            android:pathData="M304,144H720A128,128 0 0 1 848,272V466A128,128 0 0 1 720,594H304A128,128 0 0 1 176,466V272A128,128 0 0 1 304,144ZM310,210H714A68,68 0 0 1 782,278V460A68,68 0 0 1 714,528H310A68,68 0 0 1 242,460V278A68,68 0 0 1 310,210Z" />
+        <path android:fillColor="#FF292929"
+            android:pathData="M244,688h98v-98h98v98h98v98h-98v98h-98v-98h-98z" />
+        <path android:fillColor="#FF292929"
+            android:pathData="M730,660A76,76 0 1 0 730,812A76,76 0 1 0 730,660Z" />
+    </group>
+</vector>
