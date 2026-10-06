@@ -74,7 +74,7 @@ open class EmulatorSession : AutoCloseable {
      * Carga el ROM y devuelve su información. [unixTimeSeconds] inicializa el reloj del MBC3: el llamador
      * real pasa la hora actual (con 0 el RTC arranca sin hora válida, solo para tests y depuración).
      */
-    fun load(rom: ByteArray, unixTimeSeconds: Long = 0L): RomInfo {
+    fun load(rom: ByteArray, unixTimeSeconds: Long = 0L, options: EmulationOptions = EmulationOptions()): RomInfo {
         requireState("cargar", SessionState.New)
         if (rom.size < CoreBridge.MIN_ROM_BYTES) throw CoreError.RomTooSmall()
         if (rom.size > CoreBridge.MAX_ROM_BYTES) throw CoreError.RomTooLarge()
@@ -82,7 +82,12 @@ open class EmulatorSession : AutoCloseable {
         val fingerprint = ByteArray(32)
         val title = ByteArray(17)
         withHandle { nativeHandle ->
-            checkNative("cargar", NativeLibrary.nativeSessionLoad(nativeHandle, rom, unixTimeSeconds))
+            checkNative(
+                "cargar",
+                NativeLibrary.nativeSessionLoad(
+                    nativeHandle, rom, unixTimeSeconds, options.model.native, options.compatPalette,
+                ),
+            )
             checkNative("leer la cabecera", NativeLibrary.nativeSessionRomInfo(nativeHandle, ints, fingerprint, title))
         }
         val read = romInfoFromNative(ints, fingerprint, title)
@@ -184,6 +189,36 @@ open class EmulatorSession : AutoCloseable {
         withHandle { NativeLibrary.nativeSessionSetSpeed(it, factor) }
     }
 
+    /** Paleta de compatibilidad pedida (0 = automática). */
+    val compatPalette: Int
+        get() = withHandle { NativeLibrary.nativeSessionCompatPalette(it) }
+
+    val volume: Float
+        get() = withHandle { NativeLibrary.nativeSessionVolume(it) }
+
+    val scaleMode: ScaleMode
+        get() = withHandle { ScaleMode.entries.first { mode -> mode.native == NativeLibrary.nativeSessionScaleMode(it) } }
+
+    /**
+     * Cambia la paleta de compatibilidad sin reiniciar (K8): solo con la ROM en compatibilidad CGB
+     * ([RomInfo.cgbCompat]); la aplica el hilo nativo entre frames. Hilo principal (I1).
+     */
+    fun setCompatPalette(id: Int) {
+        if (id !in 0..CoreBridge.COMPAT_PALETTES) throw CoreError.InvalidArgument()
+        if (!info.cgbCompat) throw CoreError.NotCompatibilityMode()
+        withHandle { checkNative("cambiar la paleta", NativeLibrary.nativeSessionSetCompatPalette(it, id)) }
+    }
+
+    /** Volumen lineal. Solo se aceptan valores finitos en 0..1; el nativo vuelve a recortar. */
+    fun setVolume(gain: Float) {
+        require(gain.isFinite() && gain in 0f..1f) { "Volumen fuera de 0..1: $gain" }
+        withHandleOrNull { NativeLibrary.nativeSessionSetVolume(it, gain) }
+    }
+
+    fun setScaleMode(mode: ScaleMode) {
+        withHandleOrNull { NativeLibrary.nativeSessionSetScaleMode(it, mode.native) }
+    }
+
     override fun close() {
         // El lock de escritura espera a que acaben las lecturas del hilo de guardado (I2/I3).
         handleLock.write {
@@ -200,6 +235,8 @@ open class EmulatorSession : AutoCloseable {
             0 -> Unit
             NS_BUSY -> throw SessionError.NotParked(action, mutableState.value)
             NS_TIMEOUT -> throw SessionError.SnapshotTimeout()
+            NS_INVALID -> throw CoreError.InvalidArgument()
+            NS_NOT_COMPAT -> throw CoreError.NotCompatibilityMode()
             else -> CoreError.fromResult(result)?.let { throw it }
         }
     }
@@ -245,5 +282,7 @@ open class EmulatorSession : AutoCloseable {
         /** Códigos de `native_session.h`: sesión no aparcada y espera de instantánea agotada. */
         const val NS_BUSY = -1
         const val NS_TIMEOUT = -2
+        const val NS_INVALID = -3
+        const val NS_NOT_COMPAT = -4
     }
 }

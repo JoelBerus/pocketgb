@@ -1,6 +1,7 @@
 #include "native_session.h"
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +35,21 @@ struct native_session {
     enum native_audio_state audio_state;
     int16_t audio_scratch[2048];
     ANativeWindow *window;
+    /* Ajustes en caliente: los escribe cualquier hilo y los lee el hilo nativo entre frames (sin mutex). */
+    atomic_int scale_mode;        /* enum native_scale_mode */
+    atomic_int pending_palette;   /* -1 = sin petición; 0..GB_COMPAT_PALETTES = aplicar antes del próximo frame */
+    atomic_int current_palette;   /* última paleta pedida (0 = automática) */
+    bool cgb_compat;              /* la ROM cargada corre en modo compatibilidad CGB */
+    /* Geometría del blit, recalculada solo al cambiar el tamaño del buffer o el modo (hilo nativo, sin malloc). */
+    int layout_width;
+    int layout_height;
+    int layout_mode;
+    int draw_width;
+    int draw_height;
+    int draw_left;
+    int draw_top;
+    uint32_t step_x;              /* 16.16: píxeles de origen por píxel de destino */
+    uint32_t step_y;
     /* Partidas. `sram_snapshot` se reserva en load (nunca en el bucle de emulación) y es el buzón por el
      * que el hilo nativo entrega la SRAM a otro hilo mientras corre. Todo bajo `mutex`. */
     uint8_t *sram_snapshot;
@@ -138,6 +154,36 @@ static void pace_from_audio(native_session *session) {
     }
 }
 
+/* Calcula el rectángulo de dibujo y los pasos 16.16 para un buffer de `width` x `height`.
+ * Entero: mayor múltiplo entero que quepa (si no cabe ninguno, escala fraccional que quepa). Llenar: 10:9
+ * (la proporción de la pantalla) que quepa, centrado. Siempre vecino más cercano. */
+static void compute_layout(native_session *session, int width, int height, int mode) {
+    int draw_width;
+    int draw_height;
+    const int integer_scale = width / GB_SCREEN_W < height / GB_SCREEN_H ? width / GB_SCREEN_W : height / GB_SCREEN_H;
+    if (mode == NATIVE_SCALE_INTEGER && integer_scale >= 1) {
+        draw_width = GB_SCREEN_W * integer_scale;
+        draw_height = GB_SCREEN_H * integer_scale;
+    } else if ((int64_t)width * GB_SCREEN_H <= (int64_t)height * GB_SCREEN_W) {
+        draw_width = width;
+        draw_height = (int)((int64_t)width * GB_SCREEN_H / GB_SCREEN_W);
+    } else {
+        draw_height = height;
+        draw_width = (int)((int64_t)height * GB_SCREEN_W / GB_SCREEN_H);
+    }
+    if (draw_width < 1) draw_width = 1;
+    if (draw_height < 1) draw_height = 1;
+    session->layout_width = width;
+    session->layout_height = height;
+    session->layout_mode = mode;
+    session->draw_width = draw_width;
+    session->draw_height = draw_height;
+    session->draw_left = (width - draw_width) / 2;
+    session->draw_top = (height - draw_height) / 2;
+    session->step_x = (uint32_t)(((uint64_t)GB_SCREEN_W << 16) / (uint64_t)draw_width);
+    session->step_y = (uint32_t)(((uint64_t)GB_SCREEN_H << 16) / (uint64_t)draw_height);
+}
+
 static void render_frame(native_session *session) {
     (void)pthread_mutex_lock(&session->mutex);
     ANativeWindow *window = session->window;
@@ -170,32 +216,21 @@ static void render_frame(native_session *session) {
     }
 
     const uint32_t *source = gb_framebuffer(session->core);
-    if (source != NULL && buffer.width > 0 && buffer.height > 0) {
-        const int integer_scale = buffer.width / GB_SCREEN_W < buffer.height / GB_SCREEN_H
-            ? buffer.width / GB_SCREEN_W
-            : buffer.height / GB_SCREEN_H;
-        int draw_width;
-        int draw_height;
-        if (integer_scale >= 1) {
-            draw_width = GB_SCREEN_W * integer_scale;
-            draw_height = GB_SCREEN_H * integer_scale;
-        } else if ((int64_t)buffer.width * GB_SCREEN_H <= (int64_t)buffer.height * GB_SCREEN_W) {
-            draw_width = buffer.width;
-            draw_height = buffer.width * GB_SCREEN_H / GB_SCREEN_W;
-        } else {
-            draw_height = buffer.height;
-            draw_width = buffer.height * GB_SCREEN_W / GB_SCREEN_H;
+    if (source != NULL) {
+        const int mode = atomic_load_explicit(&session->scale_mode, memory_order_relaxed);
+        if (session->layout_width != buffer.width || session->layout_height != buffer.height ||
+            session->layout_mode != mode) {
+            compute_layout(session, buffer.width, buffer.height, mode);
         }
-        if (draw_width < 1) draw_width = 1;
-        if (draw_height < 1) draw_height = 1;
-        const int left = (buffer.width - draw_width) / 2;
-        const int top = (buffer.height - draw_height) / 2;
+        const int draw_width = session->draw_width;
+        const int draw_height = session->draw_height;
         for (int y = 0; y < draw_height; ++y) {
-            const int source_y = y * GB_SCREEN_H / draw_height;
-            uint32_t *row = destination + (size_t)(top + y) * (size_t)buffer.stride + (size_t)left;
+            const uint32_t source_y = ((uint32_t)y * session->step_y) >> 16;
+            const uint32_t *source_row = source + (size_t)source_y * GB_SCREEN_W;
+            uint32_t *row = destination + (size_t)(session->draw_top + y) * (size_t)buffer.stride +
+                (size_t)session->draw_left;
             for (int x = 0; x < draw_width; ++x) {
-                const int source_x = x * GB_SCREEN_W / draw_width;
-                row[x] = source[(size_t)source_y * GB_SCREEN_W + (size_t)source_x];
+                row[x] = source_row[((uint32_t)x * session->step_x) >> 16];
             }
         }
     }
@@ -246,6 +281,8 @@ static void *run_session(void *context) {
         }
         sync_audio_speed(session, speed);
         gb_set_buttons(session->core, buttons);
+        const int palette = atomic_exchange_explicit(&session->pending_palette, -1, memory_order_acq_rel);
+        if (palette >= 0) gb_set_compat_palette(session->core, (uint8_t)palette);
         gb_run_frame(session->core);
         /* Solo este hilo toca el core mientras corre: se lee y se limpia el flag aquí, sin bloquear. */
         const bool sram_dirty = gb_sram_dirty(session->core);
@@ -305,6 +342,9 @@ native_session *native_session_create(void) {
     }
     session->state = NATIVE_SESSION_NEW;
     session->speed = 1u;
+    atomic_init(&session->scale_mode, NATIVE_SCALE_INTEGER);
+    atomic_init(&session->pending_palette, -1);
+    atomic_init(&session->current_palette, 0);
     audio_ring_init(&session->audio_ring_buffer);
     audio_output_init(&session->audio, &session->audio_ring_buffer);
     session->audio_state = NATIVE_AUDIO_STOPPED;
@@ -353,6 +393,10 @@ gb_result native_session_load(
         session->sram_size = sram_size;
         session->sram_dirty_seq = 0u;
         session->snapshot_requested = false;
+        gb_rom_info loaded;
+        session->cgb_compat = gb_rom_info_get(session->core, &loaded) == GB_OK && loaded.cgb_compat;
+        atomic_store_explicit(&session->current_palette, (int)options->compat_palette, memory_order_relaxed);
+        atomic_store_explicit(&session->pending_palette, -1, memory_order_relaxed);
         session->state = NATIVE_SESSION_READY;
         session->frames = 0u;
         (void)pthread_mutex_unlock(&session->mutex);
@@ -510,6 +554,47 @@ void native_session_set_speed(native_session *session, unsigned speed) {
         session->timing_reset = true;
     }
     (void)pthread_mutex_unlock(&session->mutex);
+}
+
+int native_session_set_compat_palette(native_session *session, int id) {
+    if (session == NULL) return NS_INVALID;
+    if (id < 0 || id > (int)GB_COMPAT_PALETTES) return NS_INVALID;
+    (void)pthread_mutex_lock(&session->mutex);
+    const bool compat = session->cgb_compat;
+    const bool started = session->thread_started;
+    if (compat && !started) gb_set_compat_palette(session->core, (uint8_t)id);
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (!compat) return NS_NOT_COMPAT;
+    atomic_store_explicit(&session->current_palette, id, memory_order_relaxed);
+    /* Con el hilo en marcha (o en pausa) lo aplica entre frames, sin tocar el core desde aquí. */
+    if (started) atomic_store_explicit(&session->pending_palette, id, memory_order_release);
+    return NS_OK;
+}
+
+int native_session_compat_palette(native_session *session) {
+    if (session == NULL) return 0;
+    return atomic_load_explicit(&session->current_palette, memory_order_relaxed);
+}
+
+void native_session_set_volume(native_session *session, float gain) {
+    if (session == NULL) return;
+    audio_output_set_volume(&session->audio, gain);
+}
+
+float native_session_volume(native_session *session) {
+    if (session == NULL) return 1.0f;
+    return audio_output_volume(&session->audio);
+}
+
+void native_session_set_scale_mode(native_session *session, int mode) {
+    if (session == NULL) return;
+    if (mode != NATIVE_SCALE_INTEGER && mode != NATIVE_SCALE_FILL) return;
+    atomic_store_explicit(&session->scale_mode, mode, memory_order_relaxed);
+}
+
+int native_session_scale_mode(native_session *session) {
+    if (session == NULL) return NATIVE_SCALE_INTEGER;
+    return atomic_load_explicit(&session->scale_mode, memory_order_relaxed);
 }
 
 unsigned native_session_speed(native_session *session) {

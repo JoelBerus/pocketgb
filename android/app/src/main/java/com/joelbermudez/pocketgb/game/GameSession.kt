@@ -220,6 +220,16 @@ class GameSession(
 
     // ------------------------------------------------------------------ transiciones
 
+    /* Ajustes en caliente (A6-L2): delegan en la sesión como `setSpeed`; no tocan la ruta de guardado ni de cierre. */
+    fun setVolume(gain: Float) = session.setVolume(gain)
+
+    fun setScaleMode(mode: com.joelbermudez.pocketgb.emulator.ScaleMode) = session.setScaleMode(mode)
+
+    /** Solo surte efecto con la ROM en compatibilidad CGB ([RomInfo.cgbCompat]); si no, no hace nada. */
+    fun setCompatPalette(id: Int) {
+        if (info.cgbCompat) session.setCompatPalette(id)
+    }
+
     fun start() {
         session.start()
     }

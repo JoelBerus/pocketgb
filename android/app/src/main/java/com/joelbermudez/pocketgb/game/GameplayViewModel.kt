@@ -56,6 +56,9 @@ sealed interface GameNotice {
     data class StateFailed(val error: StateError) : GameNotice
     data object SavePending : GameNotice
 
+    /** La cabecera del ROM tiene el checksum incorrecto: se puede jugar, pero puede no ser un cartucho válido (K15). */
+    data object HeaderDamaged : GameNotice
+
     /** Hay un estado de rescate de una salida anterior con fallo de guardado (J6). */
     data object RescueStateExists : GameNotice
 }
@@ -155,6 +158,7 @@ class GameplayViewModel(
                         _game.value = game
                         watch(game)
                         result.warning?.let { _dialog.value = GameDialog.LoadWarning(it) }
+                        result.notices.forEach { _notices.tryEmit(it) }
                         if (game.hasRescueState) _notices.tryEmit(GameNotice.RescueStateExists)
                     }
                 }
