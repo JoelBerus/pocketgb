@@ -69,3 +69,22 @@ Suite completa tras los tres cambios: `169 tests in 17 suites passed`.
 - [ ] Miniatura y HUD en las dos rotaciones horizontales con notch o Dynamic Island.
 - [ ] Rechazo con dos copias del mismo ROM; aviso de continuación con progreso sin guardar.
 - Falta la auditoría independiente de los lotes 3–5 (`LinkSession`, rechazos, `AppState`).
+
+## 8. Auditoría final ([M9-ios-opus](M9-ios-opus.md), respuesta en [M9-ios-respuesta](M9-ios-respuesta.md))
+Veredicto APROBAR CON CAMBIOS (tres bajos). Corregidos en `0b9f570`, `46d0f64` y `b19d0cb`.
+
+**M9-H1, mutación** (guardas `persisters.count <= 1` sustituidas por `_ = 0`):
+```
+✘ Test statesAreRefusedByTheSessionGuardEvenIfTheCoreCouldSaveThem() recorded an issue at EmulatorSessionContractTests.swift:116:9: Expectation failed: an error was expected but none was thrown
+✘ ... :122:9: Expectation failed: an error was expected but none was thrown
+✘ ... :123:9: Expectation failed: try storeA.load() == savedA && storeB.load() == savedB
+✘ Test run with 5 tests in 1 suite failed after 0.077 seconds with 3 issues.
+** TEST FAILED **
+```
+**Restaurado:**
+```
+✔ Test statesAreRefusedByTheSessionGuardEvenIfTheCoreCouldSaveThem() passed after 0.116 seconds.
+✔ Test run with 5 tests in 1 suite passed after 0.121 seconds.
+** TEST SUCCEEDED **
+```
+**`LinkSessionTests` (M9-H2 y `.sameGame` con espejo):** `✔ Test run with 12 tests in 1 suite passed after 0.949 seconds.`
