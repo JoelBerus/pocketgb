@@ -398,10 +398,7 @@ final class AppState {
             // Estado automático al salir (SPEC §12). La pausa hace antes el flush síncrono
             // de la SRAM; un fallo del estado nunca impide salir ni guardar la partida.
             if !paused && !editingControls { session.pause() }
-            if let stateStore, let saved = try? session.saveState(),
-               (try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)) != nil {
-                resumableFingerprints.insert(session.info.fingerprint)
-            }
+            saveAutomaticState(of: session)
             session.stop()
             saveArtwork(session)
         }
@@ -416,6 +413,15 @@ final class AppState {
         showingGameMenu = false
     }
 
+    /// Guarda el estado `.auto` con la sesión aparcada (después del flush de la SRAM, para
+    /// que su fecha quede posterior a la de la partida). Un fallo nunca impide salir.
+    private func saveAutomaticState(of session: EmulatorSession) {
+        guard let stateStore, let saved = try? session.saveState(),
+              (try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)) != nil
+        else { return }
+        resumableFingerprints.insert(session.info.fingerprint)
+    }
+
     func canResume(_ entry: RomEntry) -> Bool {
         #if DEBUG
         if DebugArguments.screen != nil { return libraryPrefs.lastPlayed(entry) != nil }
@@ -424,7 +430,8 @@ final class AppState {
         return resumableFingerprints.contains(fingerprint)
     }
 
-    /// Revisa solo metadatos y cabeceras pequeñas fuera del actor principal.
+    /// Revisa fuera del actor principal la fecha y la cabecera de 4 bytes del estado `.auto`
+    /// (sin leer miniaturas); el contenido se valida al reanudar, en `EmulatorSession`.
     func refreshContinuations() {
         let fingerprints = Set(libraryPrefs.data.fingerprints.values)
         Task.detached(priority: .utility) { [weak self] in
@@ -453,12 +460,14 @@ final class AppState {
         artwork.save(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 
-    /// `.inactive`/`.background`: pausar y hacer flush síncrono de la SRAM.
+    /// `.inactive`/`.background`: pausar, flush síncrono de la SRAM y después el estado
+    /// automático, todo dentro de la tarea de fondo (iOS puede matar la app sin más aviso).
     func enterBackground() {
         guard let session, !paused else { return }
         let backgroundTask = LocalSaveBackgroundTask()
         backgroundTask.begin()
         session.pause()
+        if !editingControls { saveAutomaticState(of: session) }
         session.whenMirrorIdle(LocalSaveBackgroundTask.makeEndHandler(backgroundTask))
         paused = true
     }
