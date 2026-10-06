@@ -29,7 +29,8 @@ class GameControlsView(
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
-    private val density = resources.displayMetrics.density
+    /** Se lee en cada uso: con `density` en `configChanges` la actividad no se recrea al cambiar el tamaño de pantalla (DS-H2). */
+    private val density: Float get() = resources.displayMetrics.density
     private var inputEngine: TouchInputEngine? = null
     private var lastMask = 0
     private var lastPressed = emptySet<ControlId>()
@@ -75,6 +76,7 @@ class GameControlsView(
         set(value) {
             if (fade.visibility == value) return
             fade.visibility = value
+            a11yHelper.invalidateRoot() // el estado «oculto» de los nodos cambia (A7-H4)
             invalidate()
         }
 
@@ -185,6 +187,11 @@ class GameControlsView(
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
         rebuild()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration?) {
+        super.onConfigurationChanged(newConfig)
+        if (hasGeometry) rebuild()
     }
 
     private fun rebuild() {

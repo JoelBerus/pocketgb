@@ -16,12 +16,16 @@ object GestureExclusion {
             val right = frame.centerX >= viewWidth / 2f
             val remaining = budget - spent.getValue(right)
             if (remaining <= 0f) return@forEach
-            val height = minOf(frame.height, remaining)
-            // Nunca sobre el recorte: la exclusión se recorta al área segura de los controles.
             val area = geometry.area
+            // Nunca sobre el recorte: la exclusión se recorta al área segura en los cuatro bordes (A7-H2).
+            val top = maxOf(frame.top, area.top)
+            val bottom = minOf(frame.bottom, area.bottom)
+            val height = minOf(bottom - top, remaining)
+            if (height <= 0f) return@forEach
+            val centerY = ((top + bottom) / 2f).coerceIn(area.top + height / 2f, area.bottom - height / 2f)
             result += ControlBounds(
-                maxOf(frame.left, area.left), frame.centerY - height / 2f,
-                minOf(frame.right, area.right), frame.centerY + height / 2f,
+                maxOf(frame.left, area.left), centerY - height / 2f,
+                minOf(frame.right, area.right), centerY + height / 2f,
             )
             spent[right] = spent.getValue(right) + height
         }

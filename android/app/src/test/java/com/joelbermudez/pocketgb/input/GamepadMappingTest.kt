@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.input
 
+import android.view.InputDevice
 import android.view.KeyEvent
 import com.joelbermudez.pocketgb.settings.ControllerMappingData
 import org.junit.Assert.assertEquals
@@ -128,9 +129,11 @@ class GamepadMappingTest {
         val mapping = ControllerMappingData(mapOf("A" to KeyEvent.KEYCODE_BUTTON_X, "FAST_FORWARD" to KeyEvent.KEYCODE_BUTTON_Y))
         val pad = GamepadState(mapping)
         assertEquals(a, pad.onKey(KeyEvent.KEYCODE_BUTTON_X, true).mask)
-        // BUTTON_B ya no es A: nadie lo tiene (B conserva BUTTON_A).
-        assertEquals(a, pad.onKey(KeyEvent.KEYCODE_BUTTON_B, true).mask)
-        assertEquals(a or b, pad.onKey(KeyEvent.KEYCODE_BUTTON_A, true).mask)
+        // BUTTON_B ya no es A: nadie lo tiene (B conserva BUTTON_A). Se suelta X antes para aislar la aserción (DS-H3).
+        assertEquals(0, pad.onKey(KeyEvent.KEYCODE_BUTTON_X, false).mask)
+        assertFalse(pad.handles(KeyEvent.KEYCODE_BUTTON_B))
+        assertEquals(0, pad.onKey(KeyEvent.KEYCODE_BUTTON_B, true).mask)
+        assertEquals(b, pad.onKey(KeyEvent.KEYCODE_BUTTON_A, true).mask)
         assertEquals(setOf(PadAction.FAST_FORWARD), pad.onKey(KeyEvent.KEYCODE_BUTTON_Y, true).actions)
         // R1 ya no es avance rápido.
         assertTrue(pad.onKey(KeyEvent.KEYCODE_BUTTON_R1, true).actions.isEmpty())
@@ -151,6 +154,26 @@ class GamepadMappingTest {
         assertTrue(pad.handles(KeyEvent.KEYCODE_DPAD_LEFT))
         assertTrue(pad.handles(KeyEvent.KEYCODE_BUTTON_B))
         assertFalse(pad.handles(KeyEvent.KEYCODE_BACK))
+        assertFalse("sin asignar: no se consume (A7-H1)", pad.handles(KeyEvent.KEYCODE_BUTTON_THUMBL))
+        assertFalse(pad.handles(KeyEvent.KEYCODE_A))
+    }
+
+    @Test
+    fun motionFromAnyEventOfAGamepadDeviceIsAccepted() {
+        val keyboardLike = InputDevice.SOURCE_KEYBOARD or InputDevice.SOURCE_DPAD
+        val pad = InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD
+        assertTrue(isPadMotion(InputDevice.SOURCE_JOYSTICK, 0))
+        assertTrue("hat con SOURCE_GAMEPAD", isPadMotion(InputDevice.SOURCE_GAMEPAD, 0))
+        assertTrue("hat con SOURCE_DPAD de un dispositivo mando", isPadMotion(InputDevice.SOURCE_DPAD, pad))
+        assertFalse("SOURCE_DPAD de un teclado", isPadMotion(InputDevice.SOURCE_DPAD, keyboardLike))
+    }
+
+    @Test
+    fun onlyGamepadOrJoystickSourcesCountAsPads() {
+        assertTrue(isGamepadSources(InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD))
+        assertTrue(isGamepadSources(InputDevice.SOURCE_JOYSTICK))
+        assertFalse("teclado con flechas", isGamepadSources(InputDevice.SOURCE_KEYBOARD or InputDevice.SOURCE_DPAD))
+        assertFalse("mando a distancia", isGamepadSources(InputDevice.SOURCE_DPAD))
     }
 
     @Test

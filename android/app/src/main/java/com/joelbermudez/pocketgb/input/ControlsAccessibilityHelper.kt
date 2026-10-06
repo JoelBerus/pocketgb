@@ -8,6 +8,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.customview.widget.ExploreByTouchHelper
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import kotlin.math.hypot
 
 enum class DpadDirection { UP, DOWN, LEFT, RIGHT }
@@ -99,6 +100,10 @@ class ControlsAccessibilityHelper(private val view: GameControlsView) : ExploreB
         node.setBoundsInParent(
             Rect(bounds.left.toInt(), bounds.top.toInt(), bounds.right.toInt().coerceAtLeast(bounds.left.toInt() + 1), bounds.bottom.toInt().coerceAtLeast(bounds.top.toInt() + 1)),
         )
+        // Controles ocultos (mando o ajuste): los nodos siguen accesibles, pero TalkBack avisa de que están ocultos (A7-H4).
+        if (view.controlsVisibility == ControlsVisibility.HIDDEN && !view.editing) {
+            node.stateDescription = view.context.getString(R.string.controls_a11y_hidden)
+        }
         if (view.editing) return // en el editor se arrastra con el dedo: no hay acciones de juego
         ControlsAccessibilityModel.actionsFor(id).forEach { action ->
             when (action) {

@@ -17,6 +17,13 @@ fun isGamepadSources(sources: Int): Boolean =
         (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
 /**
+ * `true` si un evento de ejes viene de un mando: su fuente es de mando, o su dispositivo ([deviceSources]) lo es aunque
+ * emita el hat con `SOURCE_DPAD` (DS-H1). Un teclado o mando a distancia con solo `SOURCE_DPAD` no cuenta.
+ */
+fun isPadMotion(eventSource: Int, deviceSources: Int): Boolean =
+    isGamepadSources(eventSource) || isGamepadSources(deviceSources)
+
+/**
  * Estado puro de un mando: traduce teclas y ejes a la máscara de Game Boy y a acciones de la app (R1–R4).
  * Botones, cruceta digital, hat y stick izquierdo se combinan con OR y después se anulan los opuestos. Las acciones
  * de la app (menú, avance rápido) solo se disparan al pasar de suelto a pulsado: una repetición no las repite.
