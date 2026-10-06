@@ -13,6 +13,12 @@ class ControlsFadeController(
 ) {
     private var since = clock()
 
+    /**
+     * Reducir movimiento (R11): sin rampa. Pasado el plazo los controles desaparecen de golpe (alfa 1 → 0) en lugar de
+     * desvanecerse en [FADE_DURATION_MS].
+     */
+    var reduceMotion: Boolean = false
+
     var visibility: ControlsVisibility = visibility
         set(value) {
             if (field != value) {
@@ -46,7 +52,7 @@ class ControlsFadeController(
         val elapsed = clock() - since
         return when {
             elapsed < DELAY_MS -> DELAY_MS - elapsed
-            elapsed < DELAY_MS + FADE_DURATION_MS -> FRAME_MS
+            !reduceMotion && elapsed < DELAY_MS + FADE_DURATION_MS -> FRAME_MS
             else -> null
         }
     }
@@ -55,6 +61,7 @@ class ControlsFadeController(
         val elapsed = clock() - since
         return when {
             elapsed <= DELAY_MS -> 1f
+            reduceMotion -> 0f
             elapsed >= DELAY_MS + FADE_DURATION_MS -> 0f
             else -> 1f - (elapsed - DELAY_MS).toFloat() / FADE_DURATION_MS
         }

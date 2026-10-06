@@ -38,10 +38,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 
 /** Chip GB/GBC: texto, nunca solo color. */
 @Composable
-fun ConsoleChip(isColor: Boolean, modifier: Modifier = Modifier) {
+fun ConsoleChip(isColor: Boolean, modifier: Modifier = Modifier, announce: Boolean = true) {
     val description = stringResource(if (isColor) R.string.game_system_gbc else R.string.game_system_gb)
     Text(
         text = if (isColor) "GBC" else "GB",
@@ -49,7 +50,8 @@ fun ConsoleChip(isColor: Boolean, modifier: Modifier = Modifier) {
             .width(38.dp)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
             .padding(vertical = 2.dp)
-            .semantics { contentDescription = description },
+            // Dentro de una tarjeta el sistema ya va en la etiqueta combinada: sin descripción propia no se lee dos veces.
+            .then(if (announce) Modifier.semantics { contentDescription = description } else Modifier),
         style = MaterialTheme.typography.labelSmall,
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.SemiBold,
@@ -69,13 +71,20 @@ fun gameDetailText(entry: RomEntry, lastPlayedAt: Long?): String = when {
 
 /** Chip, favorito, «Nuevo» y estado en una línea propia: un título largo no los solapa. */
 @Composable
-fun GameMetaLine(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?, modifier: Modifier = Modifier) {
+fun GameMetaLine(
+    entry: RomEntry,
+    favorite: Boolean,
+    lastPlayedAt: Long?,
+    modifier: Modifier = Modifier,
+    /** `false` dentro de una tarjeta con etiqueta combinada (R8): chip y favorito no se anuncian aparte. */
+    announce: Boolean = true,
+) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ConsoleChip(entry.isColor)
+        ConsoleChip(entry.isColor, announce = announce)
         if (favorite) {
             Icon(
                 Icons.Filled.Star,
-                contentDescription = stringResource(R.string.game_favorite),
+                contentDescription = if (announce) stringResource(R.string.game_favorite) else null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
@@ -91,7 +100,7 @@ fun GameMetaLine(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?, modifi
         Text(
             gameDetailText(entry, lastPlayedAt),
             modifier = Modifier.weight(1f, fill = false),
-            maxLines = 1,
+            maxLines = if (LocalLargeFont.current) 2 else 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -101,7 +110,7 @@ fun GameMetaLine(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?, modifi
 
 /** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, problema y última partida. */
 @Composable
-private fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
+fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
     val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
     val parts = mutableListOf(entry.title, system)
     if (favorite) parts += stringResource(R.string.game_favorite)
@@ -126,12 +135,16 @@ fun GameCard(
     favorite: Boolean,
     lastPlayedAt: Long?,
     modifier: Modifier = Modifier,
+    /** Una sola columna con fuente grande (R9): portada a la izquierda y texto a la derecha. */
+    horizontal: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
     val description = rememberGameDescription(entry, favorite, lastPlayedAt)
     val clickLabel = stringResource(R.string.game_details_action)
-    val longLabel = stringResource(R.string.game_more_actions)
+    // En TalkBack la pulsación larga se anuncia como la acción «Más opciones» (el menú contextual).
+    val longLabel = stringResource(R.string.game_a11y_more_options)
+    val largeFont = LocalLargeFont.current
     val interaction = if (onClick != null) {
         Modifier.combinedClickable(
             onClickLabel = clickLabel,
@@ -142,31 +155,60 @@ fun GameCard(
     } else {
         Modifier
     }
-    Column(
-        modifier = modifier
-            .testTag("game-card")
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                contentDescription = description
-            }
-            .then(interaction),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box {
-            GameArtwork(entry, fingerprint, Modifier.fillMaxWidth(), decorative = true)
-            if (entry.problem != null) StatusBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+    val semanticsModifier = Modifier
+        .testTag("game-card")
+        .semantics(mergeDescendants = true) {
+            role = Role.Button
+            contentDescription = description
         }
-        Text(
-            entry.title,
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (entry.problem == null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        GameMetaLine(entry, favorite, lastPlayedAt)
+        .then(interaction)
+    val titleColor = if (entry.problem == null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    // Con fuente grande el título no se trunca: ocupa las líneas que necesite (R9).
+    val titleLines = if (largeFont) Int.MAX_VALUE else 2
+    if (horizontal) {
+        Row(
+            modifier = modifier.then(semanticsModifier),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.width(HorizontalCardArtworkWidth)) {
+                GameArtwork(entry, fingerprint, Modifier.fillMaxWidth(), decorative = true)
+                if (entry.problem != null) StatusBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    entry.title,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = titleLines,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = titleColor,
+                )
+                GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+            }
+        }
+    } else {
+        Column(
+            modifier = modifier.then(semanticsModifier),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box {
+                GameArtwork(entry, fingerprint, Modifier.fillMaxWidth(), decorative = true)
+                if (entry.problem != null) StatusBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+            Text(
+                entry.title,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = titleLines,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+                color = titleColor,
+            )
+            GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+        }
     }
 }
+
+private val HorizontalCardArtworkWidth = 140.dp
 
 /** Símbolo sobre fondo oscuro fijo para que se lea sobre cualquier portada. */
 @Composable
@@ -177,7 +219,7 @@ private fun StatusBadge(modifier: Modifier = Modifier) {
     ) {
         Icon(
             Icons.Outlined.WarningAmber,
-            contentDescription = stringResource(R.string.game_problem),
+            contentDescription = null, // el motivo ya va en la etiqueta combinada de la tarjeta
             modifier = Modifier.size(20.dp),
             tint = Color.White,
         )
@@ -198,7 +240,7 @@ fun GameListItem(
 ) {
     val description = rememberGameDescription(entry, favorite, lastPlayedAt)
     val clickLabel = stringResource(R.string.game_details_action)
-    val longLabel = stringResource(R.string.game_more_actions)
+    val longLabel = stringResource(R.string.game_a11y_more_options)
     val interaction = if (onClick != null) {
         Modifier.combinedClickable(
             onClickLabel = clickLabel,
@@ -227,7 +269,7 @@ fun GameListItem(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 entry.title,
-                maxLines = 2,
+                maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -243,13 +285,13 @@ fun GameListItem(
                     color = MaterialTheme.colorScheme.error,
                 )
             } else {
-                GameMetaLine(entry, favorite, lastPlayedAt)
+                GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
             }
         }
         if (entry.problem != null) {
             Icon(
                 Icons.Outlined.ErrorOutline,
-                contentDescription = stringResource(R.string.game_problem),
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.error,
             )
         } else {

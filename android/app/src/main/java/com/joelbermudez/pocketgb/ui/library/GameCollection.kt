@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.ui.library
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.library.LibraryLayout
@@ -100,9 +102,12 @@ fun GameCollection(
 ) {
     GameMenuHost(actions) { menu ->
         when (layout) {
-            LibraryLayout.GRID -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(156.dp),
-                modifier = modifier.fillMaxSize().testTag("library-collection"),
+            LibraryLayout.GRID -> BoxWithConstraints(modifier.fillMaxSize()) {
+              // Columnas según el ancho y la escala de fuente (R9): con fuente muy grande, una columna con tarjeta horizontal.
+              val columns = columnsFor(maxWidth.value, LocalDensity.current.fontScale)
+              LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxSize().testTag("library-collection"),
                 contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -119,6 +124,7 @@ fun GameCollection(
                             fingerprint = prefs.fingerprints[entry.id],
                             favorite = favorite,
                             lastPlayedAt = prefs.lastPlayedAt(entry),
+                            horizontal = columns == 1,
                             onClick = { actions.onOpenDetails(entry) },
                             onLongClick = { menu.open(entry) },
                         )
@@ -128,6 +134,7 @@ fun GameCollection(
                 if (footer != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "footer") { footer() }
                 }
+              }
             }
             LibraryLayout.LIST -> LazyColumn(
                 modifier = modifier.fillMaxSize().testTag("library-collection"),

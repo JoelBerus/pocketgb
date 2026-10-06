@@ -35,13 +35,23 @@ class GameControlsView(
     private var lastPressed = emptySet<ControlId>()
     private var lastDpad = 0
 
+    /** Reducir movimiento (R11): los controles desaparecen de golpe en vez de desvanecerse. */
+    var reduceMotion: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            fade.reduceMotion = value
+            invalidate()
+        }
+
     /** Reloj del desvanecido; se sustituye en las pruebas. */
     var clock: () -> Long = SystemClock::uptimeMillis
         set(value) {
             field = value
-            fade = ControlsFadeController(fade.visibility, value)
+            fade = ControlsFadeController(fade.visibility, value).also { it.reduceMotion = reduceMotion }
         }
-    private var fade = ControlsFadeController(ControlsVisibility.ALWAYS, clock)
+    private var fade = ControlsFadeController(ControlsVisibility.ALWAYS, clock).also { it.reduceMotion = reduceMotion }
+    private val a11yHelper = ControlsAccessibilityHelper(this)
     private val fadeTick = Runnable { invalidate() }
 
     var hapticsEnabled: Boolean = true
@@ -107,6 +117,7 @@ class GameControlsView(
             dragPreview = null
             publishClearedInput()
             if (value) fade.restart()
+            a11yHelper.invalidateRoot()
             invalidate()
         }
     var selected: ControlId? = null
@@ -125,10 +136,50 @@ class GameControlsView(
     lateinit var controlGeometry: ControlGeometry
         private set
 
+    internal val hasGeometry: Boolean get() = ::controlGeometry.isInitialized
+
+    /** Botones pulsados desde TalkBack (R7): se combinan con OR con lo que haya en pantalla y se sueltan solos. */
+    private var accessibilityMask = 0
+    private val accessibilityReleases = mutableMapOf<Int, Runnable>()
+
     init {
         isFocusable = true
         isClickable = true
-        contentDescription = context.getString(R.string.controls_content_description)
+        // Sin descripción única: cada control es un nodo virtual (R7) y el raíz solo ofrece «Abrir menú».
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        ViewCompat.setAccessibilityDelegate(this, a11yHelper)
+    }
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean =
+        a11yHelper.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+
+    /** Pulsación accesible: mantiene [mask] durante [durationMs] por el mismo publicador que el táctil. */
+    internal fun pressFor(mask: Int, durationMs: Long): Boolean {
+        if (editing || mask == 0) return false
+        accessibilityReleases.remove(mask)?.let(::removeCallbacks)
+        accessibilityMask = accessibilityMask or mask
+        if (hapticsEnabled) hapticFeedback()
+        publishCombined()
+        val release = Runnable {
+            accessibilityReleases.remove(mask)
+            accessibilityMask = accessibilityMask and mask.inv()
+            publishCombined()
+        }
+        accessibilityReleases[mask] = release
+        postDelayed(release, durationMs)
+        return true
+    }
+
+    internal fun openMenuFromAccessibility(): Boolean {
+        if (editing) return false
+        onMenu()
+        return true
+    }
+
+    private fun cancelAccessibilityPresses() {
+        accessibilityReleases.values.forEach(::removeCallbacks)
+        accessibilityReleases.clear()
+        accessibilityMask = 0
     }
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -139,6 +190,7 @@ class GameControlsView(
     private fun rebuild() {
         if (width <= 0 || height <= 0) return
         publishClearedInput()
+        a11yHelper.invalidateRoot()
         val orientation = orientationOverride
             ?: if (width > height) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
         var layout = controlLayout ?: ControlLayout.defaults(orientation)
@@ -248,11 +300,11 @@ class GameControlsView(
         val engine = inputEngine ?: return
         val fadeAlpha = if (editing) 1f else fade.alpha()
         if (fadeAlpha > 0f) {
-            val factor = (if (editing) 1f else renderOptions.opacityFraction) * fadeAlpha
-            val labelFactor = (if (editing) 1f else renderOptions.labelFraction) * fadeAlpha
+            // En el editor los controles se ven siempre al 100 %: la opacidad elegida no se aplica.
+            val options = if (editing) renderOptions.copy(opacity = 100) else renderOptions
             ControlId.entries.forEach { id ->
                 if (id == ControlId.MENU && !renderOptions.showMenu) return@forEach
-                drawControl(canvas, id, engine, factor, labelFactor)
+                drawControl(canvas, id, engine, options, fadeAlpha)
             }
         }
         if (!editing) drawHint(canvas)
@@ -296,33 +348,33 @@ class GameControlsView(
         paint.style = Paint.Style.FILL
     }
 
-    private fun drawControl(canvas: Canvas, id: ControlId, engine: TouchInputEngine, factor: Float, labelFactor: Float) {
+    private fun drawControl(canvas: Canvas, id: ControlId, engine: TouchInputEngine, o: ControlsRenderOptions, fade: Float) {
         val b = controlGeometry.frames.getValue(id)
         val pressed = id in engine.pressed
         val rect = RectF(b.left, b.top, b.right, b.bottom)
         when (id) {
-            ControlId.DPAD -> drawDpad(canvas, b, engine.dpadMask, factor, labelFactor)
+            ControlId.DPAD -> drawDpad(canvas, b, engine.dpadMask, o, fade)
             ControlId.START, ControlId.SELECT -> {
                 val radius = b.height / 2f
-                scrim(canvas, rect, radius, factor)
+                scrim(canvas, rect, radius, o, fade)
                 paint.style = Paint.Style.FILL
-                paint.color = fill(pressed, factor)
+                paint.color = fill(pressed, o, fade)
                 canvas.drawRoundRect(rect, radius, radius, paint)
-                ring(canvas, rect, radius, RING_NEUTRAL, factor)
-                label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, labelFactor)
+                ring(canvas, rect, radius, RING_NEUTRAL, o, fade)
+                label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, o, fade)
             }
             else -> {
-                scrim(canvas, rect, b.width / 2f, factor)
+                scrim(canvas, rect, b.width / 2f, o, fade)
                 paint.style = Paint.Style.FILL
-                paint.color = fill(pressed, factor)
+                paint.color = fill(pressed, o, fade)
                 canvas.drawOval(rect, paint)
-                ring(canvas, rect, b.width / 2f, if (id == ControlId.A) RING_A else if (id == ControlId.B) RING_B else RING_NEUTRAL, factor)
-                label(canvas, label(id), b, b.height * 0.42f, labelFactor)
+                ring(canvas, rect, b.width / 2f, if (id == ControlId.A) RING_A else if (id == ControlId.B) RING_B else RING_NEUTRAL, o, fade)
+                label(canvas, label(id), b, b.height * 0.42f, o, fade)
             }
         }
     }
 
-    private fun drawDpad(canvas: Canvas, frame: ControlBounds, mask: Int, factor: Float, labelFactor: Float) {
+    private fun drawDpad(canvas: Canvas, frame: ControlBounds, mask: Int, o: ControlsRenderOptions, fade: Float) {
         val arms = ControlGeometry.dpadArms(frame)
         val third = frame.width / 3f
         val round = third * 0.28f
@@ -332,29 +384,29 @@ class GameControlsView(
             arms.forEach { (button, arm) ->
                 val gap = third * 0.12f
                 val rect = RectF(arm.left + gap, arm.top + gap, arm.right - gap, arm.bottom - gap)
-                scrim(canvas, rect, round, factor)
+                scrim(canvas, rect, round, o, fade)
                 paint.style = Paint.Style.FILL
-                paint.color = fill(mask and button.mask != 0, factor)
+                paint.color = fill(mask and button.mask != 0, o, fade)
                 canvas.drawRoundRect(rect, round, round, paint)
-                ring(canvas, rect, round, RING_NEUTRAL, factor)
-                arrowIn(canvas, button, rect, labelFactor)
+                ring(canvas, rect, round, RING_NEUTRAL, o, fade)
+                arrowIn(canvas, button, rect, o, fade)
             }
         } else {
             // Cruz de una pieza: oscurece y rellena los brazos y el centro; el brazo pulsado se ilumina.
             val horizontal = RectF(frame.left, frame.top + third, frame.right, frame.bottom - third)
             val vertical = RectF(frame.left + third, frame.top, frame.right - third, frame.bottom)
-            scrim(canvas, horizontal, round, factor)
-            scrim(canvas, vertical, round, factor)
+            scrim(canvas, horizontal, round, o, fade)
+            scrim(canvas, vertical, round, o, fade)
             paint.style = Paint.Style.FILL
-            paint.color = fill(false, factor)
+            paint.color = fill(false, o, fade)
             canvas.drawRoundRect(horizontal, round, round, paint)
             canvas.drawRoundRect(vertical, round, round, paint)
             arms.forEach { (button, arm) ->
                 if (mask and button.mask != 0) {
-                    paint.color = fill(true, factor)
+                    paint.color = fill(true, o, fade)
                     canvas.drawRoundRect(RectF(arm.left, arm.top, arm.right, arm.bottom), round, round, paint)
                 }
-                arrow(canvas, button, arm, labelFactor)
+                arrow(canvas, button, arm, o, fade)
             }
             val cross = Path().apply {
                 addRoundRect(horizontal, round, round, Path.Direction.CW)
@@ -362,17 +414,17 @@ class GameControlsView(
             }
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.5f * density
-            paint.color = argb(0.5f * factor, RING_NEUTRAL)
+            paint.color = argb(o.ringAlpha(accent = false, fade = fade), RING_NEUTRAL)
             canvas.drawPath(cross, paint)
             paint.style = Paint.Style.FILL
         }
     }
 
-    private fun arrowIn(canvas: Canvas, button: GameBoyButton, rect: RectF, labelFactor: Float) = arrow(
-        canvas, button, ControlBounds(rect.left, rect.top, rect.right, rect.bottom), labelFactor,
+    private fun arrowIn(canvas: Canvas, button: GameBoyButton, rect: RectF, o: ControlsRenderOptions, fade: Float) = arrow(
+        canvas, button, ControlBounds(rect.left, rect.top, rect.right, rect.bottom), o, fade,
     )
 
-    private fun arrow(canvas: Canvas, button: GameBoyButton, arm: ControlBounds, labelFactor: Float) {
+    private fun arrow(canvas: Canvas, button: GameBoyButton, arm: ControlBounds, o: ControlsRenderOptions, fade: Float) {
         val size = arm.width.coerceAtMost(arm.height) * 0.26f
         val cx = arm.centerX
         val cy = arm.centerY
@@ -385,32 +437,32 @@ class GameControlsView(
         }
         path.close()
         paint.style = Paint.Style.FILL
-        paint.color = argb(labelFactor, 0xFFFFFF)
+        paint.color = argb(o.labelAlpha(fade), 0xFFFFFF)
         canvas.drawPath(path, paint)
     }
 
     /** Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. */
-    private fun scrim(canvas: Canvas, rect: RectF, radius: Float, factor: Float) {
+    private fun scrim(canvas: Canvas, rect: RectF, radius: Float, o: ControlsRenderOptions, fade: Float) {
         val pad = 5f * density
         paint.style = Paint.Style.FILL
-        paint.color = argb(0.28f * factor, 0)
+        paint.color = argb(o.scrimAlpha(fade), 0)
         canvas.drawRoundRect(RectF(rect.left - pad, rect.top - pad, rect.right + pad, rect.bottom + pad), radius + pad, radius + pad, paint)
     }
 
-    private fun ring(canvas: Canvas, rect: RectF, radius: Float, color: Int, factor: Float) {
+    private fun ring(canvas: Canvas, rect: RectF, radius: Float, color: Int, o: ControlsRenderOptions, fade: Float) {
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2f * density
-        paint.color = argb((if (color == RING_NEUTRAL) 0.5f else 0.95f) * factor, color)
+        paint.strokeWidth = o.ringWidthDp * density
+        paint.color = argb(o.ringAlpha(accent = color != RING_NEUTRAL, fade = fade), color)
         canvas.drawRoundRect(rect, radius, radius, paint)
         paint.style = Paint.Style.FILL
     }
 
-    private fun fill(pressed: Boolean, factor: Float): Int =
-        if (pressed) argb(0.92f * factor, FILL_PRESSED) else argb(0.72f * factor, FILL_NEUTRAL)
+    private fun fill(pressed: Boolean, o: ControlsRenderOptions, fade: Float): Int =
+        argb(o.fillAlpha(pressed, fade), if (pressed) FILL_PRESSED else FILL_NEUTRAL)
 
-    private fun label(canvas: Canvas, text: String, bounds: ControlBounds, size: Float, labelFactor: Float) {
+    private fun label(canvas: Canvas, text: String, bounds: ControlBounds, size: Float, o: ControlsRenderOptions, fade: Float) {
         paint.style = Paint.Style.FILL
-        paint.color = argb(labelFactor, 0xFFFFFF)
+        paint.color = argb(o.labelAlpha(fade), 0xFFFFFF)
         paint.textSize = size
         canvas.drawText(text, bounds.centerX, bounds.centerY - (paint.ascent() + paint.descent()) / 2f, paint)
     }
@@ -418,6 +470,15 @@ class GameControlsView(
     fun release() {
         removeCallbacks(fadeTick)
         publishClearedInput()
+    }
+
+    private fun publishCombined() {
+        val mask = (inputEngine?.mask ?: 0) or accessibilityMask
+        if (mask != lastMask) {
+            lastMask = mask
+            onMaskChanged(mask)
+        }
+        invalidate()
     }
 
     private fun publish(engine: TouchInputEngine) {
@@ -429,16 +490,12 @@ class GameControlsView(
         }
         lastPressed = pressed
         lastDpad = dpad
-        val mask = engine.mask
-        if (mask != lastMask) {
-            lastMask = mask
-            onMaskChanged(mask)
-        }
-        invalidate()
+        publishCombined()
     }
 
     private fun publishClearedInput() {
         inputEngine?.cancelAll()
+        cancelAccessibilityPresses()
         lastPressed = emptySet()
         lastDpad = 0
         if (lastMask != 0) {

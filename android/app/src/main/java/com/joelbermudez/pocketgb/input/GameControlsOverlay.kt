@@ -2,14 +2,12 @@ package com.joelbermudez.pocketgb.input
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
-import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
+import com.joelbermudez.pocketgb.ui.a11y.LocalHighContrast
+import com.joelbermudez.pocketgb.ui.a11y.LocalReduceMotion
 
 /**
  * Controles táctiles sobre la sesión. [settings] decide opacidad, visibilidad, estilo de cruceta, escala y disposición
@@ -26,7 +24,8 @@ fun GameControlsOverlay(
     safeInsets: SafeInsets = SafeInsets.NONE,
     editor: ControlsEditorBinding? = null,
 ) {
-    val description = stringResource(R.string.controls_content_description)
+    val highContrast = LocalHighContrast.current
+    val reduceMotion = LocalReduceMotion.current
     AndroidView(
         factory = { context ->
             GameControlsView(
@@ -35,12 +34,13 @@ fun GameControlsOverlay(
                 onMenu = onMenu,
             )
         },
-        modifier = modifier.semantics { contentDescription = description },
+        modifier = modifier,
         update = { view ->
             view.onMaskChanged = session::setTouchButtons
             view.onMenu = onMenu
             view.hapticsEnabled = settings.haptics
-            view.renderOptions = ControlsRenderOptions.from(settings)
+            view.renderOptions = ControlsRenderOptions.from(settings).copy(highContrast = highContrast)
+            view.reduceMotion = reduceMotion
             view.controlsVisibility = if (editor != null) ControlsVisibility.ALWAYS else settings.visibility
             view.sizeScale = settings.sizeScale
             view.safeInsets = safeInsets
