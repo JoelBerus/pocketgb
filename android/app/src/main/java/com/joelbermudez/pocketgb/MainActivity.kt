@@ -17,6 +17,7 @@ import com.joelbermudez.pocketgb.library.LibraryViewModelFactory
 import com.joelbermudez.pocketgb.app.PocketGBApp
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.settings.appearanceDataStore
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
         val appearanceRepository = AppearanceRepository(applicationContext.appearanceDataStore)
+        val gameplaySettings = GameplaySettingsRepository.shared(applicationContext)
         setContent {
             if (!buildVariantContent(intent)) {
                 val appearance by appearanceRepository.state.collectAsStateWithLifecycle(
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
                         appearanceRepository = appearanceRepository,
                         library = library,
                         gameplay = gameplay,
+                        gameplaySettings = gameplaySettings,
                     )
                 }
             }

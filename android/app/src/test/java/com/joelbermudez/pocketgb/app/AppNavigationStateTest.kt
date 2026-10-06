@@ -62,4 +62,29 @@ class AppNavigationStateTest {
 
         assertTrue(error.message.orEmpty().contains("SETTINGS"))
     }
+
+    @Test
+    fun everySettingsScreenCanBeStackedAndSurvivesSerialization() {
+        val screens = listOf(
+            SettingsRoute.Appearance,
+            SettingsRoute.Library,
+            SettingsRoute.Saves,
+            SettingsRoute.About,
+            SettingsRoute.SettingsControls,
+            SettingsRoute.SettingsDisplay,
+            SettingsRoute.SettingsEmulation,
+            SettingsRoute.SettingsAudio,
+            SettingsRoute.SettingsStorage,
+            SettingsRoute.SettingsLicenses,
+        )
+        val state = AppNavigationState()
+        state.select(TopLevelDestination.SETTINGS)
+        screens.forEach { state.push(it) }
+        assertEquals(1 + screens.size, state.currentBackStack.size)
+
+        val json = kotlinx.serialization.json.Json.encodeToString(NavigationSnapshot.serializer(), state.snapshot())
+        val restored = AppNavigationState(kotlinx.serialization.json.Json.decodeFromString(NavigationSnapshot.serializer(), json))
+        assertEquals(state.snapshot(), restored.snapshot())
+        assertEquals(SettingsRoute.SettingsLicenses, restored.currentBackStack.last())
+    }
 }

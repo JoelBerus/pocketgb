@@ -26,6 +26,7 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.saves.SavesBrowser
@@ -39,6 +40,12 @@ import com.joelbermudez.pocketgb.ui.details.GameDetailsScreen
 import com.joelbermudez.pocketgb.ui.favorites.FavoritesScreen
 import com.joelbermudez.pocketgb.ui.library.LibraryScreen
 import com.joelbermudez.pocketgb.ui.settings.AppearanceScreen
+import com.joelbermudez.pocketgb.ui.settings.AudioSettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.ControlsSettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.DisplaySettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.EmulationSettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.LicensesScreen
+import com.joelbermudez.pocketgb.ui.settings.StorageSettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.LibrarySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
@@ -62,11 +69,12 @@ fun PocketGBApp(
     appearanceRepository: AppearanceRepository,
     library: LibraryViewModel,
     gameplay: GameplayViewModel,
+    gameplaySettings: GameplaySettingsRepository,
 ) {
     // El estado de navegación vive aquí (no en el Scaffold): al salir de una partida se vuelve al mismo sitio.
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
     GameplayRoot(gameplay) {
-        AppScaffold(navigationState, appearance, appearanceRepository, library, gameplay)
+        AppScaffold(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
     }
 }
 
@@ -77,6 +85,7 @@ private fun AppScaffold(
     appearanceRepository: AppearanceRepository,
     library: LibraryViewModel,
     gameplay: GameplayViewModel,
+    gameplaySettings: GameplaySettingsRepository,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -133,6 +142,11 @@ private fun AppScaffold(
                         }
                         SettingsRoute.Root -> NavEntry(route) {
                             SettingsScreen(
+                                onEmulation = { navigationState.push(SettingsRoute.SettingsEmulation) },
+                                onControls = { navigationState.push(SettingsRoute.SettingsControls) },
+                                onAudio = { navigationState.push(SettingsRoute.SettingsAudio) },
+                                onDisplay = { navigationState.push(SettingsRoute.SettingsDisplay) },
+                                onStorage = { navigationState.push(SettingsRoute.SettingsStorage) },
                                 onAppearance = { navigationState.push(SettingsRoute.Appearance) },
                                 onLibrary = { navigationState.push(SettingsRoute.Library) },
                                 onSaves = { navigationState.push(SettingsRoute.Saves) },
@@ -160,7 +174,28 @@ private fun AppScaffold(
                             SavesScreen(browser, gameplay, onBack = { navigationState.pop() })
                         }
                         SettingsRoute.About -> NavEntry(route) {
-                            AboutScreen(onBack = { navigationState.pop() })
+                            AboutScreen(
+                                onBack = { navigationState.pop() },
+                                onLicenses = { navigationState.push(SettingsRoute.SettingsLicenses) },
+                            )
+                        }
+                        SettingsRoute.SettingsControls -> NavEntry(route) {
+                            ControlsSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.SettingsDisplay -> NavEntry(route) {
+                            DisplaySettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.SettingsEmulation -> NavEntry(route) {
+                            EmulationSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.SettingsAudio -> NavEntry(route) {
+                            AudioSettingsScreen(gameplaySettings, onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.SettingsStorage -> NavEntry(route) {
+                            StorageSettingsScreen(onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.SettingsLicenses -> NavEntry(route) {
+                            LicensesScreen(onBack = { navigationState.pop() })
                         }
                     }
                 },
