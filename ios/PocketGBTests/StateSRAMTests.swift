@@ -156,6 +156,14 @@ struct StateSRAMTests {
 
     /// Caso legítimo: `closeGame` vacía la SRAM antes de guardar el estado automático, así
     /// que su SRAM coincide con la partida en disco y la reanudación se acepta sin reescribirla.
+    /// D81-H9: la consulta de “Continuar” no lee la miniatura PNG; `entries()` sí.
+    @Test func automaticEntryDoesNotReadTheThumbnail() throws {
+        let states = StateStore(directory: dir.appendingPathComponent("states", isDirectory: true))
+        try states.save(Data("PGBS-valid".utf8), thumbnail: Data("png".utf8), to: .auto)
+        #expect(try #require(states.automaticEntry(newerThan: nil)).thumbnail == nil)
+        #expect(try #require(states.entries()[.auto]).thumbnail == Data("png".utf8))
+    }
+
     @Test func startRestoringResumesWhenStateSRAMMatchesTheSave() throws {
         let rom = Self.rom(title: "REANUDAR", value: 0x11)
         let (state, x) = try automaticState(rom: rom, savesDirectory: dir)

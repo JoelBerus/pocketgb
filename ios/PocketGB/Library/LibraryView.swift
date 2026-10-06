@@ -142,9 +142,8 @@ struct LibraryView: View {
             scrollOffset = value
         }
         .refreshable { library.refresh() }
-        // Campo siempre visible bajo el título: la búsqueda es la acción principal de la
-        // biblioteca. (Con `.searchToolbarBehavior(.minimize)` quedaba en un botón que no se
-        // podía expandir desde las capturas del catálogo.)
+        // Búsqueda bajo el título (`.automatic`) que con `.searchToolbarBehavior(.minimize)`
+        // se pliega a una lupa en la barra y se expande al tocarla (iOS 26).
         .searchable(text: $state.librarySearch, isPresented: $state.librarySearchPresented,
                     placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Juegos")
         .searchToolbarBehavior(.minimize)
