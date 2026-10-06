@@ -53,5 +53,8 @@ sealed interface SettingsRoute : AppRoute {
     data object Library : SettingsRoute
 
     @Serializable
+    data object Saves : SettingsRoute
+
+    @Serializable
     data object About : SettingsRoute
 }

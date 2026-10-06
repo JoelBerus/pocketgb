@@ -34,11 +34,16 @@ import com.joelbermudez.pocketgb.video.GameSurface
 fun GameplayScreen(
     session: EmulatorSession,
     modifier: Modifier = Modifier,
+    /** Con valor, el botón Menú y el gesto de pausa delegan en el menú de pausa de la partida. */
+    onMenu: (() -> Unit)? = null,
+    /** El catálogo debug usa su propio aviso de pausa; la partida real usa el menú de pausa. */
+    showPausedOverlay: Boolean = true,
 ) {
     var speed by remember { mutableIntStateOf(session.speed) }
     val sessionState by session.state.collectAsStateWithLifecycle()
     val pause = {
-        if (session.state.value == SessionState.Running) session.pause()
+        if (onMenu != null) onMenu()
+        else if (session.state.value == SessionState.Running) session.pause()
     }
     BoxWithConstraints(modifier.fillMaxSize().background(Color.Black)) {
         val landscape = maxWidth > maxHeight
@@ -78,7 +83,7 @@ fun GameplayScreen(
                 )
             }
         }
-        if (sessionState == SessionState.Paused) {
+        if (showPausedOverlay && sessionState == SessionState.Paused) {
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)

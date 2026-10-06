@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -16,6 +17,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -35,13 +38,13 @@ import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
-import com.joelbermudez.pocketgb.ui.details.PLAY_DISABLED_LABEL
 import com.joelbermudez.pocketgb.ui.favorites.FavoritesContent
 import com.joelbermudez.pocketgb.ui.library.GameActions
 import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.settings.LibrarySettingsContent
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -70,6 +73,7 @@ class LibraryUiTest {
     private val games = listOf(red, yellow, alpha, color)
 
     private var opened: String? = null
+    private val played = mutableListOf<String>()
     private var chooseCount = 0
     private var rescanCount = 0
 
@@ -95,10 +99,13 @@ class LibraryUiTest {
                     onOpenDetails = { opened = it.id },
                     onToggleFavorite = { prefs = prefs.toggleFavorite(it) },
                     onHide = { prefs = prefs.hide(it) },
+                    onPlay = if (playFromRecent) ({ played += it.id }) else null,
                 ),
             )
         }
     }
+
+    private var playFromRecent = false
 
     private fun cards() = compose.onAllNodesWithTag("game-card")
 
@@ -257,6 +264,21 @@ class LibraryUiTest {
     }
 
     @Test
+    fun continuePlayingCardOpensTheGameWithTheSameLauncherAction() {
+        playFromRecent = true
+        compose.setContent {
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"),
+                LibraryPreferencesData(lastPlayed = mapOf(alpha.id to 10L)),
+            )
+        }
+        compose.onNodeWithTag("recent-row").assertIsDisplayed()
+        compose.onNode(hasTestTag("game-card") and hasAnyAncestor(hasTestTag("recent-row"))).performClick()
+        assertEquals(listOf("Alpha.gb"), played)
+        assertEquals(null, opened)
+    }
+
+    @Test
     fun favoritesScreenShowsOnlyFavoritesAndOpensDetails() {
         compose.setContent {
             PocketGBTheme {
@@ -295,7 +317,7 @@ class LibraryUiTest {
     )
 
     @Composable
-    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad) {
+    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long? = null) {
         var favorite by remember { mutableStateOf(false) }
         var hidden by remember { mutableStateOf(false) }
         PocketGBTheme {
@@ -304,7 +326,8 @@ class LibraryUiTest {
                     entry = entry,
                     load = load,
                     favorite = favorite,
-                    lastPlayedAt = null,
+                    lastPlayedAt = lastPlayedAt,
+                    onPlay = { played += entry.id },
                     onToggleFavorite = { favorite = !favorite },
                     onHide = { hidden = true },
                     onBack = {},
@@ -315,15 +338,44 @@ class LibraryUiTest {
     }
 
     @Test
-    fun detailsShowMetadataChecksumsAndADisabledPlayButton() {
+    fun detailsShowMetadataChecksumsAndAnEnabledPlayButton() {
         compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details)) }
-        compose.onNodeWithText(PLAY_DISABLED_LABEL).assertIsDisplayed()
-        compose.onNodeWithTag("game-details-play").assertIsNotEnabled()
+        compose.onNodeWithTag("game-details-play").assertIsEnabled()
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithText("MBC3 + RAM + batería").assertExists()
         compose.onNodeWithText("Correcto").assertExists()
         compose.onNodeWithText("No coincide (la consola real lo ignora)").assertExists()
         compose.onNodeWithTag("game-details-fingerprint").assertExists()
         compose.onNodeWithText("Nunca").assertExists()
+    }
+
+    @Test
+    fun playIsEnabledOnlyForPlayableGamesAndShowsContinueWhenAlreadyPlayed() {
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details)) }
+        compose.onNodeWithTag("game-details-play").assertIsEnabled().performClick()
+        assertEquals(listOf("Red.gb"), played)
+    }
+
+    @Test
+    fun playedGamesOfferContinue() {
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L) }
+        compose.onNodeWithText("Continuar").assertIsDisplayed()
+        compose.onNodeWithTag("game-details-play").assertIsEnabled()
+    }
+
+    @Test
+    fun playIsDisabledWhenTheRomHasAProblemOrMetadataFailed() {
+        compose.setContent { DetailsHarness(broken, DetailsLoad.Loading) }
+        compose.onNodeWithTag("game-details-play").assertIsNotEnabled()
+    }
+
+    @Test
+    fun playIsDisabledWhenTheCoreRejectedTheRom() {
+        compose.setContent {
+            DetailsHarness(red, DetailsLoad.Failed(com.joelbermudez.pocketgb.library.DetailsError.Unreadable))
+        }
+        compose.onNodeWithTag("game-details-play").assertIsNotEnabled()
+        assertTrue(played.isEmpty())
     }
 
     @Test
@@ -487,7 +539,7 @@ class LibraryUiTest {
             scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
         )
         compose.setContent {
-            PocketGBTheme { com.joelbermudez.pocketgb.ui.details.GameDetailsScreen(vm, "Red.gb", onBack = {}) }
+            PocketGBTheme { com.joelbermudez.pocketgb.ui.details.GameDetailsScreen(vm, "Red.gb", onPlay = {}, onBack = {}) }
         }
         // Antes del primer escaneo (Loading) y durante él (Scanning sin datos) se ve progreso, no "no disponible".
         compose.onNodeWithTag("library-progress").assertIsDisplayed()

@@ -1,0 +1,86 @@
+package com.joelbermudez.pocketgb.testing
+
+import androidx.test.platform.app.InstrumentationRegistry
+import com.joelbermudez.pocketgb.emulator.EmulatorSession
+import com.joelbermudez.pocketgb.game.GameSession
+import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
+import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
+import com.joelbermudez.pocketgb.saves.SaveFileOps
+import com.joelbermudez.pocketgb.saves.SaveMirror
+import com.joelbermudez.pocketgb.saves.SaveSizes
+import com.joelbermudez.pocketgb.saves.SaveStore
+import com.joelbermudez.pocketgb.saves.SaveTarget
+import com.joelbermudez.pocketgb.saves.StateStore
+import java.io.File
+import java.io.IOException
+import java.util.UUID
+
+/** Espera activa con plazo; devuelve el valor final de la condición. */
+fun waitUntil(timeoutMs: Long = 20_000, condition: () -> Boolean): Boolean {
+    val deadline = System.nanoTime() + timeoutMs * 1_000_000
+    while (System.nanoTime() < deadline) {
+        if (condition()) return true
+        Thread.sleep(10)
+    }
+    return condition()
+}
+
+fun tempDir(prefix: String): File {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    return File(context.cacheDir, "$prefix-${UUID.randomUUID()}").apply { mkdirs() }
+}
+
+/** Operaciones de archivo con un interruptor que hace fallar la instalación del `.sav` (disco lleno simulado). */
+class FailableOps(private val delegate: SaveFileOps = PosixSaveFileOps) : SaveFileOps by delegate {
+    @Volatile var failSav = false
+
+    override fun writeSynced(file: File, data: ByteArray) {
+        if (failSav && file.name.endsWith(".sav.tmp")) throw IOException("disco lleno (fallo inyectado)")
+        delegate.writeSynced(file, data)
+    }
+}
+
+/** Una partida abierta sobre directorios temporales, con todo lo que un test necesita comprobar. */
+class OpenedGame(
+    val game: GameSession,
+    val store: SaveStore?,
+    val states: StateStore,
+    val root: File,
+) : AutoCloseable {
+    val session: EmulatorSession get() = game.session
+
+    override fun close() {
+        game.close()
+        root.deleteRecursively()
+    }
+}
+
+/**
+ * Abre [rom] como lo haría el lanzador pero sin biblioteca: núcleo, partida local sobre [root], espejo
+ * opcional y la sesión lista (sin arrancar). [persist] = false imita una sesión sin destino de guardado.
+ */
+fun openGame(
+    rom: ByteArray,
+    ops: SaveFileOps = PosixSaveFileOps,
+    mirror: SaveMirror? = null,
+    persist: Boolean = true,
+    root: File = tempDir("game"),
+): OpenedGame {
+    val session = EmulatorSession()
+    val info = session.load(rom, 1_700_000_000)
+    val fingerprint = info.fingerprintHex
+    val states = StateStore(File(root, "states"), fingerprint, ops)
+    var store: SaveStore? = null
+    var target: SaveTarget? = null
+    var baseline: ByteArray? = null
+    if (persist && info.hasBattery) {
+        val saveStore = SaveStore(File(root, "saves"), fingerprint, ops)
+        saveStore.recoverOrphans(SaveSizes.validSizes(info.hasRtc, info.sramBytes))
+        saveStore.load()?.let { session.loadSram(it) }
+        store = saveStore
+        target = SaveTarget(saveStore, mirror, registry = MirrorChannelRegistry())
+        baseline = session.copySram()
+    }
+    val game = GameSession(session, info, states, target, baseline)
+    return OpenedGame(game, store, states, root)
+}

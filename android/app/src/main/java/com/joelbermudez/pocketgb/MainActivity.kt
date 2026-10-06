@@ -10,6 +10,8 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.game.GameplayViewModel
+import com.joelbermudez.pocketgb.game.GameplayViewModelFactory
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.LibraryViewModelFactory
 import com.joelbermudez.pocketgb.app.PocketGBApp
@@ -21,6 +23,9 @@ import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 class MainActivity : ComponentActivity() {
     // Solo se crea (y escanea) fuera del catálogo debug, que usa datos sintéticos.
     private val library: LibraryViewModel by viewModels { LibraryViewModelFactory(applicationContext) }
+
+    // Dueño de la partida abierta: sobrevive a la rotación; la sesión nunca vive en un `remember`.
+    private val gameplay: GameplayViewModel by viewModels { GameplayViewModelFactory(applicationContext, library) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -43,6 +48,7 @@ class MainActivity : ComponentActivity() {
                         appearance = appearance,
                         appearanceRepository = appearanceRepository,
                         library = library,
+                        gameplay = gameplay,
                     )
                 }
             }

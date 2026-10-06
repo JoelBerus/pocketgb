@@ -26,7 +26,14 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
+import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.library.LibraryViewModel
+import com.joelbermudez.pocketgb.saves.SavesBrowser
+import com.joelbermudez.pocketgb.ui.gameplay.GameplayRoot
+import com.joelbermudez.pocketgb.ui.settings.SavesScreen
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
 import com.joelbermudez.pocketgb.ui.about.AboutScreen
 import com.joelbermudez.pocketgb.ui.details.GameDetailsScreen
 import com.joelbermudez.pocketgb.ui.favorites.FavoritesScreen
@@ -54,8 +61,23 @@ fun PocketGBApp(
     appearance: AppearanceState,
     appearanceRepository: AppearanceRepository,
     library: LibraryViewModel,
+    gameplay: GameplayViewModel,
 ) {
+    // El estado de navegación vive aquí (no en el Scaffold): al salir de una partida se vuelve al mismo sitio.
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
+    GameplayRoot(gameplay) {
+        AppScaffold(navigationState, appearance, appearanceRepository, library, gameplay)
+    }
+}
+
+@Composable
+private fun AppScaffold(
+    navigationState: AppNavigationState,
+    appearance: AppearanceState,
+    appearanceRepository: AppearanceRepository,
+    library: LibraryViewModel,
+    gameplay: GameplayViewModel,
+) {
     val scope = rememberCoroutineScope()
 
     BackHandler(enabled = navigationState.currentBackStack.size > 1) {
@@ -94,10 +116,11 @@ fun PocketGBApp(
                             LibraryScreen(
                                 viewModel = library,
                                 onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
+                                onPlay = gameplay::open,
                             )
                         }
                         is LibraryRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(library, route.gameId, onBack = { navigationState.pop() })
+                            GameDetailsScreen(library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() })
                         }
                         FavoritesRoute.Root -> NavEntry(route) {
                             FavoritesScreen(
@@ -106,12 +129,13 @@ fun PocketGBApp(
                             )
                         }
                         is FavoritesRoute.Details -> NavEntry(route) {
-                            GameDetailsScreen(library, route.gameId, onBack = { navigationState.pop() })
+                            GameDetailsScreen(library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() })
                         }
                         SettingsRoute.Root -> NavEntry(route) {
                             SettingsScreen(
                                 onAppearance = { navigationState.push(SettingsRoute.Appearance) },
                                 onLibrary = { navigationState.push(SettingsRoute.Library) },
+                                onSaves = { navigationState.push(SettingsRoute.Saves) },
                                 onAbout = { navigationState.push(SettingsRoute.About) },
                             )
                         }
@@ -129,6 +153,11 @@ fun PocketGBApp(
                         }
                         SettingsRoute.Library -> NavEntry(route) {
                             LibrarySettingsScreen(library, onBack = { navigationState.pop() })
+                        }
+                        SettingsRoute.Saves -> NavEntry(route) {
+                            val context = LocalContext.current
+                            val browser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
+                            SavesScreen(browser, gameplay, onBack = { navigationState.pop() })
                         }
                         SettingsRoute.About -> NavEntry(route) {
                             AboutScreen(onBack = { navigationState.pop() })

@@ -166,12 +166,20 @@ class EmulatorSession : AutoCloseable {
         NativeLibrary.nativeSessionDetachSurface(nativeHandle)
     }
 
+    /**
+     * Entrada de los controles. Tras cerrar la sesión (la salida cierra antes de que Compose retire la vista)
+     * un toque tardío se ignora en vez de lanzar: no puede tumbar la app.
+     */
     fun setTouchButtons(mask: Int) {
-        NativeLibrary.nativeSessionSetTouchButtons(requireHandle(), mask and 0xFF)
+        val nativeHandle = handle
+        if (nativeHandle == 0L) return
+        NativeLibrary.nativeSessionSetTouchButtons(nativeHandle, mask and 0xFF)
     }
 
     fun setPhysicalButtons(mask: Int) {
-        NativeLibrary.nativeSessionSetPhysicalButtons(requireHandle(), mask and 0xFF)
+        val nativeHandle = handle
+        if (nativeHandle == 0L) return
+        NativeLibrary.nativeSessionSetPhysicalButtons(nativeHandle, mask and 0xFF)
     }
 
     fun setSpeed(factor: Int) {

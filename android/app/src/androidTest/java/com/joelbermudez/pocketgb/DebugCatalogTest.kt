@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb
 import android.content.Intent
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -38,13 +39,38 @@ class DebugCatalogTest {
         launch("library-list").use {
             compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
         }
-        launch("library-detail").use { compose.onNodeWithText("Jugar se activa en A5 (partidas seguras)").assertIsDisplayed() }
+        launch("library-detail").use { compose.onNodeWithTag("game-details-play").assertIsEnabled() }
         launch("library-detail-problem").use {
             compose.onNodeWithTag("game-details-problem").assertIsDisplayed()
         }
         launch("favorites-empty").use { compose.onNodeWithText("Todavía no hay favoritos").assertIsDisplayed() }
         launch("favorites").use { compose.onAllNodesWithTag("game-card").assertCountEquals(2) }
         launch("settings-library").use { compose.onNodeWithText("Juegos ocultos").assertIsDisplayed() }
+    }
+
+    @Test
+    fun saveAndStateCatalogScreensShowTheirContent() {
+        launch("pause-sheet").use {
+            compose.onNodeWithTag("pause-continue").assertIsDisplayed()
+            compose.onNodeWithTag("pause-states").assertIsDisplayed()
+            compose.onNodeWithTag("pause-exit").assertIsDisplayed()
+        }
+        launch("pause-dialog").use { compose.onNodeWithTag("pause-continue").assertIsDisplayed() }
+        launch("states-sheet").use {
+            compose.onNodeWithTag("state-row-auto").assertIsDisplayed()
+            compose.onNodeWithTag("state-save-slot1").assertIsDisplayed()
+            compose.onNodeWithText("Dañado").assertExists()
+        }
+        launch("exit-save-failed").use {
+            compose.onNodeWithText("No se pudo guardar la partida en este teléfono").assertIsDisplayed()
+            compose.onNodeWithTag("exit-failed-retry").assertIsDisplayed()
+            compose.onNodeWithTag("exit-failed-leave").assertIsDisplayed()
+        }
+        launch("exit-risk").use { compose.onNodeWithTag("exit-risk-confirm").assertIsDisplayed() }
+        launch("saves-settings").use { compose.onNodeWithText("POKÉMON RED").assertIsDisplayed() }
+        launch("library-detail-played").use { compose.onNodeWithText("Continuar").assertIsDisplayed() }
+        launch("save-warning").use { compose.onNodeWithTag("warning-ok").assertIsDisplayed() }
+        launch("open-error").use { compose.onNodeWithTag("open-error-ok").assertIsDisplayed() }
     }
 
     @Test

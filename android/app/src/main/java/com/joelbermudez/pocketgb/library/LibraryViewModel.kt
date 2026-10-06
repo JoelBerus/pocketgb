@@ -237,6 +237,10 @@ class LibraryViewModel(
 
     fun setSort(sort: LibrarySort) = mutate { it.copy(sort = sort) }
 
+    /** Registra que se abrió [entry] (para "Continuar jugando" y la huella). */
+    fun recordPlayed(entry: RomEntry, fingerprint: String, at: Long) =
+        mutate { it.recordPlayed(entry.id, fingerprint, at) }
+
     /**
      * Espera a que lo último en memoria esté en disco. Devuelve [PersistResult.Failed] si no se pudo;
      * en ese caso la versión sigue pendiente y se reintenta sola.

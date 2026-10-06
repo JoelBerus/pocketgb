@@ -64,10 +64,13 @@ import com.joelbermudez.pocketgb.ui.library.ScanningPane
 import java.text.DateFormat
 import java.util.Date
 
-const val PLAY_DISABLED_LABEL = "Jugar se activa en A5 (partidas seguras)"
-
 @Composable
-fun GameDetailsScreen(viewModel: LibraryViewModel, gameId: String, onBack: () -> Unit) {
+fun GameDetailsScreen(
+    viewModel: LibraryViewModel,
+    gameId: String,
+    onPlay: (RomEntry) -> Unit,
+    onBack: () -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val entries = when (val current = state) {
@@ -95,6 +98,7 @@ fun GameDetailsScreen(viewModel: LibraryViewModel, gameId: String, onBack: () ->
         load = load,
         favorite = prefs.isFavorite(entry),
         lastPlayedAt = prefs.lastPlayedAt(entry),
+        onPlay = { onPlay(entry) },
         onToggleFavorite = { viewModel.toggleFavorite(entry) },
         onHide = {
             viewModel.hide(entry)
@@ -134,6 +138,7 @@ fun GameDetailsContent(
     load: DetailsLoad,
     favorite: Boolean,
     lastPlayedAt: Long?,
+    onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     onHide: () -> Unit,
     onBack: () -> Unit,
@@ -185,14 +190,15 @@ fun GameDetailsContent(
             val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
             if (problemMessage != null) ProblemCard(problemMessage)
 
-            // Regla dura 6: no se abre un juego sin la ruta de guardado atómica de A5.
+            // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. "Continuar" NO carga el
+            // estado AUTO (J8): abre la partida (SRAM) donde se dejó, como iOS.
             Button(
-                onClick = {},
-                enabled = false,
+                onClick = onPlay,
+                enabled = entry.isPlayable && load !is DetailsLoad.Failed,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play"),
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(PLAY_DISABLED_LABEL, modifier = Modifier.padding(start = 8.dp))
+                Text(if (lastPlayedAt != null) "Continuar" else "Jugar", modifier = Modifier.padding(start = 8.dp))
             }
 
             Facts(entry, load, lastPlayedAt)

@@ -98,6 +98,17 @@ internal fun DebugCatalog(intent: DebugIntent) {
                     load = DetailsLoad.Loaded(demoDetails(demoGames[0])),
                     favorite = true,
                     lastPlayedAt = null,
+                    onPlay = {},
+                    onToggleFavorite = {},
+                    onHide = {},
+                    onBack = {},
+                )
+                "library-detail-played" -> GameDetailsContent(
+                    entry = demoGames[0],
+                    load = DetailsLoad.Loaded(demoDetails(demoGames[0])),
+                    favorite = false,
+                    lastPlayedAt = 1_759_700_000_000,
+                    onPlay = {},
                     onToggleFavorite = {},
                     onHide = {},
                     onBack = {},
@@ -107,6 +118,7 @@ internal fun DebugCatalog(intent: DebugIntent) {
                     load = DetailsLoad.Loading,
                     favorite = false,
                     lastPlayedAt = null,
+                    onPlay = {},
                     onToggleFavorite = {},
                     onHide = {},
                     onBack = {},
@@ -117,7 +129,7 @@ internal fun DebugCatalog(intent: DebugIntent) {
                     demoActions,
                 )
                 "favorites" -> FavoritesContent(LibraryState.Ready(demoGames, "Juegos"), demoFavorites, demoActions)
-                "settings-main" -> SettingsScreen(onAppearance = {}, onLibrary = {}, onAbout = {})
+                "settings-main" -> SettingsScreen(onAppearance = {}, onLibrary = {}, onSaves = {}, onAbout = {})
                 "settings-library" -> LibrarySettingsContent(
                     state = LibraryState.Ready(demoGames, "Juegos"),
                     folderName = "Juegos",
@@ -130,6 +142,15 @@ internal fun DebugCatalog(intent: DebugIntent) {
                 )
                 "appearance" -> AppearanceScreen(intent.appearance, {}, {}, {})
                 "about" -> AboutScreen(onBack = {})
+                "pause-sheet" -> PauseSheetCatalog(landscape = false)
+                "pause-dialog" -> PauseSheetCatalog(landscape = true)
+                "states-sheet" -> StatesSheetCatalog(landscape = false)
+                "states-dialog" -> StatesSheetCatalog(landscape = true)
+                "exit-save-failed" -> ExitSaveFailedCatalog(risk = false)
+                "exit-risk" -> ExitSaveFailedCatalog(risk = true)
+                "save-warning" -> SaveWarningCatalog()
+                "open-error" -> OpenErrorCatalog()
+                "saves-settings" -> SavesSettingsCatalog()
                 "native-video" -> NativeVideoScreen()
                 "gameplay-controls" -> GameplayDebugScreen()
                 "gameplay-fast-forward" -> GameplayDebugScreen(initialSpeed = 4)

@@ -9,30 +9,35 @@ import com.joelbermudez.pocketgb.app.SessionLifecycleObserver
 import com.joelbermudez.pocketgb.audio.AudioFocusController
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.SessionState
+import com.joelbermudez.pocketgb.game.GameSession
+import com.joelbermudez.pocketgb.saves.StateStore
+import java.io.File
 import com.joelbermudez.pocketgb.ui.gameplay.GameplayScreen
 
 @Composable
 internal fun GameplayDebugScreen(initialSpeed: Int = 1) {
-    val session = remember(initialSpeed) {
-        EmulatorSession().apply { setSpeed(initialSpeed) }
-    }
     val context = LocalContext.current
+    val game = remember(initialSpeed) {
+        val session = EmulatorSession().apply { setSpeed(initialSpeed) }
+        val info = session.load(DebugSyntheticRom.create())
+        GameSession(session, info, StateStore(File(context.cacheDir, "debug-states")))
+    }
+    val session = game.session
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val lifecycleObserver = remember(session) { SessionLifecycleObserver(session) }
+    val lifecycleObserver = remember(game) { SessionLifecycleObserver(game) }
     val audioFocus = remember(session, context) {
         AudioFocusController(context) {
             if (session.state.value == SessionState.Running) session.pause()
         }
     }
-    DisposableEffect(session, lifecycle) {
+    DisposableEffect(game, lifecycle) {
         audioFocus.request()
-        session.load(DebugSyntheticRom.create())
-        session.start()
+        game.start()
         lifecycle.addObserver(lifecycleObserver)
         onDispose {
             lifecycle.removeObserver(lifecycleObserver)
             audioFocus.close()
-            session.close()
+            game.close()
         }
     }
     GameplayScreen(session)

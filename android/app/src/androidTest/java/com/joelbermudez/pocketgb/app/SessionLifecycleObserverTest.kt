@@ -6,17 +6,28 @@ import com.joelbermudez.pocketgb.audio.AudioState
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.SessionState
 import com.joelbermudez.pocketgb.testing.SyntheticRom
+import androidx.test.platform.app.InstrumentationRegistry
+import com.joelbermudez.pocketgb.game.GameSession
+import com.joelbermudez.pocketgb.saves.StateStore
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SessionLifecycleObserverTest {
+    private fun newGame(): GameSession {
+        val session = EmulatorSession()
+        val info = session.load(SyntheticRom.romOnly())
+        val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "observer-states-${System.nanoTime()}")
+        return GameSession(session, info, StateStore(dir))
+    }
+
     @Test
     fun backgroundPausesAndForegroundDoesNotResume() {
-        EmulatorSession().use { session ->
-            session.load(SyntheticRom.romOnly())
-            session.start()
+        newGame().use { game ->
+            val session = game.session
+            game.start()
             val owner = TestLifecycleOwner(Lifecycle.State.RESUMED)
-            val observer = SessionLifecycleObserver(session)
+            val observer = SessionLifecycleObserver(game)
             owner.lifecycle.addObserver(observer)
 
             owner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
@@ -30,10 +41,10 @@ class SessionLifecycleObserverTest {
 
     @Test
     fun repeatedPauseAndStopAreIdempotent() {
-        EmulatorSession().use { session ->
-            session.load(SyntheticRom.romOnly())
-            session.start()
-            val observer = SessionLifecycleObserver(session)
+        newGame().use { game ->
+            val session = game.session
+            game.start()
+            val observer = SessionLifecycleObserver(game)
 
             observer.onStateChanged(TestLifecycleOwner(), Lifecycle.Event.ON_PAUSE)
             observer.onStateChanged(TestLifecycleOwner(), Lifecycle.Event.ON_PAUSE)

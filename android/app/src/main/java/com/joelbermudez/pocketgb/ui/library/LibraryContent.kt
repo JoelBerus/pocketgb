@@ -76,6 +76,8 @@ class GameActions(
     val onOpenDetails: (RomEntry) -> Unit,
     val onToggleFavorite: (RomEntry) -> Unit,
     val onHide: (RomEntry) -> Unit,
+    /** Abre el juego directamente ("Continuar jugando"); sin valor, abre su detalle. */
+    val onPlay: ((RomEntry) -> Unit)? = null,
 )
 
 /**
@@ -483,7 +485,7 @@ private fun RecentRow(
                     favorite = prefs.isFavorite(entry),
                     hasProblem = entry.problem != null,
                     modifier = Modifier.width(156.dp),
-                    onClick = { actions.onOpenDetails(entry) },
+                    onClick = { (actions.onPlay ?: actions.onOpenDetails)(entry) },
                 )
             }
         }
