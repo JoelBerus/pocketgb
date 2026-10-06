@@ -86,6 +86,7 @@ final class EmulatorSession: @unchecked Sendable {
 
         var warning: SaveLoadWarning?
         var saves: SaveTarget?
+        var initialSRAM: Data?
         if info.hasBattery, core.sramSaveSize > 0 {
             let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
             do {
@@ -96,6 +97,9 @@ final class EmulatorSession: @unchecked Sendable {
                 if let data = outcome.data { try core.sramLoad(data) }
                 saves = outcome.target
                 warning = outcome.warning
+                // Lo que ya está en disco (o la RAM inicial): una reanudación con la misma
+                // SRAM no reescribe ni la copia local ni el espejo (D81-H7).
+                initialSRAM = try? core.sramSave()
             } catch let refusal as SaveOpening.Refusal {
                 // `saves` y `loadWarning` aún no están inicializados, así que `deinit` no se
                 // ejecutará: el búfer se libera aquí. Si se inicializan antes, quitar esto.
@@ -110,6 +114,8 @@ final class EmulatorSession: @unchecked Sendable {
         }
         self.saves = saves
         loadWarning = warning
+        confirmed = initialSRAM
+        lastQueued = initialSRAM
     }
 
     deinit { audioScratch.deallocate() }
@@ -124,21 +130,39 @@ final class EmulatorSession: @unchecked Sendable {
         startThreadAndAudio()
     }
 
-    /// Restaura el estado antes de crear el hilo y arrancar el audio. La SRAM incluida
-    /// se persiste con la misma ruta atómica y backups que una carga manual.
+    /// Restaura el estado antes de crear el hilo y arrancar el audio.
+    ///
+    /// La vigencia se decide aquí, ya con la partida abierta (`SaveOpening` puede haber
+    /// instalado un espejo más nuevo) y por contenido (D81-H1): un estado automático
+    /// legítimo lleva la misma SRAM que la partida, porque `closeGame` y `enterBackground`
+    /// la vacían antes de guardarlo. Si difiere, se revierte el núcleo y se lanza
+    /// `StateError.notCurrent` sin escribir ninguna copia de la partida.
     @MainActor
     func start(restoring state: Data?) throws {
         if let state {
             let previous = try core.stateSave()
+            let sramBefore = try ramBytes()
             try core.stateLoad(state)
+            guard try ramBytes() == sramBefore else {
+                try? core.stateLoad(previous)
+                frames.publish { core.copyFramebuffer(to: $0) }
+                throw StateError.notCurrent
+            }
             guard flushSRAM(sync: true) else {
                 try? core.stateLoad(previous)
                 frames.publish { core.copyFramebuffer(to: $0) }
                 throw StateError.saveFailed
             }
+            // El RTC del MBC3 vuelve a la hora real (el estado trae la del momento de guardarlo).
+            core.setRTCTime(Int64(Date().timeIntervalSince1970))
             frames.publish { core.copyFramebuffer(to: $0) }
         }
         startThreadAndAudio()
+    }
+
+    /// Solo los bytes de RAM de cartucho, sin el pie del RTC (que sí cambia con un estado).
+    private func ramBytes() throws -> Data {
+        try core.sramSave().prefix(info.sramBytes)
     }
 
     @MainActor
@@ -274,11 +298,22 @@ final class EmulatorSession: @unchecked Sendable {
 
     // MARK: - Save states (D5)
 
-    enum StateError: Error, Equatable {
+    enum StateError: Error, Equatable, LocalizedError {
         /// Los estados solo se guardan o cargan con el hilo de emulación aparcado.
         case notPaused
         /// La partida del estado no se pudo guardar: se volvió al estado anterior.
         case saveFailed
+        /// El estado automático no corresponde a la partida vigente (la SRAM difiere):
+        /// se revirtió el núcleo y no se tocó ninguna copia de la partida.
+        case notCurrent
+
+        var errorDescription: String? {
+            switch self {
+            case .notPaused: "La partida debe estar en pausa."
+            case .saveFailed: "No se pudo guardar la partida del estado."
+            case .notCurrent: "El estado guardado ya no corresponde a tu partida actual."
+            }
+        }
     }
 
     /// Guarda un estado con la sesión en pausa. Devuelve el estado y el frame actual
