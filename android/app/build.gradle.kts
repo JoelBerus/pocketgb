@@ -49,7 +49,7 @@ val copyScreenManifest = tasks.register<Copy>("copyScreenManifest") {
     into(layout.buildDirectory.dir("generated/screenManifest"))
 }
 tasks.configureEach {
-    if (name.endsWith("AndroidTestAssets")) dependsOn(copyScreenManifest)
+    if (name != "copyScreenManifest" && (name.contains("AndroidTest") || name.startsWith("lint"))) dependsOn(copyScreenManifest)
 }
 
 dependencies {
