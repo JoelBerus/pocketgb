@@ -43,5 +43,8 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | I10 | Cable M9: mandar la app a segundo plano durante el cable y volver | La conexión sigue o se recupera sin perder partidas |
 
 ### Decisiones pendientes de Joel
-- **G7-1 y G7-3:** decidir cuando se pruebe el cable.
-- Cable: alternar entre juegos frente a pantalla dividida (qué presentación prefieres).
+- **GBA (vinculado a la prueba de Kirby, I3–I6):** G7-1: aprobar el descarte del hallazgo; G7-3: confirmar el RTC dentro del `.sav` (en lugar de un `.rtc` aparte). Ambas son de GBA, no del cable.
+- **Cable M9:** alternar entre juegos con miniatura (provisional) frente a pantalla dividida; mismo ROM sin batería permitido en los dos lados; el lado 0 es el juego del detalle.
+- **Android, decisiones provisionales K1–K20 y R1–R16** (no son teclas: son las decisiones numeradas de los planes). K1–K20 de A6 ([A6-plan](diseno-android/A6-plan.md)): sin interruptor de silencio, «Llenar» en vertical, paleta aplicada en la próxima apertura, portadas y carril «Continuar jugando». R1–R16 de A7 ([A7-plan](diseno-android/A7-plan.md)): mapeo Xbox por posición, R1 = velocidad, Mode/L1 = menú, `configChanges`, lista-detalle desactivada. Tabla completa: [ESTADO](ESTADO.md) §«Decisiones provisionales pendientes de ratificar por Joel».
+- **Android A8:** los literales de la interfaz ya están extraídos a `strings.xml` (51 claves); solo queda `LibraryModels.kt:75`. Decidir si se extrae o se acepta.
+- **PR a `main`:** aprobar la PR de `cierre-integracion`.
