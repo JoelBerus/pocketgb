@@ -130,12 +130,12 @@ fun GameDetailsScreen(
 @Composable
 private fun GameUnavailable(onBack: () -> Unit) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Detalle") }, navigationIcon = { BackButton(onBack) }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.details_title)) }, navigationIcon = { BackButton(onBack) }) },
     ) { padding ->
         EmptyState(
             icon = Icons.Outlined.VisibilityOff,
-            title = "Juego no disponible",
-            message = "Ya no está en la carpeta o se ocultó.",
+            title = stringResource(R.string.details_unavailable_title),
+            message = stringResource(R.string.details_unavailable_message),
             modifier = Modifier.padding(padding),
         )
     }
@@ -333,10 +333,11 @@ private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, on
         }
     }
     val settingsButton: @Composable (Modifier) -> Unit = { modifier ->
+        val settingsDescription = stringResource(R.string.details_settings_button)
         OutlinedButton(
             onClick = onOpenSettings,
             modifier = modifier.heightIn(min = 48.dp).testTag("game-details-settings")
-                .semantics { contentDescription = "Ajustes del juego" },
+                .semantics { contentDescription = settingsDescription },
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
             Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -368,7 +369,7 @@ private fun ProblemCard(message: String) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(
                 Icons.Outlined.ErrorOutline,
-                contentDescription = "Problema",
+                contentDescription = stringResource(R.string.details_problem),
                 tint = MaterialTheme.colorScheme.onErrorContainer,
             )
             Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
@@ -387,7 +388,7 @@ private fun Facts(entry: RomEntry, load: DetailsLoad) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Text("Leyendo metadatos…", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.details_reading_metadata), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             is DetailsLoad.Failed -> Unit
@@ -401,20 +402,20 @@ private fun Facts(entry: RomEntry, load: DetailsLoad) {
 
 @Composable
 private fun LoadedFacts(details: GameDetails) {
-    Fact("Cartucho", details.cartridge)
+    Fact(stringResource(R.string.details_fact_cartridge), details.cartridge)
     Fact("ROM", ByteFormat.format(details.romBytes.toLong()))
     Fact(
-        "Partida guardada",
+        stringResource(R.string.details_fact_save),
         buildString {
-            append(if (details.sramBytes == 0) "Sin RAM" else ByteFormat.format(details.sramBytes.toLong()))
-            if (details.hasBattery) append(" · batería")
-            if (details.hasRtc) append(" · reloj")
+            append(if (details.sramBytes == 0) stringResource(R.string.details_no_ram) else ByteFormat.format(details.sramBytes.toLong()))
+            if (details.hasBattery) append(stringResource(R.string.details_battery_suffix))
+            if (details.hasRtc) append(stringResource(R.string.details_rtc_suffix))
         },
     )
     ChecksumFact("Checksum de cabecera", details.headerChecksumOk, "Correcto", "Incorrecto")
     ChecksumFact("Checksum global", details.globalChecksumOk, "Correcto", "No coincide (la consola real lo ignora)")
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-        Text("Huella SHA-256", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.details_sha_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SelectionContainer {
             Text(
                 details.fingerprint,

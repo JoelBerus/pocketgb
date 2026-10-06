@@ -136,7 +136,7 @@ fun LibrarySettingsContent(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).semantics { heading() },
                 )
                 ListItem(
-                    headlineContent = { Text("Carpeta actual") },
+                    headlineContent = { Text(stringResource(R.string.settings_library_current_folder)) },
                     supportingContent = {
                         Text(
                             if (hasFolder) "${folderName ?: "Sin nombre"} · ${statusText(state)}" else statusText(state),
@@ -156,15 +156,15 @@ fun LibrarySettingsContent(
             if (hasFolder) {
                 item {
                     ListItem(
-                        headlineContent = { Text("Volver a escanear") },
+                        headlineContent = { Text(stringResource(R.string.settings_library_rescan)) },
                         leadingContent = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
                         modifier = Modifier.clickable(onClick = onRescan).testTag("settings-rescan"),
                     )
                 }
                 item {
                     ListItem(
-                        headlineContent = { Text("Olvidar carpeta") },
-                        supportingContent = { Text("No borra ningún archivo, solo deja de usar la carpeta.") },
+                        headlineContent = { Text(stringResource(R.string.settings_library_forget)) },
+                        supportingContent = { Text(stringResource(R.string.settings_library_forget_summary)) },
                         leadingContent = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null) },
                         colors = ListItemDefaults.colors(
                             headlineColor = MaterialTheme.colorScheme.error,
@@ -203,15 +203,15 @@ fun LibrarySettingsContent(
                 HorizontalDivider()
                 ListItem(
                     headlineContent = {
-                        Text("Juegos ocultos", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.settings_library_hidden_title), style = MaterialTheme.typography.titleMedium)
                     },
                 )
             }
             if (hidden.isEmpty()) {
                 item {
                     ListItem(
-                        headlineContent = { Text("Ningún juego oculto") },
-                        supportingContent = { Text("Los juegos que ocultes aparecerán aquí.") },
+                        headlineContent = { Text(stringResource(R.string.settings_library_hidden_none)) },
+                        supportingContent = { Text(stringResource(R.string.settings_library_hidden_none_summary)) },
                         modifier = Modifier.testTag("settings-no-hidden"),
                     )
                 }
@@ -249,20 +249,19 @@ fun LibrarySettingsContent(
     if (confirmForget) {
         AlertDialog(
             onDismissRequest = { confirmForget = false },
-            title = { Text("¿Olvidar la carpeta?") },
+            title = { Text(stringResource(R.string.settings_library_forget_dialog_title)) },
             text = {
                 Text(
-                    "PocketGB dejará de usarla y soltará el permiso. No se borra ningún ROM ni partida; " +
-                        "puedes elegirla de nuevo cuando quieras.",
+                    stringResource(R.string.settings_library_forget_dialog_body),
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmForget = false
                     onForget()
-                }) { Text("Olvidar") }
+                }) { Text(stringResource(R.string.settings_library_forget_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirmForget = false }) { Text(stringResource(R.string.settings_library_forget_cancel)) } },
         )
     }
 }

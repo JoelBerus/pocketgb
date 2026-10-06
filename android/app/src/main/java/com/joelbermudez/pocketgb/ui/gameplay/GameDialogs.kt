@@ -94,6 +94,7 @@ fun noticeText(context: Context, notice: GameNotice): String {
 /** Cortina con progreso mientras se abre un juego (lee la ROM y la partida; puede tardar con nube). */
 @Composable
 fun OpeningOverlay(modifier: Modifier = Modifier) {
+    val openingDescription = stringResource(R.string.gameplay_opening_game)
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -106,7 +107,7 @@ fun OpeningOverlay(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.large)
                 .padding(24.dp)
-                .semantics { contentDescription = "Abriendo el juego" },
+                .semantics { contentDescription = openingDescription },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

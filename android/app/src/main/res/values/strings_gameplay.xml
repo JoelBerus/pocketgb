@@ -46,4 +46,8 @@
     <string name="editor_control_start">Start</string>
     <string name="editor_control_select">Select</string>
     <string name="editor_control_menu">Menú</string>
+    <!-- A8-S: literales extraídos -->
+    <string name="gameplay_paused_title">Juego en pausa</string>
+    <string name="gameplay_resume">Continuar</string>
+    <string name="gameplay_opening_game">Abriendo el juego</string>
 </resources>

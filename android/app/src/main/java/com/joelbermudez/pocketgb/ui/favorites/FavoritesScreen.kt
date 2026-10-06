@@ -109,8 +109,8 @@ fun FavoritesContent(
             when {
                 entries == null && state is LibraryState.NoFolder || state is LibraryState.Failed -> EmptyState(
                     icon = Icons.Outlined.FolderOpen,
-                    title = "Sin carpeta de juegos",
-                    message = "Elige o repara la carpeta en Biblioteca para ver aquí tus favoritos.",
+                    title = stringResource(R.string.favorites_no_folder_title),
+                    message = stringResource(R.string.favorites_no_folder_message),
                 )
                 entries == null || entries.isEmpty() && state is LibraryState.Scanning -> ScanningPane(
                     message = if (state is LibraryState.Loading) "Cargando biblioteca…" else "Buscando juegos…",
