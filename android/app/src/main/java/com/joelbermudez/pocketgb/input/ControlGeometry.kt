@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.input
 
+import com.joelbermudez.pocketgb.settings.StoredControlLayout
+import kotlinx.serialization.Serializable
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.hypot
@@ -10,6 +12,7 @@ enum class ControlId { DPAD, A, B, START, SELECT, MENU }
 
 enum class ControlsOrientation { PORTRAIT, LANDSCAPE }
 
+@Serializable
 data class NormalizedPoint(val x: Float, val y: Float)
 data class ControlPoint(val x: Float, val y: Float)
 
@@ -42,6 +45,12 @@ data class ControlLayout(
     fun scale(id: ControlId): Float = (scales[id] ?: 1f).coerceIn(0.6f, 1.6f)
 
     companion object {
+        /** Disposición guardada por el usuario sobre la de fábrica: lo no guardado conserva su valor por defecto. */
+        fun from(stored: StoredControlLayout, orientation: ControlsOrientation): ControlLayout {
+            val base = defaults(orientation)
+            return ControlLayout(centers = base.centers + stored.positions, scales = base.scales + stored.scales)
+        }
+
         fun defaults(orientation: ControlsOrientation): ControlLayout = when (orientation) {
             ControlsOrientation.PORTRAIT -> ControlLayout(
                 centers = mapOf(
