@@ -1,6 +1,5 @@
 package com.joelbermudez.pocketgb.ui.settings
 
-import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -31,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.library.ByteFormat
 import com.joelbermudez.pocketgb.settings.StorageUsage
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
@@ -51,7 +51,7 @@ fun StorageSettingsScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     StorageSettingsContent(
         usage = usage,
-        formatSize = { Formatter.formatFileSize(context, it) },
+        formatSize = { ByteFormat.format(it) },
         onClearArtwork = {
             scope.launch {
                 withContext(Dispatchers.IO) { StorageUsage.clearArtwork(context.filesDir) }
