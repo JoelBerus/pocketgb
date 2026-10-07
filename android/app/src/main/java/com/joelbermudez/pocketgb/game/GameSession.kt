@@ -235,6 +235,10 @@ class GameSession(
      * Por eso un cambio de tamaño cuenta como un guardado más: se escribe la partida con su tamaño nuevo.
      */
     private val openedSaveSize: Int = try { session.sramSaveSize } catch (_: RuntimeException) { 0 }
+    // Invariante (auditoría N8 Kotlin, H1): dentro de una sesión el tamaño solo crece (EEPROM 512 B → 8 KiB, una vez;
+    // confirmado, el núcleo no lo vuelve a cambiar), así que el salto de `dirtySeq` es un único escalón y la secuencia
+    // nunca retrocede. Si algún día el tamaño pudiera volver al de apertura, el escalón se desharía y el coordinador lo
+    // vería como «otro cambio» (sigue siendo seguro: solo provoca un guardado de más, nunca uno de menos).
 
     private val coordinator = SaveCoordinator(
         source = object : SramSource {

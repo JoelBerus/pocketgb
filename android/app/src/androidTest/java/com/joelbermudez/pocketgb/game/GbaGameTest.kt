@@ -240,6 +240,30 @@ class GbaGameTest {
     }
 
     @Test
+    fun aValidLocalSaveKeepsSavingWhileAMirrorOfAnotherSizeIsNeverOverwritten() {
+        // H2: local válida para los ajustes forzados (SRAM 32 KiB) y espejo de otro tamaño (64 KiB).
+        fixtures.put("Contador.gba", SyntheticGbaRom.sramCounter())
+        val entry = entry("Contador.gba")
+        val fingerprint = openGame(entry).game.also { it.close() }.fingerprint
+        SaveStore(File(root, "saves"), fingerprint).save(ByteArray(32768))
+        val mirror = ByteArray(65536) { 0x44 }
+        fixtures.put("Contador.sav", mirror)
+        gbaOptions = GbaOptions(saveType = GbaSaveType.SRAM)
+        val result = openGame(entry)
+        assertEquals(SaveLoadWarning.GameSettingsMismatch(noSave = false), result.warning)
+        val game = result.game
+        assertTrue("la local válida se sigue guardando", game.persists)
+        game.start()
+        assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+        assertEquals(FlushResult.Saved, game.pause())
+        val local = SaveStore(File(root, "saves"), fingerprint).load()!!
+        assertEquals(32768, local.size)
+        assertTrue("la partida avanzó", local.any { it != 0.toByte() })
+        Thread.sleep(1_000)
+        assertArrayEquals("el espejo de otro tamaño no se pisa", mirror, fixtures.read("Contador.sav"))
+    }
+
+    @Test
     fun forcedSettingsThatDoNotMatchTheSaveWarnAndNeverTouchIt() {
         fixtures.put("Contador.gba", SyntheticGbaRom.sramCounter())
         val entry = entry("Contador.gba")
