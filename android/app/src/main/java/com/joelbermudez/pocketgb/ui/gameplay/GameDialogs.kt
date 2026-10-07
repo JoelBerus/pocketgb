@@ -111,22 +111,11 @@ fun ResumeFailedDialog(reason: ResumeFailure, onPlayFromStart: () -> Unit, onDis
 
 /** Texto del snackbar de un [GameNotice] (fuera de Compose: lo usa un colector de flujo). */
 fun noticeText(context: Context, notice: GameNotice): String {
-    fun slot(slot: com.joelbermudez.pocketgb.saves.StateSlot): String = when (slot) {
-        com.joelbermudez.pocketgb.saves.StateSlot.AUTO -> context.getString(R.string.state_auto)
-        com.joelbermudez.pocketgb.saves.StateSlot.MANUAL1 -> context.getString(R.string.state_slot, 1)
-        com.joelbermudez.pocketgb.saves.StateSlot.MANUAL2 -> context.getString(R.string.state_slot, 2)
-        com.joelbermudez.pocketgb.saves.StateSlot.MANUAL3 -> context.getString(R.string.state_slot, 3)
-        com.joelbermudez.pocketgb.saves.StateSlot.MANUAL4 -> context.getString(R.string.state_slot, 4)
-        com.joelbermudez.pocketgb.saves.StateSlot.RESCUE -> context.getString(R.string.state_rescue)
-    }
     return when (notice) {
         GameNotice.MirrorTrouble -> context.getString(R.string.notice_mirror_trouble)
         is GameNotice.MirrorDisabled -> context.getString(
             if (notice.reason == MirrorDisabledReason.ExternalChange) R.string.notice_mirror_external else R.string.notice_mirror_name,
         )
-        is GameNotice.StateSaved -> context.getString(R.string.notice_state_saved, slot(notice.slot))
-        is GameNotice.StateLoaded -> context.getString(R.string.notice_state_loaded, slot(notice.slot))
-        is GameNotice.StateDeleted -> context.getString(R.string.notice_state_deleted, slot(notice.slot))
         is GameNotice.StateFailed -> context.getString(R.string.notice_state_failed, causeText(notice.error))
         GameNotice.SavePending -> context.getString(R.string.notice_save_pending)
         GameNotice.RescueStateExists -> context.getString(R.string.notice_rescue_state)

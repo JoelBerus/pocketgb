@@ -25,7 +25,7 @@ import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.RomEntry
 
 /**
- * Acciones de la pulsación larga. Nunca ofrece borrar el ROM. «Estados» queda deshabilitado hasta que existan.
+ * Acciones de la pulsación larga. Nunca ofrece borrar el ROM. N6: «Momentos» abre los momentos del juego.
  * [onPlay] `null` (o juego con problema) oculta «Jugar»; [onGameSettings] `null` oculta «Ajustes del juego».
  * A9: con [canResume] la primera acción es «Continuar» (estado automático exacto) seguida de «Jugar desde el inicio»
  * ([onPlayFromStart]), como iOS; [onRename] `null` oculta «Renombrar».
@@ -44,6 +44,8 @@ fun GameContextMenu(
     canResume: Boolean = false,
     onPlayFromStart: (() -> Unit)? = null,
     onRename: (() -> Unit)? = null,
+    /** N6: «Momentos» del juego; `null` lo oculta. */
+    onOpenMoments: (() -> Unit)? = null,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.testTag("game-context-menu")) {
         if (entry.isPlayable && onPlay != null) {
@@ -82,12 +84,14 @@ fun GameContextMenu(
                 modifier = Modifier.testTag("menu-rename"),
             )
         }
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.menu_states_soon)) },
-            leadingIcon = { Icon(Icons.Outlined.ViewAgenda, contentDescription = null) },
-            enabled = false,
-            onClick = {},
-        )
+        if (onOpenMoments != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.n6_details_moments)) },
+                leadingIcon = { Icon(Icons.Outlined.ViewAgenda, contentDescription = null) },
+                onClick = { onDismiss(); onOpenMoments() },
+                modifier = Modifier.testTag("menu-moments"),
+            )
+        }
         if (onGameSettings != null) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.menu_game_settings)) },

@@ -49,6 +49,8 @@ class GameActions(
     val onRename: ((RomEntry) -> Unit)? = null,
     /** A9: el juego tiene «Continuar» exacto (estado automático vigente). */
     val canResume: (RomEntry) -> Boolean = { false },
+    /** N6: «Momentos» del menú; sin valor, el menú abre el detalle (que tiene «Momentos»). */
+    val onOpenMoments: ((RomEntry) -> Unit)? = null,
 )
 
 /**
@@ -87,6 +89,7 @@ class GameMenuController internal constructor(private val actions: GameActions) 
             canResume = actions.canResume(entry),
             onPlayFromStart = actions.onPlayFromStart?.let { play -> { play(entry) } },
             onRename = actions.onRename?.let { rename -> { rename(entry) } },
+            onOpenMoments = { (actions.onOpenMoments ?: actions.onOpenDetails)(entry) },
         )
     }
 }

@@ -14,8 +14,6 @@ import com.joelbermudez.pocketgb.saves.LaunchMode
 import com.joelbermudez.pocketgb.saves.ResumeFailure
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.isSafe
-import com.joelbermudez.pocketgb.saves.StateSlot
-import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
@@ -62,9 +60,6 @@ sealed interface GameDialog {
 sealed interface GameNotice {
     data object MirrorTrouble : GameNotice
     data class MirrorDisabled(val reason: MirrorDisabledReason) : GameNotice
-    data class StateSaved(val slot: StateSlot) : GameNotice
-    data class StateLoaded(val slot: StateSlot) : GameNotice
-    data class StateDeleted(val slot: StateSlot) : GameNotice
     data class StateFailed(val error: StateError) : GameNotice
     data object SavePending : GameNotice
 
@@ -113,11 +108,6 @@ data class MomentsUi(
 /** N6: qué cargar nada más abrir el juego desde el detalle («Cargar» un momento o «Recuperar»). */
 data class PendingMoment(val kind: com.joelbermudez.pocketgb.saves.MomentStore.Kind, val id: String, val label: String)
 
-data class StatesUi(
-    val entries: Map<StateSlot, StateStore.Entry> = emptyMap(),
-    val busy: Boolean = false,
-)
-
 /**
  * Dueño de la [GameSession] (SPEC §2.2): sobrevive a la rotación y a la recreación de la actividad; la sesión
  * JAMÁS vive en un `remember`. Las operaciones con E/S (abrir, estados, salir) corren en [io] bajo una
@@ -162,9 +152,6 @@ class GameplayViewModel(
 
     /** N6: contabilidad del tiempo de la partida abierta. */
     @Volatile private var tracker: com.joelbermudez.pocketgb.progress.PlayTimeTracker? = null
-
-    private val _states = MutableStateFlow(StatesUi())
-    val states: StateFlow<StatesUi> = _states.asStateFlow()
 
     private val _notices = MutableSharedFlow<GameNotice>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val notices: SharedFlow<GameNotice> = _notices.asSharedFlow()
@@ -278,7 +265,6 @@ class GameplayViewModel(
                             return@launch
                         }
                         _menu.value = GameMenu.None
-                        _states.value = StatesUi()
                         _moments.value = MomentsUi()
                         _game.value = game
                         attachCover(game)
@@ -412,36 +398,6 @@ class GameplayViewModel(
         if (_menu.value == GameMenu.Editor) _menu.value = GameMenu.Pause
     }
 
-    fun refreshStates() {
-        val game = _game.value ?: return
-        scope.launch {
-            operations.withLock {
-                val entries = try {
-                    withContext(io) { game.states() }
-                } catch (_: Exception) {
-                    emptyMap()
-                }
-                _states.value = _states.value.copy(entries = entries)
-            }
-        }
-    }
-
-    fun saveState(slot: StateSlot) = stateOperation { game ->
-        game.saveState(slot)
-        GameNotice.StateSaved(slot)
-    }
-
-    /** [saveCurrentToAuto] `false` = «Cargar sin guardar» (K14): no toca la ranura automática. */
-    fun loadState(slot: StateSlot, saveCurrentToAuto: Boolean = true) = stateOperation { game ->
-        game.loadState(slot, saveCurrentToAuto)
-        GameNotice.StateLoaded(slot)
-    }
-
-    fun deleteState(slot: StateSlot) = stateOperation { game ->
-        game.deleteState(slot)
-        GameNotice.StateDeleted(slot)
-    }
-
     // ------------------------------------------------------------------ momentos (N6)
 
     /** Tiempo de juego acumulado de la partida abierta (lo escrito + lo que lleva esta sesión). */
@@ -525,33 +481,6 @@ class GameplayViewModel(
             while (isActive && !game.isClosed) {
                 kotlinx.coroutines.delay(playTimeCheckpointMs)
                 withContext(io) { t.checkpoint() }
-            }
-        }
-    }
-
-    private fun stateOperation(block: (GameSession) -> GameNotice) {
-        val game = _game.value ?: return
-        scope.launch {
-            operations.withLock {
-                if (_game.value !== game) return@withLock
-                _states.value = _states.value.copy(busy = true)
-                _busy.value = true
-                val notice = try {
-                    withContext(io) { block(game) }
-                } catch (error: StateError) {
-                    GameNotice.StateFailed(error)
-                } catch (error: Exception) {
-                    GameNotice.StateFailed(StateError.Io(error))
-                }
-                val entries = try {
-                    withContext(io) { game.states() }
-                } catch (_: Exception) {
-                    _states.value.entries
-                }
-                _states.value = StatesUi(entries, busy = false)
-                _busy.value = false
-                _notices.tryEmit(notice)
-                // Tras cargar un estado el juego sigue en pausa con el menú abierto (Continuar lo reanuda).
             }
         }
     }

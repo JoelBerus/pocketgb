@@ -178,6 +178,7 @@ private fun AppContent(
                             onPlayFromStart = playFromStart,
                             resumable = resumable,
                             onOpenSaves = { navigationState.push(FavoritesRoute.GameSaves(it)) },
+                            onOpenMoments = { navigationState.push(FavoritesRoute.Moments(it)) },
                         )
                     }
                     is FavoritesRoute.Details -> NavEntry(route) {

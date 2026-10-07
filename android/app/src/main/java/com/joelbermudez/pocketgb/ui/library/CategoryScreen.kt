@@ -85,6 +85,8 @@ fun CategoryScreen(
     onPlayFromStart: ((RomEntry) -> Unit)? = null,
     resumable: Set<String> = emptySet(),
     onOpenSaves: ((String) -> Unit)? = null,
+    /** N6: «Momentos» del menú contextual (id del juego); `null` = abre el detalle. */
+    onOpenMoments: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -108,6 +110,7 @@ fun CategoryScreen(
             onPlayFromStart = onPlayFromStart,
             onRename = { renameFor = it },
             canResume = { entry -> canResume(entry) },
+            onOpenMoments = onOpenMoments?.let { open -> { entry -> open(entry.id) } },
         )
     }
     CategoryContent(

@@ -7,27 +7,9 @@
     <string name="opening_game">Abriendo el juego…</string>
 
     <!-- Estados -->
-    <string name="states_title">Estados guardados</string>
-    <string name="states_back">Volver al menú de pausa</string>
-    <string name="state_auto">Automático</string>
-    <string name="state_rescue">Rescate</string>
-    <string name="state_load_body_rescue">Es el estado que se guardó al salir sin poder guardar la partida. Antes se guardará el estado actual en Automático.</string>
-    <string name="state_slot">Ranura %1$d</string>
-    <string name="state_slot_empty">Vacía</string>
-    <string name="state_corrupt">Dañado</string>
-    <string name="state_save">Guardar</string>
-    <string name="state_load">Cargar</string>
-    <string name="state_delete">Eliminar</string>
-    <string name="state_preview">Captura de %1$s</string>
-    <string name="state_delete_title">¿Eliminar %1$s?</string>
-    <string name="state_delete_body">No se puede deshacer.</string>
-    <string name="state_delete_confirm">Eliminar</string>
     <string name="dialog_cancel">Cancelar</string>
 
     <!-- Avisos breves -->
-    <string name="notice_state_saved">%1$s guardada</string>
-    <string name="notice_state_loaded">%1$s cargada</string>
-    <string name="notice_state_deleted">%1$s eliminada</string>
     <string name="notice_state_failed">No se pudo completar la operación: %1$s</string>
     <string name="notice_mirror_trouble">No se pudo actualizar el .sav junto al juego. La partida está a salvo en el teléfono y se reintentará.</string>
     <string name="notice_mirror_external">El .sav junto al juego cambió por fuera: se conservó una copia y ya no se actualizará en esta partida.</string>

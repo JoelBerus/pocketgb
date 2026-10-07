@@ -196,4 +196,33 @@ class MomentStoreTest {
             assertTrue(failAt < 40)
         }
     }
+
+    @Test fun aClockGoingBackwardsNeverEvictsTheNewEntry() {
+        val s = store()
+        repeat(3) { s.pushBeforeLoad(MomentStore.Capture(state(it), version(it), null), "M$it") }
+        clock = 10 // el reloj del sistema retrocede
+        val newest = s.pushBeforeLoad(MomentStore.Capture(state(9), version(9), null), "Nueva")
+        val ring = s.snapshot().beforeLoad
+        assertEquals(listOf("Nueva", "M2", "M1"), ring.map { it.name })
+        assertArrayEquals(version(9), s.loadSram(MomentStore.Kind.BEFORE_LOAD, newest.id))
+        assertFalse("sale la más antigua por inserción", s.stateFile(MomentStore.Kind.BEFORE_LOAD, "id0").exists())
+    }
+
+    @Test fun aRebuiltIndexKeepsTheMigrationShaAndAtMostThreeRingEntries() {
+        val states = StateStore(File(tmp.root, "states"), "fp")
+        states.save(state(1), null, StateSlot.MANUAL1)
+        val s = store()
+        s.migrateSlots(states) { it }
+        repeat(5) { s.pushBeforeLoad(MomentStore.Capture(state(10 + it), version(it), null), "B$it") }
+        // Archivos del anillo que el índice ya no conoce (p. ej. de una versión anterior) + índice dañado.
+        File(s.directory, "b-old1.sav").writeBytes(version(1)).also { File(s.directory, "b-old1.sav").setLastModified(1_000) }
+        File(s.directory, "index.json").writeText("roto")
+        s.recoverOrphans()
+        val snap = s.snapshot()
+        assertTrue(snap.beforeLoad.size <= MomentStore.RING_SIZE)
+        // La ranura reaparece igual (muerte antes de borrarla): no se duplica.
+        states.save(state(1), null, StateSlot.MANUAL1)
+        s.migrateSlots(states) { it }
+        assertEquals(1, s.snapshot().moments.size)
+    }
 }

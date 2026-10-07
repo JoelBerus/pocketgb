@@ -111,7 +111,8 @@ class MomentStore(
     /** Lanza [IOException] si no se puede leer el índice (no se toca nada). Sin índice: vacío. */
     fun snapshot(): Snapshot = lock.withLock {
         val index = readIndex() ?: throw IOException("El índice de momentos está dañado")
-        Snapshot(index.moments.sortedByDescending { it.createdMs }, index.beforeLoad.sortedByDescending { it.createdMs })
+        // El anillo va en orden de inserción (más reciente primero), no por fecha: un reloj que retrocede no lo reordena.
+        Snapshot(index.moments.sortedByDescending { it.createdMs }, index.beforeLoad)
     }
 
     fun loadState(kind: Kind, id: String): ByteArray = ops.readBytes(stateFile(kind, id), StateStore.MAX_STATE_BYTES)
@@ -153,8 +154,8 @@ class MomentStore(
     }
 
     /**
-     * Añade al anillo «Antes de cargar» la posición actual y retira la más antigua si pasa de [RING_SIZE] (su borrado es
-     * posterior a la confirmación del índice). [label] = qué se iba a cargar, para el nombre en la lista.
+     * Añade al anillo «Antes de cargar» la posición actual y retira la más antigua por orden de inserción si pasa de
+     * [RING_SIZE] (su borrado es posterior a la confirmación del índice). La entrada nueva nunca se expulsa. [label] = qué se iba a cargar, para el nombre en la lista.
      */
     fun pushBeforeLoad(capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null): Moment =
         lock.withLock {
@@ -167,7 +168,8 @@ class MomentStore(
                     hasState = capture.state != null, hasSram = capture.sram != null, hasThumbnail = capture.thumbnail != null,
                 ),
             )
-            val ring = (index.beforeLoad + entry).sortedByDescending { it.createdMs }
+            // N6A-H1: orden de inserción, nunca por `createdMs` (con el reloj hacia atrás la nueva saldría expulsada).
+            val ring = listOf(entry) + index.beforeLoad
             val kept = ring.take(RING_SIZE)
             val evicted = ring.drop(RING_SIZE)
             writeIndex(index.copy(beforeLoad = kept))
@@ -325,13 +327,20 @@ class MomentStore(
         fun rebuilt(kind: Kind) = stems.filter { it.startsWith(kind.prefix) && ID.matches(it.removePrefix(kind.prefix)) }.map { stem ->
             val id = stem.removePrefix(kind.prefix)
             val date = ops.lastModified(stateFile(kind, id)) ?: ops.lastModified(sramFile(kind, id)) ?: now()
+            // N6A-H2: el SHA del estado se recalcula para que una ranura ya migrada no se vuelva a migrar (sin duplicados).
+            val sha = try {
+                if (ops.exists(stateFile(kind, id))) sha256(ops.readBytes(stateFile(kind, id), StateStore.MAX_STATE_BYTES)) else null
+            } catch (_: IOException) {
+                null
+            }
             Moment(
                 id = id, name = "Recuperado $id".take(MAX_NAME), createdMs = date,
                 hasState = ops.exists(stateFile(kind, id)), hasSram = ops.exists(sramFile(kind, id)),
-                hasThumbnail = ops.exists(thumbnailFile(kind, id)),
+                hasThumbnail = ops.exists(thumbnailFile(kind, id)), originSha = if (kind == Kind.MOMENT) sha else null,
             )
         }.filter { it.hasState || it.hasSram }
-        val index = Index(moments = rebuilt(Kind.MOMENT), beforeLoad = rebuilt(Kind.BEFORE_LOAD))
+        // N6A-H2: el anillo reconstruido se queda en las 3 más recientes por fecha de archivo (la más nueva nunca sale).
+        val index = Index(moments = rebuilt(Kind.MOMENT), beforeLoad = rebuilt(Kind.BEFORE_LOAD).sortedByDescending { it.createdMs }.take(RING_SIZE))
         writeIndex(index)
         return index
     }

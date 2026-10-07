@@ -79,6 +79,16 @@ internal object N6Data {
         return MomentsUi(MomentStore.Snapshot(moments, ring), thumbs, loaded = true)
     }
 
+    /** El rescate (J6) ya migrado: un momento «Rescate» sin copia aparte de la partida. */
+    fun rescueUi(): MomentsUi {
+        val base = ui()
+        val rescue = m("r1", "Rescate", 1 * HOUR, sram = false, origin = "rescue")
+        return base.copy(
+            snapshot = MomentStore.Snapshot(listOf(rescue) + base.snapshot.moments, base.snapshot.beforeLoad),
+            thumbnails = base.thumbnails + listOfNotNull(CatalogStates.thumbnail(7)?.let { "m-r1" to it }),
+        )
+    }
+
     val noActions = MomentActions(onCreate = {}, onLoad = {}, onRecover = {}, onRecoverSram = {}, onEdit = { _, _, _, _, _ -> }, onDelete = { _, _ -> })
 
     private val badges = (1..8).map { "Medalla $it" } + "Liga Pokémon"
@@ -212,4 +222,18 @@ internal val n6CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
             }
         }
     }
+}
+
+/** Hoja «Momentos» de la pausa con datos sintéticos (también para los ids antiguos de estados). */
+@Composable
+internal fun MomentsCatalogSheet(landscape: Boolean, ui: MomentsUi = N6Data.ui(), preview: MomentsPreview? = null) {
+    MomentsSheet(
+        landscape = landscape,
+        ui = ui,
+        snackbar = remember { SnackbarHostState() },
+        actions = N6Data.noActions,
+        currentConfig = mapOf("console" to "GB", "model" to "CGB", "palette" to "0"),
+        onBack = {},
+        preview = preview,
+    )
 }

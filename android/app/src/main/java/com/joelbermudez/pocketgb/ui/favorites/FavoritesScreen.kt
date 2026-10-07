@@ -70,6 +70,8 @@ fun FavoritesScreen(
     resumable: Set<String> = emptySet(),
     /** N4: «Partida» del centro de ajustes del juego. */
     onOpenSaves: ((String) -> Unit)? = null,
+    /** N6: «Momentos» del menú contextual (id del juego); `null` = abre el detalle. */
+    onOpenMoments: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -89,6 +91,7 @@ fun FavoritesScreen(
             onPlayFromStart = onPlayFromStart,
             onRename = { renameFor = it },
             canResume = { entry -> canResume(entry) },
+            onOpenMoments = onOpenMoments?.let { open -> { entry -> open(entry.id) } },
         )
     }
     FavoritesContent(state = state, prefs = prefs, actions = actions)
