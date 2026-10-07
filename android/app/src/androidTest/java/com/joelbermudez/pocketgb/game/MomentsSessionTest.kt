@@ -124,4 +124,44 @@ class MomentsSessionTest {
             assertArrayEquals(before, game.session.copySram())
         }
     }
+
+    @Test
+    fun openingTheGameMigratesSlotsOneToFourAndRescueIntoMomentsWithoutLoss() {
+        val root = com.joelbermudez.pocketgb.testing.tempDir("moments-migrate")
+        try {
+            val rom = SyntheticRom.sramCounter()
+            val launcher = GameplayTestHost.launcher(root, rom = rom)
+            // Una primera apertura para conocer la huella y tener un estado real que migrar.
+            val first = (launcher.openBlocking(GameplayTestHost.entry) as OpenResult.Opened).game
+            playAndPause(first)
+            first.saveState(StateSlot.MANUAL2)
+            first.exit()
+            assertTrue(waitUntil { !first.holdsLease })
+            val states = com.joelbermudez.pocketgb.saves.StateStore(File(root, "states"), first.fingerprint)
+            val slot2 = states.load(StateSlot.MANUAL2)
+            // Un rescate (J6) de una salida con fallo de guardado (otro contenido: uno idéntico se reconoce como ya migrado).
+            val rescue = slot2 + byteArrayOf(1)
+            states.saveRescue(rescue, null)
+
+            val opened = launcher.openBlocking(GameplayTestHost.entry) as OpenResult.Opened
+            opened.game.use { game ->
+                val moments = game.moments().moments
+                assertEquals(setOf("slot2", "rescue"), moments.mapNotNull { it.origin }.toSet())
+                val store = MomentStore(File(root, "moments"), game.fingerprint)
+                val bySlot = moments.associateBy { it.origin }
+                assertArrayEquals("estado byte a byte", slot2, store.loadState(MomentStore.Kind.MOMENT, bySlot.getValue("slot2").id))
+                assertArrayEquals(rescue, store.loadState(MomentStore.Kind.MOMENT, bySlot.getValue("rescue").id))
+                assertFalse(states.stateFile(StateSlot.MANUAL2).exists())
+                assertFalse(states.stateFile(StateSlot.RESCUE).exists())
+                assertTrue("se avisa del rescate migrado", opened.notices.contains(GameNotice.RescueMoment))
+                // Y el momento migrado se carga en la sesión.
+                game.start()
+                game.pause()
+                val migrated = bySlot.getValue("slot2")
+                game.loadMoment(MomentStore.Kind.MOMENT, migrated.id, migrated.name, null)
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

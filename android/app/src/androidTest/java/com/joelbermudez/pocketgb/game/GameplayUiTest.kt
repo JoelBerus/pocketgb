@@ -55,6 +55,7 @@ class GameplayUiTest {
                 GameplayTestConfig.factory = {
                     GameplayViewModel(
                         GameplayTestHost.launcher(root, ops, mirrors = MirrorLocator { e, s, v, d -> mirrorLocator.locate(e, s, v, d) }),
+                        progress = com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")),
                     )
                 }
             }
@@ -166,6 +167,34 @@ class GameplayUiTest {
         compose.onNodeWithTag("moments-confirm").performClick()
         assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.moments.isEmpty() })
         assertFalse(File(root, "moments/${game.fingerprint}/m-${moment.id}.state").exists())
+    }
+
+    @Test
+    fun loadingAMomentFromTheDetailsOpensTheGamePausedAndCountsPlayTimeOnlyWhileRunning() {
+        val game = openGame()
+        Thread.sleep(600)
+        pressBackViaDispatcher()
+        waitTag("pause-sheet")
+        vm.createMoment("Desde el detalle")
+        assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.moments.size == 1 && !vm.moments.value.busy })
+        val moment = vm.moments.value.snapshot.moments.single()
+        compose.onNodeWithTag("pause-exit").performClick()
+        compose.waitUntil(10_000) { vm.game.value == null }
+        assertTrue(waitUntil { !game.holdsLease })
+        val progress = com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")).load(game.fingerprint)
+        assertEquals(1, progress.sessions)
+        assertTrue("contó el rato jugado (${progress.playTimeMs} ms)", progress.playTimeMs in 300..60_000)
+        assertNotNull(progress.romHeader)
+
+        vm.open(GameplayTestHost.entry, com.joelbermudez.pocketgb.saves.LaunchMode.FRESH, PendingMoment(com.joelbermudez.pocketgb.saves.MomentStore.Kind.MOMENT, moment.id, moment.name))
+        compose.waitUntil(10_000) { vm.game.value != null }
+        val reopened = vm.game.value!!
+        waitTag("pause-sheet")
+        assertTrue(waitUntil(8_000) { reopened.moments().beforeLoad.size == 1 })
+        assertEquals("se carga en pausa", SessionState.Paused, reopened.state.value)
+        val paused = com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")).load(game.fingerprint).playTimeMs
+        Thread.sleep(800)
+        assertEquals("en pausa no cuenta", paused, com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")).load(game.fingerprint).playTimeMs)
     }
 
     @Test
