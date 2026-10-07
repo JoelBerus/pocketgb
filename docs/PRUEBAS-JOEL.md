@@ -47,6 +47,7 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | N1-3 | Crear `_Revisar/` y `PocketGB/` en `Roms` con un juego dentro de cada una | Esos juegos no salen en la biblioteca |
 | N1-4 | Primer escaneo de la carpeta con todas las subcarpetas (con conexión) | Termina; anotar cuánto tarda. `adb logcat -s PocketGB/Library` muestra cuántas consultas hizo |
 | N1-5 | Dejar dos copias del mismo juego en carpetas distintas y abrir el detalle de ambas | «Duplicado» en las dos tarjetas y «También en: …» en el detalle |
+| N1-6 | Con dos copias cuyos `.sav` son distintos, abrir la copia con el `.sav` más nuevo | Se juega esa partida; en Ajustes › Partidas › «Apartadas» queda la otra y «Restaurar» la recupera |
 
 ## iPhone
 
