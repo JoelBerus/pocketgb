@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.ui.library
 
+import com.joelbermudez.pocketgb.library.LibraryCategory
+import com.joelbermudez.pocketgb.library.LibraryFilter
 import com.joelbermudez.pocketgb.ui.components.ARTWORK_RATIO
 
 /**
@@ -86,3 +88,36 @@ fun railMetricsFor(widthDp: Float, viewportHeightDp: Float, fontScale: Float, la
         )
     }
 }
+
+/** Textos del título de sección (de los recursos; aquí sin Android para probarlo en JVM). */
+data class SectionLabels(val allGames: String, val uncategorized: String, val join: (category: String, filter: String) -> String)
+
+/** «Todos los juegos», el filtro, la categoría o «Categoría · filtro» (N3b). */
+fun sectionTitle(filter: LibraryFilter, category: LibraryCategory, labels: SectionLabels): String {
+    val filterTitle = if (filter == LibraryFilter.ALL) null else filter.title
+    val categoryTitle = when (category) {
+        LibraryCategory.All -> null
+        LibraryCategory.Uncategorized -> labels.uncategorized
+        is LibraryCategory.Folder -> category.name
+    }
+    return when {
+        categoryTitle != null && filterTitle != null -> labels.join(categoryTitle, filterTitle)
+        categoryTitle != null -> categoryTitle
+        filterTitle != null -> filterTitle
+        else -> labels.allGames
+    }
+}
+
+/**
+ * N3b (respuesta a la auditoría, H1): la barra flotante solo aparece al desplazar en horizontal, con la barra superior
+ * plegada al menos a la mitad y el título de sección ya fijado arriba. En reposo las herramientas están en la barra
+ * superior (con `enterAlways` vuelven al subir y la flotante se va).
+ */
+fun showFloatingToolbar(landscape: Boolean, searching: Boolean, collapsedFraction: Float, titlePinned: Boolean): Boolean =
+    landscape && !searching && collapsedFraction >= FLOATING_TOOLBAR_MIN_COLLAPSE && titlePinned
+
+/** Fracción plegada de la barra superior desde la que aparece la barra flotante. */
+const val FLOATING_TOOLBAR_MIN_COLLAPSE = 0.5f
+
+/** El título de sección está fijado arriba: no hay carril delante o el carril ya salió por arriba. */
+fun isTitlePinned(railShown: Boolean, firstVisibleItemIndex: Int): Boolean = !railShown || firstVisibleItemIndex > 0

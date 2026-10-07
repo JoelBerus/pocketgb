@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.onAllNodesWithTag
+import com.joelbermudez.pocketgb.ui.library.LibraryToolsPreset
+import com.joelbermudez.pocketgb.ui.library.LocalLibraryToolsPreset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
@@ -120,6 +124,31 @@ class TouchTargetTest {
         }
         compose.waitForIdle()
         assertAllTargetsAtLeast48("Detalle")
+    }
+
+    /** N3b (H8): la biblioteca en horizontal, en reposo (iconos arriba) o desplazada (barra flotante). */
+    @Composable
+    private fun LandscapeLibrary(preset: LibraryToolsPreset) {
+        Box(Modifier.requiredSize(640.dp, 360.dp)) {
+            CompositionLocalProvider(LocalLibraryToolsPreset provides preset) {
+                Library(LibraryPreferencesData().recordPlayed(games[0].id, "%064x".format(1L), 10L))
+            }
+        }
+    }
+
+    @Test
+    fun landscapeLibraryTargetsAreBigEnoughAtRest() {
+        compose.setContent { LandscapeLibrary(LibraryToolsPreset()) }
+        compose.waitForIdle()
+        assertAllTargetsAtLeast48("Biblioteca en horizontal")
+    }
+
+    @Test
+    fun landscapeLibraryTargetsAreBigEnoughOnceScrolled() {
+        compose.setContent { LandscapeLibrary(LibraryToolsPreset(scrolled = true)) }
+        compose.waitForIdle()
+        assertTrue("con la barra flotante", compose.onAllNodesWithTag("library-tools").fetchSemanticsNodes().isNotEmpty())
+        assertAllTargetsAtLeast48("Biblioteca en horizontal desplazada")
     }
 
     @Test

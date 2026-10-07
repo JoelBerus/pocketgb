@@ -12,18 +12,18 @@
 
 ## En horizontal
 Al girar el teléfono la pantalla se aprovecha para los juegos:
-- **No hay buscador ni filtros arriba.** Al bajar, la barra con «Biblioteca» se esconde y vuelve en cuanto subes un poco.
-- El título de la sección («Todos los juegos», «GBC», «Pokémon»…) se queda **fijo arriba** al bajar, así siempre sabes qué estás viendo.
-- **A la derecha, abajo, hay cuatro botones:**
+- **No hay buscador ni filtros arriba.** En su lugar, la barra de arriba («Biblioteca») tiene **cuatro iconos**:
 
-| Botón | Qué hace |
+| Icono | Qué hace |
 |---|---|
-| Lupa · **Buscar** | El buscador aparece en la barra de arriba con el teclado. Escribe parte del nombre (vale el nombre que le pusiste o el del archivo). La flecha o el botón Atrás lo cierran: la búsqueda se vacía y vuelven la barra, los botones y la lista donde estaba. |
-| Embudo · **Filtros** | Todos, GB, GBC o Favoritos. Con un filtro puesto, el botón se ve relleno. |
+| Lupa · **Buscar** | El buscador aparece en la barra de arriba con el teclado. Escribe parte del nombre (vale el nombre que le pusiste o el del archivo). La flecha o el botón Atrás lo cierran: la búsqueda se vacía y vuelven la barra y la lista como estaban. |
+| Embudo · **Filtros** | Todos, GB, GBC o Favoritos. Con un filtro puesto, el icono se ve relleno. |
 | Carpeta · **Categorías** | Las carpetas de primer nivel de tu carpeta de juegos (por ejemplo «Pokémon» o «Kirby»), con cuántos juegos tiene cada una, y «Sin categoría» para los juegos sueltos. «Todas» quita la categoría. |
 | Cuadrícula o lista · **Vista y orden** | Cuadrícula o lista, y ordenar por nombre o por lo último jugado. |
 
-- Cada botón abre su panel **hacia arriba**, pegado a los botones, y no tapa el título de la sección. Toca fuera del panel o pulsa Atrás para cerrarlo.
+- Cada icono abre su panel **hacia abajo**, bajo la barra. El panel no tapa el título de la sección («Todos los juegos», «GBC», «Pokémon»…): si el título está justo debajo de la barra, el panel se abre debajo del título. Toca fuera del panel o pulsa Atrás para cerrarlo.
+- **Al bajar por la lista**, la barra de arriba se esconde, el título de la sección se queda fijo arriba y aparecen **los mismos cuatro botones abajo a la derecha**, flotando. Sus paneles se abren **hacia arriba** y llegan como mucho hasta debajo del título. Si con la letra muy grande no cabe, la barra de arriba termina de esconderse antes de abrir el panel.
+- **Al subir un poco**, vuelve la barra de arriba con sus iconos y los botones flotantes se van. Si tienes «Quitar animaciones» activado en el teléfono, aparecen y se van sin animación.
 - «Volver a escanear» y «Cambiar carpeta» siguen en el menú «⋮» de arriba.
 - Lo que elijas se mantiene al volver a vertical: el título de la sección te dice qué filtro o categoría tienes puesto. En vertical lo cambias con los filtros y con «⋮» › Categoría.
 - Funciona igual con la barra lateral de navegación (en horizontal y en pantallas anchas los destinos Biblioteca, Favoritos y Ajustes van a la izquierda).
@@ -32,7 +32,7 @@ Las categorías salen de tus carpetas (ver [carpetas-android.md](carpetas-androi
 
 ## El detalle de un juego
 - **En vertical**, la imagen ocupa como mucho algo menos de la mitad de la pantalla, así ves enseguida **Jugar** o **Continuar**.
-- **En horizontal** (o en pantallas anchas, como un plegable abierto o una tablet), la imagen va a la izquierda, entera, y la información a la derecha con su propio desplazamiento. **Jugar/Continuar** queda bajo el título sin tener que bajar; con la letra muy grande sube justo debajo del título.
+- **En horizontal** (o en pantallas anchas, como un plegable abierto o una tablet), la imagen va a la izquierda, entera, y la información a la derecha con su propio desplazamiento. **Jugar/Continuar** va justo debajo del título (que ocupa como mucho dos líneas), así se ve sin bajar aunque el nombre o la carpeta sean muy largos.
 - La imagen respeta la forma de la pantalla de la consola: casi cuadrada en Game Boy y Game Boy Color (10:9). Nunca se estira.
 - **Favorito, Estados y Ajustes** van en una fila si caben enteros; si no, con el icono encima del texto o uno debajo de otro.
 

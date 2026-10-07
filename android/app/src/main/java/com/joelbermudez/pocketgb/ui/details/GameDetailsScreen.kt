@@ -281,9 +281,11 @@ fun GameDetailsContent(
                     canResume = canResume,
                     onPlayFromStart = onPlayFromStart,
                     onHide = { confirmHide = true },
-                    // Con fuente grande «Jugar» va justo bajo el título: la ruta y el chip crecen y lo empujarían fuera de
-                    // la pantalla (en la columna estrecha de dos columnas y bajo la imagen en vertical).
-                    playFirst = LocalLargeFont.current,
+                    // «Jugar» siempre justo bajo el título (H3): con un nombre o una ruta largos, la ruta y «También en» lo
+                    // empujaban fuera de la pantalla (en dos columnas y también en vertical). En dos columnas el título
+                    // ocupa como mucho 2 líneas (completo en la barra superior y en «Renombrar»).
+                    playFirst = true,
+                    titleMaxLines = if (layout.twoColumns) 2 else Int.MAX_VALUE,
                 )
             }
             val scroll = rememberScrollState(initialInfoScroll)
@@ -344,15 +346,23 @@ private fun DetailsInfo(
     onPlayFromStart: () -> Unit,
     onHide: () -> Unit,
     playFirst: Boolean = false,
+    titleMaxLines: Int = Int.MAX_VALUE,
 ) {
+    val title: @Composable () -> Unit = {
+        Text(
+            entry.displayTitle,
+            style = MaterialTheme.typography.headlineSmall,
+            maxLines = titleMaxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("game-details-title"),
+        )
+    }
     if (playFirst) {
-        Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
+        title()
         PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (!playFirst) {
-            Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
-        }
+        if (!playFirst) title()
         // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera y bajo el chip.
         val location = locationText(entry.location, inRoot = null)
         val locationDescription = stringResource(R.string.n1_location_description, location)

@@ -5,60 +5,48 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** N3b · hasta dónde sube un panel de la barra flotante sin tapar el título de sección (px de ventana). */
+/** N3b · estado de las herramientas en horizontal: título de sección medido y paneles por origen. */
 class LibraryToolsStateTest {
-    private fun tools() = LibraryToolsState(mutableStateOf(false), mutableStateOf(null)).apply { viewportTop = 176 }
-
-    private val toolbarTop = 528
-    private val panelLeft = 288
+    private fun tools() = LibraryToolsState(mutableStateOf(false), mutableStateOf(null))
 
     @Test
-    fun withThePinnedTitleShownThePanelStopsBelowIt() {
-        val tools = tools().apply {
-            headerTop = 176
-            headerBottom = 256
-            titleRight = 470
-        }
-        assertEquals(256, tools.panelLimitTop(toolbarTop, panelLeft))
-    }
-
-    @Test
-    fun withTheTitleStillBelowTheToolbarThePanelCanReachTheTopBar() {
-        // Arriba del todo, con el carril: el título de sección aún no se ve por encima de la barra flotante.
-        val tools = tools().apply {
-            headerTop = 600
-            headerBottom = 680
-            titleRight = 470
-        }
-        assertEquals(176, tools.panelLimitTop(toolbarTop, panelLeft))
-    }
-
-    @Test
-    fun aTitleThatIsNotOnScreenDoesNotLimitThePanel() {
+    fun theHeaderIsKnownOnlyWhileItIsOnScreen() {
         val tools = tools()
+        assertNull("sin medir", tools.header)
+        tools.headerTop = 176
+        tools.headerBottom = 256
+        assertEquals(HeaderBounds(176, 256), tools.header)
         tools.forgetHeader()
-        assertEquals(176, tools.panelLimitTop(toolbarTop, panelLeft))
+        assertNull("fuera de la lista", tools.header)
     }
 
     @Test
-    fun aTitleLeftOfThePanelIsNeverCoveredSoItDoesNotLimitIt() {
-        // Ventana ancha: el panel (alineado a la derecha) empieza después de donde acaba el texto del título.
+    fun anEmptyHeaderIsNotAHeader() {
         val tools = tools().apply {
-            headerTop = 300
-            headerBottom = 380
-            titleRight = 250
+            headerTop = 200
+            headerBottom = 200
         }
-        assertEquals(176, tools.panelLimitTop(toolbarTop, panelLeft))
+        assertNull(tools.header)
     }
 
     @Test
-    fun togglingAPanelOpensAndClosesIt() {
+    fun togglingAPanelOpensAndClosesItFromTheSameSource() {
         val tools = tools()
-        tools.toggle(LibraryPanel.FILTERS)
+        tools.toggle(LibraryPanel.FILTERS, PanelSource.BAR)
         assertEquals(LibraryPanel.FILTERS, tools.panel)
-        tools.toggle(LibraryPanel.VIEW)
+        assertEquals(PanelSource.BAR, tools.panelSource)
+        tools.toggle(LibraryPanel.VIEW, PanelSource.BAR)
         assertEquals(LibraryPanel.VIEW, tools.panel)
-        tools.toggle(LibraryPanel.VIEW)
+        tools.toggle(LibraryPanel.VIEW, PanelSource.BAR)
         assertNull(tools.panel)
+    }
+
+    @Test
+    fun theSamePanelFromTheOtherToolbarMovesInsteadOfClosing() {
+        val tools = tools()
+        tools.toggle(LibraryPanel.CATEGORIES, PanelSource.BAR)
+        tools.toggle(LibraryPanel.CATEGORIES, PanelSource.FLOATING)
+        assertEquals(LibraryPanel.CATEGORIES, tools.panel)
+        assertEquals(PanelSource.FLOATING, tools.panelSource)
     }
 }

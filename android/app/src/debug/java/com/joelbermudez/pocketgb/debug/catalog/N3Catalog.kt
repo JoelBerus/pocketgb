@@ -18,6 +18,7 @@ import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.library.RomLocation
 import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.ui.components.LocalArtworkStore
 import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
@@ -89,15 +90,27 @@ private object N3Data {
     )
 }
 
-/** Portadas sintéticas de los cinco juegos con portada (sin hilos: determinista). */
+/**
+ * Portada casi blanca (blanco con rayas gris muy claro): la captura de un juego de pantalla blanca, para comprobar que
+ * el título de sección y la barra flotante se leen encima (N3, como `library-landscape-white` de iOS).
+ */
+private fun whiteCoverPixels(seed: Int): IntArray = IntArray(160 * 144) { i ->
+    val x = i % 160
+    val y = i / 160
+    if ((x + y + seed * 7) % 24 < 2) 0xFFE4E4E4.toInt() else 0xFFFFFFFF.toInt()
+}
+
+/** Portadas sintéticas de los cinco juegos con portada (sin hilos: determinista); [white] = casi blancas. */
 @Composable
-private fun N3Artwork(content: @Composable () -> Unit) {
+private fun N3Artwork(white: Boolean, content: @Composable () -> Unit) {
     val context = LocalContext.current.applicationContext
-    val store = remember(context) {
-        val dir = File(context.cacheDir, "debug-artwork-n3")
+    val store = remember(context, white) {
+        val dir = File(context.cacheDir, if (white) "debug-artwork-n3-white" else "debug-artwork-n3")
         dir.listFiles()?.forEach { it.delete() }
         ArtworkStore(dir, executor = null).also { store ->
-            (0 until 5).forEach { index -> store.save(N3Data.fingerprint(index), CatalogData.coverPixels(index)) }
+            (0 until 5).forEach { index ->
+                store.save(N3Data.fingerprint(index), if (white) whiteCoverPixels(index) else CatalogData.coverPixels(index))
+            }
         }
     }
     CompositionLocalProvider(LocalArtworkStore provides store, content = content)
@@ -105,9 +118,9 @@ private fun N3Artwork(content: @Composable () -> Unit) {
 
 /** El marco real de la app: barra inferior en vertical y NavigationRail desde 600 dp (horizontal y ventana ancha). */
 @Composable
-private fun N3Frame(content: @Composable () -> Unit) {
+private fun N3Frame(white: Boolean = false, content: @Composable () -> Unit) {
     val navigation = remember { AppNavigationState() }
-    N3Artwork { AppScaffold(navigation) { content() } }
+    N3Artwork(white) { AppScaffold(navigation) { content() } }
 }
 
 private val n3Actions = GameActions(
@@ -128,12 +141,13 @@ private fun N3Library(
     initialQuery: String = "",
     initialCategory: LibraryCategory = LibraryCategory.All,
     initialLayout: LibraryLayout = LibraryLayout.GRID,
+    white: Boolean = false,
 ) {
     var prefs by remember { mutableStateOf(N3Data.prefs(initialLayout)) }
     var query by remember { mutableStateOf(initialQuery) }
     var filter by remember { mutableStateOf(LibraryFilter.ALL) }
     var category by remember { mutableStateOf(initialCategory) }
-    N3Frame {
+    N3Frame(white) {
         CompositionLocalProvider(LocalLibraryToolsPreset provides preset) {
             LibraryContent(
                 state = LibraryState.Ready(N3Data.entries, "Roms"),
@@ -155,9 +169,17 @@ private fun N3Library(
     }
 }
 
+/** Nombre de 80 caracteres, ruta de cinco carpetas y dos copias: el caso largo del detalle (H3). */
+private val longEntry: RomEntry
+    get() = N3Data.entries[0].copy(
+        alias = "Pokémon Rojo — la partida principal con el equipo completo y todas las medallas.",
+        folderPath = listOf("Clásicos de la consola", "Nintendo y compañía", "Pokémon", "Primera generación", "Kanto"),
+        alsoAt = listOf(RomLocation(listOf("Copias"), "Pokemon Red (1).gb"), RomLocation(listOf("Copias", "Viejas"), "Pokemon Red (2).gb")),
+    )
+
 @Composable
-private fun N3Details(canResume: Boolean = false, scrolled: Boolean = false) {
-    val entry = N3Data.entries[0]
+private fun N3Details(canResume: Boolean = false, scrolled: Boolean = false, long: Boolean = false) {
+    val entry = if (long) longEntry else N3Data.entries[0]
     N3Frame {
         GameDetailsContent(
             entry = entry,
@@ -183,15 +205,22 @@ internal val n3CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     // Carril «Continuar jugando» con el ancho de las columnas de la cuadrícula (solo reanudables: COLOR DEMO no sale).
     put("n3-rail-portrait") { N3Library() }
     put("n3-rail-portrait-ax5") { N3Library() }
-    // Biblioteca en horizontal: sin buscador ni chips, barra flotante a la derecha, carril con 3 columnas.
+    // Biblioteca en horizontal en reposo: sin buscador ni chips, herramientas como iconos de la barra superior, carril
+    // con 3 columnas y sin barra flotante.
     put("n3-library-landscape") { N3Library() }
     put("n3-library-landscape-ax5") { N3Library() }
-    // Tras desplazar (`swipe=up`): barra superior plegada y título de sección fijado.
-    put("n3-library-landscape-scrolled") { N3Library() }
-    // Cada panel de la barra flotante abierto hacia arriba.
+    // Desplazada: barra superior plegada, título de sección fijado y barra flotante a la derecha.
+    put("n3-library-landscape-scrolled") { N3Library(LibraryToolsPreset(scrolled = true)) }
+    // Cada panel en reposo (cuelga de los iconos de la barra superior) y desplazada (sube desde la barra flotante).
     put("n3-library-landscape-filters") { N3Library(LibraryToolsPreset(panel = LibraryPanel.FILTERS)) }
     put("n3-library-landscape-categories") { N3Library(LibraryToolsPreset(panel = LibraryPanel.CATEGORIES)) }
     put("n3-library-landscape-view") { N3Library(LibraryToolsPreset(panel = LibraryPanel.VIEW)) }
+    put("n3-library-landscape-scrolled-filters") { N3Library(LibraryToolsPreset(panel = LibraryPanel.FILTERS, scrolled = true)) }
+    put("n3-library-landscape-scrolled-categories") { N3Library(LibraryToolsPreset(panel = LibraryPanel.CATEGORIES, scrolled = true)) }
+    put("n3-library-landscape-scrolled-view") { N3Library(LibraryToolsPreset(panel = LibraryPanel.VIEW, scrolled = true)) }
+    // Portadas casi blancas bajo la barra superior (reposo) y bajo el título fijado y la barra flotante (desplazada).
+    put("n3-library-landscape-white") { N3Library(white = true) }
+    put("n3-library-landscape-white-scrolled") { N3Library(LibraryToolsPreset(scrolled = true), white = true) }
     // Buscando: el campo ocupa la barra superior y desaparece la barra flotante.
     put("n3-library-landscape-search") { N3Library(LibraryToolsPreset(search = true), initialQuery = "po") }
     // La misma búsqueda sin teclado: los resultados en lista bajo el campo.
@@ -207,7 +236,8 @@ internal val n3CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("n3-library-portrait-category") { N3Library(initialCategory = LibraryCategory.Folder("Puzles")) }
     // Ventana ancha (853 dp, rail): misma disposición horizontal con más columnas.
     put("n3-library-wide") { N3Library() }
-    put("n3-library-wide-filters") { N3Library(LibraryToolsPreset(panel = LibraryPanel.FILTERS)) }
+    // Desplazada con el panel de filtros: no tapa el encabezado entero (título y «Roms», H6).
+    put("n3-library-wide-filters") { N3Library(LibraryToolsPreset(panel = LibraryPanel.FILTERS, scrolled = true)) }
     // Detalle: una columna (imagen ≤ 45 % del alto) o dos columnas con «Jugar» visible sin desplazar.
     put("n3-details-portrait") { N3Details() }
     put("n3-details-portrait-ax5") { N3Details() }
@@ -216,4 +246,7 @@ internal val n3CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("n3-details-landscape-ax5") { N3Details() }
     put("n3-details-landscape-scrolled") { N3Details(scrolled = true) }
     put("n3-details-wide") { N3Details(canResume = true) }
+    // Nombre de 80 caracteres, ruta larga y dos copias: «Continuar» sigue a la vista bajo el título (H3).
+    put("n3-details-landscape-long") { N3Details(canResume = true, long = true) }
+    put("n3-details-portrait-long") { N3Details(canResume = true, long = true) }
 }

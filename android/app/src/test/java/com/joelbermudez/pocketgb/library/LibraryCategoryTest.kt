@@ -83,7 +83,7 @@ class LibraryCategoryTest {
     }
 
     @Test
-    fun theSectionTitleNamesTheCategoryAndTheFilter() {
+    fun onlyFolderCategoriesHaveAFolderName() {
         assertEquals(null, LibraryCategory.All.folderName)
         assertEquals("Pokémon", LibraryCategory.Folder("Pokémon").folderName)
         assertEquals(null, LibraryCategory.Uncategorized.folderName)

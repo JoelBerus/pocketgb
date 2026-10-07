@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
 import android.view.View
@@ -42,8 +43,12 @@ class DebugCatalogTest {
     fun libraryCatalogScreensShowTheirStates() {
         launch("library-empty").use { compose.onNodeWithText("Elegir carpeta").assertIsDisplayed() }
         launch("library-error").use { compose.onNodeWithText("Volver a elegir").assertIsDisplayed() }
-        launch("library-search").use { compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
-            compose.onNodeWithText("Buscar en todos").assertIsDisplayed() }
+        launch("library-search").use {
+            // H9 (N3): con «mostrar teclado con teclado físico» activado, el teclado empujaba el botón fuera de la vista.
+            Espresso.closeSoftKeyboard()
+            compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Buscar en todos").assertIsDisplayed()
+        }
         launch("library-list").use {
             compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
         }

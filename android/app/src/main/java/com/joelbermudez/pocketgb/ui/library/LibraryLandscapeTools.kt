@@ -27,10 +27,10 @@ import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -81,26 +82,36 @@ import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibrarySort
 import kotlin.math.roundToInt
 
-/** Paneles de la barra flotante de la biblioteca en horizontal (N3b). */
+/** Paneles de las herramientas de la biblioteca en horizontal (N3b). */
 enum class LibraryPanel(val tag: String) {
     FILTERS("filters"),
     CATEGORIES("categories"),
     VIEW("view"),
 }
 
+/** Desde dónde se abrió un panel: los iconos de la barra superior (en reposo) o la barra flotante (al desplazar). */
+enum class PanelSource { BAR, FLOATING }
+
 /**
- * Solo el catálogo de capturas: panel o búsqueda abiertos al entrar (en la app, nada). [focusSearch] = `false` deja la
- * búsqueda abierta sin teclado (para ver los resultados).
+ * Solo el catálogo de capturas y las pruebas: panel o búsqueda abiertos al entrar (en la app, nada). [focusSearch] =
+ * `false` deja la búsqueda abierta sin teclado. [scrolled] arranca con el carril fuera y la barra superior plegada en la
+ * fracción [collapse] (estado «al desplazar», con la barra flotante); entonces [panel] se abre desde la barra flotante.
  */
-data class LibraryToolsPreset(val panel: LibraryPanel? = null, val search: Boolean = false, val focusSearch: Boolean = true)
+data class LibraryToolsPreset(
+    val panel: LibraryPanel? = null,
+    val search: Boolean = false,
+    val focusSearch: Boolean = true,
+    val scrolled: Boolean = false,
+    val collapse: Float = 1f,
+)
 
 val LocalLibraryToolsPreset = staticCompositionLocalOf { LibraryToolsPreset() }
 
-/** Separación entre la barra flotante y su panel, y entre el panel y el título de sección fijado. */
+/** Separación entre una barra y su panel, y entre el panel y el título de sección. */
 private val PanelGap = 8.dp
 
-/** Alto mínimo de un panel aunque no quepa entero (se desplaza dentro). */
-private val PanelMinHeight = 112.dp
+/** Alto mínimo de un panel (con más opciones se desplaza dentro). */
+internal val PanelMinHeight = 112.dp
 
 /** Ancho máximo de un panel: caben los cuatro filtros en una fila. */
 private val PanelMaxWidth = 480.dp
@@ -109,13 +120,15 @@ private val PanelMaxWidth = 480.dp
 internal val PinnedHeaderMinHeight = 40.dp
 
 /**
- * Estado de la barra flotante: qué panel está abierto, si la búsqueda está abierta (sobreviven al girar) y dónde
- * empieza la lista y cuánto mide el título fijado (para que un panel nunca tape el título de sección).
+ * Estado de las herramientas en horizontal: qué panel está abierto y desde dónde, si la búsqueda está abierta (sobreviven
+ * al girar) y las medidas que necesitan los paneles para no tapar el título de sección (lista y encabezado, en px de
+ * ventana).
  */
 @Stable
 class LibraryToolsState internal constructor(
     private val searchState: MutableState<Boolean>,
     private val panelState: MutableState<LibraryPanel?>,
+    initialSource: PanelSource = PanelSource.BAR,
 ) {
     var searchOpen: Boolean
         get() = searchState.value
@@ -125,34 +138,36 @@ class LibraryToolsState internal constructor(
         get() = panelState.value
         set(value) { panelState.value = value }
 
-    /** Borde superior (px, ventana) de la lista: el título de sección fijado queda justo debajo. */
+    var panelSource by mutableStateOf(initialSource)
+
+    /** Bordes superior e inferior (px, ventana) de la lista. */
     var viewportTop by mutableIntStateOf(0)
+    var viewportBottom by mutableIntStateOf(0)
 
     /** Bordes (px, ventana) del título de sección mientras está en pantalla; `-1` si no lo está. */
     var headerTop by mutableIntStateOf(-1)
     var headerBottom by mutableIntStateOf(-1)
 
-    /** Borde derecho (px, ventana) del texto del título de sección, para saber si un panel lo taparía. */
-    var titleRight by mutableIntStateOf(-1)
+    /** Hay carril «Continuar jugando» delante del título de sección (lo anota la lista). */
+    var railShown by mutableStateOf(false)
 
-    /**
-     * Hasta dónde puede subir un panel que acaba en [toolbarTop] y empieza como mucho en [panelLeft] (px, ventana): bajo
-     * el título de sección si se ve por encima de la barra y el panel lo taparía; si no (por ejemplo, arriba del todo,
-     * con el carril y el título aún por debajo), hasta la barra superior.
-     */
-    fun panelLimitTop(toolbarTop: Int, panelLeft: Int): Int {
-        val headerShown = headerBottom > viewportTop && headerTop in 0 until toolbarTop
-        return if (headerShown && titleRight > panelLeft) headerBottom else viewportTop
-    }
+    /** El título de sección si está en pantalla. */
+    val header: HeaderBounds?
+        get() = if (headerTop < 0 || headerBottom <= headerTop) null else HeaderBounds(headerTop, headerBottom)
 
     fun forgetHeader() {
         headerTop = -1
         headerBottom = -1
-        titleRight = -1
     }
 
-    fun toggle(target: LibraryPanel) {
-        panel = if (panel == target) null else target
+    /** Abre [target] desde [source]; si ya estaba abierto desde ahí, lo cierra. */
+    fun toggle(target: LibraryPanel, source: PanelSource = PanelSource.BAR) {
+        if (panel == target && panelSource == source) {
+            panel = null
+        } else {
+            panelSource = source
+            panel = target
+        }
     }
 }
 
@@ -161,121 +176,185 @@ internal fun rememberLibraryToolsState(): LibraryToolsState {
     val preset = LocalLibraryToolsPreset.current
     val search = rememberSaveable { mutableStateOf(preset.search) }
     val panel = rememberSaveable { mutableStateOf(preset.panel) }
-    return remember(search, panel) { LibraryToolsState(search, panel) }
+    return remember(search, panel) {
+        LibraryToolsState(search, panel, if (preset.scrolled) PanelSource.FLOATING else PanelSource.BAR)
+    }
+}
+
+/** Callbacks y valores que comparten los iconos de la barra superior y la barra flotante. */
+internal class LibraryToolActions(
+    val filter: LibraryFilter,
+    val category: LibraryCategory,
+    val categories: List<CategoryOption>,
+    val layout: LibraryLayout,
+    val sort: LibrarySort,
+    val onSearch: () -> Unit,
+    val onFilterChange: (LibraryFilter) -> Unit,
+    val onCategoryChange: (LibraryCategory) -> Unit,
+    val onLayoutChange: (LibraryLayout) -> Unit,
+    val onSortChange: (LibrarySort) -> Unit,
+)
+
+/** Buscar, Filtros, Categorías y Vista/Orden; [tagPrefix] distingue los de la barra superior de los de la flotante. */
+@Composable
+private fun ToolButtons(tools: LibraryToolsState, actions: LibraryToolActions, source: PanelSource, tagPrefix: String, onOpen: (LibraryPanel) -> Unit) {
+    val open = tools.panel.takeIf { tools.panelSource == source }
+    ToolButton(
+        icon = Icons.Filled.Search,
+        label = stringResource(R.string.n3_tools_search),
+        highlighted = false,
+        state = null,
+        tag = "$tagPrefix-search",
+    ) {
+        tools.panel = null
+        actions.onSearch()
+    }
+    ToolButton(
+        icon = if (actions.filter != LibraryFilter.ALL) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
+        label = stringResource(R.string.n3_tools_filters),
+        highlighted = actions.filter != LibraryFilter.ALL || open == LibraryPanel.FILTERS,
+        state = stringResource(R.string.n3_tools_filter_state, actions.filter.title),
+        tag = "$tagPrefix-filters",
+    ) { onOpen(LibraryPanel.FILTERS) }
+    ToolButton(
+        icon = if (actions.category != LibraryCategory.All) Icons.Filled.Folder else Icons.Outlined.Folder,
+        label = stringResource(R.string.n3_tools_categories),
+        highlighted = actions.category != LibraryCategory.All || open == LibraryPanel.CATEGORIES,
+        state = stringResource(R.string.n3_tools_category_state, categoryTitle(actions.category)),
+        tag = "$tagPrefix-categories",
+    ) { onOpen(LibraryPanel.CATEGORIES) }
+    ToolButton(
+        icon = if (actions.layout == LibraryLayout.GRID) Icons.Outlined.GridView else Icons.AutoMirrored.Outlined.ViewList,
+        label = stringResource(R.string.n3_tools_view),
+        highlighted = open == LibraryPanel.VIEW,
+        state = stringResource(R.string.n3_tools_view_state, actions.layout.title, actions.sort.title),
+        tag = "$tagPrefix-view",
+    ) { onOpen(LibraryPanel.VIEW) }
 }
 
 /**
- * Barra flotante de la biblioteca en horizontal (N3b): Buscar, Filtros, Categorías y Vista/Orden en una pastilla con
- * componentes estables de Material 3 (sin `HorizontalFloatingToolbar`, que solo existe en 1.5.0-alpha). Cada botón abre
- * su panel **hacia arriba**, pegado a la barra, con un alto máximo que no llega al título de sección fijado; si las
- * opciones no caben, el panel se desplaza dentro. Tocar fuera o Atrás lo cierran.
+ * En reposo (horizontal): las cuatro herramientas como iconos de la barra superior (H1). Su panel cuelga **hacia abajo**
+ * bajo la barra, sin tapar el título de sección ([PanelPlacement.below]). Al ir arriba, TalkBack las lee antes que la
+ * lista (H4).
+ */
+@Composable
+internal fun LibraryBarActions(tools: LibraryToolsState, actions: LibraryToolActions) {
+    val density = LocalDensity.current
+    var anchorBottom by remember { mutableIntStateOf(0) }
+    Box(Modifier.onGloballyPositioned { anchorBottom = it.boundsInWindow().bottom.roundToInt() }) {
+        Row(Modifier.testTag("library-bar-tools")) {
+            ToolButtons(tools, actions, PanelSource.BAR, "bar") { tools.toggle(it, PanelSource.BAR) }
+        }
+        val panel = tools.panel.takeIf { tools.panelSource == PanelSource.BAR }
+        if (panel != null) {
+            val gap = with(density) { PanelGap.roundToPx() }
+            val min = with(density) { PanelMinHeight.roundToPx() }
+            val span = PanelPlacement.below(anchorBottom, tools.viewportBottom, tools.header, gap, min)
+            val provider = remember(span.top, gap) { BelowPositionProvider(span.top, gap) }
+            PanelPopup(tools, provider, panel, span.maxHeight, actions)
+        }
+    }
+}
+
+/**
+ * Barra flotante de la biblioteca en horizontal (N3b): solo aparece al desplazar ([showFloatingToolbar]), en una pastilla
+ * con componentes estables de Material 3 (sin `HorizontalFloatingToolbar`, que solo existe en 1.5.0-alpha). Cada botón
+ * abre su panel **hacia arriba**, hasta debajo del título de sección fijado; si no cabe el mínimo (fuente grande con la
+ * barra superior a medio plegar), [onNeedRoom] pliega antes la barra superior (H2). Va la primera en el orden de TalkBack
+ * (H4).
  */
 @Composable
 internal fun LibraryToolbar(
     tools: LibraryToolsState,
-    filter: LibraryFilter,
-    category: LibraryCategory,
-    categories: List<CategoryOption>,
-    layout: LibraryLayout,
-    sort: LibrarySort,
-    onSearch: () -> Unit,
-    onFilterChange: (LibraryFilter) -> Unit,
-    onCategoryChange: (LibraryCategory) -> Unit,
-    onLayoutChange: (LibraryLayout) -> Unit,
-    onSortChange: (LibrarySort) -> Unit,
+    actions: LibraryToolActions,
+    onNeedRoom: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     var toolbarTop by remember { mutableIntStateOf(0) }
-    var toolbarRight by remember { mutableIntStateOf(0) }
-    Box(
-        modifier.onGloballyPositioned {
-            val bounds = it.boundsInWindow()
-            toolbarTop = bounds.top.roundToInt()
-            toolbarRight = bounds.right.roundToInt()
-        },
-    ) {
+    val gap = with(density) { PanelGap.roundToPx() }
+    val min = with(density) { PanelMinHeight.roundToPx() }
+    Box(modifier.onGloballyPositioned { toolbarTop = it.boundsInWindow().top.roundToInt() }) {
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 3.dp,
             shadowElevation = 6.dp,
-            modifier = Modifier.testTag("library-tools").semantics { isTraversalGroup = true },
+            modifier = Modifier.testTag("library-tools").semantics {
+                isTraversalGroup = true
+                traversalIndex = -1f
+            },
         ) {
             Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ToolButton(
-                    icon = Icons.Filled.Search,
-                    label = stringResource(R.string.n3_tools_search),
-                    highlighted = false,
-                    state = null,
-                    tag = "tools-search",
-                ) {
-                    tools.panel = null
-                    onSearch()
+                ToolButtons(tools, actions, PanelSource.FLOATING, "tools") { target ->
+                    val available = PanelPlacement.above(toolbarTop, tools.viewportTop, tools.header, gap)
+                    if (PanelPlacement.needsRoom(available, min)) onNeedRoom()
+                    tools.toggle(target, PanelSource.FLOATING)
                 }
-                ToolButton(
-                    icon = if (filter != LibraryFilter.ALL) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
-                    label = stringResource(R.string.n3_tools_filters),
-                    highlighted = filter != LibraryFilter.ALL || tools.panel == LibraryPanel.FILTERS,
-                    state = stringResource(R.string.n3_tools_filter_state, filter.title),
-                    tag = "tools-filters",
-                ) { tools.toggle(LibraryPanel.FILTERS) }
-                ToolButton(
-                    icon = if (category != LibraryCategory.All) Icons.Filled.Folder else Icons.Outlined.Folder,
-                    label = stringResource(R.string.n3_tools_categories),
-                    highlighted = category != LibraryCategory.All || tools.panel == LibraryPanel.CATEGORIES,
-                    state = stringResource(R.string.n3_tools_category_state, categoryTitle(category)),
-                    tag = "tools-categories",
-                ) { tools.toggle(LibraryPanel.CATEGORIES) }
-                ToolButton(
-                    icon = if (layout == LibraryLayout.GRID) Icons.Outlined.GridView else Icons.AutoMirrored.Outlined.ViewList,
-                    label = stringResource(R.string.n3_tools_view),
-                    highlighted = tools.panel == LibraryPanel.VIEW,
-                    state = stringResource(R.string.n3_tools_view_state, layout.title, sort.title),
-                    tag = "tools-view",
-                ) { tools.toggle(LibraryPanel.VIEW) }
             }
         }
-        val panel = tools.panel
+        val panel = tools.panel.takeIf { tools.panelSource == PanelSource.FLOATING }
         if (panel != null) {
-            val gap = with(density) { PanelGap.roundToPx() }
-            val panelLeft = toolbarRight - with(density) { PanelMaxWidth.roundToPx() }
-            // Del borde superior de la barra hasta debajo del título de sección (o de la barra superior si no se ve), en px:
-            // el panel lo convierte con su propia densidad (la ventana emergente puede tener otra).
-            val availablePx = toolbarTop - gap - (tools.panelLimitTop(toolbarTop, panelLeft) + gap)
+            val available = PanelPlacement.above(toolbarTop, tools.viewportTop, tools.header, gap)
             val provider = remember(gap) { AbovePositionProvider(gap) }
-            Popup(
-                popupPositionProvider = provider,
-                onDismissRequest = { tools.panel = null },
-                properties = PopupProperties(focusable = true),
-            ) {
-                LibraryPanelContent(
-                    panel = panel,
-                    maxHeightPx = availablePx,
-                    filter = filter,
-                    category = category,
-                    categories = categories,
-                    layout = layout,
-                    sort = sort,
-                    onFilterChange = {
-                        tools.panel = null
-                        onFilterChange(it)
-                    },
-                    onCategoryChange = {
-                        tools.panel = null
-                        onCategoryChange(it)
-                    },
-                    onLayoutChange = {
-                        tools.panel = null
-                        onLayoutChange(it)
-                    },
-                    onSortChange = {
-                        tools.panel = null
-                        onSortChange(it)
-                    },
-                )
-            }
+            PanelPopup(tools, provider, panel, maxOf(available, min), actions)
         }
+    }
+}
+
+/** El panel en su ventana emergente; elegir una opción lo cierra y la aplica. Alto en px (la ventana tiene su densidad). */
+@Composable
+private fun PanelPopup(
+    tools: LibraryToolsState,
+    provider: PopupPositionProvider,
+    panel: LibraryPanel,
+    maxHeightPx: Int,
+    actions: LibraryToolActions,
+) {
+    Popup(
+        popupPositionProvider = provider,
+        onDismissRequest = { tools.panel = null },
+        properties = PopupProperties(focusable = true),
+    ) {
+        LibraryPanelContent(
+            panel = panel,
+            maxHeightPx = maxHeightPx,
+            filter = actions.filter,
+            category = actions.category,
+            categories = actions.categories,
+            layout = actions.layout,
+            sort = actions.sort,
+            onFilterChange = {
+                tools.panel = null
+                actions.onFilterChange(it)
+            },
+            onCategoryChange = {
+                tools.panel = null
+                actions.onCategoryChange(it)
+            },
+            onLayoutChange = {
+                tools.panel = null
+                actions.onLayoutChange(it)
+            },
+            onSortChange = {
+                tools.panel = null
+                actions.onSortChange(it)
+            },
+        )
+    }
+}
+
+/** Coloca el panel en [topPx] (px de ventana), con su borde derecho alineado con el del ancla y dentro de la ventana. */
+private class BelowPositionProvider(private val topPx: Int, private val gapPx: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val wanted = if (layoutDirection == LayoutDirection.Ltr) anchorBounds.right - popupContentSize.width else anchorBounds.left
+        val maxX = (windowSize.width - popupContentSize.width - gapPx).coerceAtLeast(gapPx)
+        return IntOffset(wanted.coerceIn(gapPx, maxX), topPx)
     }
 }
 
@@ -303,12 +382,12 @@ private fun ToolButton(
     tag: String,
     onClick: () -> Unit,
 ) {
-    val modifier = Modifier.testTag(tag).semantics { if (state != null) stateDescription = state }
-    if (highlighted) {
-        FilledTonalIconButton(onClick = onClick, modifier = modifier) { Icon(icon, contentDescription = label) }
-    } else {
-        IconButton(onClick = onClick, modifier = modifier) { Icon(icon, contentDescription = label) }
-    }
+    // Un solo IconButton con colores según el estado (H5): el nodo de TalkBack es el mismo al abrir o cerrar el panel.
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.testTag(tag).semantics { if (state != null) stateDescription = state },
+        colors = if (highlighted) IconButtonDefaults.filledTonalIconButtonColors() else IconButtonDefaults.iconButtonColors(),
+    ) { Icon(icon, contentDescription = label) }
 }
 
 @Composable
