@@ -235,7 +235,9 @@ class GameCenterUiTest {
     fun upcomingRowsAreDisabledForTalkBackAndHidingAsksFirst() {
         show()
         openCenterFor("TETRA")
-        for (tag in listOf("game-center-cover", "game-center-progress")) {
+        // N5: «Portada» ya funciona (su fila tiene «Cambiar»); solo «Progreso» sigue próximamente.
+        compose.onNodeWithTag("game-center-cover-change").performScrollTo().assertIsEnabled()
+        for (tag in listOf("game-center-progress")) {
             compose.onNodeWithTag(tag).performScrollTo()
                 .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Disabled))
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "No disponible todavía"))
