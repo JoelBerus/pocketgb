@@ -133,7 +133,7 @@ class GameCenterUiTest {
                 AppNavigationState().also { if (start != LibraryRoute.Root) it.push(start) }
             }
             navigation = state
-            val deps = LibraryRouteDeps(vm, {}, {}, emptySet(), repository) { _, _ -> }
+            val deps = LibraryRouteDeps(vm, {}, {}, emptySet(), repository, saves = { _, _ -> })
             NavDisplay(
                 backStack = state.currentBackStack,
                 onBack = { state.pop() },

@@ -93,6 +93,7 @@ fun GameSettingsHost(
     var editingTags by remember(entry.id) { mutableStateOf(false) }
     var confirmHide by remember(entry.id) { mutableStateOf(false) }
     var saveFailed by remember(entry.id) { mutableStateOf(false) }
+    var showProgress by remember(entry.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     // H15: si la huella dejó de estar confirmada entre abrir y aplicar, se vuelve a confirmar leyendo el ROM y se
     // reintenta; si aun así no se puede, se avisa en el centro (nunca se cierra en silencio sin guardar).
@@ -134,6 +135,7 @@ fun GameSettingsHost(
         saveFailed = saveFailed,
         cover = rememberCoverCenter(entry, fingerprint?.takeIf { confirmed }),
         title = shown.displayTitle,
+        onOpenProgress = { showProgress = true },
     )
     val gbaInfo = if (entry.isGba) rememberGbaSettingsInfo(fingerprint?.takeIf { confirmed }) else GbaSettingsInfo()
     GameSettingsSheet(
@@ -187,6 +189,9 @@ fun GameSettingsHost(
             onDismiss = { editingTags = false },
         )
     }
+    if (showProgress && confirmed && fingerprint != null) {
+        com.joelbermudez.pocketgb.ui.progress.ProgressDialog(fingerprint, shown.displayTitle) { showProgress = false }
+    }
     if (confirmHide) {
         HideGameDialog(
             title = shown.displayTitle,
@@ -223,6 +228,8 @@ class GameCenterState(
     val cover: CoverCenterState? = null,
     /** N5: nombre del juego (título del diálogo de portada). */
     val title: String = "",
+    /** N6: «Progreso» (hitos, porcentaje y lector Pokémon); `null` = la fila «próximamente» (catálogos anteriores). */
+    val onOpenProgress: (() -> Unit)? = null,
 )
 
 /**

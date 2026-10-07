@@ -10,6 +10,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.joelbermudez.pocketgb.debug.GameplayTestActivity
@@ -120,40 +122,50 @@ class GameplayUiTest {
     }
 
     @Test
-    fun statesSaveLoadAndDeleteWithConfirmation() {
+    fun momentsCreateLoadRecoverAndDeleteWithConfirmation() {
         val game = openGame()
         pressBackViaDispatcher()
         waitTag("pause-sheet")
         compose.onNodeWithTag("pause-states").performClick()
         waitTag("states-sheet")
+        compose.waitUntil(8_000) { vm.moments.value.loaded }
 
-        // Guardar en ranura vacía: sin confirmación.
-        compose.onNodeWithTag("state-save-slot1").performClick()
-        assertTrue(waitUntil(8_000) { vm.states.value.entries.containsKey(StateSlot.MANUAL1) })
-        val saved = vm.states.value.entries.getValue(StateSlot.MANUAL1)
-        assertNotNull(saved.thumbnail)
+        // Crear: nombre sugerido y confirmación.
+        compose.onNodeWithTag("moments-new").performScrollTo().performClick()
+        waitTag("moments-name")
+        compose.onNodeWithTag("moments-name").assertTextContains("Momento 1")
+        compose.onNodeWithTag("moments-confirm").performClick()
+        assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.moments.size == 1 && !vm.moments.value.busy })
+        val moment = vm.moments.value.snapshot.moments.single()
+        assertTrue("con su RAM del cartucho (ND13)", moment.hasSram)
+        assertNotNull(vm.moments.value.thumbnails["m-${moment.id}"])
 
-        // Reemplazar una ranura ocupada pide confirmación; cancelar no cambia nada.
-        compose.onNodeWithTag("state-save-slot1").performClick()
-        waitTag("state-confirm")
-        compose.onNodeWithTag("state-cancel").performClick()
-        waitGone("state-confirm")
-        assertEquals(saved, vm.states.value.entries.getValue(StateSlot.MANUAL1))
-
-        // Cargar: confirmación, y el estado actual se guarda antes en AUTO.
-        compose.onNodeWithTag("state-load-slot1").performClick()
-        waitTag("state-confirm-save")
-        compose.onNodeWithTag("state-confirm-save").performClick()
-        waitGone("state-confirm-save")
-        assertTrue(waitUntil(8_000) { vm.states.value.entries.containsKey(StateSlot.AUTO) && !vm.states.value.busy })
+        // Cargar: la confirmación explica que cambia la partida; no escribe el AUTO.
+        compose.onNodeWithTag("moment-load-${moment.id}").performScrollTo().performClick()
+        waitTag("moments-dialog-body")
+        compose.onNode(hasText("cambia también la partida", substring = true)).assertIsDisplayed()
+        compose.onNodeWithTag("moments-confirm").performClick()
+        assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.beforeLoad.size == 1 && !vm.moments.value.busy })
         assertEquals("tras cargar sigue en pausa", SessionState.Paused, game.state.value)
+        assertFalse("cargar no pisa el AUTO", File(root, "states/${game.fingerprint}/auto.state").exists())
 
-        // Eliminar: confirmación y desaparece.
-        compose.onNodeWithTag("state-delete-slot1").performClick()
-        waitTag("state-confirm")
-        compose.onNodeWithTag("state-confirm").performClick()
-        assertTrue(waitUntil(8_000) { !vm.states.value.entries.containsKey(StateSlot.MANUAL1) })
-        assertFalse(File(root, "states/${game.fingerprint}/slot1.state").exists())
+        // Recuperar en un toque (con confirmación).
+        compose.onNodeWithTag("moments-recover-0").performScrollTo().performClick()
+        waitTag("moments-confirm")
+        compose.onNodeWithTag("moments-confirm").performClick()
+        assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.beforeLoad.size == 2 && !vm.moments.value.busy })
+
+        // Cancelar un borrado no cambia nada; confirmarlo lo borra.
+        compose.onNodeWithTag("moment-delete-${moment.id}").performScrollTo().performClick()
+        waitTag("moments-cancel")
+        compose.onNodeWithTag("moments-cancel").performClick()
+        waitGone("moments-cancel")
+        assertEquals(1, vm.moments.value.snapshot.moments.size)
+        compose.onNodeWithTag("moment-delete-${moment.id}").performScrollTo().performClick()
+        waitTag("moments-confirm")
+        compose.onNodeWithTag("moments-confirm").performClick()
+        assertTrue(waitUntil(8_000) { vm.moments.value.snapshot.moments.isEmpty() })
+        assertFalse(File(root, "moments/${game.fingerprint}/m-${moment.id}.state").exists())
     }
 
     @Test
@@ -317,7 +329,7 @@ class GameplayUiTest {
         compose.onNode(hasText(game.info.title)).assertIsDisplayed()
         compose.onNodeWithTag("pause-customize").assertIsDisplayed()
         compose.onNode(hasText("Personalizar controles")).assertIsDisplayed()
-        compose.onNode(hasText("Estados guardados")).assertIsDisplayed()
+        compose.onNode(hasText("Momentos")).assertIsDisplayed()
         compose.onNode(hasText("Salir del juego")).assertIsDisplayed()
         compose.onNodeWithTag("pause-dim").assertExists()
     }

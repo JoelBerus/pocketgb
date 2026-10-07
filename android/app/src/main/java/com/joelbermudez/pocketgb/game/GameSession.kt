@@ -9,6 +9,7 @@ import com.joelbermudez.pocketgb.saves.CloseResult
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.FramePng
+import com.joelbermudez.pocketgb.saves.MomentStore
 import com.joelbermudez.pocketgb.saves.SaveCoordinator
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.SaveTarget
@@ -39,6 +40,9 @@ sealed class StateError(message: String, cause: Throwable? = null) : Exception(m
 
     /** El núcleo rechazó el estado (dañado, de otro ROM, versión) o falló al guardarlo. */
     class Core(val error: CoreError) : StateError(error.message ?: "El núcleo rechazó el estado.", error)
+
+    /** N6: el momento no tiene estado del núcleo (migrado sin él o solo partida): se recupera su partida desde el detalle. */
+    class NoState : StateError("Este momento no tiene un estado que cargar.")
 
     /** No se pudo leer o escribir el archivo del estado. */
     class Io(cause: Throwable) : StateError("No se pudo acceder al estado guardado: ${cause.message}", cause)
@@ -167,6 +171,10 @@ class GameSession(
      * lo aparta en vez de pisarlo (A9-H2).
      */
     private val unsavedCartridge: Boolean = false,
+    /** N6: momentos y anillo «Antes de cargar» de esta huella (`null` en pruebas antiguas sin momentos). */
+    private val moments: MomentStore? = null,
+    /** N6 (ND13): configuración con la que se abrió (modelo, paleta; en GBA, tipo de partida, reloj y BIOS). */
+    val momentConfig: Map<String, String> = emptyMap(),
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -383,6 +391,14 @@ class GameSession(
         } catch (error: CoreError) {
             throw StateError.Core(error)
         }
+        applyLoadedState(data, previous)
+    }
+
+    /**
+     * Aplica [data] (sesión en pausa) y persiste la SRAM que trae; si no se puede, vuelve a [previous] con la semántica
+     * transaccional de SPEC §5.4 (rollback, barrera y reparación). Común a [loadState] y [loadMoment].
+     */
+    private fun applyLoadedState(data: ByteArray, previous: com.joelbermudez.pocketgb.emulator.SavedState) {
         // Copia INDEPENDIENTE en memoria de la partida (SRAM) de antes de cargar nada: si el rollback del núcleo falla,
         // es lo único fiable con lo que reponer la partida principal en disco (A5V2-H3).
         val sramBefore = if (coordinator.hasTarget) {
@@ -555,6 +571,79 @@ class GameSession(
             deferredRepair.set(deferred)
         }
     }
+
+    // ------------------------------------------------------------------ momentos (N6)
+
+    private fun momentStore(): MomentStore = moments ?: throw StateError.Io(IOException("Sin almacén de momentos"))
+
+    private inline fun <T> onSaveThread(crossinline block: () -> T): T = try {
+        coordinator.runOnSaveThread { block() }
+    } catch (error: IOException) {
+        throw StateError.Io(error)
+    } catch (error: TimeoutException) {
+        throw StateError.Io(error)
+    }
+
+    /** Momentos y anillo «Antes de cargar». Bloquea: fuera del hilo principal. */
+    fun moments(): MomentStore.Snapshot = onSaveThread { momentStore().snapshot() }
+
+    fun momentThumbnail(kind: MomentStore.Kind, id: String): ByteArray? = onSaveThread { momentStore().thumbnail(kind, id) }
+
+    /** La RAM del cartucho de ahora mismo (sin destino de guardado también), o `null` si el juego no tiene. */
+    private fun currentSram(): ByteArray? = try {
+        if (session.sramSaveSize > 0) session.copySram() else null
+    } catch (_: CoreError) {
+        null
+    }
+
+    /**
+     * Crea un momento con la sesión en pausa: estado + RAM del cartucho del instante + miniatura + configuración (ND13).
+     * No toca la partida ni el AUTO.
+     */
+    fun createMoment(name: String, playTimeMs: Long?): MomentStore.Moment {
+        val saved = try {
+            session.saveState()
+        } catch (_: SessionError.NotParked) {
+            throw StateError.NotParked()
+        } catch (error: CoreError) {
+            throw StateError.Core(error)
+        }
+        val sram = currentSram()
+        return onSaveThread {
+            momentStore().create(MomentStore.Capture(saved.bytes, sram, FramePng.encode(saved.pixels)), name, momentConfig, playTimeMs)
+        }
+    }
+
+    /**
+     * Carga un momento (o una entrada del anillo: «Recuperar») con la sesión en pausa (§3.3). Antes guarda la posición
+     * actual en el anillo «Antes de cargar» (3 entradas, fuera de la rotación de backups); si eso falla, no se carga nada.
+     * Después aplica el estado y persiste su SRAM como [loadState] (la partida anterior queda en el backup `.1`). El AUTO
+     * NO se toca (unificado con iOS: cargar no lo pisa). La exclusión por huella la da la propia sesión, dueña del lease.
+     */
+    fun loadMoment(kind: MomentStore.Kind, id: String, label: String, playTimeMs: Long?) {
+        if (session.state.value != SessionState.Paused) throw StateError.NotParked()
+        val store = momentStore()
+        val entry = onSaveThread { store.snapshot().find(kind, id) } ?: throw StateError.Io(IOException("El momento ya no existe"))
+        if (!entry.hasState) throw StateError.NoState()
+        val data = onSaveThread { store.loadState(kind, id) }
+        val previous = try {
+            session.saveState()
+        } catch (_: SessionError.NotParked) {
+            throw StateError.NotParked()
+        } catch (error: CoreError) {
+            throw StateError.Core(error)
+        }
+        val sram = currentSram()
+        onSaveThread {
+            store.pushBeforeLoad(MomentStore.Capture(previous.bytes, sram, FramePng.encode(previous.pixels)), label, momentConfig, playTimeMs)
+        }
+        applyLoadedState(data, previous)
+    }
+
+    fun deleteMoment(kind: MomentStore.Kind, id: String) = onSaveThread { momentStore().delete(kind, id) }
+
+    fun updateMoment(id: String, name: String, tags: List<String>, collection: String?, note: String) =
+        onSaveThread { momentStore().update(id, name, tags, collection, note) }
 
     fun deleteState(slot: StateSlot) {
         try {

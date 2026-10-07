@@ -102,7 +102,19 @@ internal fun GameCenterRows(center: GameCenterState) {
     } else {
         SoonRow(Icons.Outlined.Image, stringResource(R.string.n4_center_cover), stringResource(R.string.n4_center_cover_soon), "game-center-cover")
     }
-    SoonRow(Icons.Outlined.Insights, stringResource(R.string.n4_center_progress), stringResource(R.string.n4_center_progress_soon), "game-center-progress")
+    val openProgress = center.onOpenProgress
+    if (openProgress != null) {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.n4_center_progress)) },
+            supportingContent = { Text(stringResource(R.string.n6_progress_center)) },
+            leadingContent = { Icon(Icons.Outlined.Insights, contentDescription = null) },
+            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(role = Role.Button, enabled = center.enabled, onClick = openProgress).testTag("game-center-progress"),
+        )
+    } else {
+        SoonRow(Icons.Outlined.Insights, stringResource(R.string.n4_center_progress), stringResource(R.string.n4_center_progress_soon), "game-center-progress")
+    }
     val openSaves = center.onOpenSaves
     if (openSaves != null) {
         ListItem(

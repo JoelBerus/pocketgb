@@ -39,5 +39,7 @@ object GameplayTestHost {
         registry = MirrorChannelRegistry(),
         ownership = ownership,
         emulationFor = emulationFor,
+        momentsRoot = File(root, "moments"),
+        progress = com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")),
     )
 }

@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,6 +74,15 @@ sealed interface GameNotice {
     /** Hay un estado de rescate de una salida anterior con fallo de guardado (J6). */
     data object RescueStateExists : GameNotice
 
+    /** N6: había un estado de rescate (J6) y se migró a un momento «Rescate» (Momentos). */
+    data object RescueMoment : GameNotice
+
+    /** N6: momentos. [name] = nombre visible del momento. */
+    data class MomentSaved(val name: String) : GameNotice
+    data class MomentLoaded(val name: String) : GameNotice
+    data object MomentRecovered : GameNotice
+    data object MomentDeleted : GameNotice
+
     /** N5: «Usar como portada» fijó la escena actual (o no pudo). */
     data object CoverPinned : GameNotice
     data object CoverPinFailed : GameNotice
@@ -91,6 +101,17 @@ internal object GameRescue {
         executor.execute(task)
     }
 }
+
+/** N6: momentos de la partida abierta (hoja de la pausa). Las miniaturas van por `"<prefijo><id>"` (`m-…`, `b-…`). */
+data class MomentsUi(
+    val snapshot: com.joelbermudez.pocketgb.saves.MomentStore.Snapshot = com.joelbermudez.pocketgb.saves.MomentStore.Snapshot(emptyList(), emptyList()),
+    val thumbnails: Map<String, ByteArray> = emptyMap(),
+    val busy: Boolean = false,
+    val loaded: Boolean = false,
+)
+
+/** N6: qué cargar nada más abrir el juego desde el detalle («Cargar» un momento o «Recuperar»). */
+data class PendingMoment(val kind: com.joelbermudez.pocketgb.saves.MomentStore.Kind, val id: String, val label: String)
 
 data class StatesUi(
     val entries: Map<StateSlot, StateStore.Entry> = emptyMap(),
@@ -114,6 +135,10 @@ class GameplayViewModel(
     private val rescueRetryDelayMs: Long = 1_000,
     /** Dueño de las sesiones que sobreviven a este ViewModel con el guardado pendiente (A5V2-H1). */
     private val orphans: OrphanSessionRegistry = OrphanSessionRegistry.shared,
+    /** N6: progreso por huella (tiempo de juego, sesiones); `null` = sin contabilidad (pruebas antiguas). */
+    private val progress: com.joelbermudez.pocketgb.progress.ProgressStore? = null,
+    /** N6: cada cuánto se escribe el tiempo de juego mientras se juega (acota lo que pierde un cierre forzado). */
+    private val playTimeCheckpointMs: Long = 30_000,
 ) : ViewModel(scope) {
     private val _game = MutableStateFlow<GameSession?>(null)
     val game: StateFlow<GameSession?> = _game.asStateFlow()
@@ -131,6 +156,12 @@ class GameplayViewModel(
 
     private val _dialog = MutableStateFlow<GameDialog?>(null)
     val dialog: StateFlow<GameDialog?> = _dialog.asStateFlow()
+
+    private val _moments = MutableStateFlow(MomentsUi())
+    val moments: StateFlow<MomentsUi> = _moments.asStateFlow()
+
+    /** N6: contabilidad del tiempo de la partida abierta. */
+    @Volatile private var tracker: com.joelbermudez.pocketgb.progress.PlayTimeTracker? = null
 
     private val _states = MutableStateFlow(StatesUi())
     val states: StateFlow<StatesUi> = _states.asStateFlow()
@@ -218,7 +249,7 @@ class GameplayViewModel(
      * Abre [entry]. Ignora la petición si ya hay una apertura o una partida en curso (doble toque). [mode]
      * [LaunchMode.RESUME] = «Continuar» exacto (A9); [LaunchMode.FRESH] = «Jugar» o «Jugar desde el inicio».
      */
-    fun open(entry: RomEntry, mode: LaunchMode = LaunchMode.FRESH) {
+    fun open(entry: RomEntry, mode: LaunchMode = LaunchMode.FRESH, moment: PendingMoment? = null) {
         if (_opening.value || _game.value != null) return
         _opening.value = true
         scope.launch {
@@ -248,9 +279,18 @@ class GameplayViewModel(
                         }
                         _menu.value = GameMenu.None
                         _states.value = StatesUi()
+                        _moments.value = MomentsUi()
                         _game.value = game
                         attachCover(game)
                         watch(game)
+                        trackPlayTime(game)
+                        if (moment != null) {
+                            // «Cargar» desde el detalle: el juego se abre en pausa y se carga el momento con la sesión ya
+                            // dueña de la huella (exclusión por huella, §3.3); el menú queda abierto.
+                            game.pause()
+                            _menu.value = GameMenu.Pause
+                            loadMoment(moment.kind, moment.id, moment.label)
+                        }
                         result.warning?.let { _dialog.value = GameDialog.LoadWarning(it) }
                         result.notices.forEach { _notices.tryEmit(it) }
                         if (game.hasRescueState) _notices.tryEmit(GameNotice.RescueStateExists)
@@ -356,7 +396,7 @@ class GameplayViewModel(
     fun openStates() {
         if (_game.value == null) return
         _menu.value = GameMenu.States
-        refreshStates()
+        refreshMoments()
     }
 
     fun closeStates() {
@@ -400,6 +440,93 @@ class GameplayViewModel(
     fun deleteState(slot: StateSlot) = stateOperation { game ->
         game.deleteState(slot)
         GameNotice.StateDeleted(slot)
+    }
+
+    // ------------------------------------------------------------------ momentos (N6)
+
+    /** Tiempo de juego acumulado de la partida abierta (lo escrito + lo que lleva esta sesión). */
+    private fun playTimeOf(game: GameSession): Long? = progress?.let {
+        try { it.load(game.fingerprint).playTimeMs + (tracker?.pendingMs() ?: 0L) } catch (_: Exception) { null }
+    }
+
+    fun refreshMoments() {
+        val game = _game.value ?: return
+        scope.launch {
+            operations.withLock { _moments.value = withContext(io) { readMoments(game) }.copy(busy = false) }
+        }
+    }
+
+    private fun readMoments(game: GameSession): MomentsUi = try {
+        val snapshot = game.moments()
+        val thumbs = buildMap {
+            for (m in snapshot.moments) game.momentThumbnail(com.joelbermudez.pocketgb.saves.MomentStore.Kind.MOMENT, m.id)?.let { put("m-${m.id}", it) }
+            for (m in snapshot.beforeLoad) game.momentThumbnail(com.joelbermudez.pocketgb.saves.MomentStore.Kind.BEFORE_LOAD, m.id)?.let { put("b-${m.id}", it) }
+        }
+        MomentsUi(snapshot, thumbs, loaded = true)
+    } catch (_: Exception) {
+        MomentsUi(loaded = true)
+    }
+
+    fun createMoment(name: String) = momentOperation { game ->
+        val moment = game.createMoment(name, playTimeOf(game))
+        GameNotice.MomentSaved(moment.name)
+    }
+
+    /** Carga un momento ([kind] MOMENT) o recupera una entrada del anillo ([kind] BEFORE_LOAD). [label] = su nombre. */
+    fun loadMoment(kind: com.joelbermudez.pocketgb.saves.MomentStore.Kind, id: String, label: String) = momentOperation { game ->
+        game.loadMoment(kind, id, label, playTimeOf(game))
+        if (kind == com.joelbermudez.pocketgb.saves.MomentStore.Kind.BEFORE_LOAD) GameNotice.MomentRecovered else GameNotice.MomentLoaded(label)
+    }
+
+    fun updateMoment(id: String, name: String, tags: List<String>, collection: String?, note: String) = momentOperation { game ->
+        val moment = game.updateMoment(id, name, tags, collection, note)
+        GameNotice.MomentSaved(moment.name)
+    }
+
+    fun deleteMoment(kind: com.joelbermudez.pocketgb.saves.MomentStore.Kind, id: String) = momentOperation { game ->
+        game.deleteMoment(kind, id)
+        GameNotice.MomentDeleted
+    }
+
+    private fun momentOperation(block: (GameSession) -> GameNotice) {
+        val game = _game.value ?: return
+        scope.launch {
+            operations.withLock {
+                if (_game.value !== game) return@withLock
+                _moments.value = _moments.value.copy(busy = true)
+                _busy.value = true
+                val notice = try {
+                    withContext(io) { block(game) }
+                } catch (error: StateError) {
+                    GameNotice.StateFailed(error)
+                } catch (error: Exception) {
+                    GameNotice.StateFailed(StateError.Io(error))
+                }
+                _moments.value = withContext(io) { readMoments(game) }
+                _busy.value = false
+                _notices.tryEmit(notice)
+            }
+        }
+    }
+
+    /** Cuenta el tiempo solo con el juego corriendo (pausa, segundo plano y salida lo paran y lo escriben). */
+    private fun trackPlayTime(game: GameSession) {
+        val store = progress ?: return
+        val t = com.joelbermudez.pocketgb.progress.PlayTimeTracker(store, game.fingerprint)
+        tracker = t
+        scope.launch {
+            game.state.first { state ->
+                val running = state == com.joelbermudez.pocketgb.emulator.SessionState.Running
+                withContext(io) { t.onRunning(running) }
+                state == com.joelbermudez.pocketgb.emulator.SessionState.Closed
+            }
+        }
+        scope.launch {
+            while (isActive && !game.isClosed) {
+                kotlinx.coroutines.delay(playTimeCheckpointMs)
+                withContext(io) { t.checkpoint() }
+            }
+        }
     }
 
     private fun stateOperation(block: (GameSession) -> GameNotice) {
@@ -567,6 +694,7 @@ class GameplayViewModelFactory(
         require(modelClass.isAssignableFrom(GameplayViewModel::class.java)) { "ViewModel desconocido: $modelClass" }
         val resolver = appContext.contentResolver
         val folders = LibraryFolderStore(appContext)
+        val progress = com.joelbermudez.pocketgb.progress.ProgressService.shared(appContext).store
         val launcher = GameLauncher(
             roms = ContentResolverRomSource(resolver),
             savesDirectory = File(appContext.filesDir, "saves"),
@@ -576,15 +704,31 @@ class GameplayViewModelFactory(
             emulationFor = GameplaySettingsRepository.shared(appContext).emulationProvider(),
             gbaOptionsFor = GameplaySettingsRepository.shared(appContext).gbaOptionsProvider(),
             biosReader = { com.joelbermudez.pocketgb.library.GbaBiosSource.read(appContext) },
+            momentsRoot = File(appContext.filesDir, "moments"),
+            progress = progress,
+            migratedName = { origin -> migratedMomentName(appContext, origin) },
         )
         val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(
             launcher = launcher,
             recordPlayed = { entry, fingerprint, at -> library.recordPlayed(entry, fingerprint, at) },
+            progress = progress,
         ).also {
             it.setCoverSink { fingerprint, pixels -> artwork.saveAsync(fingerprint, pixels) }
             val covers = com.joelbermudez.pocketgb.library.artwork.CoverRepository.shared(appContext)
             it.setCoverPinSink { fingerprint, pixels -> covers.pinCapture(fingerprint, pixels) }
         } as T
+    }
+}
+
+/** N6: «Ranura 1»…«Ranura 4», «Rescate» y «Rescate (fecha)» para las ranuras migradas a momentos. */
+internal fun migratedMomentName(context: Context, origin: String): String = when {
+    origin.startsWith("slot") -> context.getString(com.joelbermudez.pocketgb.R.string.n6_migrated_slot, origin.removePrefix("slot").toIntOrNull() ?: 0)
+    origin == "rescue" -> context.getString(com.joelbermudez.pocketgb.R.string.n6_migrated_rescue)
+    else -> {
+        val ms = origin.removePrefix("rescue-").substringBefore('-').toLongOrNull()
+        val date = ms?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(it)) }
+        if (date != null) context.getString(com.joelbermudez.pocketgb.R.string.n6_migrated_rescue_dated, date)
+        else context.getString(com.joelbermudez.pocketgb.R.string.n6_migrated_rescue)
     }
 }

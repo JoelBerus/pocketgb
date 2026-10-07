@@ -32,6 +32,10 @@ sealed interface LibraryRoute : AppRoute {
     /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
     @Serializable
     data class GameSaves(val fingerprint: String) : LibraryRoute
+
+    /** N6: momentos de un juego, desde su detalle. */
+    @Serializable
+    data class Moments(val gameId: String) : LibraryRoute
 }
 
 @Serializable
@@ -48,6 +52,10 @@ sealed interface FavoritesRoute : AppRoute {
     /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
     @Serializable
     data class GameSaves(val fingerprint: String) : FavoritesRoute
+
+    /** N6: momentos de un juego, desde su detalle. */
+    @Serializable
+    data class Moments(val gameId: String) : FavoritesRoute
 }
 
 @Serializable

@@ -18,6 +18,8 @@ internal class LibraryRouteDeps(
     val gameplaySettings: GameplaySettingsRepository?,
     /** Ajustes › Partidas de una huella (necesita la partida abierta: lo pinta la app). */
     val saves: @Composable (fingerprint: String, onBack: () -> Unit) -> Unit,
+    /** N6: «Momentos» de un juego; `null` = el botón deshabilitado de antes. */
+    val moments: (@Composable (gameId: String, onBack: () -> Unit) -> Unit)? = null,
 )
 
 /**
@@ -63,7 +65,9 @@ internal fun LibraryRouteContent(route: LibraryRoute, navigation: AppNavigationS
             onPlayFromStart = deps.playFromStart,
             resumable = deps.resumable,
             onOpenSaves = openSaves,
+            onOpenMoments = deps.moments?.let { { id: String -> navigation.push(LibraryRoute.Moments(id)) } },
         )
         is LibraryRoute.GameSaves -> deps.saves(route.fingerprint) { navigation.pop() }
+        is LibraryRoute.Moments -> deps.moments?.invoke(route.gameId) { navigation.pop() }
     }
 }
