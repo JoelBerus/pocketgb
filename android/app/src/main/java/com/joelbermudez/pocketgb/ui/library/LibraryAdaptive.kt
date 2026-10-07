@@ -90,22 +90,24 @@ fun railMetricsFor(widthDp: Float, viewportHeightDp: Float, fontScale: Float, la
 }
 
 /** Textos del título de sección (de los recursos; aquí sin Android para probarlo en JVM). */
-data class SectionLabels(val allGames: String, val uncategorized: String, val join: (category: String, filter: String) -> String)
+data class SectionLabels(
+    val allGames: String,
+    val uncategorized: String,
+    /** N4: «Etiqueta «rpg»». */
+    val tag: (String) -> String = { it },
+    val join: (category: String, filter: String) -> String,
+)
 
-/** «Todos los juegos», el filtro, la categoría o «Categoría · filtro» (N3b). */
-fun sectionTitle(filter: LibraryFilter, category: LibraryCategory, labels: SectionLabels): String {
+/** «Todos los juegos», el filtro, la categoría, la etiqueta (N4) o varios unidos («Categoría · filtro · etiqueta», N3b). */
+fun sectionTitle(filter: LibraryFilter, category: LibraryCategory, labels: SectionLabels, tag: String? = null): String {
     val filterTitle = if (filter == LibraryFilter.ALL) null else filter.title
     val categoryTitle = when (category) {
         LibraryCategory.All -> null
         LibraryCategory.Uncategorized -> labels.uncategorized
         is LibraryCategory.Folder -> category.name
     }
-    return when {
-        categoryTitle != null && filterTitle != null -> labels.join(categoryTitle, filterTitle)
-        categoryTitle != null -> categoryTitle
-        filterTitle != null -> filterTitle
-        else -> labels.allGames
-    }
+    val parts = listOfNotNull(categoryTitle, filterTitle, tag?.let(labels.tag))
+    return if (parts.isEmpty()) labels.allGames else parts.reduce(labels.join)
 }
 
 /**
@@ -120,4 +122,10 @@ fun showFloatingToolbar(landscape: Boolean, searching: Boolean, collapsedFractio
 const val FLOATING_TOOLBAR_MIN_COLLAPSE = 0.5f
 
 /** El título de sección está fijado arriba: no hay carril delante o el carril ya salió por arriba. */
-fun isTitlePinned(railShown: Boolean, firstVisibleItemIndex: Int): Boolean = !railShown || firstVisibleItemIndex > 0
+fun isTitlePinned(railShown: Boolean, firstVisibleItemIndex: Int): Boolean = isTitlePinned(if (railShown) 1 else 0, firstVisibleItemIndex)
+
+/**
+ * N4: con [leadingItems] filas antes del título de sección (carril, Favoritos y estanterías del inicio), el título está
+ * fijado cuando todas ellas ya salieron por arriba.
+ */
+fun isTitlePinned(leadingItems: Int, firstVisibleItemIndex: Int): Boolean = firstVisibleItemIndex >= leadingItems

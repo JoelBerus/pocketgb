@@ -53,6 +53,7 @@ import com.joelbermudez.pocketgb.ui.settings.DisplaySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.EmulationSettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.LicensesScreen
 import com.joelbermudez.pocketgb.ui.settings.StorageSettingsScreen
+import com.joelbermudez.pocketgb.ui.settings.HomeSettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.LibrarySettingsScreen
 import com.joelbermudez.pocketgb.ui.settings.SettingsScreen
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
@@ -106,6 +107,19 @@ private fun AppContent(
     BackHandler(enabled = navigationState.currentBackStack.size > 1) {
         navigationState.pop()
     }
+    val context = LocalContext.current
+    val savesBrowser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
+    val gameSaves: @Composable (String, () -> Unit) -> Unit = { fingerprint, onBack ->
+        SavesScreen(savesBrowser, gameplay, onBack = onBack, onlyFingerprint = fingerprint)
+    }
+    val libraryDeps = LibraryRouteDeps(
+        library = library,
+        play = play,
+        playFromStart = playFromStart,
+        resumable = resumable,
+        gameplaySettings = gameplaySettings,
+        saves = gameSaves,
+    )
 
     AppScaffold(navigationState) {
         NavDisplay(
@@ -137,23 +151,11 @@ private fun AppContent(
                                 },
                             )
                         } else {
-                            LibraryScreen(
-                                viewModel = library,
-                                onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
-                                onPlay = play,
-                                gameplaySettings = gameplaySettings,
-                                onPlayFromStart = playFromStart,
-                                resumable = resumable,
-                            )
+                            LibraryRouteContent(LibraryRoute.Root, navigationState, libraryDeps)
                         }
                     }
-                    is LibraryRoute.Details -> NavEntry(route) {
-                        GameDetailsScreen(
-                            library, route.gameId, onPlay = play, onBack = { navigationState.pop() },
-                            gameplaySettings = gameplaySettings,
-                            onPlayFromStart = playFromStart,
-                            resumable = resumable,
-                        )
+                    is LibraryRoute.Details, is LibraryRoute.Category, is LibraryRoute.GameSaves -> NavEntry(route) {
+                        LibraryRouteContent(route as LibraryRoute, navigationState, libraryDeps)
                     }
                     FavoritesRoute.Root -> NavEntry(route) {
                         FavoritesScreen(
@@ -163,6 +165,7 @@ private fun AppContent(
                             gameplaySettings = gameplaySettings,
                             onPlayFromStart = playFromStart,
                             resumable = resumable,
+                            onOpenSaves = { navigationState.push(FavoritesRoute.GameSaves(it)) },
                         )
                     }
                     is FavoritesRoute.Details -> NavEntry(route) {
@@ -171,8 +174,10 @@ private fun AppContent(
                             gameplaySettings = gameplaySettings,
                             onPlayFromStart = playFromStart,
                             resumable = resumable,
+                            onOpenSaves = { navigationState.push(FavoritesRoute.GameSaves(it)) },
                         )
                     }
+                    is FavoritesRoute.GameSaves -> NavEntry(route) { gameSaves(route.fingerprint) { navigationState.pop() } }
                     SettingsRoute.Root -> NavEntry(route) {
                         SettingsScreen(
                             onEmulation = { navigationState.push(SettingsRoute.SettingsEmulation) },
@@ -199,12 +204,17 @@ private fun AppContent(
                         )
                     }
                     SettingsRoute.Library -> NavEntry(route) {
-                        LibrarySettingsScreen(library, onBack = { navigationState.pop() })
+                        LibrarySettingsScreen(
+                            library,
+                            onBack = { navigationState.pop() },
+                            onOpenHome = { navigationState.push(SettingsRoute.LibraryHome) },
+                        )
+                    }
+                    SettingsRoute.LibraryHome -> NavEntry(route) {
+                        HomeSettingsScreen(library, onBack = { navigationState.pop() })
                     }
                     SettingsRoute.Saves -> NavEntry(route) {
-                        val context = LocalContext.current
-                        val browser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
-                        SavesScreen(browser, gameplay, onBack = { navigationState.pop() })
+                        SavesScreen(savesBrowser, gameplay, onBack = { navigationState.pop() })
                     }
                     SettingsRoute.About -> NavEntry(route) {
                         AboutScreen(

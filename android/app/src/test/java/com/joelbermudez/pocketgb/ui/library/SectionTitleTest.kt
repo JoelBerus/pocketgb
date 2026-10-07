@@ -31,4 +31,20 @@ class SectionTitleTest {
         assertEquals("Pokémon · GBC", sectionTitle(LibraryFilter.GBC, LibraryCategory.Folder("Pokémon"), labels))
         assertEquals("Sin categoría · GB", sectionTitle(LibraryFilter.GB, LibraryCategory.Uncategorized, labels))
     }
+
+    @Test
+    fun aTagIsNamedAfterTheFilter() {
+        val tagged = labels.copy(tag = { "Etiqueta «$it»" })
+        assertEquals("Etiqueta «rpg»", sectionTitle(LibraryFilter.ALL, LibraryCategory.All, tagged, tag = "rpg"))
+        assertEquals("GBC · Etiqueta «rpg»", sectionTitle(LibraryFilter.GBC, LibraryCategory.All, tagged, tag = "rpg"))
+        assertEquals("Todos los juegos", sectionTitle(LibraryFilter.ALL, LibraryCategory.All, tagged, tag = null))
+    }
+
+    @Test
+    fun theTitleIsPinnedOnceEveryHomeRowLeftTheTop() {
+        // N4: carril, Favoritos y dos estanterías delante del título.
+        assertEquals(false, isTitlePinned(leadingItems = 4, firstVisibleItemIndex = 3))
+        assertEquals(true, isTitlePinned(leadingItems = 4, firstVisibleItemIndex = 4))
+        assertEquals(true, isTitlePinned(leadingItems = 0, firstVisibleItemIndex = 0))
+    }
 }

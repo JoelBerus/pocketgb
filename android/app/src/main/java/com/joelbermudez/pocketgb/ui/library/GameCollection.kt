@@ -62,14 +62,20 @@ class GameMenuController internal constructor(private val actions: GameActions) 
     var hideCandidate by mutableStateOf<RomEntry?>(null)
         internal set
 
-    fun open(entry: RomEntry) {
-        menuFor = entry.id
+    /**
+     * Abre el menú de [entry] en [place] (N4: el mismo juego puede salir en una estantería del inicio y en la cuadrícula;
+     * solo se abre el menú del sitio que se pulsó). `""` = la cuadrícula o la lista.
+     */
+    fun open(entry: RomEntry, place: String = "") {
+        menuFor = key(entry, place)
     }
 
+    private fun key(entry: RomEntry, place: String) = if (place.isEmpty()) entry.id else "$place|${entry.id}"
+
     @Composable
-    fun Menu(entry: RomEntry, favorite: Boolean) {
+    fun Menu(entry: RomEntry, favorite: Boolean, place: String = "") {
         GameContextMenu(
-            expanded = menuFor == entry.id,
+            expanded = menuFor == key(entry, place),
             onDismiss = { menuFor = null },
             entry = entry,
             favorite = favorite,
@@ -105,11 +111,15 @@ fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController)
     }
 }
 
+/** N4: una fila completa con clave propia antes del título de sección (Favoritos, estanterías del inicio…). */
+class CollectionItem(val key: String, val content: @Composable (GameMenuController) -> Unit)
+
 /**
  * Cuadrícula o lista de juegos con su menú de pulsación larga. Compartida con Favoritos. [header] y [footer]
- * ocupan una fila completa al principio y al final y se desplazan con el contenido. [pinnedHeader] (N3b, horizontal)
- * va tras [header] y se queda fijo arriba al desplazar (título de sección). [gridState]/[listState] permiten conservar
- * la posición al volver de una búsqueda; [bottomPadding] deja aire bajo la última fila (barra flotante).
+ * ocupan una fila completa al principio y al final y se desplazan con el contenido. [leadingItems] (N4) van tras
+ * [header], cada una en su fila. [pinnedHeader] (N3b, horizontal) va después y se queda fijo arriba al desplazar
+ * (título de sección). [gridState]/[listState] permiten conservar la posición al volver de una búsqueda;
+ * [bottomPadding] deja aire bajo la última fila (barra flotante).
  */
 @Composable
 fun GameCollection(
@@ -124,6 +134,7 @@ fun GameCollection(
     gridState: LazyGridState? = null,
     listState: LazyListState? = null,
     bottomPadding: Dp = 16.dp,
+    leadingItems: List<CollectionItem> = emptyList(),
 ) {
     GameMenuHost(actions) { menu ->
         when (layout) {
@@ -142,6 +153,9 @@ fun GameCollection(
             ) {
                 if (header != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "header") { header(menu) }
+                }
+                leadingItems.forEach { leading ->
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "leading-${leading.key}") { leading.content(menu) }
                 }
                 if (pinnedHeader != null) {
                     stickyHeader(key = "pinned-header") { pinnedHeader() }
@@ -174,6 +188,11 @@ fun GameCollection(
             ) {
                 if (header != null) {
                     item(key = "header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp, vertical = 8.dp)) { header(menu) } }
+                }
+                leadingItems.forEach { leading ->
+                    item(key = "leading-${leading.key}") {
+                        Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp, vertical = 8.dp)) { leading.content(menu) }
+                    }
                 }
                 if (pinnedHeader != null) {
                     stickyHeader(key = "pinned-header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp)) { pinnedHeader() } }

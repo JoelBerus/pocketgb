@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.library.LibraryCategory
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
@@ -27,12 +28,18 @@ fun LibraryScreen(
     onPlayFromStart: ((RomEntry) -> Unit)? = null,
     /** A9: huellas con «Continuar» exacto disponible. */
     resumable: Set<String> = emptySet(),
+    /** N4: abre la pantalla de una categoría. */
+    onOpenCategory: (LibraryCategory) -> Unit = {},
+    /** N4: «Ver todo» de la fila de Favoritos. */
+    onOpenFavorites: () -> Unit = {},
+    /** N4: «Partida» del centro de ajustes del juego (Ajustes › Partidas de esa huella). */
+    onOpenSaves: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
-    val category by viewModel.category.collectAsStateWithLifecycle()
+    val tag by viewModel.tag.collectAsStateWithLifecycle()
     val summary by viewModel.newGamesSummary.collectAsStateWithLifecycle()
     val preferencesReadOnly by viewModel.preferencesReadOnly.collectAsStateWithLifecycle()
     val chooseFolder = rememberFolderPicker(viewModel::chooseFolder)
@@ -67,8 +74,10 @@ fun LibraryScreen(
         filter = filter,
         onQueryChange = viewModel::setQuery,
         onFilterChange = viewModel::setFilter,
-        category = category,
-        onCategoryChange = viewModel::setCategory,
+        onOpenCategory = onOpenCategory,
+        onOpenFavorites = onOpenFavorites,
+        tag = tag,
+        onTagChange = viewModel::setTag,
         onLayoutChange = viewModel::setLayout,
         onSortChange = viewModel::setSort,
         onChooseFolder = chooseFolder,
@@ -83,6 +92,7 @@ fun LibraryScreen(
         library = viewModel,
         repository = gameplaySettings ?: GameplaySettingsRepository.shared(LocalContext.current),
         onDismiss = { settingsFor = null },
+        onOpenSaves = onOpenSaves,
     )
     RenameGameHost(entry = renameFor, prefs = prefs, onSetAlias = viewModel::setAlias, onDismiss = { renameFor = null })
 }

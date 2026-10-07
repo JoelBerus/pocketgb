@@ -64,6 +64,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -77,6 +78,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 import com.joelbermudez.pocketgb.library.ByteFormat
+import com.joelbermudez.pocketgb.library.CategoryPaths
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
 import com.joelbermudez.pocketgb.library.LibraryQuery
@@ -90,6 +92,7 @@ import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.ui.components.ConsoleChip
 import com.joelbermudez.pocketgb.ui.components.GameArtwork
 import com.joelbermudez.pocketgb.ui.components.HideGameDialog
+import com.joelbermudez.pocketgb.ui.components.MovedBadge
 import com.joelbermudez.pocketgb.ui.components.RenameGameHost
 import com.joelbermudez.pocketgb.ui.components.relativeDateText
 import com.joelbermudez.pocketgb.ui.library.ScanningPane
@@ -106,6 +109,8 @@ fun GameDetailsScreen(
     onPlayFromStart: (RomEntry) -> Unit = {},
     /** A9: huellas con «Continuar» exacto disponible. */
     resumable: Set<String> = emptySet(),
+    /** N4: «Partida» del centro de ajustes del juego (Ajustes › Partidas de esa huella). */
+    onOpenSaves: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -163,6 +168,8 @@ fun GameDetailsScreen(
         library = viewModel,
         repository = gameplaySettings ?: GameplaySettingsRepository.shared(LocalContext.current),
         onDismiss = { showSettings = false },
+        onOpenSaves = onOpenSaves,
+        onHidden = onBack,
     )
 }
 
@@ -387,6 +394,8 @@ private fun DetailsInfo(
                 locationText()
             }
         }
+        if (entry.isMovedInApp) ShownIn(entry.categoryPath)
+        if (entry.tags.isNotEmpty()) DetailTags(entry.tags)
         if (entry.isDuplicate) AlsoIn(entry.alsoAt)
     }
 
@@ -466,6 +475,37 @@ internal fun locationText(location: RomLocation, inRoot: String?): String = when
         stringResource(R.string.n1_location, location.folderPath.joinToString(" › "), location.fileName)
     inRoot != null -> stringResource(R.string.n1_location, inRoot, location.fileName)
     else -> location.fileName
+}
+
+/** N4 (ND3): el juego se ve en otra categoría que la de su carpeta (la ruta de arriba es la del archivo). */
+@Composable
+private fun ShownIn(path: List<String>) {
+    val where = if (path.isEmpty()) stringResource(R.string.n3_category_root) else CategoryPaths.display(path)
+    Row(
+        Modifier.semantics(mergeDescendants = true) {}.testTag("game-details-shown-in"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MovedBadge()
+        Text(
+            stringResource(R.string.n4_details_shown_in, where),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
+/** N4: las etiquetas del juego (se cambian en sus ajustes). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun DetailTags(tags: List<String>) {
+    val description = stringResource(R.string.n4_details_tags, tags.joinToString(", "))
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.clearAndSetSemantics { contentDescription = description }.testTag("game-details-tags"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) { tags.forEach { TagLabel(it) } }
 }
 
 /** N1a: las otras copias del juego (misma huella) y qué comparten. */

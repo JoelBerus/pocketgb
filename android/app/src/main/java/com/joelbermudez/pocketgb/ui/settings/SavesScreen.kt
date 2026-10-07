@@ -57,12 +57,20 @@ import kotlinx.coroutines.withContext
 
 /** Ajustes › Partidas con datos reales: lee `saves/` y restaura copias (J4). */
 @Composable
-fun SavesScreen(browser: SavesBrowser, gameplay: GameplayViewModel, onBack: () -> Unit) {
+fun SavesScreen(
+    browser: SavesBrowser,
+    gameplay: GameplayViewModel,
+    onBack: () -> Unit,
+    /** N4: solo la partida de esta huella (desde el centro de ajustes del juego). */
+    onlyFingerprint: String? = null,
+) {
     val openFingerprint by gameplay.openFingerprint.collectAsStateWithLifecycle()
     var refresh by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val games by produceState<List<SavedGameUi>?>(null, refresh) {
-        value = withContext(Dispatchers.IO) { runCatching { browser.list() }.getOrDefault(emptyList()) }
+        value = withContext(Dispatchers.IO) {
+            runCatching { browser.list() }.getOrDefault(emptyList()).filter { onlyFingerprint == null || it.fingerprint == onlyFingerprint }
+        }
     }
     // Fecha de la partida actual: la `.sav` local de cada huella (lectura barata de la fecha, fuera del hilo principal).
     val currentDates by produceState<Map<String, Long>>(emptyMap(), games) {

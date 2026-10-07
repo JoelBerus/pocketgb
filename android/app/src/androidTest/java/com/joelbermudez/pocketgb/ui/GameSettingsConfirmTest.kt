@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.ui
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -103,7 +104,8 @@ class GameSettingsConfirmTest {
 
         compose.setContent { PocketGBTheme { GameSettingsHost(entry, vm, repository, onDismiss = {}) } }
         compose.waitUntil(10_000) { vm.prefs.value.fingerprints[entry.id] == real && entry.id !in vm.prefs.value.inferredFingerprints }
-        compose.onNodeWithTag("game-setting-color").performClick()
+        // N4: en el centro de ajustes el color va más abajo (tras categoría, etiquetas…).
+        compose.onNodeWithTag("game-setting-color").performScrollTo().performClick()
         compose.onNodeWithTag("game-setting-color-1").performClick()
         compose.waitUntil(10_000) { repository.state.value.perGame[real] != null }
         assertEquals(GameOverrides(colorForGameBoy = true), repository.state.value.perGame[real])

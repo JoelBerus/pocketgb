@@ -68,6 +68,8 @@ fun FavoritesScreen(
     onPlayFromStart: ((RomEntry) -> Unit)? = null,
     /** A9: huellas con «Continuar» exacto disponible. */
     resumable: Set<String> = emptySet(),
+    /** N4: «Partida» del centro de ajustes del juego. */
+    onOpenSaves: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -95,6 +97,7 @@ fun FavoritesScreen(
         library = viewModel,
         repository = gameplaySettings ?: GameplaySettingsRepository.shared(LocalContext.current),
         onDismiss = { settingsFor = null },
+        onOpenSaves = onOpenSaves,
     )
     RenameGameHost(entry = renameFor, prefs = prefs, onSetAlias = viewModel::setAlias, onDismiss = { renameFor = null })
 }

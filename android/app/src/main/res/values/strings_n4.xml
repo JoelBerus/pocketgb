@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N4 Android: categorías, etiquetas, inicio y centro de ajustes del juego. Textos nuevos de este lote, solo aquí. -->
+<resources>
+    <plurals name="n4_games">
+        <item quantity="one">%d juego</item>
+        <item quantity="other">%d juegos</item>
+    </plurals>
+
+    <!-- Inicio: fila de Favoritos y estanterías por categoría -->
+    <string name="n4_favorites_row">Favoritos</string>
+    <string name="n4_see_all">Ver todo</string>
+    <string name="n4_see_all_description">Ver todo %1$s, %2$s</string>
+    <string name="n4_see_all_favorites_description">Ver todos los favoritos, %1$s</string>
+    <string name="n4_shelf_heading">%1$s, %2$s</string>
+    <string name="n4_shelf_pinned">Fijada arriba</string>
+    <string name="n4_open_category_description">Abrir %1$s, %2$d juegos</string>
+
+    <!-- Pantalla de categoría -->
+    <string name="n4_breadcrumb_root">Biblioteca</string>
+    <string name="n4_breadcrumbs_description">Estás en: %1$s</string>
+    <string name="n4_breadcrumb_go">Ir a %1$s</string>
+    <string name="n4_subcategories">Subcategorías</string>
+    <string name="n4_subcategory_description">Subcategoría %1$s, %2$s</string>
+    <string name="n4_category_games">Juegos</string>
+    <string name="n4_category_games_subtree">En esta categoría y sus subcategorías</string>
+    <string name="n4_category_games_root">En la carpeta principal</string>
+    <string name="n4_category_empty_title">No hay juegos en «%1$s»</string>
+    <string name="n4_category_empty_message">Puede que estén ocultos o que los hayas mostrado en otra categoría desde sus ajustes.</string>
+    <string name="n4_category_back_home">Volver a la biblioteca</string>
+    <string name="n4_layout_show_list">Ver en lista</string>
+    <string name="n4_layout_show_grid">Ver en cuadrícula</string>
+    <string name="n4_layout_state">Vista: %1$s</string>
+    <string name="n4_menu_categories">Categorías</string>
+
+    <!-- Etiquetas y filtros -->
+    <string name="n4_panel_tags">Etiquetas</string>
+    <string name="n4_tag_all">Todas</string>
+    <string name="n4_tag_option">%1$s (%2$d)</string>
+    <string name="n4_tools_filter_tag_state">%1$s, etiqueta %2$s</string>
+    <string name="n4_tag_filter">Etiqueta</string>
+    <string name="n4_tag_filter_selected">Etiqueta: %1$s</string>
+    <string name="n4_section_tag">Etiqueta «%1$s»</string>
+    <string name="n4_no_games_tag_title">Ningún juego con la etiqueta «%1$s»</string>
+    <string name="n4_no_games_tag_message">Prueba con otra etiqueta o quítala para ver todos los juegos.</string>
+    <string name="n4_clear_tag">Quitar la etiqueta</string>
+
+    <!-- Categoría virtual (ND3) -->
+    <string name="n4_moved_badge">Movido en la app</string>
+    <string name="n4_details_shown_in">Se ve en «%1$s»</string>
+    <string name="n4_details_tags">Etiquetas: %1$s</string>
+
+    <!-- Centro de ajustes del juego -->
+    <string name="n4_center_category">Categoría</string>
+    <string name="n4_center_category_folder">%1$s · su carpeta</string>
+    <string name="n4_center_category_moved">%1$s · movido en la app</string>
+    <string name="n4_center_category_root">Sin categoría (carpeta principal)</string>
+    <string name="n4_center_category_change">Cambiar</string>
+    <string name="n4_center_category_change_description">Mostrar en otra categoría</string>
+    <string name="n4_center_category_return">Volver a su carpeta</string>
+    <string name="n4_center_category_own">Su carpeta: %1$s</string>
+    <string name="n4_center_tags">Etiquetas</string>
+    <string name="n4_center_tags_none">Sin etiquetas</string>
+    <string name="n4_center_tags_edit">Editar</string>
+    <string name="n4_center_tags_edit_description">Editar las etiquetas</string>
+    <string name="n4_center_cover">Portada</string>
+    <string name="n4_center_cover_soon">Próximamente: elegir una imagen o una captura</string>
+    <string name="n4_center_progress">Progreso y momentos</string>
+    <string name="n4_center_progress_soon">Próximamente</string>
+    <string name="n4_center_soon_state">No disponible todavía</string>
+    <string name="n4_center_saves">Partida</string>
+    <string name="n4_center_saves_summary">Copias de seguridad y partidas apartadas de este juego</string>
+    <string name="n4_center_color_header">Color y paleta</string>
+    <string name="n4_center_hide">Ocultar de la biblioteca</string>
+    <string name="n4_center_hide_summary">No borra el juego ni su partida: lo vuelves a mostrar en Ajustes › Biblioteca.</string>
+    <string name="n4_center_reading">Leyendo el juego para poder guardar su categoría y sus etiquetas…</string>
+    <string name="n4_center_unavailable">No se pudo leer el juego: su categoría y sus etiquetas no se pueden cambiar ahora.</string>
+    <string name="n4_center_footer">Nombre, categoría y etiquetas solo cambian cómo lo ves en PocketGB: tus archivos no se mueven ni se renombran.</string>
+
+    <!-- «Mostrar en categoría…» -->
+    <string name="n4_picker_title">Mostrar en categoría</string>
+    <string name="n4_picker_message">PocketGB lo recordará en este teléfono. El archivo se queda en su carpeta.</string>
+    <string name="n4_picker_own_folder">su carpeta</string>
+    <string name="n4_picker_current">ahora</string>
+    <string name="n4_picker_new">Nueva categoría</string>
+    <string name="n4_picker_new_hint">Usa / para ponerla dentro de otra, por ejemplo Pokémon/Favoritas.</string>
+    <string name="n4_picker_error_reserved">Ningún nombre puede empezar por . ni por _ (PocketGB no lee esas carpetas).</string>
+    <string name="n4_picker_error_deep">Como mucho 5 niveles.</string>
+    <string name="n4_picker_apply">Mostrar aquí</string>
+    <string name="n4_picker_list">Categorías que ya existen</string>
+
+    <!-- Editor de etiquetas -->
+    <string name="n4_tags_title">Etiquetas de %1$s</string>
+    <string name="n4_tags_field">Nueva etiqueta</string>
+    <string name="n4_tags_add">Añadir</string>
+    <string name="n4_tags_remove">Quitar la etiqueta %1$s</string>
+    <string name="n4_tags_suggestions">Etiquetas que ya usas</string>
+    <string name="n4_tags_add_suggestion">Añadir la etiqueta %1$s</string>
+    <string name="n4_tags_none">Este juego aún no tiene etiquetas.</string>
+    <string name="n4_tags_full">Ya tiene 20 etiquetas: quita alguna para añadir otra.</string>
+    <string name="n4_tags_footer">Sirven para buscar y para filtrar (Filtros › Etiquetas). Como mucho 30 caracteres cada una.</string>
+    <string name="n4_done">Listo</string>
+    <string name="n4_cancel">Cancelar</string>
+
+    <!-- Ajustes › Biblioteca › Inicio -->
+    <string name="n4_settings_home">Inicio</string>
+    <string name="n4_settings_home_summary">Orden de las categorías, fijadas, ocultas y la fila de Favoritos</string>
+    <string name="n4_home_favorites_row">Fila de Favoritos</string>
+    <string name="n4_home_favorites_footer">Tus favoritos en una fila, bajo «Continuar jugando».</string>
+    <string name="n4_home_categories_header">Categorías en el inicio</string>
+    <string name="n4_home_pin">Fijar arriba %1$s</string>
+    <string name="n4_home_unpin">Dejar de fijar %1$s</string>
+    <string name="n4_home_up">Subir %1$s</string>
+    <string name="n4_home_down">Bajar %1$s</string>
+    <string name="n4_home_show">En el inicio</string>
+    <string name="n4_home_show_description">Mostrar %1$s en el inicio</string>
+    <string name="n4_home_hidden_state">Oculta en el inicio</string>
+    <string name="n4_home_pinned_state">Fijada arriba</string>
+    <string name="n4_home_footer">Se guarda en este teléfono. Una categoría oculta sigue en «Todos los juegos» y en Categorías; las fijadas van siempre primero.</string>
+    <string name="n4_home_no_categories">Aún no hay categorías. Crea carpetas dentro de tu carpeta de juegos (por ejemplo «Pokémon») y aparecerán aquí.</string>
+    <string name="n4_home_reset">Restablecer el inicio</string>
+</resources>
