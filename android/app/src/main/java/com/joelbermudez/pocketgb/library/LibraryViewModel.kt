@@ -208,13 +208,16 @@ class LibraryViewModel(
                 else -> emptyList()
             }
             publish(LibraryState.Scanning(previous, name))
-            val entries = LibraryScanner.scan(openTree(uri)) { done, total ->
-                context.ensureActive()
-                // Sin inundar a la UI: el primero, cada cinco y el último.
-                if (isCurrent() && (done == 1 || done == total || done % PROGRESS_STEP == 0)) {
-                    _state.value = LibraryState.Scanning(previous, name, done, total)
-                }
-            }
+            val entries = LibraryScanner.scan(
+                openTree(uri),
+                progress = { done, total ->
+                    // Sin inundar a la UI: el primero, cada cinco y el último.
+                    if (isCurrent() && (done == 1 || done == total || done % PROGRESS_STEP == 0)) {
+                        _state.value = LibraryState.Scanning(previous, name, done, total)
+                    }
+                },
+                checkCancelled = { context.ensureActive() },
+            )
             LibraryState.Ready(markNew(entries), name)
         } catch (error: CancellationException) {
             throw error

@@ -8,9 +8,15 @@ enum class RomProblem(val message: String) {
     REMOTE_UNAVAILABLE("El proveedor aún no tiene el archivo disponible. Reintenta con conexión."),
 }
 
+/** Dónde está un archivo dentro de la carpeta de la biblioteca: carpetas desde la raíz y nombre (N1). */
+data class RomLocation(val folderPath: List<String>, val fileName: String)
+
 /** Un `.gb`/`.gbc` de la carpeta de la biblioteca. Valor inmutable creado por el escáner. */
 data class RomEntry(
-    /** Ruta relativa a la carpeta ("Pokemon Red.gb" o "Rojo/Pokemon Red.gb"). */
+    /**
+     * Ruta relativa a la carpeta ("Pokemon Red.gb" o "Pokémon/Gen 1/Pokemon Red.gb"), con sufijo `#…` si dos documentos
+     * comparten ruta. Clave provisional de las preferencias hasta conocer la huella (N1a).
+     */
     val id: String,
     /** URI SAF del documento; solo se usa para leer. */
     val uri: String,
@@ -32,13 +38,33 @@ data class RomEntry(
      * lo pone. Solo es presentación: el ROM, su `.sav` y sus estados no cambian.
      */
     val alias: String? = null,
+    /**
+     * N1b: carpetas desde la raíz hasta el ROM (vacía en la raíz). El escáner la da siempre; por defecto se deduce del
+     * id (datos de prueba y catálogo).
+     */
+    val folderPath: List<String> = id.substringBeforeLast('/', missingDelimiterValue = "").split('/').filter { it.isNotEmpty() },
+    /** N1a: fecha de modificación del ROM según el proveedor (epoch ms), parte de su sello de documento; `null` si no la da. */
+    val lastModified: Long? = null,
+    /**
+     * N1a: otras copias del mismo ROM (misma huella conocida) en la carpeta, aplicadas por [LibraryQuery]; el escáner
+     * nunca las pone. Solo informativo: las copias comparten partida, estados, ajustes y portada (van por huella).
+     */
+    val alsoAt: List<RomLocation> = emptyList(),
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String
         get() = alias ?: title
 
+    /** Carpetas separadas por `/` ("" en la raíz). */
     val subfolder: String
-        get() = id.substringBeforeLast('/', missingDelimiterValue = "")
+        get() = folderPath.joinToString("/")
+
+    val location: RomLocation
+        get() = RomLocation(folderPath, fileName)
+
+    /** N1a: hay otra copia con la misma huella. */
+    val isDuplicate: Boolean
+        get() = alsoAt.isNotEmpty()
 
     val isPlayable: Boolean
         get() = problem == null
