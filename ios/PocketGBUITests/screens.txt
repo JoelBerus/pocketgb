@@ -137,3 +137,31 @@ link-partner-picker-ax5 portrait  light -screen link-partner-picker-ax5 -demoLib
 link-open-refused       portrait  light -screen link-open-refused -demoLibrary standard -demoLinkError same-game
 link-open-refused       portrait  dark  -screen link-open-refused -demoLibrary standard -demoLinkError same-game
 link-continue-warning   portrait  light -screen link-continue-warning -demoLibrary standard
+
+# ---- N2 · Controles: la cruceta responde por dirección, bordes y flechas nuevos ----
+# -uiPressedDpad <dirección>: un dedo simulado en el centro del brazo o flecha (motor real).
+gameplay-dpad-up            portrait  dark   -screen gameplay-dpad-up -rom $FIXTURES/dmg-acid2.gb -uiPressedDpad up
+gameplay-dpad-up            portrait  light  -screen gameplay-dpad-up -rom $FIXTURES/dmg-acid2.gb -uiPressedDpad up
+gameplay-dpad-up            landscape dark   -screen gameplay-dpad-up -rom $FIXTURES/dmg-acid2.gb -uiPressedDpad up
+gameplay-dpad-up            landscape light  -screen gameplay-dpad-up -rom $FIXTURES/dmg-acid2.gb -uiPressedDpad up
+gameplay-dpad-upright       portrait  dark   -screen gameplay-dpad-upright -rom $FIXTURES/dmg-acid2.gb -uiPressedDpad upright
+gameplay-dpad-up-clear      landscape dark   -screen gameplay-dpad-up-clear -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30 -uiPressedDpad up
+gameplay-dpad-up-reduce-transparency landscape dark -screen gameplay-dpad-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -controlOpacity 30 -reduceTransparency -uiPressedDpad up
+gameplay-arrows-up          portrait  dark   -screen gameplay-arrows-up -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -uiPressedDpad up
+gameplay-arrows-up          portrait  light  -screen gameplay-arrows-up -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -uiPressedDpad up
+gameplay-arrows-up          landscape dark   -screen gameplay-arrows-up -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -uiPressedDpad up
+gameplay-arrows-up          landscape light  -screen gameplay-arrows-up -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -uiPressedDpad up
+gameplay-arrows-upright     portrait  dark   -screen gameplay-arrows-upright -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -uiPressedDpad upright
+gameplay-arrows-up-reduce-transparency landscape dark -screen gameplay-arrows-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -controlOpacity 30 -reduceTransparency -uiPressedDpad up
+gameplay-arrows-spacing-70  portrait  dark   -screen gameplay-arrows-spacing-70 -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -arrowSpacing 0.7
+gameplay-arrows-spacing-150 portrait  dark   -screen gameplay-arrows-spacing-150 -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -arrowSpacing 1.5
+gameplay-arrows-spacing-150 landscape dark   -screen gameplay-arrows-spacing-150 -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -arrowSpacing 1.5
+gameplay-gba-dpad-up        landscape dark   -screen gameplay-gba-dpad-up -rom $FIXTURES/arm.gba -uiPressedDpad up
+gameplay-gba-arrows-up      landscape dark   -screen gameplay-gba-arrows-up -rom $FIXTURES/arm.gba -dpadStyle separated -uiPressedDpad up
+customize-controls-dpad     portrait  dark   -screen customize-controls-dpad -rom $FIXTURES/dmg-acid2.gb
+customize-controls-arrows   portrait  dark   -screen customize-controls-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+customize-controls-arrows   landscape dark   -screen customize-controls-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
+settings-controls-ax5       portrait  light  -screen settings-controls-ax5 -contentSizeCategory accessibility5 -scrollTo settings-dpad-diagonals -uiAssertHittable settings-dpad-diagonals
+# N2-H6: ↑ pulsado con Reduce Transparency también en vertical.
+gameplay-dpad-up-reduce-transparency portrait dark -screen gameplay-dpad-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -reduceTransparency -uiPressedDpad up
+gameplay-arrows-up-reduce-transparency portrait dark -screen gameplay-arrows-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -reduceTransparency -uiPressedDpad up

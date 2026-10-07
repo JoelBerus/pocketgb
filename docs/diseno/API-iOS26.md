@@ -97,3 +97,14 @@ UIGlassEffectStyleRegular,
 typedef NS_ENUM(NSInteger, UIGlassEffectStyle) {
 }) NS_SWIFT_NAME(UIGlassEffect.Style);
 ```
+
+## UIKit: forma de las vistas (N2, `ControlVisualView`)
+Del `UIKit.swiftinterface` del SDK de iOS 26.5 (Xcode 26): la vista de vidrio toma su forma con `cornerConfiguration` en lugar de `layer.cornerRadius` + `clipsToBounds` (que recortaba el borde del vidrio).
+```swift
+@MainActor public var cornerConfiguration: UIKit.UICornerConfiguration { get set }   // extension UIView
+public struct UICornerConfiguration {
+  public static func capsule(maximumRadius: Swift.Double? = nil) -> UIKit.UICornerConfiguration
+  public static func corners(radius: UIKit.UICornerRadius) -> UIKit.UICornerConfiguration
+  public static func uniformCorners(radius: UIKit.UICornerRadius) -> UIKit.UICornerConfiguration
+}
+```

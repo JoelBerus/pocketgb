@@ -11,14 +11,16 @@ struct ControlsLayoutTests {
     static let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN)
     static let a = UInt16(GB_BTN_A), b = UInt16(GB_BTN_B)
 
-    /// Máscara para un punto a `angle` grados (0 = derecha, antihorario) y distancia `r`.
-    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70) -> UInt16 {
+    /// Máscara para un punto a `angle` grados (0 = derecha, antihorario) y distancia `r`,
+    /// con diagonales «Normales» (ocho sectores de 45°) salvo que se indique otro modo.
+    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70,
+                     diagonals: DpadDiagonals = .normal, previous: UInt8 = 0) -> UInt16 {
         let rad = angle * .pi / 180
         return UInt16(ControlsGeometry.dpadMask(dx: CGFloat(cos(rad) * r), dy: CGFloat(-sin(rad) * r),
-                                                radius: CGFloat(radius)))
+                                                radius: CGFloat(radius), diagonals: diagonals, previous: previous))
     }
 
-    @Test func eightSectorsOf45Degrees() {
+    @Test func normalDiagonalsGiveEightSectorsOf45Degrees() {
         let expected: [(Double, UInt16)] = [
             (0, Self.right), (45, Self.right | Self.up), (90, Self.up), (135, Self.up | Self.left),
             (180, Self.left), (225, Self.left | Self.down), (270, Self.down), (315, Self.down | Self.right),
@@ -41,21 +43,30 @@ struct ControlsLayoutTests {
         #expect(Self.mask(202.6) == Self.left | Self.down)
     }
 
-    @Test func deadZoneIs25PercentOfRadius() {
-        #expect(Self.mask(0, r: 17.4) == 0)        // < 25 % de 70
-        #expect(Self.mask(0, r: 17.6) == Self.right)
-        #expect(Self.mask(123, r: 0) == 0)
+    @Test func deadZoneIs30PercentOfRadius() {
+        for diagonals in DpadDiagonals.allCases {
+            #expect(Self.mask(0, r: 20.9, diagonals: diagonals) == 0)        // < 30 % de 70
+            #expect(Self.mask(0, r: 21.1, diagonals: diagonals) == Self.right)
+            #expect(Self.mask(123, r: 0, diagonals: diagonals) == 0)
+        }
     }
 
     @Test func neverOppositeDirections() {
-        for tenth in 0..<3600 {
-            let m = Self.mask(Double(tenth) / 10, r: 50)
-            #expect(m & (Self.up | Self.down) != (Self.up | Self.down))
-            #expect(m & (Self.left | Self.right) != (Self.left | Self.right))
-            #expect(m != 0)
+        for diagonals in DpadDiagonals.allCases {
+            var previous: UInt8 = 0
+            for tenth in 0..<3600 {
+                // Barrido sin histéresis y como un dedo que rueda (con histéresis).
+                for m in [Self.mask(Double(tenth) / 10, r: 50, diagonals: diagonals),
+                          Self.mask(Double(tenth) / 10, r: 50, diagonals: diagonals, previous: previous)] {
+                    #expect(m & (Self.up | Self.down) != (Self.up | Self.down))
+                    #expect(m & (Self.left | Self.right) != (Self.left | Self.right))
+                    #expect(m != 0)
+                }
+                previous = UInt8(Self.mask(Double(tenth) / 10, r: 50, diagonals: diagonals, previous: previous))
+            }
+            // También muy fuera del radio (dedo capturado).
+            #expect(Self.mask(90, r: 500, diagonals: diagonals) == Self.up)
         }
-        // También muy fuera del radio (dedo capturado).
-        #expect(Self.mask(90, r: 500) == Self.up)
     }
 
     static let area = CGRect(x: 60, y: 0, width: 752, height: 381)   // horizontal con safe area

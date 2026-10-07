@@ -8,6 +8,21 @@ struct ControlsSettingsView: View {
     private var gameplay: GameplaySettings { state.gameplay }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                #if DEBUG
+                .task {
+                    // `-scrollTo <id>`: desplazamiento programático y determinista para las capturas
+                    // (`settings-controls-ax5`, auditoría N2-H5).
+                    guard let target = DebugArguments.value("-scrollTo") else { return }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                #endif
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 Picker("Opacidad", selection: binding(\.opacity)) {
@@ -24,10 +39,15 @@ struct ControlsSettingsView: View {
                     ForEach(DpadStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Picker("Diagonales", selection: binding(\.dpadDiagonals)) {
+                    ForEach(DpadDiagonals.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("settings-dpad-diagonals")
+                .id("settings-dpad-diagonals")
             } header: {
                 Text("Cruceta")
             } footer: {
-                Text("Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de PlayStation. Ambas admiten diagonales.")
+                Text("Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de PlayStation. Diagonales reducidas: solo cuentan si apuntas casi a la esquina, así arriba no se convierte en arriba‑derecha sin querer. Desactivadas: solo las cuatro direcciones.")
             }
             Section("Controles") {
                 Picker("Tamaño", selection: binding(\.sizeScale)) {
