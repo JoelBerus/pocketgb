@@ -272,7 +272,9 @@ class GameControlsViewTest {
     fun aTouchInsideAnArrowCircleGivesItsDirectionThroughTheRealViewEvenNearTheSideOfTheButton() {
         for (diagonals in DiagonalMode.entries) {
             val masks = mutableListOf<Int>()
-            val view = view(masks)
+            // Una vista grande (en px reales, con la densidad del emulador) para que la cruceta no invada a A/B.
+            val view = GameControlsView(ApplicationProvider.getApplicationContext(), onMaskChanged = masks::add)
+                .apply { layout(0, 0, 1080, 1920) }
             view.renderOptions = ControlsRenderOptions(dpadStyle = DpadStyle.ARROWS, diagonals = diagonals)
             val frame = view.controlGeometry.frames.getValue(ControlId.DPAD)
             val circles = DpadShape.arrowCircles(frame, view.controlGeometry.dpadSeparation)

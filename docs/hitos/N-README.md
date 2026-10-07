@@ -164,6 +164,11 @@ Los criterios se verifican con comando y salida (regla dura 7). Para que los lot
   - Flechas: 4 círculos en rombo (diámetro 0,36 × ancho) con iconos Material.
   - Tema Material propio, con contraste pulsado/neutro ≥ 3:1.
 - **Flechas separadas (ambas), ND10:** tamaño (ya existe), separación 0,7–1,5 (nuevo) y mover el grupo (ya existe). Se guarda por disposición (consola × orientación) y se puede restablecer.
+- **Geometría y háptica comunes (decisión del orquestador, 2026-10-07):** las dos apps usan una sola fórmula y una sola regla, para que Joel note lo mismo en ambos teléfonos.
+  - **Separación de las flechas:** el diámetro de cada círculo es 0,36 W fijo (W = ancho nominal del control). La distancia del centro de cada círculo al del grupo es 0,32 W × k para k ≥ 1 y, para k < 1, baja linealmente hasta 0,265 W con k = 0,7: los círculos nunca se solapan y el objetivo táctil se conserva. El marco del grupo mide 0,36 W + 2 × distancia (1,0 W de fábrica, 1,32 W a k = 1,5). Es la fórmula de Android; iOS la adopta.
+  - **Sectores:** histéresis angular de 8°, zona muerta del 30 % con histéresis (0,24) y, con flechas separadas, un toque dentro de un círculo da su dirección, el mismo dedo la conserva hasta salir ~4 dp, la zona muerta se limita al borde interior de los círculos − 2 dp y fuera de los círculos decide el ángulo.
+  - **Háptica:** vibra cuando se activa una dirección que no estaba activa (↑ → ↑→ vibra; ↑→ → ↑ no; ↑ → nada → ↑ sí).
+  - **Opuestas:** nunca llegan al núcleo direcciones opuestas, ni de dos dedos ni de táctil + mando.
 - No cambia la distribución general de los controles ni la posición del juego en ninguna plataforma.
 
 **Criterios:**

@@ -7,7 +7,7 @@ Esta guía explica cómo se ve y se comporta la cruceta de PocketGB en Android, 
 En **Ajustes › Controles › Cruceta** eliges cómo se dibuja:
 
 - **Game Boy**: una cruz de una sola pieza dentro de un disco, como en la consola. Al tocar una dirección se ilumina solo ese brazo; el centro de la cruz nunca se ilumina.
-- **Flechas separadas**: cuatro botones redondos puestos en rombo (arriba, derecha, abajo, izquierda), cada uno con su flecha. Al tocar una dirección se ilumina solo ese botón; si pulsas una diagonal se iluminan dos.
+- **Flechas separadas**: cuatro botones redondos puestos en rombo (arriba, derecha, abajo, izquierda), cada uno con su flecha. Tocar dentro de un botón pulsa siempre esa dirección, lo toques por el centro o por un lado, y el dedo la conserva hasta que sale unos milímetros del botón. Las diagonales se hacen apuntando al hueco entre dos botones (se iluminan los dos).
 
 El color sale del tema de la app: los botones sin pulsar son de un tono oscuro y el que pulsas se vuelve verde claro, con un contraste de al menos 3 a 1 entre uno y otro. Con el **contraste alto** del sistema los controles se dibujan sólidos y con borde claro.
 
@@ -25,11 +25,14 @@ En **Ajustes › Controles › Diagonales** decides cuánto cuentan las diagonal
 
 Además, en todas las opciones:
 
-- Hay una **zona muerta** en el centro (el 30 % del radio): mientras el dedo esté ahí no se pulsa nada.
-- Una vez que una dirección está activa se **mantiene un poco más** al acercarte al centro o a otra dirección, para que un pequeño temblor no la haga parpadear.
-- La **háptica** (la vibración corta) suena solo cuando se activa una dirección nueva, no en cada cambio de sector.
+- Hay una **zona muerta** en el centro (el 30 % del radio): mientras el dedo esté ahí no se pulsa nada. Con *Flechas separadas* llega, como mucho, hasta el borde interior de los botones, así que nunca se come parte de un botón.
+- Una vez que una dirección está activa se **mantiene un poco más** (8° de ángulo) al acercarte al centro o a otra dirección, para que un pequeño temblor no la haga parpadear.
+- La **háptica** (la vibración corta) suena cuando se activa una dirección que no estaba activa: pasar de arriba a arriba+derecha vibra (se activa derecha); pasar de arriba+derecha a arriba no; soltar y volver a tocar arriba sí.
+- **Nunca se pulsan dos direcciones opuestas.** Si pones un dedo en arriba y otro en abajo (o izquierda y derecha), no se pulsa ninguna de las dos; lo mismo si una la das con la pantalla y la opuesta con un mando.
 
 El ajuste de diagonales es de la cruceta táctil. El stick de un mando físico sigue como siempre.
+
+Estas reglas (la histéresis de 8°, la zona muerta, la vibración y la separación de las flechas) son las mismas en la versión de iPhone, para que la cruceta se comporte igual en las dos apps.
 
 ## Tamaño, separación y ubicación
 
@@ -63,5 +66,5 @@ Consejos:
 ## Si algo no va como esperas
 
 - *Al pulsar arriba se encienden dos direcciones*: pasa a **Reducidas** o **Desactivadas** en Ajustes › Controles › Diagonales.
-- *No se enciende nada aunque toco la cruceta*: el dedo está en la zona muerta del centro; desplázalo hacia el brazo o la flecha que quieras.
+- *No se enciende nada aunque toco la cruceta*: el dedo está en la zona muerta del centro; desplázalo hacia el brazo o la flecha que quieras. Con dos dedos en direcciones opuestas tampoco se pulsa ninguna.
 - *Los controles están muy pequeños o fuera de sitio*: abre Personalizar controles y pulsa **Restablecer**.
