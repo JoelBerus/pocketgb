@@ -174,15 +174,32 @@ static void base_init(void)
 
 /* ---- Vectores dorados ---- */
 
-/* «Pokémon Rojo – prueba» con é (C3 A9) y el guion largo (E2 80 93). 61 bytes. */
-static const char GOLDEN_META[] = "{\"formato\":1,\"juego\":\"Pok\xC3\xA9" "mon Rojo \xE2\x80\x93 prueba\",\"ms\":1234567}";
+/* META v1 de G1 (docs/12-formato-pgbm.md §META v1): ASCII puro; «Pokémon Rojo – prueba» va con escapes JSON \u00e9 y
+ * \u2013, así que no depende de la normalización Unicode del fuente de cada plataforma. */
+static const char GOLDEN_META[] =
+    "{\"format\":1,"
+    "\"rom_sha256\":\"10355a7fa4c9ee13385d82a7ccf1163b6085aacff4193e6388add2f71c41668b\","
+    "\"sav_sha256\":\"d3c5532fe0534370189004c7704430c1470f5c0f0be7b9e522c3799517ac28ef\","
+    "\"base_sav_sha256\":null,"
+    "\"device\":{\"platform\":\"ios\",\"name\":\"iPhone de prueba\"},"
+    "\"created_ms\":1790000000000,"
+    "\"core\":{\"name\":\"gb\",\"version\":\"1.0.0\"},"
+    "\"config\":{\"model\":\"cgb\",\"compat_palette\":\"default\"},"
+    "\"state_of_sav_sha256\":\"d3c5532fe0534370189004c7704430c1470f5c0f0be7b9e522c3799517ac28ef\","
+    "\"play_time_ms\":3723000,"
+    "\"title\":\"Pok\\u00e9mon Rojo \\u2013 prueba\","
+    "\"alias\":\"Mi partida\","
+    "\"tags\":[\"rpg\",\"prueba\"],"
+    "\"milestones\":[{\"id\":\"badge1\",\"title\":\"Medalla Roca\",\"done\":true},{\"id\":\"badge2\",\"title\":\"Medalla Cascada\",\"done\":false}],"
+    "\"moment\":{\"name\":\"Antes del gimnasio\",\"collection\":\"Principal\",\"note\":\"Nota de prueba\",\"created_ms\":1789999000000}}";
 enum { GOLDEN_META_LEN = sizeof GOLDEN_META - 1, GOLDEN_SAV = 8192, GOLDEN_STATE = 1500, GOLDEN_THUMB = 32 };
 
-static const char G1_SHA[] = "a71baa2e1c81ba3e9ed0058571237f232cf5fdd3da13d8d4f61449dfcd30f3c6";
+static const char G1_SHA[] = "e83ee087bd870c6b395bca974654ce25f799839b3e77f6865b01f142bc16ab4d";
 static const char G2_SHA[] = "5548b8cac9de16d52d17aec2907fd61832443bdebb4dc747499f726da9ef41c9";
-static const char G3_SHA[] = "b6b3f3e96df34995d4bdf171e368acae20f5b72bb512b824fae509d3979a4a53";
-enum { G1_LEN = 9873, G2_LEN = 80, G3_LEN = 93 };
-static const uint32_t G1_CRC = 0xa46a6d04u, G2_CRC = 0xfe827d35u, G3_CRC = 0x03717a59u;
+static const char G3_SHA[] = "1d61e5c030c7855a197e5b4b05e7417d7c452d4f2accf5441d494e84cb96a261";
+static const char G4_SHA[] = "b6b3f3e96df34995d4bdf171e368acae20f5b72bb512b824fae509d3979a4a53";
+enum { G1_LEN = 10614, G2_LEN = 80, G3_LEN = 93, G4_LEN = 93 };
+static const uint32_t G1_CRC = 0x49b7b519u, G2_CRC = 0xfe827d35u, G3_CRC = 0x0a62ba0au, G4_CRC = 0x03717a59u;
 
 static const uint8_t G2_BYTES[G2_LEN] = {
     0x50, 0x47, 0x42, 0x4d, 0x01, 0x00, 0x02, 0x00, 0x50, 0x00, 0x00, 0x00, 0x52, 0x4f, 0x4d, 0x46,
@@ -192,13 +209,16 @@ static const uint8_t G2_BYTES[G2_LEN] = {
     0xb5, 0xda, 0xff, 0x24, 0x49, 0x6e, 0x93, 0xb8, 0xdd, 0x02, 0x27, 0x4c, 0x35, 0x7d, 0x82, 0xfe
 };
 
-/* which: 0 = G1 completo, 1 = G2 mínimo, 2 = G3 con una sección desconocida. Devuelve la longitud. */
+/* which: 0 = G1 completo, 1 = G2 mínimo, 2 = G3 con una sección desconocida ignorable («xtra»),
+ * 3 = G4 con una sección desconocida crítica («XTRA», se rechaza). Devuelve la longitud. */
 static size_t build_golden(unsigned which, uint8_t *out, size_t cap)
 {
     uint8_t rom[ROMF_LEN];
     pat_fill(rom, sizeof rom, 0x10);
-    if (which == 2) {
-        struct rsec s[3] = { RS("ROMF", rom, ROMF_LEN), RS("XTRA", (const uint8_t *)"hola!", 5), { "SAVE", NULL, 16, -1 } };
+    if (which == 2 || which == 3) {
+        struct rsec s[3] = { RS("ROMF", rom, ROMF_LEN), RS("xtra", (const uint8_t *)"hola!", 5), { "SAVE", NULL, 16, -1 } };
+        if (which == 3)
+            s[1].tag = "XTRA";
         uint8_t sav[16];
         pat_fill(sav, sizeof sav, 0x21);
         s[2].data = sav;
@@ -240,14 +260,14 @@ static size_t build_golden(unsigned which, uint8_t *out, size_t cap)
 static void test_golden(struct ut *t)
 {
     base_init();
-    static const unsigned lens[3] = { G1_LEN, G2_LEN, G3_LEN };
-    static const char *const shas[3] = { G1_SHA, G2_SHA, G3_SHA };
-    static const uint32_t crcs[3] = { G1_CRC, G2_CRC, G3_CRC };
+    static const unsigned lens[4] = { G1_LEN, G2_LEN, G3_LEN, G4_LEN };
+    static const char *const shas[4] = { G1_SHA, G2_SHA, G3_SHA, G4_SHA };
+    static const uint32_t crcs[4] = { G1_CRC, G2_CRC, G3_CRC, G4_CRC };
     uint8_t *buf = malloc(16384);
     CHECK(t, buf != NULL);
     if (!buf)
         return;
-    for (unsigned w = 0; w < 3; w++) {
+    for (unsigned w = 0; w < 4; w++) {
         size_t n = build_golden(w, buf, 16384);
         CHECK(t, n == lens[w]);
         CHECK(t, sha_is(buf, n, shas[w]));
@@ -279,15 +299,41 @@ static void test_golden(struct ut *t)
         pat_fill(exp, GOLDEN_STATE, 0x42);
         CHECK(t, span_is(v.state, exp, GOLDEN_STATE));
         CHECK(t, v.thumb.len == GOLDEN_THUMB && v.thumb.data[0] == 0x89 && v.thumb.data[8] == pat(0x63, 0));
+        /* El META de G1 cumple el esquema: ASCII puro, rom_sha256 = hex(ROMF), sav_sha256 = SHA-256 de SAVE
+         * (y state_of_sav_sha256 igual: el estado es de esa partida). */
+        bool ascii = true;
+        for (size_t i = 0; i < GOLDEN_META_LEN; i++)
+            ascii = ascii && (uint8_t)GOLDEN_META[i] < 0x80;
+        CHECK(t, ascii);
+        uint8_t digest[32];
+        char hex[65], needle[128];
+        hex_of(v.rom_fp, hex);
+        snprintf(needle, sizeof needle, "\"rom_sha256\":\"%s\"", hex);
+        CHECK(t, strstr(GOLDEN_META, needle) != NULL);
+        sha256(v.sav.data, v.sav.len, digest);
+        hex_of(digest, hex);
+        snprintf(needle, sizeof needle, "\"sav_sha256\":\"%s\"", hex);
+        CHECK(t, strstr(GOLDEN_META, needle) != NULL);
+        snprintf(needle, sizeof needle, "\"state_of_sav_sha256\":\"%s\"", hex);
+        CHECK(t, strstr(GOLDEN_META, needle) != NULL);
         free(c);
     }
-    /* G3: la sección desconocida se ignora y el resto se lee. */
+    /* G3: la sección desconocida («xtra», minúscula) se ignora y el resto se lee. */
     size_t n3 = build_golden(2, buf, 16384);
     c = dup_exact(buf, n3);
     CHECK(t, c != NULL);
     if (c) {
         CHECK(t, pgbm_parse(c, n3, &v) == PGBM_OK);
         CHECK(t, span_is(v.sav, g_sav16, 16) && v.meta.len == 0 && v.state.len == 0 && v.thumb.len == 0);
+        free(c);
+    }
+    /* G4: la misma sección con mayúscula inicial («XTRA») es crítica: se rechaza entera. */
+    size_t n4 = build_golden(3, buf, 16384);
+    c = dup_exact(buf, n4);
+    CHECK(t, c != NULL);
+    if (c) {
+        memset(&v, 0xA5, sizeof v);
+        CHECK(t, pgbm_parse(c, n4, &v) == PGBM_ERR_CRITICAL && view_zero(&v));
         free(c);
     }
     free(buf);
@@ -701,7 +747,7 @@ static void test_structure(struct ut *t)
 
         /* Una desconocida que lleva el archivo justo al tope total, y un byte más. */
         size_t fixed = HDR + CRCB + (SHDR + ROMF_LEN) + (SHDR + 16) + SHDR;
-        struct rsec u[3] = { romf, sav, { "ZZZZ", big, (uint32_t)(PGBM_MAX_TOTAL - fixed), -1 } };
+        struct rsec u[3] = { romf, sav, { "zzzz", big, (uint32_t)(PGBM_MAX_TOTAL - fixed), -1 } };
         n = raw_build(buf, 1, -1, -1, u, 3, false);
         CHECK(t, n == PGBM_MAX_TOTAL && parse_code(buf, n) == PGBM_OK);
         u[2].len++;
@@ -715,19 +761,21 @@ static void test_structure(struct ut *t)
         s[0] = romf;
         s[1] = sav;
         for (unsigned i = 2; i < PGBM_MAX_SECTIONS + 1; i++)
-            s[i] = (struct rsec){ "FILL", blob, 4, -1 };
+            s[i] = (struct rsec){ "fill", blob, 4, -1 };
         size_t n = raw_build(buf, 1, -1, -1, s, PGBM_MAX_SECTIONS, false);
         CHECK(t, parse_code(buf, n) == PGBM_OK);
         n = raw_build(buf, 1, -1, -1, s, PGBM_MAX_SECTIONS + 1, false);
         CHECK(t, parse_code(buf, n) == PGBM_ERR_TOO_LARGE);
     }
 
-    /* Tipos desconocidos: se ignoran (aunque se repitan o vayan vacíos) pero cuentan para el CRC. */
+    /* Tipos desconocidos auxiliares (primera letra no mayúscula): se ignoran, aunque se repitan o vayan vacíos,
+     * pero cuentan para el CRC. */
     {
-        /* Los tipos que solo se parecen a uno conocido (ROMX, METB, SAV_, STAT sin la última letra…) son desconocidos. */
-        struct rsec s[12] = { RS("XTRA", blob, 4), romf, RS("XTRA", blob, 4), { "zzzz", blob, 0, -1 }, sav, RS("~!@#", blob, 4),
-                              RS("ROMX", blob, 4), RS("METB", blob, 1), RS("SAV_", blob, 3), RS("STAU", blob, 2),
-                              RS("THMC", blob, 1), RS("XOMF", blob, 4) };
+        /* Los tipos que solo se parecen a uno conocido por tener otra letra inicial (rOMF, mETA…) son desconocidos
+         * auxiliares: el tipo se compara entero y distingue mayúsculas de minúsculas. */
+        struct rsec s[12] = { RS("xtra", blob, 4), romf, RS("xtra", blob, 4), { "zzzz", blob, 0, -1 }, sav, RS("~!@#", blob, 4),
+                              RS("rOMF", blob, 4), RS("mETA", blob, 1), RS("sAVE", blob, 3), RS("sTAT", blob, 2),
+                              RS("tHMB", blob, 1), RS("9xyz", blob, 4) };
         size_t n = raw_build(buf, 1, -1, -1, s, 12, false);
         uint8_t *c = dup_exact(buf, n);
         CHECK(t, c && pgbm_parse(c, n, &v) == PGBM_OK);
@@ -746,7 +794,7 @@ static void test_structure(struct ut *t)
         if (c) {
             size_t xpos = 0;
             for (size_t i = HDR; i + 4 < n; i++)
-                if (memcmp(c + i, "XTRA", 4) == 0) {
+                if (memcmp(c + i, "xtra", 4) == 0) {
                     xpos = i + SHDR;
                     break;
                 }
@@ -757,7 +805,7 @@ static void test_structure(struct ut *t)
         free(c);
         n = raw_build(buf, 1, -1, -1, s, 12, true);
         CHECK(t, parse_code(buf, n) == PGBM_ERR_CRC);
-        /* Un tipo no ASCII imprimible no es un tipo. */
+        /* Un tipo no ASCII imprimible no es un tipo (y eso se comprueba antes que lo de crítico: «XY Z» es BOUNDS). */
         static const char *const bad_tags[] = { "\x01XYZ", "XY Z", "XYZ\x7F", "\x80XYZ", "XYZ\xFF", "\0XYZ", " XYZ" };
         for (size_t i = 0; i < sizeof bad_tags / sizeof bad_tags[0]; i++) {
             struct rsec b[3] = { romf, sav, { bad_tags[i], blob, 4, -1 } };
@@ -769,6 +817,61 @@ static void test_structure(struct ut *t)
         memset(big, 0xFF, 8);
         n = raw_build(buf, 1, -1, -1, lc, 3, false);
         CHECK(t, parse_code(buf, n) == PGBM_OK);
+    }
+
+    /* Convención de PNG (H2 de la auditoría): un tipo desconocido cuya primera letra es mayúscula A–Z es CRÍTICO y se
+     * rechaza entero (PGBM_ERR_CRITICAL); cualquier otra primera letra (minúscula, dígito, signo) es auxiliar. */
+    {
+        static const struct { const char *tag; pgbm_result want; } kinds[] = {
+            { "XTRA", PGBM_ERR_CRITICAL }, { "Axyz", PGBM_ERR_CRITICAL }, { "Zxyz", PGBM_ERR_CRITICAL },
+            { "ROMX", PGBM_ERR_CRITICAL }, { "METB", PGBM_ERR_CRITICAL }, { "SAV_", PGBM_ERR_CRITICAL },
+            { "STAU", PGBM_ERR_CRITICAL }, { "THMC", PGBM_ERR_CRITICAL }, { "XOMF", PGBM_ERR_CRITICAL },
+            { "A000", PGBM_ERR_CRITICAL }, { "Q~~~", PGBM_ERR_CRITICAL }, { "MmMm", PGBM_ERR_CRITICAL },
+            { "@xyz", PGBM_OK }, { "[xyz", PGBM_OK }, { "`xyz", PGBM_OK }, { "{xyz", PGBM_OK },   /* vecinos de A–Z y a–z */
+            { "axyz", PGBM_OK }, { "zxyz", PGBM_OK }, { "0xyz", PGBM_OK }, { "9xyz", PGBM_OK },
+            { "~xyz", PGBM_OK }, { "!xyz", PGBM_OK }, { "rOMF", PGBM_OK }, { "meta", PGBM_OK },
+        };
+        for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+            struct rsec c3[3] = { romf, sav, { kinds[i].tag, blob, 4, -1 } };
+            size_t n = raw_build(buf, 1, -1, -1, c3, 3, false);
+            pgbm_result got = parse_copy(buf, n, &v);
+            CHECK(t, got == kinds[i].want);
+            if (got != kinds[i].want)
+                fprintf(stderr, "    tipo %.4s -> %s\n", kinds[i].tag, pgbm_result_name(got));
+            CHECK(t, got == PGBM_OK || view_zero(&v));
+        }
+        /* Va igual vacía, la primera, la única, o con las obligatorias sin escribir (se detecta al recorrer las secciones). */
+        struct rsec empty_c[3] = { romf, sav, { "XTRA", blob, 0, -1 } };
+        size_t n = raw_build(buf, 1, -1, -1, empty_c, 3, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_CRITICAL);
+        struct rsec first_c[3] = { RS("XTRA", blob, 4), romf, sav };
+        n = raw_build(buf, 1, -1, -1, first_c, 3, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_CRITICAL);
+        struct rsec only_c[1] = { RS("XTRA", blob, 4) };
+        n = raw_build(buf, 1, -1, -1, only_c, 1, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_CRITICAL);        /* gana a MISSING */
+        /* Orden de precedencia: una longitud imposible, un duplicado anterior o un CRC malo se anuncian antes. */
+        struct rsec lie[3] = { romf, sav, { "XTRA", blob, 4, 1000 } };
+        n = raw_build(buf, 1, -1, -1, lie, 3, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_BOUNDS);
+        struct rsec dup_first[4] = { romf, romf, sav, RS("XTRA", blob, 4) };
+        n = raw_build(buf, 1, -1, -1, dup_first, 4, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_DUPLICATE);
+        struct rsec crit_first[4] = { RS("XTRA", blob, 4), romf, romf, sav };
+        n = raw_build(buf, 1, -1, -1, crit_first, 4, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_CRITICAL);        /* recorre en orden: la crítica va antes */
+        struct rsec crc_c[3] = { romf, sav, RS("XTRA", blob, 4) };
+        n = raw_build(buf, 1, -1, -1, crc_c, 3, true);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_CRC);
+        n = raw_build(buf, 2, -1, -1, crc_c, 3, false);
+        CHECK(t, parse_code(buf, n) == PGBM_ERR_VERSION);
+        /* El codificador nunca la produce: lo que escribe vuelve a leerse. */
+        pgbm_view in;
+        memset(&in, 0, sizeof in);
+        in.sav = (pgbm_span){ g_sav16, 16 };
+        uint8_t enc[256];
+        size_t w = 0;
+        CHECK(t, pgbm_encode(&in, enc, sizeof enc, &w) == PGBM_OK && parse_code(enc, w) == PGBM_OK);
     }
 
     /* Versión y CRC en paquetes bien formados. */
@@ -1030,7 +1133,7 @@ static void test_names(struct ut *t)
 {
     const char *seen[16];
     unsigned n = 0;
-    for (int r = PGBM_OK; r <= PGBM_ERR_NOSPACE; r++) {
+    for (int r = PGBM_OK; r <= PGBM_ERR_CRITICAL; r++) {
         const char *s = pgbm_result_name((pgbm_result)r);
         CHECK(t, s != NULL && strncmp(s, "PGBM_", 5) == 0 && strcmp(s, "PGBM_ERR_UNKNOWN") != 0);
         bool dup = false;
@@ -1040,10 +1143,35 @@ static void test_names(struct ut *t)
         if (n < 16)
             seen[n++] = s;
     }
-    CHECK(t, n == 13);
+    CHECK(t, n == 14);
     CHECK(t, strcmp(pgbm_result_name(PGBM_ERR_CRC), "PGBM_ERR_CRC") == 0);
+    CHECK(t, strcmp(pgbm_result_name(PGBM_ERR_CRITICAL), "PGBM_ERR_CRITICAL") == 0);
+    CHECK(t, strcmp(pgbm_result_name((pgbm_result)14), "PGBM_ERR_UNKNOWN") == 0);
     CHECK(t, strcmp(pgbm_result_name((pgbm_result)99), "PGBM_ERR_UNKNOWN") == 0);
     CHECK(t, strcmp(pgbm_result_name((pgbm_result)-1), "PGBM_ERR_UNKNOWN") == 0);
+}
+
+/* H4 de la auditoría: los códigos son un contrato con las apps (Swift y JNI los mapean por número). Con literales,
+ * para que reordenar o renumerar el enum rompa la prueba aunque se cambien a la vez el header y pgbm.c. */
+static void test_result_values(struct ut *t)
+{
+    static const struct { pgbm_result r; int value; const char *name; } fixed[] = {
+        { PGBM_OK, 0, "PGBM_OK" }, { PGBM_ERR_MAGIC, 1, "PGBM_ERR_MAGIC" }, { PGBM_ERR_VERSION, 2, "PGBM_ERR_VERSION" },
+        { PGBM_ERR_TRUNCATED, 3, "PGBM_ERR_TRUNCATED" }, { PGBM_ERR_BOUNDS, 4, "PGBM_ERR_BOUNDS" },
+        { PGBM_ERR_CRC, 5, "PGBM_ERR_CRC" }, { PGBM_ERR_DUPLICATE, 6, "PGBM_ERR_DUPLICATE" },
+        { PGBM_ERR_MISSING, 7, "PGBM_ERR_MISSING" }, { PGBM_ERR_UTF8, 8, "PGBM_ERR_UTF8" },
+        { PGBM_ERR_PNG, 9, "PGBM_ERR_PNG" }, { PGBM_ERR_TOO_LARGE, 10, "PGBM_ERR_TOO_LARGE" },
+        { PGBM_ERR_ARG, 11, "PGBM_ERR_ARG" }, { PGBM_ERR_NOSPACE, 12, "PGBM_ERR_NOSPACE" },
+        { PGBM_ERR_CRITICAL, 13, "PGBM_ERR_CRITICAL" },
+    };
+    for (size_t i = 0; i < sizeof fixed / sizeof fixed[0]; i++) {
+        CHECK(t, (int)fixed[i].r == fixed[i].value);
+        CHECK(t, strcmp(pgbm_result_name((pgbm_result)fixed[i].value), fixed[i].name) == 0);
+    }
+    /* Y las constantes que las apps copian: versión, tamaños y topes. */
+    CHECK(t, PGBM_VERSION == 1u && PGBM_ROMF_BYTES == 32u && PGBM_MAX_SECTIONS == 64u);
+    CHECK(t, PGBM_MAX_TOTAL == 4194304u && PGBM_MAX_META == 65536u && PGBM_MAX_SAV == 131136u);
+    CHECK(t, PGBM_MAX_STATE == 1048576u && PGBM_MAX_THUMB == 262144u);
 }
 
 void unit_pgbm(struct ut *t)
@@ -1055,6 +1183,7 @@ void unit_pgbm(struct ut *t)
     test_content_checks(t);
     test_encode(t);
     test_names(t);
+    test_result_values(t);
 }
 
 /* ---- Semillas de fuzz_pgbm ---- */
@@ -1066,8 +1195,8 @@ size_t ut_pgbm_seed(unsigned which, uint8_t *out, size_t cap)
     base_init();
     uint8_t pkg[2048];
     size_t n = 0;
-    if (which == 0 || which == 1) {                 /* G2 y G3 (mínimo y con sección desconocida) */
-        n = build_golden(which == 0 ? 1 : 2, pkg, sizeof pkg);
+    if (which == 0 || which == 1 || which == 6) {    /* G2, G3 y G4 (mínimo, con sección auxiliar y con sección crítica) */
+        n = build_golden(which == 0 ? 1 : which == 1 ? 2 : 3, pkg, sizeof pkg);
     } else if (which == 2 || which == 3) {          /* completo pequeño; el 3 con el CRC roto y los arreglos activados */
         pgbm_view v;
         memset(&v, 0, sizeof v);

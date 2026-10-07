@@ -154,6 +154,8 @@ static pgbm_result walk_sections(const uint8_t *buf, size_t end, unsigned count,
         if (slen > end - pos)
             return PGBM_ERR_BOUNDS;    /* la sección se sale del contenedor */
         enum kind k = classify(tag);
+        if (k == K_UNKNOWN && tag[0] >= 'A' && tag[0] <= 'Z')
+            return PGBM_ERR_CRITICAL;  /* convención de PNG: mayúscula inicial = hay que entenderla */
         if (k != K_UNKNOWN) {
             if (seen & (1u << k))
                 return PGBM_ERR_DUPLICATE;
@@ -307,16 +309,24 @@ pgbm_result pgbm_encode(const pgbm_view *in, uint8_t *out, size_t cap, size_t *w
     return PGBM_OK;
 }
 
+/* Los códigos de pgbm_result son un contrato con las apps (se mapean por número): si alguien
+ * reordena el enum, esto no compila. unit_pgbm.c lo repite con literales. */
+_Static_assert(PGBM_OK == 0 && PGBM_ERR_MAGIC == 1 && PGBM_ERR_VERSION == 2 && PGBM_ERR_TRUNCATED == 3 &&
+               PGBM_ERR_BOUNDS == 4 && PGBM_ERR_CRC == 5 && PGBM_ERR_DUPLICATE == 6 && PGBM_ERR_MISSING == 7 &&
+               PGBM_ERR_UTF8 == 8 && PGBM_ERR_PNG == 9 && PGBM_ERR_TOO_LARGE == 10 && PGBM_ERR_ARG == 11 &&
+               PGBM_ERR_NOSPACE == 12 && PGBM_ERR_CRITICAL == 13,
+               "los valores de pgbm_result son estables (docs/12-formato-pgbm.md)");
+
 const char *pgbm_result_name(pgbm_result r)
 {
     /* Un solo bloque de texto sin punteros: una tabla de punteros iría a .data.rel.ro con -fPIC (NDK)
      * y `make check-globals` la tomaría por estado mutable. */
-    static const char NAMES[PGBM_ERR_NOSPACE + 1][20] = {
+    static const char NAMES[PGBM_ERR_CRITICAL + 1][20] = {
         "PGBM_OK", "PGBM_ERR_MAGIC", "PGBM_ERR_VERSION", "PGBM_ERR_TRUNCATED", "PGBM_ERR_BOUNDS",
         "PGBM_ERR_CRC", "PGBM_ERR_DUPLICATE", "PGBM_ERR_MISSING", "PGBM_ERR_UTF8", "PGBM_ERR_PNG",
-        "PGBM_ERR_TOO_LARGE", "PGBM_ERR_ARG", "PGBM_ERR_NOSPACE"
+        "PGBM_ERR_TOO_LARGE", "PGBM_ERR_ARG", "PGBM_ERR_NOSPACE", "PGBM_ERR_CRITICAL"
     };
-    if ((unsigned)r > (unsigned)PGBM_ERR_NOSPACE)
+    if ((unsigned)r > (unsigned)PGBM_ERR_CRITICAL)
         return "PGBM_ERR_UNKNOWN";
     return NAMES[r];
 }

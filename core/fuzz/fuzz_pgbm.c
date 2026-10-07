@@ -13,8 +13,9 @@
  *     al principio de THMB; bit 5 = corregir META a UTF-8 válido; bit 4 = pedir la versión 2.
  * Cada fragmento va a su propio bloque del montón de tamaño EXACTO, para que ASan detecte
  * cualquier lectura fuera de rango. Invariantes con abort(): determinismo; el fallo deja la salida
- * a cero; spans dentro del buffer y dentro de los topes; META UTF-8 estricto sin NUL y THMB con firma
- * PNG (contra un validador independiente de pgbm.c); lo que se lee se vuelve a codificar a un
+ * a cero; nunca se acepta un tipo desconocido crítico (mayúscula inicial; contra un recorrido propio);
+ * spans dentro del buffer y de los topes; META UTF-8 estricto sin NUL y THMB con firma PNG (contra un
+ * validador independiente de pgbm.c); lo que se lee se vuelve a codificar a un
  * paquete no mayor, que vuelve a leerse igual y cuyos bytes son idénticos al codificar de nuevo;
  * sin sitio (cap-1) nada se escribe; en el modo codificador el resultado coincide con el que
  * predice el validador independiente.
@@ -170,6 +171,25 @@ static void check_encode_roundtrip(const pgbm_view *in, size_t max_size)
     free(small);
 }
 
+/* Contra el recorrido propio de las secciones (independiente de walk_sections): si el paquete se leyó con éxito, no puede
+ * llevar un tipo desconocido que empiece por mayúscula (convención de PNG). Un archivo aceptado tiene la estructura bien. */
+static bool oracle_has_critical(const uint8_t *pkg, size_t n)
+{
+    static const char known[5][4] = { { 'R', 'O', 'M', 'F' }, { 'M', 'E', 'T', 'A' }, { 'T', 'H', 'M', 'B' },
+                                      { 'S', 'A', 'V', 'E' }, { 'S', 'T', 'A', 'T' } };
+    size_t pos = HDR, end = n - CRCB;
+    for (unsigned i = 0, count = (unsigned)pkg[6] | ((unsigned)pkg[7] << 8); i < count && pos <= end && end - pos >= SHDR; i++) {
+        const uint8_t *tag = pkg + pos;
+        bool is_known = false;
+        for (int k = 0; k < 5; k++)
+            is_known = is_known || memcmp(tag, known[k], 4) == 0;
+        if (!is_known && tag[0] >= 'A' && tag[0] <= 'Z')
+            return true;
+        pos += SHDR + r32(pkg + pos + 4);
+    }
+    return false;
+}
+
 static void check_parse(const uint8_t *pkg, size_t n)
 {
     pgbm_view a, b;
@@ -177,7 +197,7 @@ static void check_parse(const uint8_t *pkg, size_t n)
     memset(&b, 0x5A, sizeof b);
     pgbm_result ra = pgbm_parse(pkg, n, &a);
     pgbm_result rb = pgbm_parse(pkg, n, &b);
-    if (ra != rb || (unsigned)ra > (unsigned)PGBM_ERR_NOSPACE || ra == PGBM_ERR_ARG || ra == PGBM_ERR_NOSPACE)
+    if (ra != rb || (unsigned)ra > (unsigned)PGBM_ERR_CRITICAL || ra == PGBM_ERR_ARG || ra == PGBM_ERR_NOSPACE)
         abort();
     if (ra != PGBM_OK) {
         pgbm_view zero;
@@ -200,6 +220,8 @@ static void check_parse(const uint8_t *pkg, size_t n)
     if (!a.sav.data || (a.meta.len == 0 && a.meta.data) || (a.state.len == 0 && a.state.data) ||
         (a.thumb.len == 0 && a.thumb.data))
         abort();
+    if (oracle_has_critical(pkg, n))
+        abort();                            /* una sección crítica desconocida nunca se acepta */
     if (a.meta.len && !oracle_utf8(a.meta.data, a.meta.len))
         abort();
     if (a.thumb.len && !oracle_png(a.thumb.data, a.thumb.len))
@@ -457,8 +479,8 @@ int main(int argc, char **argv)
                 break;
             default:                                                         /* tipo de sección conocido en una posición cualquiera */
                 if (n > 8) {
-                    static const char *const tags[] = { "ROMF", "META", "THMB", "SAVE", "STAT", "XTRA" };
-                    memcpy(work + 1 + rnd() % (n - 5), tags[rnd() % 6], 4);
+                    static const char *const tags[] = { "ROMF", "META", "THMB", "SAVE", "STAT", "XTRA", "xtra", "Zabc" };
+                    memcpy(work + 1 + rnd() % (n - 5), tags[rnd() % 8], 4);
                 }
                 break;
             }
