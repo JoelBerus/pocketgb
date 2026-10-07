@@ -1,7 +1,7 @@
 package com.joelbermudez.pocketgb.library.artwork
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.joelbermudez.pocketgb.library.RomEntry
@@ -199,7 +199,7 @@ class CoverRepository(
 
         /** Lee un URI con el tope de [CoverImageRules.MAX_BYTES]; `null` si falla, no hay permiso o es mayor. */
         fun readUri(context: Context, uri: String): ByteArray? = try {
-            context.contentResolver.openInputStream(Uri.parse(uri))?.use(CoverDecoder::readLimited)
+            context.contentResolver.openInputStream(uri.toUri())?.use(CoverDecoder::readLimited)
         } catch (_: java.io.IOException) {
             null
         } catch (_: SecurityException) {

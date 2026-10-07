@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.library.artwork
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.core.graphics.scale
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -30,7 +31,7 @@ object CoverDecoder {
             if (decoded.width <= 0 || decoded.height <= 0) return null
             val (width, height) = CoverImageRules.scaledSize(decoded.width, decoded.height)
             if (width == decoded.width && height == decoded.height) return decoded
-            val scaled = Bitmap.createScaledBitmap(decoded, width, height, true)
+            val scaled = decoded.scale(width, height)
             if (scaled !== decoded) decoded.recycle()
             scaled
         } catch (_: RuntimeException) {
