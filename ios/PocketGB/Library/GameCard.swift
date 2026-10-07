@@ -73,11 +73,27 @@ struct GameMetaLine: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(PocketColor.accent)
             }
+            if entry.isDuplicate { DuplicateBadge() }
             Text(GameStatus.detail(entry, lastPlayed: state.libraryPrefs.lastPlayed(entry)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
         }
+    }
+}
+
+/// Insignia «Duplicado» (N1a): el mismo ROM está en otra carpeta. Discreta y con texto,
+/// nunca solo color (SPEC §13).
+struct DuplicateBadge: View {
+    var body: some View {
+        Text("Duplicado")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, PocketSpacing.xxs + 2)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
+            .fixedSize()
+            .accessibilityLabel("Duplicado")
     }
 }
 
@@ -136,6 +152,7 @@ enum GameAccessibility {
         var parts = [prefs.displayTitle(entry), entry.badge.name]
         if prefs.isFavorite(entry) { parts.append("Favorito") }
         if entry.isNew { parts.append("Nuevo") }
+        if entry.isDuplicate { parts.append("Duplicado") }
         if let problem = entry.problem {
             parts.append(problem.message)
         } else {

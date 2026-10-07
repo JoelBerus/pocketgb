@@ -59,12 +59,12 @@ struct EmulationOptions: Equatable, Sendable {
 }
 
 extension GameplaySettingsData {
-    /// Global + lo personalizado del juego.
-    func emulation(for gameID: String?) -> EmulationOptions {
-        let override = gameID.flatMap { perGame[$0] }
-        return EmulationOptions(colorForGameBoy: override?.colorForGameBoy ?? colorForGameBoy,
-                                compatPalette: override?.compatPalette ?? compatPalette,
-                                gbaSaveType: override?.gbaSaveType ?? 0, gbaRTC: override?.gbaRTC ?? 0,
-                                gbaUseBIOS: override?.gbaUseBIOS ?? true)
+    /// Global + lo personalizado del juego. Los ajustes por juego van por huella en
+    /// `LibraryPreferences` (N1a); `perGame` (por ruta) solo queda como copia antigua.
+    func emulation(with override: GameOverrides?) -> EmulationOptions {
+        EmulationOptions(colorForGameBoy: override?.colorForGameBoy ?? colorForGameBoy,
+                         compatPalette: override?.compatPalette ?? compatPalette,
+                         gbaSaveType: override?.gbaSaveType ?? 0, gbaRTC: override?.gbaRTC ?? 0,
+                         gbaUseBIOS: override?.gbaUseBIOS ?? true)
     }
 }

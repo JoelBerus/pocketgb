@@ -167,6 +167,53 @@ struct SaveStore: Sendable {
             "\(fingerprint).wrong-size-\(Int(date.timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).sav")
     }
 
+    // MARK: Copias apartadas del espejo (auditoría N1, H1)
+
+    /// Una partida apartada al abrir el juego: `backups/<huella>.mirror-<unix>-<id>.sav`.
+    struct KeptCopy: Equatable, Sendable {
+        let url: URL
+        let date: Date?
+    }
+
+    /// Aparta, **fuera de la rotación** de backups, la partida que perdió al abrir el juego frente
+    /// a un `.sav` junto al ROM que PocketGB no escribió (otra copia del mismo juego en otra
+    /// carpeta, un `.sav` de otro juego con el mismo nombre, otro emulador). Nunca se borra ni se
+    /// pisa; si ya hay una copia apartada idéntica, no se repite.
+    func keepMirrorLoser(_ data: Data, now: Date = Date()) throws {
+        if keptCopies().contains(where: { (try? Data(contentsOf: $0.url)) == data }) { return }
+        let fm = FileManager.default
+        try fm.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+        let url = backupsDirectory.appendingPathComponent(
+            "\(fingerprint).mirror-\(Int(now.timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).sav")
+        guard !fm.fileExists(atPath: url.path) else { throw CocoaError(.fileWriteFileExists) }
+        let tmp = url.appendingPathExtension("tmp")
+        try AtomicFile.writeSynced(data, to: tmp)
+        try AtomicFile.rename(tmp, url)
+        try AtomicFile.syncDirectory(backupsDirectory)
+    }
+
+    /// Copias apartadas de este juego, de la más reciente a la más antigua.
+    func keptCopies() -> [KeptCopy] {
+        let prefix = "\(fingerprint).mirror-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: backupsDirectory.path)) ?? []
+        return names.filter { $0.hasPrefix(prefix) && $0.hasSuffix(".sav") }
+            .map { name in
+                let url = backupsDirectory.appendingPathComponent(name)
+                return KeptCopy(url: url, date: Self.modificationDate(url))
+            }
+            .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
+
+    /// Restaura una copia apartada: la partida actual pasa antes a ser el backup `.1` y la copia
+    /// apartada se conserva.
+    func restore(kept copy: KeptCopy) throws {
+        guard copy.url.deletingLastPathComponent().standardizedFileURL.path == backupsDirectory.standardizedFileURL.path,
+              copy.url.lastPathComponent.hasPrefix("\(fingerprint).mirror-") else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
+        try save(try Data(contentsOf: copy.url))
+    }
+
     /// Restaura el backup `n`: la partida actual pasa antes a ser el backup `.1`
     /// (lo hace `AtomicFile.write`), así restaurar nunca pierde nada (docs/04 §Restaurar).
     func restore(backup n: Int) throws {

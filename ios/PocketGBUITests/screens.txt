@@ -165,3 +165,12 @@ settings-controls-ax5       portrait  light  -screen settings-controls-ax5 -cont
 # N2-H6: ↑ pulsado con Reduce Transparency también en vertical.
 gameplay-dpad-up-reduce-transparency portrait dark -screen gameplay-dpad-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -reduceTransparency -uiPressedDpad up
 gameplay-arrows-up-reduce-transparency portrait dark -screen gameplay-arrows-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -reduceTransparency -uiPressedDpad up
+# ---- N1 · Identidad y carpetas (iOS): subcarpetas hasta 5 niveles, duplicados y preferencias apartadas ----
+library-folders         portrait  light -screen library-folders -demoLibrary folders
+library-folders-list    portrait  dark  -screen library-folders-list -demoLibrary folders
+game-details-folders    portrait  light -screen game-details-folders -demoLibrary folders
+game-details-folders    portrait  dark  -screen game-details-folders -demoLibrary folders
+game-details-folders-ax5 portrait light -screen game-details-folders-ax5 -demoLibrary folders -contentSizeCategory accessibility5
+library-preferences-quarantined portrait light -screen library-preferences-quarantined -demoLibrary standard
+# Auditoría N1, H1: la partida que pierde frente a un .sav ajeno queda apartada y restaurable
+settings-save-backups   portrait  light -screen settings-save-backups -demoSaveState slots

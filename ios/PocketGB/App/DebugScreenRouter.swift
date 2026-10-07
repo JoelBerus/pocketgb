@@ -90,6 +90,14 @@ enum DebugScreen: String, CaseIterable {
     case customizeControlsDpad = "customize-controls-dpad"
     case customizeControlsArrows = "customize-controls-arrows"
     case settingsControlsAX5 = "settings-controls-ax5"
+    // N1 (iOS): carpetas anidadas, duplicados y preferencias apartadas (`-demoLibrary folders`)
+    case libraryFolders = "library-folders"
+    case libraryFoldersList = "library-folders-list"
+    case gameDetailsFolders = "game-details-folders"
+    case gameDetailsFoldersAX5 = "game-details-folders-ax5"
+    case libraryPreferencesQuarantined = "library-preferences-quarantined"
+    // Auditoría N1, H1: copia apartada (no rota) en Ajustes › Partidas › juego (`-demoSaveState slots`)
+    case settingsSaveBackups = "settings-save-backups"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -159,18 +167,21 @@ enum DebugScreenRouter {
         case .settingsSaves:
             state.selectedTab = .settings
             state.settingsPath = [.saves]
+        case .settingsSaveBackups:
+            state.selectedTab = .settings
+            state.settingsPath = [.saves, .backups(fingerprint: "demo-dmg-acid2")]
         case .gameSettings:
             state.libraryPath = [.details(id: demoFavorite, source: demoFavorite)]
             // Un juego de Game Boy con paleta personalizada (Global/Personalizado visibles).
             if let dmg = standard.first(where: { $0.id == demoWithArtwork }) {
-                state.gameplay.setOverrides(GameOverrides(colorForGameBoy: true, compatPalette: 5), for: dmg.id)
+                state.libraryPrefs.setOverrides(GameOverrides(colorForGameBoy: true, compatPalette: 5), for: dmg)
                 state.libraryPath = [.details(id: dmg.id, source: dmg.id)]
                 state.gameSettingsEntry = dmg
             }
         case .gameSettingsGBA, .gameSettingsGBAAX5:
             // Un juego de Game Boy Advance con el tipo de partida forzado.
             if let gba = standard.first(where: { $0.badge == .gba }) {
-                state.gameplay.setOverrides(GameOverrides(gbaSaveType: 3), for: gba.id)
+                state.libraryPrefs.setOverrides(GameOverrides(gbaSaveType: 3), for: gba)
                 state.libraryPath = [.details(id: gba.id, source: gba.id)]
                 state.gameSettingsEntry = gba
             }
@@ -212,6 +223,18 @@ enum DebugScreenRouter {
             }
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
+        case .libraryFolders:
+            // Filtro GB: sin el carril «Continuar», las dos copias duplicadas quedan arriba.
+            state.selectedTab = .library
+            state.libraryFilter = .gb
+        case .gameDetailsFolders, .gameDetailsFoldersAX5:
+            state.libraryPath = [.details(id: demoDeep, source: demoDeep)]
+        case .libraryPreferencesQuarantined:
+            // El mismo aviso que da la app al apartar un preferences.json dañado (N1a).
+            state.selectedTab = .library
+            let issue = LibraryPreferences.Issue.quarantined(fileName: "preferences.corrupt-20261006-101500.json")
+            state.alertTitle = issue.title
+            state.alertMessage = issue.message
         case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
              .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5,
              .customizeControlsDpad, .customizeControlsArrows:
@@ -282,6 +305,17 @@ enum DebugScreenRouter {
             try? StateStore(root: states, fingerprint: fp).save(Data(repeating: 7, count: 40_000), thumbnail: nil, to: .auto)
         }
         try? Data(repeating: 0, count: 23_000).write(to: artwork.appendingPathComponent("demo.png"))
+        // Fechas fijas (capturas deterministas) y, solo en su captura, una copia apartada (H1).
+        let dmg = SaveStore(directory: saves, fingerprint: "demo-dmg-acid2")
+        if DebugArguments.screen == DebugScreen.settingsSaveBackups.rawValue {
+            try? dmg.keepMirrorLoser(Data(repeating: 9, count: 8_192), now: Date(timeIntervalSince1970: 1_790_100_000))
+        }
+        let fixed: [(URL, TimeInterval)] = [(dmg.saveURL, 1_790_600_000), (dmg.backupURL(1), 1_790_500_000),
+                                            (dmg.backupURL(2), 1_790_400_000)]
+            + dmg.keptCopies().map { ($0.url, 1_790_100_000) }
+        for (url, time) in fixed {
+            try? fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: time)], ofItemAtPath: url.path)
+        }
         return (saves, states, artwork)
     }()
 
@@ -322,15 +356,24 @@ enum DebugScreenRouter {
         guard DebugArguments.demoLibrary != nil else { return }
         let screen = DebugArguments.screen.flatMap(DebugScreen.init(rawValue:))
         var prefs = LibraryPreferencesData()
-        prefs.favorites = [demoFavorite]
+        // Huellas conocidas por ruta (como tras abrir los juegos) y metadatos por huella (N1a).
         prefs.fingerprints = [demoWithArtwork: "demo-dmg-acid2", demoFavorite: "demo-cgb-acid2"]
-        prefs.lastPlayed = [demoWithArtwork: Date(timeIntervalSince1970: 1_790_500_000),
-                            demoFavorite: Date(timeIntervalSince1970: 1_790_300_000)]
+        var dmg = GameMetadata()
+        dmg.lastPlayed = Date(timeIntervalSince1970: 1_790_500_000)
+        dmg.lastPlayedPath = DebugArguments.demoLibrary == "folders" ? demoDeep : demoWithArtwork
+        var cgb = GameMetadata()
+        cgb.favorite = true
+        cgb.lastPlayed = Date(timeIntervalSince1970: 1_790_300_000)
+        cgb.lastPlayedPath = demoFavorite
+        prefs.games = ["demo-dmg-acid2": dmg, "demo-cgb-acid2": cgb]
         switch screen {
-        case .libraryList, .libraryScanProgress, .libraryScanSummary, .libraryRomError, .saveDataError:
+        case .libraryList, .libraryScanProgress, .libraryScanSummary, .libraryRomError, .saveDataError,
+             .libraryFoldersList:
             prefs.layout = .list
         case .settingsLibrary:
-            prefs.hiddenPaths = [demoHideable]
+            var hidden = GameMetadata()
+            hidden.hidden = true
+            prefs.pendingByPath = [demoHideable: hidden]
         default:
             prefs.layout = .grid
         }
@@ -379,6 +422,8 @@ enum DebugScreenRouter {
             library.applyDemo(phase: .ready(folderName: folder), entries: entries)
         case "errors":
             library.applyDemo(phase: .ready(folderName: folder), entries: Array(standard.prefix(2)) + errors)
+        case "folders":
+            library.applyDemo(phase: .ready(folderName: folder), entries: folders)
         default:
             break
         }
@@ -402,6 +447,32 @@ enum DebugScreenRouter {
               color: true, sub: "Pruebas"),
         entry("arm.gba", "jsmolka ARM", color: false, sub: "Pruebas"),
     ]
+
+    nonisolated private static let demoDeep = "Homebrew/Pruebas de vídeo/Acid/Game Boy/Clásicos/dmg-acid2.gb"
+
+    /// N1: árbol de carpetas de 5 niveles y una copia duplicada (misma huella) en `Copias/`.
+    /// Huellas de demostración (no son las reales de los ROMs de prueba).
+    nonisolated private static let folders: [RomEntry] = {
+        func make(_ path: String, _ title: String, color: Bool, fingerprint: String?, saved: Bool = false) -> RomEntry {
+            let file = (path as NSString).lastPathComponent
+            var e = RomEntry(id: path, url: URL(fileURLWithPath: "/demo/\(path)"), fileName: file, title: title,
+                             isColor: color, sizeBytes: 32_768, headerChecksumOK: true, cloud: .current,
+                             problem: nil,
+                             mirrorSaveDate: saved ? Date(timeIntervalSince1970: 1_790_000_000) : nil)
+            e.fingerprint = fingerprint
+            return e
+        }
+        var entries = [
+            make("Homebrew/Pruebas de vídeo/Acid/Game Boy Color/cgb-acid2.gbc", "CGB-ACID2", color: true,
+                 fingerprint: "demo-cgb-acid2"),
+            make(demoDeep, "DMG-ACID2", color: false, fingerprint: "demo-dmg-acid2", saved: true),
+            make("Copias/dmg-acid2.gb", "DMG-ACID2", color: false, fingerprint: "demo-dmg-acid2"),
+            make("Homebrew/Pruebas de reloj/rtc3test.gb", "RTC3TEST", color: false, fingerprint: "demo-rtc3test"),
+            make("Game Boy Advance/Pruebas/arm.gba", "jsmolka ARM", color: false, fingerprint: "demo-arm"),
+        ]
+        LibraryIdentity.markDuplicates(&entries)
+        return entries
+    }()
 
     nonisolated private static let errors: [RomEntry] = [
         entry("copia-de-seguridad.gb", "copia-de-seguridad", color: false, problem: .tooLarge),

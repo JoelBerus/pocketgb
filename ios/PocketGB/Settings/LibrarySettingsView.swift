@@ -21,10 +21,26 @@ struct LibrarySettingsView: View {
                     Button("Volver a escanear", systemImage: "arrow.clockwise") { state.library.refresh() }
                         .disabled(state.library.isScanning)
                 }
+                if state.library.isHashing {
+                    // N1a: reconocer cada juego por su contenido (huella) en segundo plano.
+                    HStack(spacing: PocketSpacing.sm) {
+                        ProgressView()
+                        Text("Reconociendo juegos nuevos o movidos…")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("library-hashing")
+                }
+                if state.library.limitReached {
+                    Label("La carpeta es demasiado grande y no se leyó entera: más de \(LibraryScanner.maxEntries.formatted()) juegos o \(LibraryScanner.maxVisitedItems.formatted()) archivos y carpetas. Aparta lo que no uses en carpetas que empiecen por “_”.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(PocketColor.danger)
+                        .accessibilityIdentifier("library-limit-reached")
+                }
             } header: {
                 Text("Carpeta de juegos")
             } footer: {
-                Text("PocketGB lee los ROMs de esta carpeta sin copiarlos ni modificarlos.")
+                Text("PocketGB lee los ROMs de esta carpeta y de sus subcarpetas (hasta 5 niveles) sin copiarlos ni modificarlos. Las carpetas que empiezan por “_” o “.” y la carpeta “PocketGB” no se leen.")
             }
             Section("Presentación") {
                 Picker("Vista", selection: Binding(get: { prefs.data.layout }, set: { prefs.setLayout($0) })) {
@@ -45,10 +61,11 @@ struct LibrarySettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.title)
                                     .lineLimit(2)
-                                Text(entry.fileName)
+                                Text(entry.locationText)
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .truncationMode(.middle)
                             }
                             Spacer()
                             Button("Mostrar") { prefs.unhide(entry) }
