@@ -6,76 +6,170 @@ import SwiftUI
 @MainActor @Observable
 final class LibraryToolsState {
     /// Barra de pestañas encogida (deducido del desplazamiento, `LibraryToolsPosition.minimized`).
-    var tabBarMinimized = false
+    /// Se reinicia (`reset`) al cambiar de pestaña, de ruta, de orientación o de carpeta y al cerrar
+    /// la búsqueda: en esos casos la lista se recrea arriba y la barra vuelve a estar desplegada.
+    private(set) var tabBarMinimized = false
     /// Borde inferior de la barra de navegación de la biblioteca (coordenadas globales).
     var visibleTop: CGFloat = 0
-    /// Texto del título de sección (coordenadas globales).
-    var sectionTitleFrame: CGRect = .zero
+    /// Cabecera de sección entera (título y carpeta), en coordenadas globales.
+    var sectionHeaderFrame: CGRect = .zero
     /// Cada toque en «Buscar» del grupo; la biblioteca abre la búsqueda.
     var searchRequests = 0
+
+    /// Tras un desplazamiento de la lista (`old`/`new`: desplazamiento vertical).
+    func scrolled(old: CGFloat, new: CGFloat) {
+        let next = LibraryToolsPosition.minimized(tabBarMinimized, old: old, new: new)
+        if next != tabBarMinimized { tabBarMinimized = next }
+    }
+
+    func reset() {
+        if tabBarMinimized { tabBarMinimized = false }
+    }
 }
 
-/// N3b · Biblioteca en horizontal: grupo flotante de vidrio a la derecha, a la altura de la barra
-/// de pestañas (que al desplazarse queda como una burbuja a la izquierda), con Buscar, Filtros,
-/// Categorías y Vista/Orden. Cada botón abre su panel **hacia arriba**, anclado a él, con un alto
-/// máximo que no tapa el título de sección fijado arriba (`panelMaxHeight`).
+/// Dónde están Buscar, Filtros, Categorías y Vista (decisión del orquestador para N3, igual en
+/// iOS y Android): en vertical, solo la lupa en la barra; en horizontal en reposo (barra de
+/// pestañas desplegada), los cuatro en la barra de navegación con sus paneles hacia abajo; al
+/// desplazar (barra encogida en burbuja), el grupo flotante a la derecha, en la fila de la burbuja,
+/// con sus paneles hacia arriba. Así el grupo nunca coincide con la barra desplegada.
+enum LibraryToolsPlacement: Equatable {
+    case portraitSearchButton
+    case navigationBar
+    case floatingGroup
+
+    static func placement(compactHeight: Bool, tabBarMinimized: Bool) -> LibraryToolsPlacement {
+        guard compactHeight else { return .portraitSearchButton }
+        return tabBarMinimized ? .floatingGroup : .navigationBar
+    }
+}
+
+/// Paneles de las herramientas: Filtros, Categorías y Vista/Orden.
+enum LibraryToolPanel: String, Identifiable, CaseIterable {
+    case filters, categories, view
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .filters: "Filtros"
+        case .categories: "Categorías"
+        case .view: "Vista y orden"
+        }
+    }
+}
+
+/// Símbolo y valor (VoiceOver) de cada herramienta según lo elegido: el estado va en el símbolo
+/// (relleno con un filtro o una categoría puestos) y en el texto, nunca solo en el color.
+@MainActor
+enum LibraryToolAppearance {
+    static func systemImage(_ panel: LibraryToolPanel, state: AppState) -> String {
+        switch panel {
+        case .filters:
+            state.libraryFilter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
+        case .categories:
+            state.libraryCategory == .all ? "folder" : "folder.fill"
+        case .view:
+            state.libraryPrefs.data.layout.systemImage
+        }
+    }
+
+    static func value(_ panel: LibraryToolPanel, state: AppState) -> String {
+        switch panel {
+        case .filters: state.libraryFilter.title
+        case .categories: state.libraryCategory.title
+        case .view: "\(state.libraryPrefs.data.layout.title), \(state.libraryPrefs.data.sort.title)"
+        }
+    }
+}
+
+/// N3b · Grupo flotante de vidrio a la derecha, en la fila de la burbuja de la barra de pestañas
+/// encogida, con Buscar, Filtros, Categorías y Vista/Orden. Cada botón abre su panel **hacia
+/// arriba**, anclado a él, con un alto máximo que no tapa la cabecera de sección fijada.
 struct LibraryToolsGroup: View {
     @Environment(AppState.self) private var state
-    /// Alto disponible para el contenido de un panel sin tapar el título de sección.
+    /// Alto disponible para el contenido de un panel sin tapar la cabecera de sección.
     let panelMaxHeight: CGFloat
     let onSearch: () -> Void
-    @State private var openPanel: Panel?
 
     /// Ancho del grupo: cuatro botones de 48 pt separados 8 pt.
     static let width: CGFloat = 4 * 48 + 3 * PocketSpacing.xs
-
-    enum Panel: String, Identifiable {
-        case filters, categories, view
-        var id: String { rawValue }
-    }
-
-    private var prefs: LibraryPreferences { state.libraryPrefs }
 
     var body: some View {
         GlassEffectContainer(spacing: PocketSpacing.xs) {
             HStack(spacing: PocketSpacing.xs) {
                 ToolButton(title: "Buscar", systemImage: "magnifyingglass", value: nil,
                            identifier: "library-tool-search", action: onSearch)
-                panelButton(.filters, title: "Filtros",
-                            systemImage: state.libraryFilter == .all
-                                ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill",
-                            value: state.libraryFilter.title)
-                panelButton(.categories, title: "Categorías",
-                            systemImage: state.libraryCategory == .all ? "folder" : "folder.fill",
-                            value: state.libraryCategory.title)
-                panelButton(.view, title: "Vista y orden", systemImage: prefs.data.layout.systemImage,
-                            value: "\(prefs.data.layout.title), \(prefs.data.sort.title)")
-            }
-        }
-    }
-
-    private func panelButton(_ panel: Panel, title: String, systemImage: String, value: String) -> some View {
-        ToolButton(title: title, systemImage: systemImage, value: value,
-                   identifier: "library-tool-\(panel.rawValue)") {
-            openPanel = panel
-        }
-        .popover(isPresented: Binding(get: { openPanel == panel }, set: { if !$0 { openPanel = nil } }),
-                 attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-            ToolPanel(maxHeight: panelMaxHeight) {
-                switch panel {
-                case .filters: filtersPanel
-                case .categories: categoriesPanel
-                case .view: viewPanel
+                ForEach(LibraryToolPanel.allCases) { panel in
+                    LibraryToolPanelButton(panel: panel, maxHeight: panelMaxHeight, arrowEdge: .bottom) { open in
+                        ToolButton(title: panel.title, systemImage: LibraryToolAppearance.systemImage(panel, state: state),
+                                   value: LibraryToolAppearance.value(panel, state: state),
+                                   identifier: "library-tool-\(panel.rawValue)", action: open)
+                    }
                 }
             }
-            .presentationCompactAdaptation(.popover)
-            .environment(state)
+        }
+        // VoiceOver: un contenedor con nombre; dentro, cada botón con su etiqueta y su valor.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Herramientas de la biblioteca")
+    }
+}
+
+/// Botón de herramienta de la barra de navegación (horizontal en reposo): abre su panel **hacia
+/// abajo**, anclado al botón.
+struct LibraryToolBarButton: View {
+    @Environment(AppState.self) private var state
+    let panel: LibraryToolPanel
+    let maxHeight: CGFloat
+
+    var body: some View {
+        LibraryToolPanelButton(panel: panel, maxHeight: maxHeight, arrowEdge: .top) { open in
+            Button(panel.title, systemImage: LibraryToolAppearance.systemImage(panel, state: state), action: open)
+                .accessibilityValue(LibraryToolAppearance.value(panel, state: state))
+                .accessibilityIdentifier("library-bar-\(panel.rawValue)")
         }
     }
+}
 
-    // MARK: Paneles
-    // Anchos y bajos: en horizontal sobra ancho y falta alto. Las opciones son cápsulas que
-    // fluyen en filas (con texto grande, en más filas); la elegida lleva marca y relleno.
+/// Un botón (el que se le pase) y su panel en popover anclado a él. `arrowEdge: .bottom`: la
+/// flecha abajo y el panel encima (se abre hacia arriba); `.top`: se abre hacia abajo.
+struct LibraryToolPanelButton<Label: View>: View {
+    @Environment(AppState.self) private var state
+    let panel: LibraryToolPanel
+    let maxHeight: CGFloat
+    let arrowEdge: Edge
+    @ViewBuilder let label: (_ open: @escaping () -> Void) -> Label
+    @State private var isOpen = false
+
+    var body: some View {
+        label { isOpen = true }
+            .popover(isPresented: $isOpen, attachmentAnchor: .rect(.bounds), arrowEdge: arrowEdge) {
+                ToolPanel(maxHeight: maxHeight) {
+                    LibraryToolPanelContent(panel: panel) { isOpen = false }
+                }
+                .presentationCompactAdaptation(.popover)
+                .environment(state)
+                #if DEBUG
+                .modifier(DebugDynamicType())   // el popover no hereda el tipo accesible forzado (captura AX5)
+                #endif
+            }
+    }
+}
+
+/// Contenido de un panel. Anchos y bajos: en horizontal sobra ancho y falta alto. Las opciones
+/// son cápsulas que fluyen en filas (con texto grande, en más filas); la elegida lleva marca.
+struct LibraryToolPanelContent: View {
+    @Environment(AppState.self) private var state
+    let panel: LibraryToolPanel
+    let close: () -> Void
+
+    private var prefs: LibraryPreferences { state.libraryPrefs }
+
+    var body: some View {
+        switch panel {
+        case .filters: filtersPanel
+        case .categories: categoriesPanel
+        case .view: viewPanel
+        }
+    }
 
     @ViewBuilder private var filtersPanel: some View {
         PanelTitle("Mostrar")
@@ -84,7 +178,7 @@ struct LibraryToolsGroup: View {
                 Chip(title: filter == .all ? "Todos" : filter.title, systemImage: nil,
                      selected: state.libraryFilter == filter) {
                     state.libraryFilter = filter
-                    openPanel = nil
+                    close()
                 }
                 .accessibilityIdentifier("library-filter-\(filter.rawValue)")
             }
@@ -100,7 +194,7 @@ struct LibraryToolsGroup: View {
                 Chip(title: category.title, systemImage: category == .all ? nil : category.systemImage,
                      selected: state.libraryCategory == category, detail: "\(count)") {
                     state.libraryCategory = category
-                    openPanel = nil
+                    close()
                 }
                 .accessibilityIdentifier("library-category-\(category.id)")
             }
@@ -123,11 +217,11 @@ struct LibraryToolsGroup: View {
                 .accessibilityIdentifier("library-sort-\(sort.rawValue)")
             }
             Chip(title: "Volver a escanear", systemImage: "arrow.clockwise", selected: nil) {
-                openPanel = nil
+                close()
                 state.library.refresh()
             }
             Chip(title: "Cambiar carpeta", systemImage: "folder.badge.gearshape", selected: nil) {
-                openPanel = nil
+                close()
                 state.chooseFolder()
             }
         }
@@ -158,6 +252,10 @@ private struct ToolButton: View {
         .accessibilityLabel(title)
         .accessibilityValue(value ?? "")
         .accessibilityIdentifier(identifier)
+        // Tamaño fijo con texto grande: mantener pulsado muestra el visor de contenido grande.
+        .accessibilityShowsLargeContentViewer {
+            Label(title, systemImage: systemImage)
+        }
     }
 }
 

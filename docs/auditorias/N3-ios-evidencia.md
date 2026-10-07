@@ -1,5 +1,7 @@
 # N3 🍎 · Evidencia de biblioteca y detalle adaptables (iOS: N3a + N3b)
 
+> **Auditoría Opus: APROBAR CON CAMBIOS** ([N3-ios-opus.md](N3-ios-opus.md)); respuesta en [N3-ios-respuesta.md](N3-ios-respuesta.md). Tras ella cambió la colocación de las herramientas en horizontal (decisión del orquestador): en reposo van en la barra de navegación y el grupo flotante solo aparece al desplazar. Lo que sigue describe la primera versión salvo donde se indica; la verificación de los cambios de la auditoría está pendiente del entorno (ver la respuesta).
+
 Rama `n3-ios-adaptable` (desde `n1-ios-identidad` en `b216c2a`; después se fusionó `siguiente-nivel` en `da51a57`, con N1 iOS cerrado y N2 iOS), 2026-10-07. Plan: [hitos/N-README.md](../hitos/N-README.md) §1 (peticiones 1, 6, 7 y 15) y §4 N3. Reglas de diseño: [diseno/SPEC.md](../diseno/SPEC.md) §15. Guía para Joel: [guia/biblioteca.md](../guia/biblioteca.md).
 
 ## 1. Qué cambia
@@ -23,7 +25,7 @@ Rama `n3-ios-adaptable` (desde `n1-ios-identidad` en `b216c2a`; después se fusi
 | Favoritos | `FavoritesView.swift` | Título en línea y borde duro en horizontal. Sin grupo: Favoritos no tiene búsqueda ni filtros. |
 
 ### Hallazgo corregido fuera del alcance previsto
-La captura `save-states-gba` mostró la ranura recién guardada de un juego GBA como **«Dañado»**. `StateStore.entry` solo aceptaba la firma `PGBS` del núcleo GB; los estados GBA empiezan por `PGBA` (`gba/src/gba_state.c`). Consecuencias: estados GBA marcados como dañados y `automaticEntry` nunca válido, así que **«Continuar» no salía para GBA**. Corrección de una línea (`StateStore.signatures`) con test `gameBoyAdvanceStatesAreNotReportedAsDamaged`. El núcleo sigue validando firma, versión y CRC al cargar; no toca la ruta de la partida (SRAM).
+La captura `save-states-gba` mostró la ranura recién guardada de un juego GBA como **«Dañado»**. `StateStore.entry` solo aceptaba la firma `PGBS` del núcleo GB; los estados GBA empiezan por `PGBA` (`gba/src/gba_state.c`). Consecuencias: estados GBA marcados como dañados y `automaticEntry` nunca válido tras reiniciar la app, así que **«Continuar» no salía para GBA** (justo después de cerrar el juego, en la misma sesión, sí salía porque se marcaba en memoria, y al abrirlo fallaba con «No se pudo continuar»). Corrección de una línea (`StateStore.signatures`) con test `gameBoyAdvanceStatesAreNotReportedAsDamaged`. El núcleo sigue validando firma, versión y CRC al cargar; no toca la ruta de la partida (SRAM).
 
 ## 2. Decisión: `tabViewBottomAccessory` frente a grupo propio
 Se probó primero `tabViewBottomAccessory(isEnabled:)` (iOS 26.1, `#available`) activo solo en Biblioteca y en horizontal, con los cuatro botones a la derecha del accesorio (código de prueba en DEBUG, retirado después). Capturas en el scratchpad de la sesión (`…/scratchpad/n3/evidencia/`):

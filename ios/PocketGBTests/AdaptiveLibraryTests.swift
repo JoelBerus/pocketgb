@@ -254,15 +254,89 @@ struct AdaptiveLibraryTests {
         typealias P = LibraryToolsPosition
         #expect(P.minimized(false, old: 0, new: 40))          // bajar: se encoge
         #expect(P.minimized(true, old: 40, new: 80))
-        #expect(!P.minimized(true, old: 80, new: 60))         // subir: el grupo sube por si se despliega
+        #expect(!P.minimized(true, old: 80, new: 60))         // subir: el grupo se va por si se despliega
         #expect(!P.minimized(true, old: 20, new: 4))          // arriba del todo: desplegada
         #expect(P.minimized(true, old: 80, new: 80))          // sin cambio: igual
-        // iPhone 17 Pro horizontal (medido): ventana hasta 402; burbuja con el centro en 359 y
-        // barra desplegada desde 337. Encogida: el grupo (48 pt) centrado con la burbuja.
-        let window: CGFloat = 402, bubbleCenter: CGFloat = 359, barTop: CGFloat = 337
-        #expect(window - P.bottomGap(minimized: true) - P.groupHeight / 2 == bubbleCenter)
-        // Desplegada: el grupo acaba 8 pt por encima de la barra.
-        #expect(window - P.bottomGap(minimized: false) == barTop - 8)
+        // iPhone 17 Pro horizontal (medido): ventana hasta 402; burbuja con el centro en 359.
+        let window: CGFloat = 402, bubbleCenter: CGFloat = 359
+        #expect(window - P.bottomGap - P.groupHeight / 2 == bubbleCenter)
+    }
+
+    /// Decisión del orquestador (H2): en reposo, en la barra; el grupo solo con la barra encogida.
+    @Test func toolsLiveInTheBarAtRestAndInTheGroupOnlyWhenScrolled() {
+        typealias T = LibraryToolsPlacement
+        #expect(T.placement(compactHeight: false, tabBarMinimized: false) == .portraitSearchButton)
+        #expect(T.placement(compactHeight: false, tabBarMinimized: true) == .portraitSearchButton)
+        #expect(T.placement(compactHeight: true, tabBarMinimized: false) == .navigationBar)
+        #expect(T.placement(compactHeight: true, tabBarMinimized: true) == .floatingGroup)
+        // El estado compartido: bajar → grupo; reiniciar (pestaña, ruta, giro, carpeta, cerrar
+        // búsqueda) → barra; subir → barra.
+        let tools = LibraryToolsState()
+        tools.scrolled(old: 0, new: 120)
+        #expect(tools.tabBarMinimized)
+        tools.reset()
+        #expect(!tools.tabBarMinimized)
+        tools.scrolled(old: 120, new: 200)
+        tools.scrolled(old: 200, new: 150)
+        #expect(!tools.tabBarMinimized)
+    }
+
+    @Test func panelsNeverCoverTheSectionHeader() {
+        typealias P = LibraryToolsPosition
+        // Cabecera fijada bajo la barra (título y carpeta, a todo el ancho): el panel acaba debajo.
+        let pinned = P.panelMaxHeight(groupTop: 335, visibleTop: 52,
+                                      headerFrame: CGRect(x: 0, y: 52, width: 874, height: 44))
+        let expectedPinned: CGFloat = 335 - 96 - 28
+        #expect(pinned == expectedPinned)
+        // Sin cabecera encima del grupo (o sin medir): hasta la barra de navegación.
+        let free = P.panelMaxHeight(groupTop: 335, visibleTop: 52, headerFrame: .zero)
+        let expectedFree: CGFloat = 335 - 52 - 28
+        #expect(free == expectedFree)
+        // Sin sitio: dos filas como mínimo (se desplaza por dentro); sin medir el grupo: 220.
+        #expect(P.panelMaxHeight(groupTop: 120, visibleTop: 52,
+                                 headerFrame: CGRect(x: 0, y: 52, width: 874, height: 44)) == 88)
+        #expect(P.panelMaxHeight(groupTop: 0, visibleTop: 0, headerFrame: .zero) == 220)
+    }
+
+    /// H3: si se gira con la búsqueda abierta (sin texto), `.searchable` sigue en horizontal.
+    @Test func searchStaysWhileItIsOpen() {
+        typealias S = LibrarySearchPolicy
+        #expect(S.searchableEnabled(compactHeight: false, landscapeSearch: false, presented: false, query: ""))
+        #expect(!S.searchableEnabled(compactHeight: true, landscapeSearch: false, presented: false, query: ""))
+        #expect(S.searchableEnabled(compactHeight: true, landscapeSearch: false, presented: true, query: ""))
+        #expect(S.searchableEnabled(compactHeight: true, landscapeSearch: true, presented: false, query: ""))
+        #expect(S.searchableEnabled(compactHeight: true, landscapeSearch: false, presented: false, query: "cpu"))
+        #expect(!S.searchableEnabled(compactHeight: true, landscapeSearch: false, presented: false, query: "  "))
+    }
+
+    /// H7: una categoría que ya no existe vuelve a «Todas».
+    @Test func missingCategoryFallsBackToAll() {
+        let available: [LibraryCategory] = [.folder("Kirby"), .uncategorized]
+        #expect(LibraryCategory.folder("Kirby").validated(in: available) == .folder("Kirby"))
+        #expect(LibraryCategory.folder("Pokémon").validated(in: available) == .all)
+        #expect(LibraryCategory.uncategorized.validated(in: [.folder("Kirby")]) == .all)
+        #expect(LibraryCategory.all.validated(in: []) == .all)
+    }
+
+    /// H5: plegar la sección cancela la lectura: no se lee ni se pasa al núcleo.
+    @Test func cancelledTechnicalLoadStopsBeforeReading() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("rom.gb")
+        try Self.gbROM(cartType: 0x00, ramCode: 0, globalOK: true).write(to: url)
+        let cancelled = await Task.detached { () -> Result<GameTechnicalInfo, GameTechnicalInfoLoader.Failure> in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return GameTechnicalInfoLoader.load(url: url, console: .gameBoy)
+        }.value
+        #expect(cancelled == .failure(.cancelled))
+        // La versión cancelable devuelve lo mismo que `load` si nadie la cancela.
+        let loaded = await GameTechnicalInfoLoader.loadCancellable(url: url, console: .gameBoy)
+        #expect((try? loaded.get())?.headerTitle == "TECNICO")
+        // Cancelar la tarea que espera cancela la lectura en segundo plano.
+        let waiting = Task { await GameTechnicalInfoLoader.loadCancellable(url: url, console: .gameBoy) }
+        waiting.cancel()
+        let result = await waiting.value
+        #expect(result == .failure(.cancelled) || (try? result.get()) != nil)   // o terminó antes
     }
 
     @Test func continueRowUsesTheGridColumnWidthInLandscape() {
@@ -276,21 +350,5 @@ struct AdaptiveLibraryTests {
         #expect(GridMetrics.columnWidth(containerWidth: 0, minimum: 150, spacing: 12) == 0)
     }
 
-    @Test func panelsNeverCoverTheSectionTitle() {
-        typealias P = LibraryToolsPosition
-        // Título a la izquierda y panel a la derecha (no se solapan): el panel llega a la barra.
-        let free = P.panelMaxHeight(groupTop: 335, visibleTop: 52,
-                                    titleFrame: CGRect(x: 78, y: 150, width: 130, height: 22), panelMinX: 380)
-        let expectedFree: CGFloat = 335 - 52 - 28
-        #expect(free == expectedFree)
-        // Título largo que pasa por debajo del panel: el panel se queda por debajo del título.
-        let under = P.panelMaxHeight(groupTop: 335, visibleTop: 52,
-                                     titleFrame: CGRect(x: 16, y: 150, width: 400, height: 22), panelMinX: 380)
-        let expectedUnder: CGFloat = 335 - 172 - 28
-        #expect(under == expectedUnder)
-        // Sin sitio: dos filas como mínimo (se desplaza por dentro); sin medir: 220.
-        #expect(P.panelMaxHeight(groupTop: 120, visibleTop: 52, titleFrame: .zero, panelMinX: 0) == 88)
-        #expect(P.panelMaxHeight(groupTop: 0, visibleTop: 0, titleFrame: .zero, panelMinX: 0) == 220)
-    }
 }
 

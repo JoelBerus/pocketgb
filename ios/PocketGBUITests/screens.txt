@@ -182,7 +182,7 @@ settings-save-backups   portrait  light -screen settings-save-backups -demoSaveS
 library-landscape            landscape light -screen library-landscape -demoLibrary adaptive
 library-landscape            landscape dark  -screen library-landscape -demoLibrary adaptive
 library-landscape-scrolled   landscape light -screen library-landscape-scrolled -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1
-library-landscape-search     landscape light -screen library-landscape-search -demoLibrary adaptive -uiTap library-tool-search
+library-landscape-search     landscape light -screen library-landscape-search -demoLibrary adaptive -uiTap library-search-button
 library-landscape-filters    landscape light -screen library-landscape-filters -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-filters
 library-landscape-categories landscape dark  -screen library-landscape-categories -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-categories
 library-landscape-view       landscape light -screen library-landscape-view -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-view
@@ -202,3 +202,10 @@ game-details-gba-technical   landscape dark  -screen game-details-gba-technical 
 game-details-ax5             landscape light -screen game-details-ax5 -demoLibrary adaptive -demoROMDir $FIXTURES -contentSizeCategory accessibility5
 game-details-ax5             portrait  light -screen game-details-ax5 -demoLibrary adaptive -demoROMDir $FIXTURES -contentSizeCategory accessibility5 -expandTechnicalInfo -uiSwipeUp
 save-states-gba              portrait  dark  -screen save-states-gba -rom $FIXTURES/arm.gba
+# N3 (auditoría): en reposo las herramientas van en la barra con paneles hacia abajo; al
+# desplazar, el grupo (paneles hacia arriba). Paneles con AX5 y sin transparencia.
+library-landscape-bar-filters    landscape light -screen library-landscape-bar-filters -demoLibrary adaptive -uiTap library-bar-filters
+library-landscape-bar-categories landscape dark  -screen library-landscape-bar-categories -demoLibrary adaptive -uiTap library-bar-categories
+library-landscape-bar-view       landscape light -screen library-landscape-bar-view -demoLibrary adaptive -uiTap library-bar-view
+library-landscape-panel-ax5      landscape light -screen library-landscape-panel-ax5 -demoLibrary adaptive -contentSizeCategory accessibility5 -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-categories
+library-landscape-panel-reduce-transparency landscape dark -screen library-landscape-panel-reduce-transparency -demoLibrary adaptive -reduceTransparency -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-filters

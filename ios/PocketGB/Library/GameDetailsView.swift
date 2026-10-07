@@ -102,7 +102,8 @@ struct GameDetailsView: View {
                 .padding(.bottom, PocketSpacing.xl)
                 .padding(.trailing, PocketSpacing.xs)   // el indicador de scroll no pisa los valores
             }
-            .scrollEdgeEffectStyle(.hard, for: .top)
+            // Suave: el duro dibujaba una banda opaca rectangular solo sobre esta columna (H10).
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .scrollIndicators(.automatic)
         }
         .padding(.horizontal, DetailLayout.margin)
@@ -186,10 +187,13 @@ struct GameDetailsView: View {
         technical = .loading
         let url = Self.technicalURL(entry)
         let console = entry.console
-        let result = await Task.detached(priority: .utility) {
-            GameTechnicalInfoLoader.load(url: url, console: console)
-        }.value
-        guard !Task.isCancelled else { return }
+        // Plegar (o salir) cancela esta tarea y, con ella, la lectura en segundo plano: no quedan
+        // lecturas de hasta 32 MiB en paralelo ni la sección en «Leyendo…» (auditoría N3, H5).
+        let result = await GameTechnicalInfoLoader.loadCancellable(url: url, console: console)
+        guard !Task.isCancelled, result != .failure(.cancelled) else {
+            if technical == .loading { technical = .idle }
+            return
+        }
         switch result {
         case .success(let info): technical = .loaded(info)
         case .failure(let failure): technical = .failed(failure.message)

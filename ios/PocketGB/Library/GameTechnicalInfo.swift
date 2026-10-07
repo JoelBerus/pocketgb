@@ -174,23 +174,39 @@ enum GameTechnicalInfoLoader {
         case unreadable
         /// El núcleo no lo acepta (con el mismo texto que al abrirlo).
         case rejected(String)
+        /// Se plegó la sección (o se salió del detalle) antes de terminar.
+        case cancelled
 
         var message: String {
             switch self {
             case .notDownloaded: "Se podrá ver cuando el juego esté descargado de iCloud."
             case .unreadable: "No se pudo leer el archivo."
             case .rejected(let reason): reason
+            case .cancelled: ""
             }
+        }
+    }
+
+    /// `load` fuera del hilo principal que se cancela con la tarea que lo espera.
+    static func loadCancellable(url: URL, console: Console) async -> Result<GameTechnicalInfo, Failure> {
+        let task = Task.detached(priority: .utility) { load(url: url, console: console) }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
     /// Lectura coordinada y acotada del ROM (`LibraryScanner.readROM`) y carga en una instancia
     /// propia del núcleo sin audio, que se destruye al terminar.
+    /// Comprueba la cancelación antes de leer y antes de pasar el ROM al núcleo.
     static func load(url: URL, console: Console) -> Result<GameTechnicalInfo, Failure> {
+        guard !Task.isCancelled else { return .failure(.cancelled) }
         guard RomFingerprint.isLocallyAvailable(url) else { return .failure(.notDownloaded) }
         guard let data = try? LibraryScanner.readROM(url, limit: LibraryScanner.romLimit(for: console)) else {
             return .failure(.unreadable)
         }
+        guard !Task.isCancelled else { return .failure(.cancelled) }
         return inspect(data, console: console)
     }
 

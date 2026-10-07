@@ -112,6 +112,12 @@ enum LibraryCategory: Hashable, Sendable, Identifiable {
         }
     }
 
+    /// La misma categoría si sigue existiendo; si no (otra carpeta, juegos movidos u ocultos),
+    /// «Todas» (auditoría N3, H7).
+    func validated(in available: [LibraryCategory]) -> LibraryCategory {
+        self == .all || available.contains(self) ? self : .all
+    }
+
     /// Las carpetas de primer nivel con juegos, por nombre, y «Sin categoría» al final si hay
     /// juegos en la raíz. «Todas» no se incluye (la vista la añade arriba).
     static func available(in entries: [RomEntry]) -> [LibraryCategory] {

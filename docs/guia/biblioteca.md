@@ -8,19 +8,20 @@
 ## En horizontal
 Al girar el iPhone la pantalla se aprovecha para los juegos:
 - El título pasa a una línea y siempre se lee, aunque debajo pase una captura muy clara.
-- **No hay buscador ni filtros arriba.** Al bajar, la barra de pestañas se encoge en una burbuja a la izquierda y el título de la sección («Todos los juegos», «GBA», «Pokémon»…) se queda fijo arriba para que siempre sepas qué estás viendo.
-- **A la derecha, abajo, tienes cuatro botones redondos:**
+- **No hay buscador ni filtros arriba**, y el título de la sección («Todos los juegos», «GBA», «Pokémon»…) se queda fijo arriba al bajar, para que siempre sepas qué estás viendo.
+- **Arriba del todo**, las herramientas están en la barra de arriba, junto a «…». Sus paneles se abren **hacia abajo**.
+- **Al bajar**, la barra de pestañas se encoge en una burbuja a la izquierda y las herramientas pasan a **cuatro botones redondos a la derecha, en la misma fila que la burbuja**. Sus paneles se abren **hacia arriba**, pegados al botón, y nunca tapan el título de la sección. Al volver arriba, los botones vuelven a la barra.
 
 | Botón | Qué hace |
 |---|---|
-| Lupa · **Buscar** | Abre el buscador con el teclado. Escribe parte del nombre (vale el nombre que le pusiste o el del archivo). Al cancelar, el buscador desaparece y vuelven los botones. |
+| Lupa · **Buscar** | Abre el buscador con el teclado. Escribe parte del nombre (vale el nombre que le pusiste o el del archivo). Al cerrarlo, el buscador desaparece. |
 | Embudo · **Filtros** | Todos, GB, GBC, GBA o Favoritos. Con un filtro puesto el icono se rellena. |
 | Carpeta · **Categorías** | Las carpetas de primer nivel de tu carpeta de juegos (por ejemplo «Pokémon» o «Kirby»), con cuántos juegos tiene cada una, y «Sin categoría» para los juegos sueltos. «Todas» quita el filtro. |
 | Cuadrícula o lista · **Vista y orden** | Cuadrícula o lista, ordenar por nombre o por lo último jugado, volver a escanear y cambiar de carpeta. |
 
-- Cada botón abre su panel **hacia arriba**, pegado a él, y nunca tapa el título de la sección. Toca fuera del panel para cerrarlo.
-- Lo que elijas se mantiene al volver a vertical: el título de la sección te dice qué filtro o categoría tienes puesto, y lo quitas con el segmentado o con «…» › Categoría › Todas.
-- La lupa también está en la barra de arriba, como una opción más.
+- Toca fuera de un panel para cerrarlo. Con texto muy grande, mantén pulsado un botón redondo para ver su nombre en grande.
+- Lo que elijas se mantiene al volver a vertical: el título de la sección te dice qué filtro o categoría tienes puesto, y lo quitas con el segmentado o con «…» › Categoría › Todas. Si cambias de carpeta o la categoría deja de existir, vuelve sola a «Todas».
+- La lupa también está en la barra en vertical, como una opción más.
 
 Las categorías salen de tus carpetas (ver [carpetas.md](carpetas.md)). Más adelante podrás ver también las subcategorías y mover un juego de categoría sin tocar los archivos.
 
@@ -42,6 +43,6 @@ Al final del detalle, **«Información técnica»** se despliega con un toque. P
 | ROM | El tamaño del juego. |
 | Partida guardada | Cuánto ocupa la partida y si el cartucho tiene batería o reloj. «Sin RAM» o «Sin partida» si el juego no guarda. |
 | Checksum de cabecera y global | Comprobaciones del volcado. Si el global no coincide no pasa nada: la consola real no lo mira. Un aviso siempre lleva símbolo y texto. |
-| Huella SHA-256 | La huella completa del archivo. Con «Copiar huella» la llevas al portapapeles (sirve para comprobar que dos copias son el mismo juego). |
+| Huella SHA-256 | La huella completa del ROM (en Game Boy, de los bytes que declara su cabecera, aunque el archivo tenga relleno al final; en Game Boy Advance, del archivo entero). Con «Copiar huella» la llevas al portapapeles (sirve para comprobar que dos copias son el mismo juego). |
 
 Si el juego está solo en iCloud, la información aparece cuando lo descargues: PocketGB nunca lo descarga por su cuenta solo para mirarla.

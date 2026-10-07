@@ -5,9 +5,10 @@ import SwiftUI
 /// captura real y el detalle con zoom desde la portada.
 ///
 /// N3 · En altura compacta (horizontal): título en línea con borde de scroll duro (se lee sobre
-/// una captura blanca), sin filtro segmentado ni buscador arriba, título de sección fijado y, a la
-/// derecha, el grupo flotante `LibraryToolsGroup` (Buscar, Filtros, Categorías, Vista/Orden). La
-/// búsqueda se abre con la lupa (en la barra o en el grupo) y desaparece al cancelarla.
+/// una captura blanca), sin filtro segmentado ni buscador arriba y título de sección fijado.
+/// Buscar, Filtros, Categorías y Vista van en la barra de navegación en reposo y, al desplazar,
+/// en el grupo flotante de la derecha (`LibraryToolsPlacement`). La búsqueda se abre con la lupa y
+/// desaparece al cerrarla.
 struct LibraryView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -17,7 +18,10 @@ struct LibraryView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Horizontal: la búsqueda solo existe mientras se usa (la lupa la abre).
     @State private var landscapeSearch = false
+    /// Ancho del contenido de la lista sin sus márgenes (el mismo de la cuadrícula).
     @State private var contentWidth: CGFloat = 0
+    /// Borde inferior del área útil (encima de la barra de pestañas), para los paneles de la barra.
+    @State private var safeBottom: CGFloat = 0
 
     /// Horizontal en iPhone: altura compacta.
     private var compactHeight: Bool { verticalSizeClass == .compact }
@@ -33,16 +37,7 @@ struct LibraryView: View {
                 .navigationTitle("Biblioteca")
                 // N3a: en horizontal, título en línea (el grande no cabe y se perdía sobre la captura).
                 .modifier(InlineTitleInCompactHeight(compact: compactHeight))
-                .toolbar {
-                    if case .ready = library.phase {
-                        // N3b: la búsqueda también como botón de la barra, «como una opción más».
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Buscar", systemImage: "magnifyingglass") { startSearch() }
-                                .accessibilityIdentifier("library-search-button")
-                        }
-                        ToolbarItem(placement: .topBarTrailing) { optionsMenu }
-                    }
-                }
+                .toolbar { libraryToolbar }
                 .overlay(alignment: .bottom) {
                     if let summary = library.summary {
                         ToastView(text: summary, systemImage: "sparkles")
@@ -57,6 +52,32 @@ struct LibraryView: View {
                             .modifier(ZoomNavigation(sourceID: source, namespace: zoom))
                     }
                 }
+        }
+    }
+
+    /// Barra de la biblioteca. N3b: la búsqueda también como botón de la barra, «como una opción
+    /// más»; en horizontal en reposo, además Filtros, Categorías y Vista con sus paneles hacia
+    /// abajo; con el grupo flotante a la vista (al desplazar), solo «…».
+    @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
+        if case .ready = library.phase {
+            if toolsPlacement != .floatingGroup {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Buscar", systemImage: "magnifyingglass") { startSearch() }
+                        .accessibilityIdentifier("library-search-button")
+                }
+            }
+            if toolsPlacement == .navigationBar && !library.entries.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    LibraryToolBarButton(panel: .filters, maxHeight: barPanelMaxHeight)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    LibraryToolBarButton(panel: .categories, maxHeight: barPanelMaxHeight)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    LibraryToolBarButton(panel: .view, maxHeight: barPanelMaxHeight)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) { optionsMenu }
         }
     }
 
@@ -163,10 +184,11 @@ struct LibraryView: View {
                     }
                 }
             }
+            // Ancho sin los márgenes: el de la cuadrícula (auditoría N3, H1).
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             .padding(.horizontal, PocketSpacing.md)
             // Horizontal: aire al final para que el grupo flotante no tape la última fila.
             .padding(.bottom, compact ? 72 : PocketSpacing.xl)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
         }
         // N3a: en horizontal, borde duro: el título en línea se lee aunque pase una captura blanca.
         .scrollEdgeEffectStyle(compact ? .hard : .soft, for: .top)
@@ -174,26 +196,56 @@ struct LibraryView: View {
             max(0, geometry.contentOffset.y + geometry.contentInsets.top)
         } action: { old, value in
             scrollOffset = value
-            let tools = state.libraryTools
-            let minimized = LibraryToolsPosition.minimized(tools.tabBarMinimized, old: old, new: value)
-            if minimized != tools.tabBarMinimized { tools.tabBarMinimized = minimized }
+            state.libraryTools.scrolled(old: old, new: value)
         }
         // Borde inferior de la barra de navegación: el de arriba del área segura (una capa vacía
         // que no recibe toques), para el alto de los paneles del grupo flotante.
         .overlay {
             Color.clear
                 .allowsHitTesting(false)
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
-                    state.libraryTools.visibleTop = $0
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    state.libraryTools.visibleTop = frame.minY
+                    safeBottom = frame.maxY
                 }
         }
         .refreshable { library.refresh() }
-        .modifier(LibrarySearchModifier(enabled: !compact || landscapeSearch || searching,
-                                        text: $state.librarySearch, isPresented: $state.librarySearchPresented))
+        .modifier(LibrarySearchModifier(
+            enabled: LibrarySearchPolicy.searchableEnabled(compactHeight: compact, landscapeSearch: landscapeSearch,
+                                                           presented: state.librarySearchPresented, query: query),
+            text: $state.librarySearch, isPresented: $state.librarySearchPresented))
         .onChange(of: state.librarySearchPresented) { _, presented in
-            if !presented && state.librarySearch.isEmpty { landscapeSearch = false }
+            // Abierta (también en vertical, por si se gira con ella abierta): `searchable` se queda
+            // hasta que se cierre (auditoría N3, H3).
+            guard !presented else { landscapeSearch = true; return }
+            // Al cerrar la búsqueda la lista vuelve arriba (la barra de pestañas se despliega). El
+            // `searchable` se quita después de la animación de cierre, no en el mismo ciclo
+            // (auditoría N3, H4).
+            state.libraryTools.reset()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                if !state.librarySearchPresented && state.librarySearch.isEmpty { landscapeSearch = false }
+            }
         }
         .onChange(of: state.libraryTools.searchRequests) { startSearch() }
+        // Una categoría que ya no existe (otra carpeta, juegos movidos u ocultos) vuelve a «Todas»
+        // (auditoría N3, H7).
+        .onChange(of: prefs.categories(library.entries)) { _, available in
+            state.libraryCategory = state.libraryCategory.validated(in: available)
+        }
+        .onChange(of: library.rootURL) { state.libraryCategory = .all }
+    }
+
+    /// Dónde están las herramientas ahora (`LibraryToolsPlacement`).
+    private var toolsPlacement: LibraryToolsPlacement {
+        LibraryToolsPlacement.placement(compactHeight: compactHeight,
+                                        tabBarMinimized: state.libraryTools.tabBarMinimized)
+    }
+
+    /// Alto máximo de un panel de la barra (hacia abajo): hasta encima de la barra de pestañas.
+    private var barPanelMaxHeight: CGFloat {
+        let top = state.libraryTools.visibleTop
+        guard safeBottom > top, top > 0 else { return 220 }
+        return max(safeBottom - top - 28, 2 * PocketSpacing.minTouch)
     }
 
 
@@ -278,7 +330,6 @@ struct LibraryView: View {
             Text(sectionTitle)
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.libraryTools.sectionTitleFrame = $0 }
             Spacer()
             Label(folderName, systemImage: "folder")
                 .font(.footnote)
@@ -287,6 +338,10 @@ struct LibraryView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("library-section-title")
+        // Cabecera entera (título y carpeta): los paneles del grupo nunca la tapan (auditoría N3, H6).
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            state.libraryTools.sectionHeaderFrame = $0
+        }
         .padding(.vertical, pinned ? PocketSpacing.xs : 0)
         .frame(minHeight: pinned ? PocketSpacing.minTouch : nil)
         .background {
@@ -522,6 +577,7 @@ struct ContinuePlayingRow: View {
                     }
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("continue-card-\(entry.id)")
             .matchedTransitionSource(id: "continue-\(entry.id)", in: zoom)
             .overlay(alignment: .bottomLeading) {
                 Button { state.open(entry: entry, mode: .resumeAutomatic) } label: {
@@ -606,10 +662,9 @@ enum GridMetrics {
 /// simuladores de iOS 26.5 (iPhone SE 3.ª gen y 17 Pro): la burbuja encogida tiene el centro a
 /// 43 pt del borde y la barra desplegada empieza a 65 pt.
 enum LibraryToolsPosition {
-    /// Encogida: el grupo (48 pt) centrado con la burbuja de la izquierda.
-    static let minimizedBottomGap: CGFloat = 43 - 24
-    /// Desplegada: el grupo, 8 pt por encima de la barra.
-    static let expandedBottomGap: CGFloat = 65 + 8
+    /// El grupo (48 pt) centrado con la burbuja de la izquierda: su borde inferior a esta
+    /// distancia del borde inferior de la ventana.
+    static let bottomGap: CGFloat = 43 - 24
 
     /// ¿Está encogida la barra tras este desplazamiento? `old`/`new`: desplazamiento vertical.
     static func minimized(_ current: Bool, old: CGFloat, new: CGFloat) -> Bool {
@@ -623,23 +678,17 @@ enum LibraryToolsPosition {
 
     static let groupHeight: CGFloat = 48
 
-    /// Alto máximo del contenido de un panel que se abre hacia arriba desde el grupo: llega hasta
-    /// la barra de navegación, salvo que el título de sección quede debajo del panel (se solapan
-    /// en horizontal): entonces se queda por debajo del título. 28 pt para la flecha y el aire.
+    /// Alto máximo del contenido de un panel que se abre hacia arriba desde el grupo: hasta la
+    /// cabecera de sección (título y carpeta, fijada bajo la barra al desplazar), o hasta la barra
+    /// de navegación si no hay cabecera por encima del grupo. 28 pt para la flecha y el aire.
     /// Nunca menos de dos filas (el panel se desplaza por dentro).
-    static func panelMaxHeight(groupTop: CGFloat, visibleTop: CGFloat, titleFrame: CGRect,
-                               panelMinX: CGFloat) -> CGFloat {
+    static func panelMaxHeight(groupTop: CGFloat, visibleTop: CGFloat, headerFrame: CGRect) -> CGFloat {
         guard groupTop > 0 else { return 220 }
-        let titleUnder = !titleFrame.isEmpty && titleFrame.maxX + PocketSpacing.sm > panelMinX
-            && titleFrame.maxY < groupTop
-        let limit = titleUnder ? max(titleFrame.maxY, visibleTop) : visibleTop
+        let headerAbove = !headerFrame.isEmpty && headerFrame.maxY < groupTop
+        let limit = headerAbove ? max(headerFrame.maxY, visibleTop) : visibleTop
         return max(groupTop - limit - 28, 2 * PocketSpacing.minTouch)
     }
 
-    /// Distancia del borde inferior de la ventana al borde inferior del grupo.
-    static func bottomGap(minimized: Bool) -> CGFloat {
-        minimized ? minimizedBottomGap : expandedBottomGap
-    }
 }
 
 /// Título en línea solo en altura compacta (N3a). En vertical no se toca el modo del título: con
@@ -653,5 +702,16 @@ struct InlineTitleInCompactHeight: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Cuándo existe `.searchable` en la biblioteca (N3b): siempre en vertical; en horizontal solo
+/// mientras se busca, también si la búsqueda se abrió en vertical y se gira con ella abierta
+/// (auditoría N3, H3).
+enum LibrarySearchPolicy {
+    static func searchableEnabled(compactHeight: Bool, landscapeSearch: Bool, presented: Bool,
+                                  query: String) -> Bool {
+        !compactHeight || landscapeSearch || presented
+            || !query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 }

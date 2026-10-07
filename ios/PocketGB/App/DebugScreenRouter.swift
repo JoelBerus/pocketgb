@@ -116,6 +116,12 @@ enum DebugScreen: String, CaseIterable {
     case gameDetailsGBATechnical = "game-details-gba-technical"
     case gameDetailsAX5 = "game-details-ax5"
     case saveStatesGBA = "save-states-gba"
+    // N3 (auditoría): herramientas en la barra en reposo y paneles con AX5 y sin transparencia
+    case libraryLandscapeBarFilters = "library-landscape-bar-filters"
+    case libraryLandscapeBarCategories = "library-landscape-bar-categories"
+    case libraryLandscapeBarView = "library-landscape-bar-view"
+    case libraryLandscapePanelAX5 = "library-landscape-panel-ax5"
+    case libraryLandscapePanelReduceTransparency = "library-landscape-panel-reduce-transparency"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.

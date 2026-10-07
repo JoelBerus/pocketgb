@@ -41,20 +41,22 @@ struct LibraryRootView: View {
 }
 
 /// N3b: el grupo flotante de la biblioteca en horizontal, encima del `TabView` y en coordenadas
-/// de la ventana. A la derecha; con la barra de pestañas encogida, en la fila de su burbuja;
-/// desplegada, 8 pt por encima de ella (`LibraryToolsPosition`).
+/// de la ventana. Solo al desplazar (barra de pestañas encogida en burbuja): a la derecha, en la
+/// fila de la burbuja. En reposo las herramientas van en la barra de navegación
+/// (`LibraryToolsPlacement`). El estado de la barra se reinicia al cambiar de pestaña, de ruta, de
+/// orientación o de carpeta: la lista vuelve a mostrarse arriba con la barra desplegada (H2).
 private struct LibraryToolsOverlay: View {
     @Environment(AppState.self) private var state
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var visible: Bool {
-        // Solo con juegos en pantalla (carpeta lista y con juegos) y sin búsqueda abierta. No se usa
-        // onAppear/onDisappear de la lista: al girar, la lista nueva aparece antes de que desaparezca
-        // la vieja y el grupo se quedaba oculto.
-        guard verticalSizeClass == .compact, state.selectedTab == .library, state.libraryPath.isEmpty,
-              !state.librarySearchPresented,
-              state.librarySearch.isEmpty, case .ready = state.library.phase else { return false }
+        // Solo con juegos en pantalla (carpeta lista y con juegos) y sin búsqueda abierta.
+        guard LibraryToolsPlacement.placement(compactHeight: verticalSizeClass == .compact,
+                                              tabBarMinimized: state.libraryTools.tabBarMinimized) == .floatingGroup,
+              state.selectedTab == .library, state.libraryPath.isEmpty,
+              !state.librarySearchPresented, state.librarySearch.isEmpty,
+              case .ready = state.library.phase else { return false }
         return !state.library.entries.isEmpty
     }
 
@@ -64,19 +66,21 @@ private struct LibraryToolsOverlay: View {
                 let tools = state.libraryTools
                 let window = proxy.frame(in: .global)
                 let bottom = window.maxY + proxy.safeAreaInsets.bottom
-                let gap = LibraryToolsPosition.bottomGap(minimized: tools.tabBarMinimized)
                 let trailing = window.maxX - PocketSpacing.md
-                let groupTop = bottom - gap - LibraryToolsPosition.groupHeight
+                let groupTop = bottom - LibraryToolsPosition.bottomGap - LibraryToolsPosition.groupHeight
                 let maxHeight = LibraryToolsPosition.panelMaxHeight(
-                    groupTop: groupTop, visibleTop: tools.visibleTop, titleFrame: tools.sectionTitleFrame,
-                    panelMinX: trailing - ToolPanelMetrics.width)
+                    groupTop: groupTop, visibleTop: tools.visibleTop, headerFrame: tools.sectionHeaderFrame)
                 LibraryToolsGroup(panelMaxHeight: maxHeight) { tools.searchRequests += 1 }
                     .position(x: trailing - LibraryToolsGroup.width / 2 - window.minX,
                               y: groupTop + LibraryToolsPosition.groupHeight / 2 - window.minY)
-                    .animation(PocketMotion.reducesMotion(system: reduceMotion) ? nil : .spring(duration: 0.3),
-                               value: tools.tabBarMinimized)
-                    .transition(.opacity)
+                    .transition(PocketMotion.reducesMotion(system: reduceMotion) ? .opacity
+                                : .opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .animation(PocketMotion.reducesMotion(system: reduceMotion) ? nil : .spring(duration: 0.3), value: visible)
+        .onChange(of: state.selectedTab) { state.libraryTools.reset() }
+        .onChange(of: state.libraryPath) { state.libraryTools.reset() }
+        .onChange(of: verticalSizeClass) { state.libraryTools.reset() }
+        .onChange(of: state.library.rootURL) { state.libraryTools.reset() }
     }
 }
