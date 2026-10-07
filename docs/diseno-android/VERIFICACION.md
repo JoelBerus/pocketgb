@@ -115,3 +115,19 @@ Bloque añadido al final de `tools/android-screens.txt`: **22 ids y 27 capturas*
 | Regresión: launch, library-continue, library-grid (C,O), library-ax5 (C,O), library-detail (C,O), library-detail-ax5 (C) | Lo de antes, con el carril nuevo | Carril con 2 columnas alineadas; el detalle de siempre ya no corta «Favori/Estad/Ajust» | ✅ |
 
 **Pixel Fold desplegado** (`n3-rail-portrait`, `n3-library-landscape`, `-filters`, `-categories`, `-scrolled`, `n3-details-portrait`, `-landscape`, `-landscape-resume`, claro). Su orientación natural es apaisada, así que las líneas «portrait» salen a 2208x1840 (841 × 701 dp, más ancho que alto) y las «landscape» a 1840x2208: con 2208x1840 la biblioteca usa la barra flotante con 4 columnas y el carril alineado; con 1840x2208, buscador y chips con 3 columnas y el carril alineado; el detalle va a dos columnas en las dos posturas (≥ 600 dp) con «Jugar» visible. En las dos capturas de paneles a 1840x2208 no hay panel: en esa postura no hay barra flotante (correcto). `screencap` en el plegable antepone un aviso de «varias pantallas» al PNG; se quitó a mano (los 347 primeros bytes) antes de mirarlas.
+
+### N3 tras la auditoría (`d43ba17`)
+El horizontal cambia (H1): **en reposo**, herramientas como iconos de la barra superior con paneles hacia abajo; **al desplazar**, barra flotante con paneles hacia arriba. El bloque N3 del manifiesto queda en **29 ids y 36 capturas** (el manifiesto entero, 141 ids y 213 capturas). Sustituye a las filas de la tabla anterior para los ids que cambian.
+
+| Id (variantes) | Debe verse | Se ve | Resultado |
+|---|---|---|---|
+| n3-library-landscape (C,O) | Reposo: iconos Buscar, Filtros, Categorías y Vista + «⋮» en la barra superior; sin barra flotante | Como se pide; el carril de 3 columnas se ve entero (antes la flotante tapaba la 3.ª tarjeta) | ✅ |
+| n3-library-landscape-ax5 (C) | Igual con fuente 200 % | «Biblioteca» grande e iconos en la barra; carril con portada a la izquierda | ✅ |
+| n3-library-landscape-scrolled (C,O) | Barra superior plegada, título fijado y barra flotante | «Todos los juegos · Roms» arriba y la flotante a la derecha | ✅ |
+| n3-library-landscape-filters (C,O), -categories, -view (C) | Panel que cuelga del icono, bajo la barra superior | Panel bajo la barra; tapa el título «Continuar jugando» del carril pero no el de la sección (más abajo) | ✅ |
+| n3-library-landscape-scrolled-filters (C,O), -scrolled-categories, -scrolled-view (C) | Panel hacia arriba desde la flotante, sin tapar el título fijado | Los tres acaban bajo «Todos los juegos · Roms» | ✅ (en la corrida anterior no salía el panel: se cerraba al componerse; corregido) |
+| n3-library-landscape-white (C), -white-scrolled (C) | Portadas casi blancas bajo la barra y el título fijado | Barra superior, título fijado y flotante opacos y legibles sobre blanco | ✅ |
+| n3-library-wide-filters (O, 853 dp) | Desplazada, panel de filtros sobre la flotante sin tapar el encabezado entero (H6) | Acaba bajo «Todos los juegos · Roms» | ✅ |
+| n3-details-landscape-long (C), n3-details-portrait-long (C) | Alias de 80 caracteres, ruta larga y dos copias: «Continuar» visible | Dos columnas: título a 2 líneas con «…» y «Continuar» / «Jugar desde el inicio» debajo. Vertical: título entero y «Continuar» antes de la ruta | ✅ |
+| n3-details-* resto (C,O), library-detail (C,O), library-detail-ax5 (C) | «Jugar» justo bajo el título | Así en todos | ✅ |
+| Plegable apaisado (`shots-fold2`) | Reposo con iconos, panel en reposo, desplazada, panel desplazado, detalle largo | Reposo y panel correctos. En «desplazada» la barra superior se pliega pero no aparece la flotante: con 8 juegos en 4 columnas y 701 dp de alto, el carril no puede salir por arriba y el título no se fija (límite documentado en la respuesta) | ✅ con reserva |

@@ -1,6 +1,6 @@
 # N3 Android: evidencia (biblioteca y detalle adaptables: N3a + N3b)
 
-Rama `n3-android-adaptable`, creada desde `n1-android-identidad` (`4ef80c1`) y con `siguiente-nivel` fusionado (`2770fd5`, sobre `e631cf5`: N1 Android cerrado y N8 nativo; sin conflictos). Commits del lote: `576e561` (carril, horizontal, categorías, detalle, tests y catálogo), `c49f7e7` (revisión tras mirar las capturas, guía, SPEC y script de capturas) y el de esta evidencia. **La verificación desde limpio se hizo sobre `c49f7e7`** (después solo cambian documentos).
+Rama `n3-android-adaptable`, creada desde `n1-android-identidad` (`4ef80c1`) y con `siguiente-nivel` fusionado (`2770fd5`, sobre `e631cf5`: N1 Android cerrado y N8 nativo; sin conflictos). Commits del lote: `576e561` (carril, horizontal, categorías, detalle, tests y catálogo), `c49f7e7` (revisión tras mirar las capturas, guía, SPEC y script de capturas), `1840dd7` (primera evidencia) y **`d43ba17` (respuesta a la auditoría Opus H1–H9, [N3-android-respuesta](N3-android-respuesta.md))**. La primera verificación desde limpio se hizo sobre `c49f7e7`; **la vigente, sobre `d43ba17`** (§Respuesta a la auditoría, al final). Desde la respuesta, el horizontal funciona así: en reposo, iconos en la barra superior; la barra flotante, solo al desplazar.
 
 Plan: [N-README §4 N3](../hitos/N-README.md) (peticiones 5, 6, 7 y 15; ND15). Guía: [biblioteca-android](../guia/biblioteca-android.md). SPEC: [diseno-android/SPEC.md](../diseno-android/SPEC.md) §3.3. Capturas: [VERIFICACION.md](../diseno-android/VERIFICACION.md) §N3. No se tocaron `android/app/src/main/cpp/`, `emulator/` ni la distribución de los controles en juego.
 
@@ -97,3 +97,49 @@ Defectos encontrados al mirar y corregidos en `c49f7e7`: asomaba un trozo de 4 d
 - **GBA 3:2 en el detalle**: la proporción sale de `Console` y tiene test JVM, pero ningún `.gba` llega aún a la biblioteca (N8 Kotlin).
 - La barra flotante en **modo multiventana** y con **recortes de pantalla** reales.
 - No se actualizaron `docs/ESTADO.md` ni la tabla de `docs/hitos/README.md` (los lleva el orquestador al fusionar).
+
+
+## Respuesta a la auditoría (verificación vigente, sobre `d43ba17`)
+Hallazgos y cambios: [N3-android-respuesta](N3-android-respuesta.md). En resumen:
+- **H1:** en reposo, las herramientas son iconos de la barra superior con paneles hacia abajo; la barra flotante solo aparece al desplazar (barra superior plegada ≥ 50 % y título fijado), animada salvo con «reducir movimiento» y con 88 dp de aire al final mientras se ve.
+- **H2:** antes de abrir un panel flotante que no cabe, se pliega la barra superior.
+- **H3:** «Jugar» siempre bajo el título, que va a 2 líneas como mucho en dos columnas.
+- **H4/H5:** `traversalIndex` y un solo `IconButton`.
+- **H6:** se mide el encabezado entero.
+- **H7:** al cerrar la búsqueda, la barra superior queda como estaba.
+- **H8:** tests renombrados o nuevos y `TouchTargetTest` en horizontal.
+- **H9:** el teclado se cierra en la prueba y `show_ime_with_hard_keyboard 0` en la preparación del emulador.
+
+### Desde limpio
+```
+git archive d43ba17 | tar -x -C <scratchpad>/n3a-android/clean
+cp android/local.properties clean/android/
+ln -sfn …/pocketgb-integracion/gba/tests/roms clean/gba/tests/roms     # ROMs libres de prueba (ignoradas por git)
+ln -sfn …/pocketgb-integracion/core/tests/roms clean/core/tests/roms
+PATH="$PATH:$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin" make -C gba homebrew   # rc=0, 22 ROMs homebrew
+cd clean/android && ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+```
+```
+BUILD SUCCESSFUL in 3m 37s
+120 actionable tasks: 120 executed
+```
+- **JVM: 620 pruebas, 0 fallos, 0 omitidas.** Las del lote suman 49: `RailMetricsTest` 11, `DetailLayoutTest` 8, `LibraryCategoryTest` 11, `LibraryToolsStateTest` 4, `PanelPlacementTest` 11 (nuevo) y `SectionTitleTest` 4 (nuevo). `ManifestPolicyTest` 9/9.
+- `aapt2 dump permissions` del Release: **sin `INTERNET`**.
+- **Lint: `0 errors, 20 warnings`**, ninguno en archivos del lote.
+- **Emulador** (`Small_Phone_API_35` dentro de `with-lock.sh emu`, con `show_ime_with_hard_keyboard 0`, desde el árbol limpio):
+  - **Kill-test:** `Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)`.
+  - **Instrumentadas completas, sin filtro:** **433 pruebas, 0 fallos, 0 omitidas** (49 clases). Entre ellas: `AdaptiveLibraryUiTest` 22, `LibraryUiTest` 61, `TouchTargetTest` 8, `DebugCatalogTest` 11, `CatalogCoverageTest` 9, `GbaNativeTest` 21 (con las ROMs libres enlazadas y las homebrew compiladas), `FoldersUiTest` 2, `RenameUiTest` 5, `FavoritesUiTest` 4 y `AppShellTest` 14.
+- **Mutaciones** (copia aparte de `d43ba17`), cada una rompe su test:
+
+  | Mutación | Test | Fallos |
+  |---|---|---|
+  | Panel bajo la barra sin evitar el título | `PanelPlacementTest` | 3 |
+  | Panel flotante siempre hasta arriba de la lista | `PanelPlacementTest` | 2 |
+  | Flotante también en reposo | `PanelPlacementTest` | 1 |
+  | Título de sección sin la categoría | `SectionTitleTest` | 1 |
+
+### Capturas revisadas (Read, hojas de contacto)
+- **`Small_Phone_API_35`:** 29 ids y 36 capturas N3 tras la respuesta, más la regresión `library-grid` y `library-detail`. Detalle en [VERIFICACION.md §N3](../diseno-android/VERIFICACION.md).
+- **Plegable** (`Pixel_Fold_API_35` desplegado, postura apaisada 2208x1840, con un manifiesto temporal `MANIFEST=` para no girar): reposo con iconos, panel de filtros en reposo, desplazada, panel desplazado, detalle con nombre largo; en postura vertical, carril y detalle.
+
+Rutas (scratchpad `n3a-android/`): `shots8/n3-library-landscape-landscape-light.png`, `shots8/n3-library-landscape-filters-landscape-light.png`, `shots8/n3-library-landscape-scrolled-landscape-light.png`, `shots8/n3-library-landscape-scrolled-filters-landscape-light.png`, `shots8/n3-library-landscape-white-scrolled-landscape-light.png`, `shots9/n3-details-landscape-long-landscape-light.png`, `shots-fold2/n3-library-landscape-filters-portrait-light.png`.
