@@ -6,6 +6,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
@@ -50,7 +53,12 @@ class DebugCatalogTest {
             compose.onNodeWithText("Buscar en todos").assertIsDisplayed()
         }
         launch("library-list").use {
-            compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
+            // N4: delante de «Todos los juegos» van la fila de Favoritos y las estanterías: se desplaza hasta cada fila.
+            for (title in listOf("POKÉMON RED", "POKÉMON YELLOW", "DEMO ADVENTURE", "COLOR DEMO", "ROTO")) {
+                compose.onNodeWithTag("library-collection")
+                    .performScrollToNode(hasTestTag("game-list-item") and hasText(title, substring = true))
+            }
+            compose.onAllNodesWithTag("game-card").assertCountEquals(0)
         }
         launch("library-detail").use { compose.onNodeWithTag("game-details-play").assertIsEnabled() }
         launch("library-detail-problem").use {

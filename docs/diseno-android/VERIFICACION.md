@@ -131,3 +131,32 @@ El horizontal cambia (H1): **en reposo**, herramientas como iconos de la barra s
 | n3-details-landscape-long (C), n3-details-portrait-long (C) | Alias de 80 caracteres, ruta larga y dos copias: «Continuar» visible | Dos columnas: título a 2 líneas con «…» y «Continuar» / «Jugar desde el inicio» debajo. Vertical: título entero y «Continuar» antes de la ruta | ✅ |
 | n3-details-* resto (C,O), library-detail (C,O), library-detail-ax5 (C) | «Jugar» justo bajo el título | Así en todos | ✅ |
 | Plegable apaisado (`shots-fold2`) | Reposo con iconos, panel en reposo, desplazada, panel desplazado, detalle largo | Reposo y panel correctos. En «desplazada» la barra superior se pliega pero no aparece la flotante: con 8 juegos en 4 columnas y 701 dp de alto, el carril no puede salir por arriba y el título no se fija (límite documentado en la respuesta) | ✅ con reserva |
+
+## N4: categorías, etiquetas, inicio y centro de ajustes del juego
+Bloque añadido al final de `tools/android-screens.txt`: **30 ids y 38 capturas** (el manifiesto queda en 171 ids y 251 capturas). Catálogo `debug/catalog/N4Catalog.kt` con un árbol demo de varias carpetas y niveles (Pokémon › 1ª/2ª generación › Johto, Aventuras, Puzles, Pruebas, un juego en la raíz y «Favoritas» virtual), etiquetas, tres favoritos y tres reanudables. Capturas del APK Debug del árbol limpio `df14840` en `Small_Phone_API_35`, claro y oscuro, revisadas en hojas de contacto con la herramienta Read. `n4-game-center-ax5` y `n4-move-category-ax5` se capturaron además con `font_scale 2.0` del sistema (las hojas y diálogos son otra ventana y no reciben la escala del catálogo).
+
+| Id (variantes) | Debe verse | Se ve | Resultado |
+|---|---|---|---|
+| n4-home (C,O), n4-home-scrolled (C) | Carril, fila de Favoritos con «Ver todo», estanterías por categoría | Carril de 2 columnas, «Favoritos 3 juegos · Ver todo», «Aventuras 2 juegos · Ver todo» con tarjetas del ancho de la columna | ✅ |
+| n4-home-arranged (C) | Puzles fijada (chincheta) antes que las demás; Pruebas oculta | «📌 Puzles 1 juego» justo tras Favoritos | ✅ |
+| n4-home-tag (C) | Filtro por etiqueta: sin estanterías, título «Etiqueta «rpg»», chip elegido a la vista | Así; la fila de filtros se desplaza para mostrar «Etiqueta: rpg» | ✅ |
+| n4-home-ax5 (C), n4-home-ax5-scrolled (C) | Fuente 200 %: carril en columna, sin cortes | Carril apilado con «Continuar» entero; el desplazamiento del script solo baja el carril (las estanterías a 200 % las cubre `HomeUiTest`) | ✅ |
+| n4-home-landscape (C,O) | Horizontal en reposo como N3: iconos arriba | Iconos Buscar, Filtros, Categorías, Vista y «⋮»; carril de 3 columnas | ✅ |
+| n4-home-landscape-scrolled (C) | Título fijado tras todas las filas del inicio y barra flotante | «Todos los juegos · Roms» fijado y la barra flotante | ✅ |
+| n4-home-landscape-categories (C) | Panel Categorías: cada una con su número y flecha de «abrir» | 6 chips con carpeta y «›», sin «Todas» | ✅ |
+| n4-home-landscape-filters (C) | Filtros con la sección Etiquetas | «Etiquetas: Todas, dos jugadores (1), pendiente (2), rpg (3)» | ✅ |
+| n4-category (C,O), n4-category-landscape (C) | Migas, subcategorías con número, «Juegos · 4» | «Biblioteca › Pokémon», chips «1ª generación (2)», «2ª generación (2)» | ✅ |
+| n4-category-nested-list (C) | Nivel 2 en lista | «Biblioteca › Pokémon › 2ª generación», «Johto (1)», 2 filas | ✅ |
+| n4-category-ax5 (C) | Fuente 200 % | Migas en dos líneas, todo legible | ✅ |
+| n4-category-virtual (C), n4-category-root (O) | «Favoritas» (virtual) con el icono de movido; «Sin categoría» con «En la carpeta principal» | Así | ✅ |
+| n4-details-moved (C) | Ruta real, insignia «Movido en la app», «Se ve en «Favoritas»» y etiquetas | Así | ✅ |
+| n4-game-center (C,O), -moved (C), -scrolled (C,O), -reading (C), -landscape (C) | Nombre, Categoría (Cambiar / Volver a su carpeta), Etiquetas, Portada y Progreso deshabilitadas, Color y paleta, Ocultar, pie | Así; «Leyendo el juego…» deshabilita Categoría y Etiquetas | ✅ |
+| n4-game-center-ax5 (C, sistema 2,0) | Título entero, botones bajo el texto | Título en 3 líneas, «Cambiar» bajo la categoría | ✅ |
+| n4-tag-editor (C,O) | Etiquetas con quitar, campo con «+», sugerencias | Así | ✅ |
+| n4-move-category (C,O), -scrolled (C) | Lista de categorías existentes con «su carpeta» y «ahora», nueva categoría abajo, botones que no se cortan | Así; «Volver a su carpeta» en su fila | ✅ |
+| n4-move-category-ax5 (C, sistema 2,0) | Fuente 200 % | Cabe poco (título, explicación y botones ocupan casi todo) pero se desplaza y nada se corta | ✅ (apretado) |
+| n4-settings-library (C) | Fila «Inicio» en Presentación | Así | ✅ |
+| n4-settings-home (C,O), -ax5 (C) | Fila de Favoritos; por categoría chincheta, subir/bajar (deshabilitados en los extremos) y «En el inicio» | Pokémon fijada, Pruebas oculta; con 200 % los controles bajo el nombre | ✅ |
+| Regresión: launch, library-grid, library-list (C,O), game-settings (C,O), n3-library-landscape-scrolled (C,O) | Lo de antes con el inicio nuevo | Favoritos y estanterías bajo el carril; la primera corrida en claro salió con el buscador enfocado y el teclado abierto (el emulador quedó fuera del modo táctil tras las instrumentadas); repetidas, salen bien | ✅ |
+
+Defectos encontrados al mirar y corregidos: el selector de categoría con tres botones apretaba la lista hasta casi cero (el botón que no cabía crecía letra a letra en alto: ahora los botones van en `FlowRow`); el campo «Nueva categoría» arriba recibía el foco y abría el teclado tapando la lista (ahora va debajo); la etiqueta «Nueva etiqueta» partida en dos líneas (ahora «+» dentro del campo); la captura desplazada en horizontal no llegaba al título fijado si arrancaba en vertical; con fuente grande se cortaban el título del centro y las categorías del selector. Observación previa a N4: el aviso «Drag handle» asoma sobre el asa de las hojas en el emulador con teclado físico.

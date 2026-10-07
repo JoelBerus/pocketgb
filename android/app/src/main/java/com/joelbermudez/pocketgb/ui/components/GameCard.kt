@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -78,6 +79,8 @@ fun GameMetaLine(
     modifier: Modifier = Modifier,
     /** `false` dentro de una tarjeta con etiqueta combinada (R8): chip y favorito no se anuncian aparte. */
     announce: Boolean = true,
+    /** N4: insignias solo con icono (tarjetas estrechas de la cuadrícula y de las estanterías). */
+    compactBadges: Boolean = false,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ConsoleChip(entry.isColor, announce = announce)
@@ -98,6 +101,7 @@ fun GameMetaLine(
             )
         }
         if (entry.isDuplicate) DuplicateBadge()
+        if (entry.isMovedInApp) MovedBadge(compact = compactBadges, announce = announce)
         Text(
             gameDetailText(entry, lastPlayedAt),
             modifier = Modifier.weight(1f, fill = false),
@@ -124,7 +128,39 @@ fun DuplicateBadge(modifier: Modifier = Modifier) {
     )
 }
 
-/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, duplicado, problema y última partida. */
+/**
+ * N4 (ND3): el juego se ve en otra categoría que la de su carpeta. Discreta, como «Duplicado»: contorno fino, icono de
+ * mover y, si cabe, el texto «Movido en la app»; [compact] = solo el icono (el texto va en la etiqueta de la tarjeta).
+ */
+@Composable
+fun MovedBadge(
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    /** `false` dentro de una tarjeta con etiqueta combinada: el texto ya va en ella (H4, no se lee dos veces). */
+    announce: Boolean = true,
+) {
+    val text = stringResource(R.string.n4_moved_badge)
+    Row(
+        modifier
+            .testTag("game-moved-badge")
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .padding(horizontal = if (compact) 4.dp else 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(
+            Icons.AutoMirrored.Outlined.DriveFileMove,
+            contentDescription = if (compact && announce) text else null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!compact) {
+            Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, duplicado, movido (N4), problema y última partida. */
 @Composable
 fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
     val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
@@ -132,6 +168,7 @@ fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Lo
     if (favorite) parts += stringResource(R.string.game_favorite)
     if (entry.isNew) parts += stringResource(R.string.game_new)
     if (entry.isDuplicate) parts += stringResource(R.string.n1_duplicate)
+    if (entry.isMovedInApp) parts += stringResource(R.string.n4_moved_badge)
     parts += entry.problem?.message ?: if (lastPlayedAt != null) {
         stringResource(R.string.game_status_played, relativeDateText(lastPlayedAt))
     } else {
@@ -200,7 +237,7 @@ fun GameCard(
                     style = MaterialTheme.typography.titleSmall,
                     color = titleColor,
                 )
-                GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+                GameMetaLine(entry, favorite, lastPlayedAt, announce = false, compactBadges = true)
             }
         }
     } else {
@@ -220,7 +257,7 @@ fun GameCard(
                 style = MaterialTheme.typography.titleSmall,
                 color = titleColor,
             )
-            GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+            GameMetaLine(entry, favorite, lastPlayedAt, announce = false, compactBadges = true)
         }
     }
 }

@@ -24,6 +24,14 @@ sealed interface LibraryRoute : AppRoute {
 
     @Serializable
     data class Details(val gameId: String) : LibraryRoute
+
+    /** N4: pantalla de una categoría; [path] desde la raíz (vacía = «Sin categoría»). */
+    @Serializable
+    data class Category(val path: List<String>) : LibraryRoute
+
+    /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
+    @Serializable
+    data class GameSaves(val fingerprint: String) : LibraryRoute
 }
 
 @Serializable
@@ -36,6 +44,10 @@ sealed interface FavoritesRoute : AppRoute {
 
     @Serializable
     data class Details(val gameId: String) : FavoritesRoute
+
+    /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
+    @Serializable
+    data class GameSaves(val fingerprint: String) : FavoritesRoute
 }
 
 @Serializable
@@ -51,6 +63,10 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object Library : SettingsRoute
+
+    /** N4: Ajustes › Biblioteca › Inicio. */
+    @Serializable
+    data object LibraryHome : SettingsRoute
 
     @Serializable
     data object Saves : SettingsRoute

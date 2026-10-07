@@ -22,6 +22,7 @@ import com.joelbermudez.pocketgb.library.RomLocation
 import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.ui.components.LocalArtworkStore
 import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
+import com.joelbermudez.pocketgb.ui.library.CategoryContent
 import com.joelbermudez.pocketgb.ui.library.GameActions
 import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LibraryPanel
@@ -143,12 +144,28 @@ private fun N3Library(
     initialLayout: LibraryLayout = LibraryLayout.GRID,
     white: Boolean = false,
 ) {
-    var prefs by remember { mutableStateOf(N3Data.prefs(initialLayout)) }
+    var prefs by remember {
+        mutableStateOf(N3Data.prefs(initialLayout).let { if (initialCategory != LibraryCategory.All) it.withCategoryLayout(initialCategory, initialLayout) else it })
+    }
     var query by remember { mutableStateOf(initialQuery) }
     var filter by remember { mutableStateOf(LibraryFilter.ALL) }
+    // N4: una categoría ya no filtra la biblioteca: se abre su pantalla (migas, subcategorías y juegos).
     var category by remember { mutableStateOf(initialCategory) }
     N3Frame(white) {
         CompositionLocalProvider(LocalLibraryToolsPreset provides preset) {
+            if (category != LibraryCategory.All) {
+                CategoryContent(
+                    state = LibraryState.Ready(N3Data.entries, "Roms"),
+                    prefs = prefs,
+                    category = category,
+                    actions = n3Actions,
+                    onBack = { category = LibraryCategory.All },
+                    onOpenCategory = { category = it },
+                    onOpenCrumb = { category = it ?: LibraryCategory.All },
+                    onLayoutChange = { prefs = prefs.withCategoryLayout(category, it) },
+                )
+                return@CompositionLocalProvider
+            }
             LibraryContent(
                 state = LibraryState.Ready(N3Data.entries, "Roms"),
                 prefs = prefs,
@@ -162,8 +179,7 @@ private fun N3Library(
                 onRescan = {},
                 actions = n3Actions,
                 artworkFingerprints = N3Data.coveredFingerprints,
-                category = category,
-                onCategoryChange = { category = it },
+                onOpenCategory = { category = it },
             )
         }
     }

@@ -100,7 +100,7 @@ class LibraryUiTest {
         /** N3 (ND15): ids que se pueden continuar (estado automático vigente); el carril solo muestra estos. */
         resumable: Set<String> = emptySet(),
     ) {
-        var prefs by remember { mutableStateOf(initial) }
+        var prefs by remember { mutableStateOf(initial.withoutHome(state)) }
         var query by remember { mutableStateOf("") }
         var filter by remember { mutableStateOf(LibraryFilter.ALL) }
         PocketGBTheme {
@@ -131,6 +131,19 @@ class LibraryUiTest {
     }
 
     private var playFromRecent = false
+
+    /**
+     * N4: sin estanterías del inicio ni fila de Favoritos (estas pruebas son de la cuadrícula, la lista y el carril; el
+     * inicio se prueba en HomeUiTest).
+     */
+    private fun LibraryPreferencesData.withoutHome(state: LibraryState): LibraryPreferencesData {
+        val entries = when (state) {
+            is LibraryState.Ready -> state.entries
+            is LibraryState.Scanning -> state.previous
+            else -> emptyList()
+        }
+        return copy(home = home.copy(showFavorites = false, hidden = com.joelbermudez.pocketgb.library.LibraryHome.keys(entries, this).toSet()))
+    }
 
     /** Huella sintética estable de un juego de prueba. */
     private fun fingerprintOf(entry: RomEntry) = "%064x".format(entry.id.hashCode().toLong() and 0xFFFFFFFFL)
@@ -542,7 +555,7 @@ class LibraryUiTest {
             PocketGBTheme {
                 LibraryContent(
                     state = LibraryState.Ready(scanned, "Juegos"),
-                    prefs = prefs.copy(layout = layout),
+                    prefs = prefs.copy(layout = layout).withoutHome(LibraryState.Ready(scanned, "Juegos")),
                     query = "",
                     filter = LibraryFilter.ALL,
                     onQueryChange = {},

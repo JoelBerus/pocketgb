@@ -94,6 +94,9 @@ class AdaptiveLibraryUiTest {
         prefs.recordPlayed(entry.id, fingerprintOf(entry), at = 100L - i)
     }
 
+    /** N4: la categoría que se pidió abrir (panel Categorías o «⋮»). */
+    private var openedCategory: LibraryCategory? = null
+
     /** Teléfono girado (escalado para caber en el emulador vertical). */
     private val landscape = DpSize(640.dp, 360.dp)
 
@@ -110,10 +113,11 @@ class AdaptiveLibraryUiTest {
         artwork: Set<String> = games.map(::fingerprintOf).toSet(),
         preset: LibraryToolsPreset = LibraryToolsPreset(),
     ) {
-        var prefs by remember { mutableStateOf(initial) }
+        // N4: sin estanterías del inicio (estas pruebas son de N3: herramientas, paneles y carril; las del inicio, en
+        // HomeUiTest).
+        var prefs by remember { mutableStateOf(initial.copy(home = initial.home.copy(hidden = setOf("Pokémon", "Kirby", ".")))) }
         var query by remember { mutableStateOf("") }
         var filter by remember { mutableStateOf(LibraryFilter.ALL) }
-        var category by remember { mutableStateOf<LibraryCategory>(LibraryCategory.All) }
         CompositionLocalProvider(LocalLibraryToolsPreset provides preset) {
             LibraryContent(
                 state = LibraryState.Ready(games, "Roms"),
@@ -134,8 +138,7 @@ class AdaptiveLibraryUiTest {
                     canResume = { it.id in resumable },
                 ),
                 artworkFingerprints = artwork,
-                category = category,
-                onCategoryChange = { category = it },
+                onOpenCategory = { openedCategory = it },
             )
         }
     }
@@ -330,19 +333,21 @@ class AdaptiveLibraryUiTest {
 
         compose.onNodeWithTag("bar-filters").performClick()
         compose.onNodeWithTag("panel-filter-ALL").performScrollTo().performClick()
+        // N4: una categoría abre su pantalla (la biblioteca no se filtra).
         compose.onNodeWithTag("bar-categories").performClick()
         compose.onNodeWithTag("panel-category-folder-Pokémon").performScrollTo().performClick()
-        compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Pokémon")
-        compose.onAllNodesWithTag("game-card").assertCountEquals(2)
+        compose.onAllNodesWithTag("library-panel-categories").assertCountEquals(0)
+        assertEquals(LibraryCategory.Folder("Pokémon"), openedCategory)
+        compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Todos los juegos")
 
         compose.onNodeWithTag("bar-categories").performClick()
         compose.onNodeWithTag("panel-category-root").performScrollTo().performClick()
-        compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Sin categoría")
-        compose.onAllNodesWithTag("game-card").assertCountEquals(2)
+        assertEquals(LibraryCategory.Uncategorized, openedCategory)
 
         compose.onNodeWithTag("bar-view").performClick()
         compose.onNodeWithTag("panel-layout-LIST").performScrollTo().performClick()
-        compose.onAllNodesWithTag("game-list-item").assertCountEquals(2)
+        compose.onAllNodesWithTag("game-card").assertCountEquals(0)
+        assertTrue(compose.onAllNodesWithTag("game-list-item").fetchSemanticsNodes().isNotEmpty())
     }
 
     @Test
@@ -414,8 +419,8 @@ class AdaptiveLibraryUiTest {
         show(null) { Library() }
         compose.onNodeWithTag("view-menu").performClick()
         compose.onNodeWithTag("menu-category-folder-Kirby").performClick()
-        compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Kirby")
-        compose.onAllNodesWithTag("game-card").assertCountEquals(1)
+        // N4: abre la pantalla de la categoría.
+        assertEquals(LibraryCategory.Folder("Kirby"), openedCategory)
     }
 
     // ---- N3a · detalle ----

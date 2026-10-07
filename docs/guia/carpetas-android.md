@@ -18,7 +18,7 @@ Roms/                                   ← la carpeta que eliges en la app
   _Revisar/                             ← apartada: PocketGB no mira dentro
 ```
 
-Las carpetas de primer nivel (aquí «Pokémon») son **categorías**: en horizontal las eliges con el botón Categorías y en vertical con «⋮» › Categoría (ver [biblioteca-android.md](biblioteca-android.md)). En el detalle de cada juego ves dónde está, por ejemplo «Pokémon › 2ª generación · Pokemon Gold.gbc». Más adelante podrás ver también las subcategorías.
+Las carpetas de primer nivel (aquí «Pokémon») son **categorías** y las de dentro, **subcategorías**: cada categoría tiene su estantería en el inicio y su pantalla, con las subcategorías y unas migas («Pokémon › 2ª generación»). En el detalle de cada juego ves dónde está, por ejemplo «Pokémon › 2ª generación · Pokemon Gold.gbc». Cómo usarlas, mostrar un juego en otra categoría sin mover el archivo y las etiquetas: [categorias-android.md](categorias-android.md). Hay un texto corto para dejar en tu carpeta: [LEEME-PocketGB.txt](../LEEME-PocketGB.txt).
 
 ## Las reglas
 

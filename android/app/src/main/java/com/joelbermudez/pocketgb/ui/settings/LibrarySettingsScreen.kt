@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
@@ -51,7 +53,7 @@ import com.joelbermudez.pocketgb.ui.settings.components.DropdownRow
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 
 @Composable
-fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit) {
+fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit, onOpenHome: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val folderName by viewModel.folderName.collectAsStateWithLifecycle()
@@ -74,6 +76,7 @@ fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit) {
         sort = prefs.sort,
         onLayout = viewModel::setLayout,
         onSort = viewModel::setSort,
+        onOpenHome = onOpenHome,
     )
 }
 
@@ -111,6 +114,8 @@ fun LibrarySettingsContent(
     sort: LibrarySort = LibrarySort.TITLE,
     onLayout: (LibraryLayout) -> Unit = {},
     onSort: (LibrarySort) -> Unit = {},
+    /** N4: Ajustes › Biblioteca › Inicio; `null` no muestra la fila. */
+    onOpenHome: (() -> Unit)? = null,
 ) {
     var confirmForget by remember { mutableStateOf(false) }
     val hasFolder = state != LibraryState.NoFolder && state != LibraryState.Loading
@@ -199,6 +204,16 @@ fun LibrarySettingsContent(
                         onSelect = onSort,
                         tag = "library-sort",
                     )
+                    if (onOpenHome != null) {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.n4_settings_home)) },
+                            supportingContent = { Text(stringResource(R.string.n4_settings_home_summary)) },
+                            leadingContent = { Icon(Icons.Outlined.Home, contentDescription = null) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                            modifier = Modifier.clickable(onClick = onOpenHome).testTag("settings-library-home"),
+                        )
+                    }
                 }
                 HorizontalDivider()
                 ListItem(

@@ -54,10 +54,31 @@ data class RomEntry(
     val documentId: String? = null,
     /** N1-H1: identidad de la cabecera ([RomHeader.identity]), parte del sello; `null` si no se pudo leer. */
     val headerKey: String? = null,
+    /**
+     * N4: etiquetas libres del juego (por huella), aplicadas por [LibraryQuery]; el escáner nunca las pone. Solo son
+     * metadatos de la app.
+     */
+    val tags: List<String> = emptyList(),
+    /**
+     * N4 (ND3): categoría virtual elegida en la app («Mostrar en categoría…», por huella), aplicada por [LibraryQuery];
+     * `null` = la de su carpeta. Vacía = «Sin categoría». Nunca mueve el archivo.
+     */
+    val virtualFolderPath: List<String>? = null,
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String
         get() = alias ?: title
+
+    /** N4: la categoría en la que se muestra: la virtual si la hay ([virtualFolderPath]) o la de su carpeta. */
+    val categoryPath: List<String>
+        get() = virtualFolderPath ?: folderPath
+
+    /**
+     * N4: se muestra en otra categoría que la de su carpeta (insignia «Movido en la app»). Una copia que ya está en la
+     * carpeta elegida para su huella no lo está (H10).
+     */
+    val isMovedInApp: Boolean
+        get() = virtualFolderPath != null && virtualFolderPath != folderPath
 
     /** Carpetas separadas por `/` ("" en la raíz). */
     val subfolder: String

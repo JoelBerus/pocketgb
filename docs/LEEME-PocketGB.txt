@@ -1,0 +1,41 @@
+LEEME · Cómo leer esta carpeta con PocketGB
+============================================
+
+Esta es tu carpeta de juegos. PocketGB la lee tal cual: no copia, mueve, renombra
+ni borra nada. Cada carpeta es una categoría y las de dentro, subcategorías.
+
+Ejemplo:
+
+  Roms/                                   <- la carpeta que eliges en la app
+    Pokémon/                              <- categoría
+      1ª generación/                      <- subcategorías (hasta 5 niveles)
+        Pokemon Red.gb
+        Pokemon Red.sav                   <- partida (la mantiene la app)
+        Pokemon Red.png                   <- portada opcional, mismo nombre que el ROM
+    Kirby/
+      Kirby - Nightmare in Dream Land.gba
+    Tetris.gb                             <- en la raíz: «Sin categoría»
+    gba_bios.bin                          <- opcional, BIOS de tu GBA (raíz)
+    PocketGB/                             <- de la app: Intercambio/, Exportados/
+    _Revisar/                             <- apartada: no se escanea
+
+Reglas
+- Hasta 5 niveles de carpetas. Un juego más hondo no aparece.
+- Lo que empieza por «.» se ignora. Las carpetas que empiezan por «_» quedan
+  apartadas (PocketGB no mira dentro): úsalas para copias o juegos por revisar.
+- «PocketGB/» en la raíz es de la app: no pongas juegos dentro.
+- Solo .gb, .gbc (hasta 8 MiB) y .gba (hasta 32 MiB; .gba: iPhone, Android
+  cuando llegue). Los .zip no se leen:
+  descomprímelos antes.
+- La partida es el .sav con el mismo nombre que el juego, en su misma carpeta.
+  Si mueves un juego, mueve también su .sav.
+- Portadas: una imagen con el mismo nombre que el juego (.png, .jpg o .webp)
+  junto a él (llegará en una próxima versión).
+
+En la app (no cambia esta carpeta)
+- «Mostrar en categoría…» (ajustes del juego) enseña un juego en otra categoría
+  sin mover el archivo; «Volver a su carpeta» lo deshace.
+- Etiquetas libres por juego para buscar y filtrar.
+- Ajustes › Biblioteca › Inicio: orden, fijadas y ocultas del inicio.
+
+Más detalles: docs/11-biblioteca-carpetas.md en el proyecto PocketGB.

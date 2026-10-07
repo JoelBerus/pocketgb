@@ -54,6 +54,17 @@ class AppNavigationState(snapshot: NavigationSnapshot = initialSnapshot()) {
         currentBackStack.add(route)
     }
 
+    /**
+     * N4 (migas): vuelve a [route] si está en la pila de la pestaña activa, quitando lo que haya encima. `false` si no
+     * está (quien llama puede apilarla).
+     */
+    fun popTo(route: AppRoute): Boolean {
+        val index = currentBackStack.lastIndexOf(route)
+        if (index < 0) return false
+        while (currentBackStack.lastIndex > index) currentBackStack.removeAt(currentBackStack.lastIndex)
+        return true
+    }
+
     fun pop(): Boolean {
         if (currentBackStack.size == 1) return false
         currentBackStack.removeAt(currentBackStack.lastIndex)

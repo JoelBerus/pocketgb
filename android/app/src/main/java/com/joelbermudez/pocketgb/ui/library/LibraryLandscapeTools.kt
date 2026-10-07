@@ -17,11 +17,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Folder
@@ -59,7 +59,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -80,6 +82,8 @@ import com.joelbermudez.pocketgb.library.LibraryCategory
 import com.joelbermudez.pocketgb.library.LibraryFilter
 import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibrarySort
+import com.joelbermudez.pocketgb.library.TagOption
+import com.joelbermudez.pocketgb.library.Tags
 import kotlin.math.roundToInt
 
 /** Paneles de las herramientas de la biblioteca en horizontal (N3b). */
@@ -103,6 +107,8 @@ data class LibraryToolsPreset(
     val focusSearch: Boolean = true,
     val scrolled: Boolean = false,
     val collapse: Float = 1f,
+    /** N4: arrancar con la lista desplazada hasta esta fila (también en vertical; solo el catálogo). */
+    val scrollToItem: Int? = null,
 )
 
 val LocalLibraryToolsPreset = staticCompositionLocalOf { LibraryToolsPreset() }
@@ -148,8 +154,11 @@ class LibraryToolsState internal constructor(
     var headerTop by mutableIntStateOf(-1)
     var headerBottom by mutableIntStateOf(-1)
 
-    /** Hay carril «Continuar jugando» delante del título de sección (lo anota la lista). */
-    var railShown by mutableStateOf(false)
+    /**
+     * Filas delante del título de sección: el carril «Continuar jugando», la fila de Favoritos y las estanterías del
+     * inicio (N4; lo anota la lista). El título está fijado cuando todas salieron por arriba ([isTitlePinned]).
+     */
+    var leadingItems by mutableIntStateOf(0)
 
     /** El título de sección si está en pantalla. */
     val header: HeaderBounds?
@@ -181,18 +190,23 @@ internal fun rememberLibraryToolsState(): LibraryToolsState {
     }
 }
 
-/** Callbacks y valores que comparten los iconos de la barra superior y la barra flotante. */
+/**
+ * Callbacks y valores que comparten los iconos de la barra superior y la barra flotante. N4: elegir una categoría abre su
+ * pantalla ([onOpenCategory]) en vez de filtrar la biblioteca; los filtros incluyen la etiqueta.
+ */
 internal class LibraryToolActions(
     val filter: LibraryFilter,
-    val category: LibraryCategory,
     val categories: List<CategoryOption>,
     val layout: LibraryLayout,
     val sort: LibrarySort,
     val onSearch: () -> Unit,
     val onFilterChange: (LibraryFilter) -> Unit,
-    val onCategoryChange: (LibraryCategory) -> Unit,
+    val onOpenCategory: (LibraryCategory) -> Unit,
     val onLayoutChange: (LibraryLayout) -> Unit,
     val onSortChange: (LibrarySort) -> Unit,
+    val tag: String? = null,
+    val tags: List<TagOption> = emptyList(),
+    val onTagChange: (String?) -> Unit = {},
 )
 
 /** Buscar, Filtros, Categorías y Vista/Orden; [tagPrefix] distingue los de la barra superior de los de la flotante. */
@@ -209,18 +223,21 @@ private fun ToolButtons(tools: LibraryToolsState, actions: LibraryToolActions, s
         tools.panel = null
         actions.onSearch()
     }
+    val filtered = actions.filter != LibraryFilter.ALL || actions.tag != null
+    val filterState = stringResource(R.string.n3_tools_filter_state, actions.filter.title)
     ToolButton(
-        icon = if (actions.filter != LibraryFilter.ALL) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
+        icon = if (filtered) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
         label = stringResource(R.string.n3_tools_filters),
-        highlighted = actions.filter != LibraryFilter.ALL || open == LibraryPanel.FILTERS,
-        state = stringResource(R.string.n3_tools_filter_state, actions.filter.title),
+        highlighted = filtered || open == LibraryPanel.FILTERS,
+        state = actions.tag?.let { stringResource(R.string.n4_tools_filter_tag_state, filterState, it) } ?: filterState,
         tag = "$tagPrefix-filters",
     ) { onOpen(LibraryPanel.FILTERS) }
+    // N4: las categorías abren su pantalla; el botón no se queda «puesto».
     ToolButton(
-        icon = if (actions.category != LibraryCategory.All) Icons.Filled.Folder else Icons.Outlined.Folder,
+        icon = Icons.Outlined.Folder,
         label = stringResource(R.string.n3_tools_categories),
-        highlighted = actions.category != LibraryCategory.All || open == LibraryPanel.CATEGORIES,
-        state = stringResource(R.string.n3_tools_category_state, categoryTitle(actions.category)),
+        highlighted = open == LibraryPanel.CATEGORIES,
+        state = null,
         tag = "$tagPrefix-categories",
     ) { onOpen(LibraryPanel.CATEGORIES) }
     ToolButton(
@@ -320,7 +337,6 @@ private fun PanelPopup(
             panel = panel,
             maxHeightPx = maxHeightPx,
             filter = actions.filter,
-            category = actions.category,
             categories = actions.categories,
             layout = actions.layout,
             sort = actions.sort,
@@ -328,9 +344,15 @@ private fun PanelPopup(
                 tools.panel = null
                 actions.onFilterChange(it)
             },
-            onCategoryChange = {
+            onOpenCategory = {
                 tools.panel = null
-                actions.onCategoryChange(it)
+                actions.onOpenCategory(it)
+            },
+            tag = actions.tag,
+            tags = actions.tags,
+            onTagChange = {
+                tools.panel = null
+                actions.onTagChange(it)
             },
             onLayoutChange = {
                 tools.panel = null
@@ -409,14 +431,16 @@ private fun LibraryPanelContent(
     panel: LibraryPanel,
     maxHeightPx: Int,
     filter: LibraryFilter,
-    category: LibraryCategory,
     categories: List<CategoryOption>,
     layout: LibraryLayout,
     sort: LibrarySort,
     onFilterChange: (LibraryFilter) -> Unit,
-    onCategoryChange: (LibraryCategory) -> Unit,
+    onOpenCategory: (LibraryCategory) -> Unit,
     onLayoutChange: (LibraryLayout) -> Unit,
     onSortChange: (LibrarySort) -> Unit,
+    tag: String?,
+    tags: List<TagOption>,
+    onTagChange: (String?) -> Unit,
 ) {
     val title = when (panel) {
         LibraryPanel.FILTERS -> stringResource(R.string.n3_tools_filters)
@@ -447,21 +471,35 @@ private fun LibraryPanelContent(
                             OptionChip(option.title, filter == option, "panel-filter-${option.name}") { onFilterChange(option) }
                         }
                     }
+                    // N4: filtro por etiqueta (solo si algún juego visible tiene etiquetas).
+                    if (tags.isNotEmpty() || tag != null) {
+                        PanelTitle(stringResource(R.string.n4_panel_tags))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OptionChip(stringResource(R.string.n4_tag_all), tag == null, "panel-tag-all") { onTagChange(null) }
+                            tags.forEach { option ->
+                                OptionChip(
+                                    stringResource(R.string.n4_tag_option, option.tag, option.count),
+                                    tag != null && Tags.same(tag, option.tag),
+                                    "panel-tag-${option.tag}",
+                                ) { onTagChange(option.tag) }
+                            }
+                        }
+                    }
                 }
                 LibraryPanel.CATEGORIES -> {
                     PanelTitle(title)
+                    // N4: cada categoría abre su pantalla (subcategorías, migas y juegos).
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OptionChip(
-                            stringResource(R.string.n3_category_all),
-                            category == LibraryCategory.All,
-                            "panel-category-all",
-                        ) { onCategoryChange(LibraryCategory.All) }
                         categories.forEach { option ->
-                            OptionChip(
+                            CategoryChip(
                                 stringResource(R.string.n3_category_option, categoryTitle(option.category), option.count),
-                                category == option.category,
+                                stringResource(
+                                    R.string.n4_open_category_description,
+                                    categoryTitle(option.category),
+                                    pluralStringResource(R.plurals.n4_games, option.count, option.count),
+                                ),
                                 "panel-category-${categoryTag(option.category)}",
-                            ) { onCategoryChange(option.category) }
+                            ) { onOpenCategory(option.category) }
                         }
                     }
                     if (!LibraryCategory.hasFolders(categories)) {
@@ -511,6 +549,23 @@ private fun PanelTitle(text: String) {
         text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** N4: chip que abre la pantalla de una categoría (con icono de carpeta y la flecha de «ir»). */
+@Composable
+internal fun CategoryChip(label: String, description: String, tag: String, onClick: () -> Unit) {
+    androidx.compose.material3.AssistChip(
+        onClick = onClick,
+        label = { Text(label) },
+        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.padding(0.dp)) },
+        trailingIcon = {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+            )
+        },
+        modifier = Modifier.heightIn(min = 48.dp).testTag(tag).semantics { contentDescription = description },
     )
 }
 
