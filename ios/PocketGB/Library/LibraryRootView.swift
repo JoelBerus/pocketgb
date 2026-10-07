@@ -49,8 +49,11 @@ private struct LibraryToolsOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var visible: Bool {
+        // Solo con juegos en pantalla (carpeta lista y con juegos) y sin búsqueda abierta. No se usa
+        // onAppear/onDisappear de la lista: al girar, la lista nueva aparece antes de que desaparezca
+        // la vieja y el grupo se quedaba oculto.
         guard verticalSizeClass == .compact, state.selectedTab == .library, state.libraryPath.isEmpty,
-              state.libraryTools.showsGames, !state.librarySearchPresented,
+              !state.librarySearchPresented,
               state.librarySearch.isEmpty, case .ready = state.library.phase else { return false }
         return !state.library.entries.isEmpty
     }

@@ -194,8 +194,6 @@ struct LibraryView: View {
             if !presented && state.librarySearch.isEmpty { landscapeSearch = false }
         }
         .onChange(of: state.libraryTools.searchRequests) { startSearch() }
-        .onAppear { state.libraryTools.showsGames = true }
-        .onDisappear { state.libraryTools.showsGames = false }
     }
 
 

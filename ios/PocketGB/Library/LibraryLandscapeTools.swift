@@ -11,8 +11,6 @@ final class LibraryToolsState {
     var visibleTop: CGFloat = 0
     /// Texto del título de sección (coordenadas globales).
     var sectionTitleFrame: CGRect = .zero
-    /// La biblioteca muestra juegos (no un estado vacío ni una búsqueda).
-    var showsGames = false
     /// Cada toque en «Buscar» del grupo; la biblioteca abre la búsqueda.
     var searchRequests = 0
 }
