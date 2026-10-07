@@ -159,3 +159,5 @@ details-duplicate portrait dark
 library-duplicates portrait light
 library-duplicates portrait dark
 library-duplicates-list portrait light
+saves-set-aside portrait light
+saves-set-aside portrait dark

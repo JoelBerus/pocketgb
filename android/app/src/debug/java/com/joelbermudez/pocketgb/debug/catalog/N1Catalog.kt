@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.debug.catalog
 
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.joelbermudez.pocketgb.debug.DebugIntent
@@ -11,6 +12,9 @@ import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.saves.SaveStore
+import com.joelbermudez.pocketgb.saves.SavedGameUi
+import com.joelbermudez.pocketgb.ui.settings.SavesSettingsContent
 import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
 import com.joelbermudez.pocketgb.ui.library.GameActions
 import com.joelbermudez.pocketgb.ui.library.LibraryContent
@@ -113,6 +117,23 @@ private fun N1Details(id: String, favorite: Boolean) {
     )
 }
 
+/** Ajustes › Partidas con una partida apartada fuera de la rotación (perdió frente al `.sav` de una copia repetida). */
+@Composable
+private fun N1SavesSetAside() {
+    val red = CatalogData.fingerprint(CatalogData.games[0].id)
+    val games = remember {
+        listOf(
+            SavedGameUi(
+                red, "POKÉMON RED", "Pokemon Red.gb",
+                listOf(SaveStore.BackupInfo(1, 1_759_700_000_000), SaveStore.BackupInfo(2, 1_759_600_000_000)),
+                listOf(SaveStore.SetAsideInfo("$red.mirror-1759650000-0a1b2c3d.sav", 1_759_650_000_000)),
+            ),
+            SavedGameUi("5a2f9b31".repeat(8), "POKÉMON YELLOW", "Amarillo/Pokemon Yellow.gbc", emptyList()),
+        )
+    }
+    SavesSettingsContent(games, openFingerprint = null, snackbar = remember { SnackbarHostState() }, onRestore = { _, _ -> }, onBack = {})
+}
+
 /** Pantallas nuevas de N1 (Android). */
 internal val n1CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = buildMap {
     // Detalle de un juego en el quinto nivel: «Clásicos › Nintendo › Pokémon › 2ª generación › Johto · archivo».
@@ -124,4 +145,6 @@ internal val n1CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     // Biblioteca con tres copias de «POKÉMON RED»: insignia «Duplicado» discreta en cada tarjeta; el carril lo muestra una vez.
     put("library-duplicates") { N1Library(LibraryLayout.GRID) }
     put("library-duplicates-list") { N1Library(LibraryLayout.LIST) }
+    // Ajustes › Partidas: «Apartadas (no se borran solas)» con su botón Restaurar.
+    put("saves-set-aside") { N1SavesSetAside() }
 }
