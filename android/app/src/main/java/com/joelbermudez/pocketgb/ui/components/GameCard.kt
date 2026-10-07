@@ -112,7 +112,7 @@ fun GameMetaLine(
 @Composable
 fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
     val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
-    val parts = mutableListOf(entry.title, system)
+    val parts = mutableListOf(entry.displayTitle, system)
     if (favorite) parts += stringResource(R.string.game_favorite)
     if (entry.isNew) parts += stringResource(R.string.game_new)
     parts += entry.problem?.message ?: if (lastPlayedAt != null) {
@@ -176,7 +176,7 @@ fun GameCard(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    entry.title,
+                    entry.displayTitle,
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = titleLines,
                     overflow = TextOverflow.Ellipsis,
@@ -196,7 +196,7 @@ fun GameCard(
                 if (entry.problem != null) StatusBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
             Text(
-                entry.title,
+                entry.displayTitle,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = titleLines,
                 overflow = TextOverflow.Ellipsis,
@@ -268,7 +268,7 @@ fun GameListItem(
         GameArtwork(entry, fingerprint, Modifier.width(ThumbnailWidth), compact = true, decorative = true)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                entry.title,
+                entry.displayTitle,
                 maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,

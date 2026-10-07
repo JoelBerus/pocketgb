@@ -32,6 +32,7 @@ import com.joelbermudez.pocketgb.game.GameDialog
 import com.joelbermudez.pocketgb.game.GameNotice
 import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.game.OpenError
+import com.joelbermudez.pocketgb.saves.ResumeFailure
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
 
@@ -64,6 +65,43 @@ fun openErrorText(error: OpenError): String = when (error) {
     OpenError.SavePending -> stringResource(R.string.open_error_save_pending)
     OpenError.Unreadable -> stringResource(R.string.open_error_unreadable)
     is OpenError.Core -> stringResource(R.string.open_error_core, causeText(error.error))
+    is OpenError.ResumeFailed -> resumeFailureText(error.reason)
+}
+
+/** Por qué no se pudo continuar (A9); siempre con la partida intacta. */
+@Composable
+fun resumeFailureText(reason: ResumeFailure): String = stringResource(
+    when (reason) {
+        ResumeFailure.MISSING -> R.string.a9_resume_failed_missing
+        ResumeFailure.UNREADABLE -> R.string.a9_resume_failed_unreadable
+        ResumeFailure.NOT_CURRENT -> R.string.a9_resume_failed_not_current
+        ResumeFailure.INCOMPATIBLE -> R.string.a9_resume_failed_incompatible
+        ResumeFailure.CORRUPT -> R.string.a9_resume_failed_corrupt
+    },
+)
+
+/**
+ * «No se pudo continuar» (A9, el aviso de iOS D8.1): explica por qué el estado automático no vale y ofrece «Jugar desde
+ * el inicio», que abre la misma partida sin el estado. Cancelar no abre nada; en ningún caso se ha escrito la partida.
+ */
+@Composable
+fun ResumeFailedDialog(reason: ResumeFailure, onPlayFromStart: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.a9_resume_failed_title)) },
+        text = { Text(stringResource(R.string.a9_resume_failed_body, resumeFailureText(reason))) },
+        confirmButton = {
+            Button(onClick = onPlayFromStart, modifier = Modifier.heightIn(min = 48.dp).testTag("resume-failed-play")) {
+                Text(stringResource(R.string.a9_resume_failed_play))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("resume-failed-cancel")) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        },
+        modifier = Modifier.testTag("resume-failed-dialog"),
+    )
 }
 
 /** Texto del snackbar de un [GameNotice] (fuera de Compose: lo usa un colector de flujo). */
@@ -233,6 +271,11 @@ fun GameDialogs(viewModel: GameplayViewModel) {
             onRequestLeave = viewModel::requestRiskyExit,
             onConfirmLeave = { viewModel.exit(force = true) },
             onCancelLeave = viewModel::cancelRiskyExit,
+        )
+        is GameDialog.ResumeFailed -> ResumeFailedDialog(
+            reason = current.reason,
+            onPlayFromStart = viewModel::playFromStartAfterResumeFailure,
+            onDismiss = viewModel::dismissDialog,
         )
     }
 }

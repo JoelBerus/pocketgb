@@ -38,6 +38,12 @@ class GameActions(
     val onPlay: ((RomEntry) -> Unit)? = null,
     /** Abre los ajustes del juego (hoja por juego); sin valor, el menú no los ofrece. */
     val onGameSettings: ((RomEntry) -> Unit)? = null,
+    /** A9: «Jugar desde el inicio» (solo la partida, sin el estado automático); se ofrece si [canResume]. */
+    val onPlayFromStart: ((RomEntry) -> Unit)? = null,
+    /** A9: «Renombrar» (alias visual); sin valor, el menú no lo ofrece. */
+    val onRename: ((RomEntry) -> Unit)? = null,
+    /** A9: el juego tiene «Continuar» exacto (estado automático vigente). */
+    val canResume: (RomEntry) -> Boolean = { false },
 )
 
 /**
@@ -67,6 +73,9 @@ class GameMenuController internal constructor(private val actions: GameActions) 
             onToggleFavorite = { actions.onToggleFavorite(entry) },
             onGameSettings = actions.onGameSettings?.let { settings -> { settings(entry) } },
             onHide = { hideCandidate = entry },
+            canResume = actions.canResume(entry),
+            onPlayFromStart = actions.onPlayFromStart?.let { play -> { play(entry) } },
+            onRename = actions.onRename?.let { rename -> { rename(entry) } },
         )
     }
 }
@@ -81,7 +90,7 @@ fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController)
     content(controller)
     controller.hideCandidate?.let { entry ->
         HideGameDialog(
-            title = entry.title,
+            title = entry.displayTitle,
             onConfirm = {
                 controller.hideCandidate = null
                 actions.onHide(entry)

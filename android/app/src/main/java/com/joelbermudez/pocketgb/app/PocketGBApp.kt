@@ -17,7 +17,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.saves.LaunchMode
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -80,6 +86,23 @@ private fun AppContent(
 ) {
     val scope = rememberCoroutineScope()
 
+    // A9 · «Continuar» exacto: qué huellas tienen estado automático vigente. Se recalcula al conocer huellas nuevas y
+    // al salir de una partida (lo hace el ViewModel). «Continuar» retoma el estado; «Jugar desde el inicio», la partida.
+    val resumable by gameplay.resumable.collectAsStateWithLifecycle()
+    val prefs by library.prefs.collectAsStateWithLifecycle()
+    val knownFingerprints = remember(prefs.fingerprints) { prefs.fingerprints.values.toSet() }
+    LaunchedEffect(knownFingerprints) { gameplay.refreshContinuations(knownFingerprints) }
+    val currentResumable by rememberUpdatedState(resumable)
+    val currentFingerprints by rememberUpdatedState(prefs.fingerprints)
+    val play: (RomEntry) -> Unit = remember(gameplay) {
+        { entry ->
+            val fingerprint = currentFingerprints[entry.id]
+            val resume = entry.isPlayable && fingerprint != null && fingerprint in currentResumable
+            gameplay.open(entry, if (resume) LaunchMode.RESUME else LaunchMode.FRESH)
+        }
+    }
+    val playFromStart: (RomEntry) -> Unit = remember(gameplay) { { entry -> gameplay.open(entry, LaunchMode.FRESH) } }
+
     BackHandler(enabled = navigationState.currentBackStack.size > 1) {
         navigationState.pop()
     }
@@ -98,14 +121,18 @@ private fun AppContent(
                                     LibraryScreen(
                                         viewModel = library,
                                         onOpenDetails = openDetails,
-                                        onPlay = gameplay::open,
+                                        onPlay = play,
                                         gameplaySettings = gameplaySettings,
+                                        onPlayFromStart = playFromStart,
+                                        resumable = resumable,
                                     )
                                 },
                                 detail = { id ->
                                     GameDetailsScreen(
-                                        library, id, onPlay = gameplay::open, onBack = {},
+                                        library, id, onPlay = play, onBack = {},
                                         gameplaySettings = gameplaySettings,
+                                        onPlayFromStart = playFromStart,
+                                        resumable = resumable,
                                     )
                                 },
                             )
@@ -113,29 +140,37 @@ private fun AppContent(
                             LibraryScreen(
                                 viewModel = library,
                                 onOpenDetails = { navigationState.push(LibraryRoute.Details(it)) },
-                                onPlay = gameplay::open,
+                                onPlay = play,
                                 gameplaySettings = gameplaySettings,
+                                onPlayFromStart = playFromStart,
+                                resumable = resumable,
                             )
                         }
                     }
                     is LibraryRoute.Details -> NavEntry(route) {
                         GameDetailsScreen(
-                            library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                            library, route.gameId, onPlay = play, onBack = { navigationState.pop() },
                             gameplaySettings = gameplaySettings,
+                            onPlayFromStart = playFromStart,
+                            resumable = resumable,
                         )
                     }
                     FavoritesRoute.Root -> NavEntry(route) {
                         FavoritesScreen(
                             viewModel = library,
                             onOpenDetails = { navigationState.push(FavoritesRoute.Details(it)) },
-                            onPlay = gameplay::open,
+                            onPlay = play,
                             gameplaySettings = gameplaySettings,
+                            onPlayFromStart = playFromStart,
+                            resumable = resumable,
                         )
                     }
                     is FavoritesRoute.Details -> NavEntry(route) {
                         GameDetailsScreen(
-                            library, route.gameId, onPlay = gameplay::open, onBack = { navigationState.pop() },
+                            library, route.gameId, onPlay = play, onBack = { navigationState.pop() },
                             gameplaySettings = gameplaySettings,
+                            onPlayFromStart = playFromStart,
+                            resumable = resumable,
                         )
                     }
                     SettingsRoute.Root -> NavEntry(route) {

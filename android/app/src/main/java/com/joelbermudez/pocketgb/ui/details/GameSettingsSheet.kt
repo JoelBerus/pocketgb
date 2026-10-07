@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +50,7 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.settings.GameOverrides
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
+import com.joelbermudez.pocketgb.ui.components.RenameGameHost
 import com.joelbermudez.pocketgb.ui.settings.SettingRowLabel
 import com.joelbermudez.pocketgb.ui.settings.compatPaletteOptions
 import com.joelbermudez.pocketgb.ui.settings.compatPaletteTitle
@@ -68,12 +70,16 @@ fun GameSettingsHost(
     val prefs by library.prefs.collectAsStateWithLifecycle()
     val settings by repository.state.collectAsStateWithLifecycle()
     var unavailable by remember(entry.id) { mutableStateOf(false) }
+    var renaming by remember(entry.id) { mutableStateOf(false) }
     val fingerprint = prefs.fingerprints[entry.id]
     LaunchedEffect(entry.id, fingerprint) {
         if (fingerprint == null && library.loadDetails(entry.id) is DetailsLoad.Failed) unavailable = true
     }
+    val shown = prefs.withAlias(entry)
     GameSettingsSheet(
-        title = entry.title,
+        title = shown.displayTitle,
+        headerTitle = entry.title,
+        onRename = { renaming = true },
         isColor = entry.isColor,
         global = settings,
         overrides = fingerprint?.let { settings.perGame[it] } ?: GameOverrides(),
@@ -83,6 +89,12 @@ fun GameSettingsHost(
         onDismiss = onDismiss,
         loading = fingerprint == null && !unavailable,
         unavailable = fingerprint == null && unavailable,
+    )
+    RenameGameHost(
+        entry = shown.takeIf { renaming },
+        prefs = prefs,
+        onSetAlias = library::setAlias,
+        onDismiss = { renaming = false },
     )
 }
 
@@ -102,6 +114,10 @@ fun GameSettingsSheet(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     unavailable: Boolean = false,
+    /** A9: título de la cabecera (se muestra bajo el nombre si el juego está renombrado). */
+    headerTitle: String? = null,
+    /** A9: fila «Nombre» con «Renombrar»; `null` la oculta. */
+    onRename: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -125,6 +141,7 @@ fun GameSettingsSheet(
                     Text(stringResource(R.string.game_settings_done))
                 }
             }
+            if (onRename != null) NameRow(title, headerTitle, onRename)
             when {
                 loading -> Row(
                     Modifier.fillMaxWidth().padding(16.dp),
@@ -143,6 +160,34 @@ fun GameSettingsSheet(
             }
         }
     }
+}
+
+/** «Nombre»: el nombre visible del juego (alias o cabecera) y «Renombrar» (A9). Solo presentación. */
+@Composable
+private fun NameRow(title: String, headerTitle: String?, onRename: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.a9_game_settings_name)) },
+        supportingContent = {
+            Column {
+                Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (headerTitle != null && headerTitle != title) {
+                    Text(
+                        stringResource(R.string.a9_game_settings_name_header, headerTitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        trailingContent = {
+            TextButton(onClick = onRename, modifier = Modifier.heightIn(min = 48.dp).testTag("game-settings-rename")) {
+                Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.a9_rename), modifier = Modifier.padding(start = 6.dp))
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.testTag("game-settings-name"),
+    )
 }
 
 @Composable

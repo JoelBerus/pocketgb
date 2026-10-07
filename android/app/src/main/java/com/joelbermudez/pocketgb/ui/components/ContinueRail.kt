@@ -97,7 +97,7 @@ private fun ContinueCard(
     // Misma etiqueta combinada que la tarjeta de la cuadrícula (R8): título, sistema, favorito, nuevo y última partida.
     val description = rememberGameDescription(entry, prefs.isFavorite(entry), lastPlayed)
     val detailsLabel = stringResource(R.string.game_details_action)
-    val continueDescription = stringResource(R.string.continue_button_description, entry.title)
+    val continueDescription = stringResource(R.string.continue_button_description, entry.displayTitle)
     val cover: @Composable (Modifier) -> Unit = { coverModifier ->
         Box(
             coverModifier
@@ -114,7 +114,7 @@ private fun ContinueCard(
     val texts: @Composable (Modifier) -> Unit = { textModifier ->
         Column(textModifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                entry.title,
+                entry.displayTitle,
                 maxLines = if (horizontal) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall,

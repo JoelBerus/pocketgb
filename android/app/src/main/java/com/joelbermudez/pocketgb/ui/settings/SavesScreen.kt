@@ -86,6 +86,8 @@ fun SavesScreen(browser: SavesBrowser, gameplay: GameplayViewModel, onBack: () -
                 val result = withContext(Dispatchers.IO) {
                     runCatching { browser.restore(fingerprint, backup, gameplay.openFingerprint.value) }
                 }
+                // A9: la partida restaurada es más nueva que el estado automático: «Continuar» se recalcula.
+                if (result.isSuccess) gameplay.didRestoreSave(fingerprint)
                 refresh++
                 snackbar.showSnackbar(
                     result.exceptionOrNull()?.let { resources.getString(R.string.saves_restore_failed, causeText(it)) }

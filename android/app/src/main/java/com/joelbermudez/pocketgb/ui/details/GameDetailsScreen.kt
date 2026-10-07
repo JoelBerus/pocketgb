@@ -15,7 +15,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Tune
@@ -28,6 +31,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,6 +74,7 @@ import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.ui.components.ConsoleChip
 import com.joelbermudez.pocketgb.ui.components.GameArtwork
 import com.joelbermudez.pocketgb.ui.components.HideGameDialog
+import com.joelbermudez.pocketgb.ui.components.RenameGameHost
 import com.joelbermudez.pocketgb.ui.components.relativeDateText
 import com.joelbermudez.pocketgb.ui.library.ScanningPane
 
@@ -76,9 +82,14 @@ import com.joelbermudez.pocketgb.ui.library.ScanningPane
 fun GameDetailsScreen(
     viewModel: LibraryViewModel,
     gameId: String,
+    /** Acción principal: «Continuar» si hay estado automático vigente, si no «Jugar» (quien llama elige el modo). */
     onPlay: (RomEntry) -> Unit,
     onBack: () -> Unit,
     gameplaySettings: GameplaySettingsRepository? = null,
+    /** A9: «Jugar desde el inicio» (solo la partida). */
+    onPlayFromStart: (RomEntry) -> Unit = {},
+    /** A9: huellas con «Continuar» exacto disponible. */
+    resumable: Set<String> = emptySet(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -87,7 +98,8 @@ fun GameDetailsScreen(
         is LibraryState.Scanning -> current.previous
         else -> emptyList()
     }
-    val entry = entries.firstOrNull { it.id == gameId }?.takeUnless { prefs.isHidden(it) }
+    // Con el alias aplicado (A9): barra superior, título y diálogos muestran el nombre que eligió el usuario.
+    val entry = entries.firstOrNull { it.id == gameId }?.takeUnless { prefs.isHidden(it) }?.let(prefs::withAlias)
     if (entry == null) {
         if (state is LibraryState.Loading || state is LibraryState.Scanning && entries.isEmpty()) {
             ScanningPane(
@@ -103,20 +115,31 @@ fun GameDetailsScreen(
         value = viewModel.loadDetails(entry.id)
     }
     var showSettings by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    val fingerprint = prefs.fingerprints[entry.id]
     GameDetailsContent(
         entry = entry,
         load = load,
         favorite = prefs.isFavorite(entry),
         lastPlayedAt = prefs.lastPlayedAt(entry),
         onPlay = { onPlay(entry) },
+        canResume = entry.isPlayable && fingerprint != null && fingerprint in resumable,
+        onPlayFromStart = { onPlayFromStart(entry) },
+        onRename = { renaming = true },
         onToggleFavorite = { viewModel.toggleFavorite(entry) },
         onHide = {
             viewModel.hide(entry)
             onBack()
         },
         onBack = onBack,
-        fingerprint = prefs.fingerprints[entry.id],
+        fingerprint = fingerprint,
         onOpenSettings = { showSettings = true },
+    )
+    RenameGameHost(
+        entry = entry.takeIf { renaming },
+        prefs = prefs,
+        onSetAlias = viewModel::setAlias,
+        onDismiss = { renaming = false },
     )
     GameSettingsHost(
         entry = entry.takeIf { showSettings },
@@ -164,14 +187,22 @@ fun GameDetailsContent(
     /** Huella del ROM si ya se conoce (portada real); si no, se usa la de [load] o el placeholder por ruta. */
     fingerprint: String? = null,
     onOpenSettings: () -> Unit = {},
+    /** A9: hay estado automático vigente: «Continuar» lo retoma y se ofrece también «Jugar desde el inicio». */
+    canResume: Boolean = false,
+    onPlayFromStart: () -> Unit = {},
+    /** A9: «Renombrar» en el menú de la barra superior; `null` lo oculta. */
+    onRename: (() -> Unit)? = null,
+    /** Solo el catálogo de capturas: el menú de la barra superior arranca abierto. */
+    initialMenuOpen: Boolean = false,
 ) {
     var confirmHide by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(initialMenuOpen) }
     val artworkKey = fingerprint ?: (load as? DetailsLoad.Loaded)?.details?.fingerprint
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(entry.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { BackButton(onBack) },
                 actions = {
                     IconButton(onClick = onToggleFavorite, modifier = Modifier.testTag("game-details-star")) {
@@ -181,6 +212,24 @@ fun GameDetailsContent(
                                 if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add,
                             ),
                         )
+                    }
+                    if (onRename != null) {
+                        Box {
+                            IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("game-details-more")) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.a9_details_more))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.a9_rename)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        onRename()
+                                    },
+                                    modifier = Modifier.testTag("game-details-rename"),
+                                )
+                            }
+                        }
                     }
                 },
             )
@@ -201,7 +250,7 @@ fun GameDetailsContent(
                 shape = MaterialTheme.shapes.large,
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(entry.title, style = MaterialTheme.typography.headlineSmall)
+                Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ConsoleChip(entry.isColor)
                     Text(
@@ -217,18 +266,35 @@ fun GameDetailsContent(
             val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
             if (problemMessage != null) ProblemCard(problemMessage)
 
-            // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. "Continuar" NO carga el
-            // estado AUTO (J8): abre la partida (SRAM) donde se dejó, como iOS.
+            // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. A9 (cambia J8, ND6), como iOS:
+            // «Continuar» retoma el estado automático exacto si sigue siendo el de la partida; si no hay, «Jugar» abre la
+            // partida. Con «Continuar» también se ofrece «Jugar desde el inicio» (solo la partida, sin el estado).
+            val playable = entry.isPlayable && load !is DetailsLoad.Failed
             Button(
                 onClick = onPlay,
-                enabled = entry.isPlayable && load !is DetailsLoad.Failed,
+                enabled = playable,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play"),
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                val played = lastPlayedAt != null || entry.mirrorSaveDate != null
                 Text(
-                    stringResource(if (played) R.string.details_continue else R.string.details_play),
+                    stringResource(if (canResume) R.string.details_continue else R.string.details_play),
                     modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            if (canResume) {
+                OutlinedButton(
+                    onClick = onPlayFromStart,
+                    enabled = playable,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play-from-start"),
+                ) {
+                    Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text(stringResource(R.string.a9_play_from_start), modifier = Modifier.padding(start = 8.dp))
+                }
+                Text(
+                    stringResource(R.string.a9_resume_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().testTag("game-details-resume-hint"),
                 )
             }
 
@@ -253,7 +319,7 @@ fun GameDetailsContent(
     }
     if (confirmHide) {
         HideGameDialog(
-            title = entry.title,
+            title = entry.displayTitle,
             onConfirm = {
                 confirmHide = false
                 onHide()
