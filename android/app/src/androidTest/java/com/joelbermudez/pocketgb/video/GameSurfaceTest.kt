@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.video
 
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -145,6 +146,127 @@ class GameSurfaceTest {
             val before = session.frameCount
             compose.waitUntil(5_000) { session.frameCount > before }
         }
+    }
+
+    /** N8: una sesión de GBA (240×160) dibuja en la misma superficie, en los dos modos de escalado y al recrearla. */
+    @Test
+    fun gbaSessionDrawsAndSurvivesSurfaceRecreationInBothScaleModes() {
+        val visible = mutableStateOf(true)
+        val mode = mutableStateOf(ScaleMode.INTEGER)
+        EmulatorSession(com.joelbermudez.pocketgb.emulator.Console.GBA).use { session ->
+            session.loadGba(com.joelbermudez.pocketgb.testing.SyntheticGbaRom.sramCounter())
+            session.start()
+            compose.activityRule.scenario.onActivity { activity ->
+                activity.setContent {
+                    PocketGBTheme {
+                        if (visible.value) {
+                            GameSurface(
+                                session = session,
+                                modifier = Modifier.fillMaxSize().testTag("game-surface"),
+                                scaleMode = mode.value,
+                            )
+                        }
+                    }
+                }
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            repeat(10) {
+                compose.runOnUiThread {
+                    visible.value = !visible.value
+                    if (visible.value) mode.value = if (mode.value == ScaleMode.FILL) ScaleMode.INTEGER else ScaleMode.FILL
+                }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            val before = session.frameCount
+            compose.waitUntil(5_000) { session.frameCount > before + 10 }
+            session.pause()
+            assertEquals(240 * 160, session.copyFrame().size)
+        }
+    }
+
+    /**
+     * N8-H3: lo que llega a la superficie en GBA. Una ROM en forced blank (pantalla blanca) en una superficie de 700×400 px:
+     * el rectángulo blanco es exactamente el que calcula el blit (3:2, centrado; entero ×2 = 480×320 o llenar = 600×400) y
+     * todo lo demás son bandas negras. Se lee con `PixelCopy` de la `SurfaceView`.
+     */
+    @Test
+    fun gbaImageKeepsThreeToTwoWithBlackBandsInIntegerAndFill() {
+        val mode = mutableStateOf(ScaleMode.INTEGER)
+        EmulatorSession(com.joelbermudez.pocketgb.emulator.Console.GBA).use { session ->
+            session.loadGba(com.joelbermudez.pocketgb.testing.SyntheticGbaRom.forcedBlank())
+            session.start()
+            compose.activityRule.scenario.onActivity { activity ->
+                activity.setContent {
+                    PocketGBTheme {
+                        val density = androidx.compose.ui.platform.LocalDensity.current
+                        val width = with(density) { 700.toDp() }
+                        val height = with(density) { 400.toDp() }
+                        GameSurface(
+                            session = session,
+                            modifier = Modifier.size(width, height).testTag("game-surface"),
+                            scaleMode = mode.value,
+                        )
+                    }
+                }
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            val view = findSurfaceView(compose.activity.window.decorView)
+            for (scale in listOf(ScaleMode.INTEGER, ScaleMode.FILL, ScaleMode.INTEGER)) {
+                compose.runOnUiThread { mode.value = scale }
+                compose.waitUntil(5_000) { session.scaleMode == scale }
+                val frames = session.frameCount
+                compose.waitUntil(5_000) { session.frameCount > frames + 5 }
+                assertGbaRect(capture(view), scale)
+            }
+        }
+    }
+
+    /** Comprueba píxel a píxel el rectángulo de dibujo con la misma geometría que `compute_layout` (native_session.c). */
+    private fun assertGbaRect(bitmap: android.graphics.Bitmap, scale: ScaleMode) {
+        val w = bitmap.width
+        val h = bitmap.height
+        val integer = minOf(w / 240, h / 160)
+        val (drawW, drawH) = when {
+            scale == ScaleMode.INTEGER && integer >= 1 -> 240 * integer to 160 * integer
+            w.toLong() * 160 <= h.toLong() * 240 -> w to (w.toLong() * 160 / 240).toInt()
+            else -> (h.toLong() * 240 / 160).toInt() to h
+        }
+        val left = (w - drawW) / 2
+        val top = (h - drawH) / 2
+        assertTrue("superficie de ${w}x$h: el rectángulo ${drawW}x$drawH debe ser 3:2", drawW * 2 == drawH * 3)
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        var wrong = 0
+        var firstWrong = ""
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val c = pixels[y * w + x]
+                val r = (c shr 16) and 0xFF
+                val g = (c shr 8) and 0xFF
+                val b = c and 0xFF
+                val inside = x in left until left + drawW && y in top until top + drawH
+                val ok = if (inside) r > 0xF0 && g > 0xF0 && b > 0xF0 else r < 0x10 && g < 0x10 && b < 0x10
+                if (!ok) {
+                    if (wrong == 0) firstWrong = "(%d,%d)=#%08x".format(x, y, c)
+                    wrong++
+                }
+            }
+        }
+        assertEquals("$scale en ${w}x$h: rect ${drawW}x$drawH en ($left,$top); primer píxel distinto $firstWrong", 0, wrong)
+    }
+
+    private fun capture(view: android.view.SurfaceView): android.graphics.Bitmap {
+        val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val done = java.util.concurrent.CountDownLatch(1)
+        val result = java.util.concurrent.atomic.AtomicInteger(-1)
+        android.view.PixelCopy.request(
+            view, bitmap, { code -> result.set(code); done.countDown() },
+            android.os.Handler(android.os.Looper.getMainLooper()),
+        )
+        assertTrue("PixelCopy no respondió", done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals("PixelCopy", android.view.PixelCopy.SUCCESS, result.get())
+        return bitmap
     }
 
     private fun findSurfaceView(root: android.view.View): android.view.SurfaceView {

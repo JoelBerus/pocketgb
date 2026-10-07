@@ -5,6 +5,7 @@
 #include <android/native_window_jni.h>
 
 #include "pocketgb.h"
+#include "pocketgba.h"
 #include "native_session.h"
 
 /* gb_result no tiene "argumento inválido" (core/ no se toca): el puente usa el siguiente código libre
@@ -12,6 +13,8 @@
 #define JNI_ERR_INVALID_ARGUMENT 17
 _Static_assert(GB_ERR_BUFFER_TOO_SMALL == 16,
     "gb_result cambió: JNI_ERR_INVALID_ARGUMENT debe seguir siendo el siguiente código libre");
+_Static_assert(JNI_ERR_INVALID_ARGUMENT == NS_ERR_INVALID_ARGUMENT,
+    "el puente y la sesión deben usar el mismo código de argumento inválido");
 
 static bool options_valid(jint model, jint compat_palette) {
     return model >= (jint)GB_MODEL_AUTO && model <= (jint)GB_MODEL_CGB &&
@@ -71,6 +74,10 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeLoadRom(
         return JNI_ERR_INVALID_ARGUMENT;
     }
     const jsize length = (*env)->GetArrayLength(env, rom);
+    /* Entrada hostil: un "ROM" mayor que el máximo del núcleo no se copia. */
+    if ((size_t)length > GB_ROM_MAX_BYTES) {
+        return GB_ERR_ROM_TOO_LARGE;
+    }
     jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
     if (bytes == NULL) {
         return GB_ERR_OUT_OF_MEMORY;
@@ -225,10 +232,13 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     if (session == NULL || rom == NULL) {
         return GB_ERR_NULL_ARG;
     }
-    if (!options_valid(model, compat_palette)) {
+    if (!options_valid(model, compat_palette) || native_session_console(session) != NATIVE_CONSOLE_GB) {
         return JNI_ERR_INVALID_ARGUMENT;
     }
     const jsize length = (*env)->GetArrayLength(env, rom);
+    if ((size_t)length > GB_ROM_MAX_BYTES) {
+        return GB_ERR_ROM_TOO_LARGE;
+    }
     jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
     if (bytes == NULL) {
         return GB_ERR_OUT_OF_MEMORY;
@@ -238,7 +248,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     options.unix_time = (int64_t)unix_time;
     options.model = (gb_model)model;
     options.compat_palette = (uint8_t)compat_palette;
-    const gb_result result = native_session_load(
+    const int result = native_session_load(
         session,
         (const uint8_t *)bytes,
         (size_t)length,
@@ -309,7 +319,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetTouchButto
 ) {
     (void)env;
     (void)clazz;
-    native_session_set_touch_buttons((native_session *)(uintptr_t)handle, (uint8_t)mask);
+    native_session_set_touch_buttons((native_session *)(uintptr_t)handle, (uint16_t)mask);
 }
 
 JNIEXPORT void JNICALL
@@ -318,7 +328,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetPhysicalBu
 ) {
     (void)env;
     (void)clazz;
-    native_session_set_physical_buttons((native_session *)(uintptr_t)handle, (uint8_t)mask);
+    native_session_set_physical_buttons((native_session *)(uintptr_t)handle, (uint16_t)mask);
 }
 
 JNIEXPORT jint JNICALL
@@ -536,9 +546,10 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramLoad(
     if (session == NULL || data == NULL) {
         return GB_ERR_NULL_ARG;
     }
-    const size_t limit = native_session_sram_size(session) + NS_SRAM_RTC_EXTRA;
+    const size_t limit = native_session_sram_capacity(session) + NS_SRAM_RTC_EXTRA;
     const size_t length = (size_t)(*env)->GetArrayLength(env, data);
-    /* Un .sav mayor que RAM + bloque RTC nunca es válido: se rechaza sin copiarlo. */
+    /* Un .sav mayor que el mayor posible (RAM + bloque RTC; en GBA, el medio más grande + 16) nunca es válido:
+     * se rechaza sin copiarlo. */
     if (length > limit) {
         return GB_ERR_SRAM_SIZE;
     }
@@ -567,29 +578,38 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramDirtySeq(
     return (jlong)native_session_sram_dirty_seq(session_from_handle(handle));
 }
 
+/* Entrega la partida en `holder[0]` (un ByteArray del tamaño exacto de ese instante): en GBA una EEPROM sin
+ * tamaño confirmado puede crecer de 512 B a 8 KiB entre dos llamadas, así que Kotlin no lo pide antes. */
 JNIEXPORT jint JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramCopy(
     JNIEnv *env,
     jclass clazz,
     jlong handle,
-    jbyteArray out
+    jobjectArray holder
 ) {
     (void)clazz;
     native_session *session = session_from_handle(handle);
-    if (session == NULL || out == NULL) {
+    if (session == NULL || holder == NULL || (*env)->GetArrayLength(env, holder) < 1) {
         return GB_ERR_NULL_ARG;
     }
-    const size_t size = native_session_sram_size(session);
-    if ((size_t)(*env)->GetArrayLength(env, out) < size) {
-        return GB_ERR_BUFFER_TOO_SMALL;
-    }
-    uint8_t *temporary = malloc(size > 0u ? size : 1u);
+    const size_t capacity = native_session_sram_capacity(session);
+    uint8_t *temporary = malloc(capacity > 0u ? capacity : 1u);
     if (temporary == NULL) {
         return GB_ERR_OUT_OF_MEMORY;
     }
-    const int result = native_session_sram_copy(session, temporary, size);
-    if (result == NS_OK && size > 0u) {
-        (*env)->SetByteArrayRegion(env, out, 0, (jsize)size, (const jbyte *)temporary);
+    size_t length = 0u;
+    const int result = native_session_sram_copy(session, temporary, capacity, &length);
+    if (result == NS_OK) {
+        jbyteArray array = (*env)->NewByteArray(env, (jsize)length);
+        if (array == NULL) {
+            free(temporary);
+            return GB_ERR_OUT_OF_MEMORY;
+        }
+        if (length > 0u) {
+            (*env)->SetByteArrayRegion(env, array, 0, (jsize)length, (const jbyte *)temporary);
+        }
+        (*env)->SetObjectArrayElement(env, holder, 0, array);
+        (*env)->DeleteLocalRef(env, array);
     }
     free(temporary);
     return result;
@@ -698,7 +718,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCopyFrame(
     if (session == NULL || out == NULL) {
         return GB_ERR_NULL_ARG;
     }
-    const size_t pixels = (size_t)GB_SCREEN_W * (size_t)GB_SCREEN_H;
+    const size_t pixels = (size_t)native_session_screen_width(session) * (size_t)native_session_screen_height(session);
     if ((size_t)(*env)->GetArrayLength(env, out) < pixels) {
         return GB_ERR_BUFFER_TOO_SMALL;
     }
@@ -712,4 +732,347 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCopyFrame(
     }
     free(temporary);
     return result;
+}
+
+/* ---- Game Boy Advance (N8) ----
+ * Mismas reglas que arriba: el ROM, la BIOS y los .sav son entrada no confiable. Las longitudes se validan antes
+ * de copiar nada (ROM ≤ 32 MiB, BIOS exactamente 16 KiB) y la BIOS solo se carga si es la oficial (SHA-256). Los
+ * resultados van en el espacio común de códigos de native_session.h (native_result_from_gba). */
+
+#define GBA_INFO_INTS 8
+#define GBA_INFO_TITLE 13
+#define GBA_INFO_CODES 8
+
+static bool gba_options_valid(jint save_type, jint rtc) {
+    return save_type >= (jint)GBA_SAVE_AUTO && save_type <= (jint)GBA_SAVE_EEPROM8K &&
+        rtc >= (jint)GBA_RTC_AUTO && rtc <= (jint)GBA_RTC_OFF;
+}
+
+/* La BIOS del usuario, si tiene el tamaño de una BIOS de GBA, en un búfer nativo (el llamador lo libera). Con
+ * otro tamaño no se copia y no se usa (HLE): `*out` queda en NULL. */
+static int copy_gba_bios(JNIEnv *env, jbyteArray bios, uint8_t **out, size_t *length) {
+    *out = NULL;
+    *length = 0u;
+    if (bios == NULL || (size_t)(*env)->GetArrayLength(env, bios) != GBA_BIOS_BYTES) {
+        return NS_OK;
+    }
+    uint8_t *copy = malloc(GBA_BIOS_BYTES);
+    if (copy == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    (*env)->GetByteArrayRegion(env, bios, 0, (jsize)GBA_BIOS_BYTES, (jbyte *)copy);
+    if ((*env)->ExceptionCheck(env)) {
+        free(copy);
+        return GB_ERR_NULL_ARG;
+    }
+    *out = copy;
+    *length = GBA_BIOS_BYTES;
+    return NS_OK;
+}
+
+static void gba_options_from_jni(gba_options *options, jlong unix_time, jint save_type, jint rtc) {
+    gba_options_default(options);
+    options->save_type = (gba_save_type)save_type;
+    options->rtc = (uint8_t)rtc;
+    /* El RTC del GBA cuenta hora local (como iOS, GBACoreBridge.localTime). */
+    options->unix_time = native_local_time((int64_t)unix_time);
+}
+
+static bool gba_eeprom_size_fixed(const gba_rom_info *info, jint requested_save_type) {
+    const bool eeprom = info->save_type == GBA_SAVE_EEPROM512 || info->save_type == GBA_SAVE_EEPROM8K;
+    return eeprom && (requested_save_type == (jint)GBA_SAVE_EEPROM512 || requested_save_type == (jint)GBA_SAVE_EEPROM8K);
+}
+
+/* ints: tamaño del ROM, tipo de medio (gba_save_type), bytes del .sav sin RTC, RTC, checksum de cabecera, BIOS
+ * real, versión y EEPROM de tamaño fijo. title: 13 bytes ASCII con NUL. codes: código de juego (5 con NUL) y
+ * de fabricante (3 con NUL). */
+static int write_gba_info(
+    JNIEnv *env,
+    const gba_rom_info *info,
+    bool eeprom_size_fixed,
+    jintArray ints,
+    jbyteArray fingerprint,
+    jbyteArray title,
+    jbyteArray codes
+) {
+    if (ints == NULL || fingerprint == NULL || title == NULL || codes == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    if ((*env)->GetArrayLength(env, ints) < GBA_INFO_INTS ||
+        (*env)->GetArrayLength(env, fingerprint) < 32 ||
+        (*env)->GetArrayLength(env, title) < GBA_INFO_TITLE ||
+        (*env)->GetArrayLength(env, codes) < GBA_INFO_CODES) {
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    jint values[GBA_INFO_INTS];
+    values[0] = (jint)info->rom_bytes;
+    values[1] = (jint)info->save_type;
+    values[2] = (jint)info->save_bytes;
+    values[3] = info->has_rtc;
+    values[4] = info->header_checksum_ok;
+    values[5] = info->bios_loaded;
+    values[6] = info->version;
+    values[7] = eeprom_size_fixed;
+    jbyte code_bytes[GBA_INFO_CODES];
+    memcpy(code_bytes, info->game_code, 5);
+    memcpy(code_bytes + 5, info->maker_code, 3);
+    (*env)->SetIntArrayRegion(env, ints, 0, GBA_INFO_INTS, values);
+    (*env)->SetByteArrayRegion(env, fingerprint, 0, 32, (const jbyte *)info->fingerprint);
+    (*env)->SetByteArrayRegion(env, title, 0, GBA_INFO_TITLE, (const jbyte *)info->title);
+    (*env)->SetByteArrayRegion(env, codes, 0, GBA_INFO_CODES, code_bytes);
+    return NS_OK;
+}
+
+/* (ancho << 16) | alto del framebuffer de `console`; 0 si la consola no existe. */
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeConsoleScreenSize(
+    JNIEnv *env, jclass clazz, jint console
+) {
+    (void)env;
+    (void)clazz;
+    if (console == NATIVE_CONSOLE_GB) return (GB_SCREEN_W << 16) | GB_SCREEN_H;
+    if (console == NATIVE_CONSOLE_GBA) return (GBA_SCREEN_W << 16) | GBA_SCREEN_H;
+    return 0;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaBiosIsOfficial(
+    JNIEnv *env, jclass clazz, jbyteArray bios
+) {
+    (void)clazz;
+    uint8_t *copy = NULL;
+    size_t length = 0u;
+    if (copy_gba_bios(env, bios, &copy, &length) != NS_OK || copy == NULL) {
+        return JNI_FALSE;
+    }
+    const bool official = native_gba_bios_is_official(copy, length);
+    free(copy);
+    return official ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCreateConsole(
+    JNIEnv *env, jclass clazz, jint console
+) {
+    (void)env;
+    (void)clazz;
+    return (jlong)(uintptr_t)native_session_create_console((int)console);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionScreenSize(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    return (native_session_screen_width(session) << 16) | native_session_screen_height(session);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSramCapacity(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void)env;
+    (void)clazz;
+    return (jint)native_session_sram_capacity(session_from_handle(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoadGba(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray rom,
+    jbyteArray bios,
+    jlong unix_time,
+    jint save_type,
+    jint rtc
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL || rom == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    if (!gba_options_valid(save_type, rtc) || native_session_console(session) != NATIVE_CONSOLE_GBA) {
+        return JNI_ERR_INVALID_ARGUMENT;
+    }
+    const jsize length = (*env)->GetArrayLength(env, rom);
+    if ((size_t)length > GBA_ROM_MAX_BYTES) {
+        return GB_ERR_ROM_TOO_LARGE;
+    }
+    uint8_t *bios_bytes = NULL;
+    size_t bios_length = 0u;
+    const int copied = copy_gba_bios(env, bios, &bios_bytes, &bios_length);
+    if (copied != NS_OK) {
+        return copied;
+    }
+    jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
+    if (bytes == NULL) {
+        free(bios_bytes);
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    gba_options options;
+    gba_options_from_jni(&options, unix_time, save_type, rtc);
+    const int result = native_session_load_gba(
+        session,
+        (const uint8_t *)bytes,
+        (size_t)length,
+        bios_bytes,
+        bios_length,
+        &options
+    );
+    (*env)->ReleaseByteArrayElements(env, rom, bytes, JNI_ABORT);
+    free(bios_bytes);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionGbaRomInfo(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jintArray ints,
+    jbyteArray fingerprint,
+    jbyteArray title,
+    jbyteArray codes
+) {
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    gba_rom_info info;
+    memset(&info, 0, sizeof(info));
+    bool eeprom_size_fixed = false;
+    const int result = native_session_gba_rom_info(session, &info, &eeprom_size_fixed);
+    if (result != NS_OK) {
+        return result;
+    }
+    return write_gba_info(env, &info, eeprom_size_fixed, ints, fingerprint, title, codes);
+}
+
+/* Núcleo GBA suelto (CoreBridge): cabecera para la biblioteca y frames deterministas en las pruebas. */
+
+static gba *gba_from_handle(jlong handle) {
+    return (gba *)(uintptr_t)handle;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaCreate(JNIEnv *env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    return (jlong)(uintptr_t)gba_create();
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaDestroy(JNIEnv *env, jclass clazz, jlong handle) {
+    (void)env;
+    (void)clazz;
+    gba_destroy(gba_from_handle(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaLoadRom(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jbyteArray rom,
+    jbyteArray bios,
+    jlong unix_time,
+    jint save_type,
+    jint rtc
+) {
+    (void)clazz;
+    gba *core = gba_from_handle(handle);
+    if (core == NULL || rom == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    if (!gba_options_valid(save_type, rtc)) {
+        return JNI_ERR_INVALID_ARGUMENT;
+    }
+    const jsize length = (*env)->GetArrayLength(env, rom);
+    if ((size_t)length > GBA_ROM_MAX_BYTES) {
+        return GB_ERR_ROM_TOO_LARGE;
+    }
+    uint8_t *bios_bytes = NULL;
+    size_t bios_length = 0u;
+    const int copied = copy_gba_bios(env, bios, &bios_bytes, &bios_length);
+    if (copied != NS_OK) {
+        return copied;
+    }
+    gba_result result = GBA_OK;
+    if (native_gba_bios_is_official(bios_bytes, bios_length)) {
+        result = gba_load_bios(core, bios_bytes, bios_length);
+    }
+    free(bios_bytes);
+    if (result != GBA_OK) {
+        return native_result_from_gba(result);
+    }
+    jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
+    if (bytes == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
+    gba_options options;
+    gba_options_from_jni(&options, unix_time, save_type, rtc);
+    result = gba_load_rom(core, (const uint8_t *)bytes, (size_t)length, &options);
+    (*env)->ReleaseByteArrayElements(env, rom, bytes, JNI_ABORT);
+    return native_result_from_gba(result);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaRomInfo(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jintArray ints,
+    jbyteArray fingerprint,
+    jbyteArray title,
+    jbyteArray codes,
+    jint requested_save_type
+) {
+    (void)clazz;
+    gba *core = gba_from_handle(handle);
+    if (core == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    gba_rom_info info;
+    memset(&info, 0, sizeof(info));
+    const gba_result result = gba_rom_info_get(core, &info);
+    if (result != GBA_OK) {
+        return native_result_from_gba(result);
+    }
+    return write_gba_info(env, &info, gba_eeprom_size_fixed(&info, requested_save_type), ints, fingerprint, title, codes);
+}
+
+JNIEXPORT void JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaRunFrame(JNIEnv *env, jclass clazz, jlong handle) {
+    (void)env;
+    (void)clazz;
+    gba *core = gba_from_handle(handle);
+    if (core != NULL) gba_run_frame(core);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaCopyFrame(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jintArray destination
+) {
+    (void)clazz;
+    gba *core = gba_from_handle(handle);
+    if (core == NULL || destination == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    const jsize pixels = GBA_SCREEN_W * GBA_SCREEN_H;
+    if ((*env)->GetArrayLength(env, destination) < pixels) {
+        return GB_ERR_BUFFER_TOO_SMALL;
+    }
+    const uint32_t *frame = gba_framebuffer(core);
+    if (frame == NULL) {
+        return GB_ERR_NO_ROM;
+    }
+    (*env)->SetIntArrayRegion(env, destination, 0, pixels, (const jint *)frame);
+    return NS_OK;
 }

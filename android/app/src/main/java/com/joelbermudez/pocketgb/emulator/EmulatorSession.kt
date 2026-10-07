@@ -9,7 +9,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-/** Estado serializado del núcleo junto con la captura de pantalla del mismo instante (RGBA8888, 160x144). */
+/** Estado serializado del núcleo junto con la captura de pantalla del mismo instante (RGBA8888, [EmulatorSession.screen]). */
 class SavedState(val bytes: ByteArray, val pixels: IntArray)
 
 /**
@@ -29,10 +29,15 @@ class SavedState(val bytes: ByteArray, val pixels: IntArray)
  *
  * Con la sesión corriendo solo el hilo nativo toca el core: [copySram] le pide una instantánea (espera como
  * mucho 1 s) y el estado, el framebuffer y la carga de SRAM solo se permiten aparcada.
+ *
+ * **Consola (N8):** [console] se fija al crearla y elige el núcleo nativo (`core/` o `gba/`); un juego de GB se
+ * abre con [load] y uno de GBA con [loadGba]. Todo lo demás es común: [screen] da el tamaño del framebuffer, las
+ * máscaras de botones se recortan a [Console.buttonMask] (L y R en los bits 9 y 8 en GBA) y el `.sav` de GBA es el
+ * medio con los 16 bytes del RTC al final, como en iOS.
  */
-open class EmulatorSession : AutoCloseable {
+open class EmulatorSession(val console: Console = Console.GB) : AutoCloseable {
     @Volatile
-    private var handle = NativeLibrary.nativeSessionCreate().also {
+    private var handle = NativeLibrary.nativeSessionCreateConsole(console.native).also {
         if (it == 0L) throw CoreError.OutOfMemory()
     }
     internal val handleLock = ReentrantReadWriteLock()
@@ -62,11 +67,18 @@ open class EmulatorSession : AutoCloseable {
     val audioFramesConsumed: Long
         get() = withHandle { NativeLibrary.nativeSessionAudioFramesConsumed(it) }
 
-    /** Información del cartucho cargado; solo existe tras [load]. */
+    /** Información del cartucho cargado; solo existe tras [load] o [loadGba]. */
     val info: RomInfo
         get() = loadedInfo ?: throw CoreError.NoRom()
 
-    /** Tamaño del `.sav` de esta sesión: RAM [+48 con RTC]. */
+    /** Tamaño del framebuffer de la consola: 160×144 (GB) o 240×160 (GBA). */
+    val screen: ScreenSize
+        get() = console.screen
+
+    /**
+     * Tamaño del `.sav` de esta sesión en este instante: GB, RAM [+48 con RTC]; GBA, medio [+16 con RTC]. En GBA con
+     * EEPROM sin ajuste puede pasar de 512 a 8192 (+16) cuando el `.sav` o la primera DMA lo confirman.
+     */
     val sramSaveSize: Int
         get() = withHandle { NativeLibrary.nativeSessionSramSize(it) }
 
@@ -75,6 +87,7 @@ open class EmulatorSession : AutoCloseable {
      * real pasa la hora actual (con 0 el RTC arranca sin hora válida, solo para tests y depuración).
      */
     fun load(rom: ByteArray, unixTimeSeconds: Long = 0L, options: EmulationOptions = EmulationOptions()): RomInfo {
+        requireConsole("cargar un ROM de Game Boy", Console.GB)
         requireState("cargar", SessionState.New)
         if (rom.size < CoreBridge.MIN_ROM_BYTES) throw CoreError.RomTooSmall()
         if (rom.size > CoreBridge.MAX_ROM_BYTES) throw CoreError.RomTooLarge()
@@ -96,6 +109,45 @@ open class EmulatorSession : AutoCloseable {
         return read
     }
 
+    /**
+     * Game Boy Advance: carga el ROM (≤ 32 MiB) y devuelve su información. [bios] es el `gba_bios.bin` del usuario
+     * (o null): solo se usa con [GbaOptions.useBios] y si es la oficial; si no, el núcleo emula la BIOS y
+     * [RomInfo.biosLoaded] es false (el estado para la UI lo da [GbaBios.status]). [unixTimeSeconds] es la hora UTC
+     * actual (el puente la pasa a hora local para el RTC); 0 solo en tests.
+     */
+    fun loadGba(
+        rom: ByteArray,
+        unixTimeSeconds: Long = 0L,
+        options: GbaOptions = GbaOptions(),
+        bios: ByteArray? = null,
+    ): RomInfo {
+        requireConsole("cargar un ROM de GBA", Console.GBA)
+        requireState("cargar", SessionState.New)
+        if (rom.size < Console.GBA.minRomBytes) throw CoreError.RomTooSmall()
+        if (rom.size > Console.GBA.maxRomBytes) throw CoreError.RomTooLarge(Console.GBA.maxRomBytes / (1024 * 1024))
+        val ints = IntArray(GBA_INFO_INTS)
+        val fingerprint = ByteArray(32)
+        val title = ByteArray(GBA_INFO_TITLE)
+        val codes = ByteArray(GBA_INFO_CODES)
+        withHandle { nativeHandle ->
+            checkNative(
+                "cargar",
+                NativeLibrary.nativeSessionLoadGba(
+                    nativeHandle, rom, bios.takeIf { options.useBios }, unixTimeSeconds,
+                    options.saveType.native, options.rtc.native,
+                ),
+            )
+            checkNative(
+                "leer la cabecera",
+                NativeLibrary.nativeSessionGbaRomInfo(nativeHandle, ints, fingerprint, title, codes),
+            )
+        }
+        val read = gbaRomInfoFromNative(ints, fingerprint, title, codes)
+        loadedInfo = read
+        mutableState.value = SessionState.Ready
+        return read
+    }
+
     /** Carga la partida del cartucho. Solo con la sesión sin arrancar o en pausa (I1). */
     fun loadSram(data: ByteArray) {
         requireParkedForSram("cargar la partida")
@@ -108,11 +160,12 @@ open class EmulatorSession : AutoCloseable {
     /**
      * Copia consistente de la SRAM [+RTC]. Con la sesión corriendo la entrega el hilo nativo (espera como
      * mucho 1 s: [SessionError.SnapshotTimeout]); aparcada, se copia directo. Hilo de guardado (I2, I4).
+     * Mide lo que medía el `.sav` en ese instante (en GBA con EEPROM, 512 B u 8 KiB [+16]).
      */
     fun copySram(): ByteArray = withHandle { nativeHandle ->
-        val out = ByteArray(NativeLibrary.nativeSessionSramSize(nativeHandle))
-        checkNative("copiar la partida", NativeLibrary.nativeSessionSramCopy(nativeHandle, out))
-        out
+        val holder = arrayOfNulls<ByteArray>(1)
+        checkNative("copiar la partida", NativeLibrary.nativeSessionSramCopy(nativeHandle, holder))
+        holder[0] ?: throw CoreError.BufferTooSmall()
     }
 
     /** Estado del núcleo y captura de pantalla. Exige la sesión en pausa. */
@@ -122,17 +175,17 @@ open class EmulatorSession : AutoCloseable {
             val holder = arrayOfNulls<ByteArray>(1)
             checkNative("guardar el estado", NativeLibrary.nativeSessionStateSave(nativeHandle, holder))
             val bytes = holder[0] ?: throw CoreError.StateCorrupt()
-            val pixels = IntArray(CoreBridge.FRAME_PIXELS)
+            val pixels = IntArray(screen.pixelCount)
             checkNative("copiar la pantalla", NativeLibrary.nativeSessionCopyFrame(nativeHandle, pixels))
             SavedState(bytes, pixels)
         }
     }
 
-    /** Solo el fotograma actual (RGBA8888, 160x144), sin serializar el estado. Exige la sesión en pausa (A6-H4). */
+    /** Solo el fotograma actual (RGBA8888, [screen]), sin serializar el estado. Exige la sesión en pausa (A6-H4). */
     open fun copyFrame(): IntArray {
         requirePaused("copiar la pantalla")
         return withHandle { nativeHandle ->
-            val pixels = IntArray(CoreBridge.FRAME_PIXELS)
+            val pixels = IntArray(screen.pixelCount)
             checkNative("copiar la pantalla", NativeLibrary.nativeSessionCopyFrame(nativeHandle, pixels))
             pixels
         }
@@ -167,8 +220,9 @@ open class EmulatorSession : AutoCloseable {
     }
 
     /**
-     * Adelanta el reloj del MBC3 a [unixSeconds] (nunca lo retrasa; sin RTC no hace nada). Tras retomar un estado,
-     * que trae la hora del momento en que se guardó (iOS D81-H5). Sesión sin arrancar o en pausa.
+     * Lleva el reloj del cartucho a la hora actual [unixSeconds] (UTC). GB: adelanta el del MBC3 (nunca lo retrasa; sin
+     * RTC no hace nada). GBA: el RTC vuelve a la hora local más el desplazamiento que fijó el juego. Tras retomar un
+     * estado, que trae la hora del momento en que se guardó (iOS D81-H5). Sesión sin arrancar o en pausa.
      */
     fun syncRtc(unixSeconds: Long) {
         requireParkedForSram("ajustar el reloj")
@@ -213,14 +267,15 @@ open class EmulatorSession : AutoCloseable {
 
     /**
      * Entrada de los controles. Tras cerrar la sesión (la salida cierra antes de que Compose retire la vista)
-     * un toque tardío se ignora en vez de lanzar: no puede tumbar la app.
+     * un toque tardío se ignora en vez de lanzar: no puede tumbar la app. La máscara se recorta a
+     * [Console.buttonMask]: en GB los bits 0..7; en GBA también R (bit 8) y L (bit 9), [GbaButtonBits].
      */
     fun setTouchButtons(mask: Int) {
-        withHandleOrNull { NativeLibrary.nativeSessionSetTouchButtons(it, mask and 0xFF) }
+        withHandleOrNull { NativeLibrary.nativeSessionSetTouchButtons(it, mask and console.buttonMask) }
     }
 
     fun setPhysicalButtons(mask: Int) {
-        withHandleOrNull { NativeLibrary.nativeSessionSetPhysicalButtons(it, mask and 0xFF) }
+        withHandleOrNull { NativeLibrary.nativeSessionSetPhysicalButtons(it, mask and console.buttonMask) }
     }
 
     fun setSpeed(factor: Int) {
@@ -275,8 +330,12 @@ open class EmulatorSession : AutoCloseable {
             NS_TIMEOUT -> throw SessionError.SnapshotTimeout()
             NS_INVALID -> throw CoreError.InvalidArgument()
             NS_NOT_COMPAT -> throw CoreError.NotCompatibilityMode()
-            else -> CoreError.fromResult(result)?.let { throw it }
+            else -> CoreError.fromResult(result, console)?.let { throw it }
         }
+    }
+
+    private fun requireConsole(action: String, expected: Console) {
+        if (console != expected) throw SessionError.WrongConsole(action, console)
     }
 
     private fun requirePaused(action: String) {
@@ -307,6 +366,9 @@ open class EmulatorSession : AutoCloseable {
     private inline fun <T> withHandle(block: (Long) -> T): T = handleLock.read {
         block(handle.takeIf { it != 0L } ?: throw CoreError.Closed())
     }
+
+    /** Solo pruebas: llamadas JNI directas con el handle vivo, bajo el mismo lock de lectura que el resto. */
+    internal fun <T> withNativeHandle(block: (Long) -> T): T = withHandle(block)
 
     /** Como [withHandle] pero un no-op si la sesión ya se cerró (entrada tardía de la UI). */
     private inline fun withHandleOrNull(block: (Long) -> Unit) {

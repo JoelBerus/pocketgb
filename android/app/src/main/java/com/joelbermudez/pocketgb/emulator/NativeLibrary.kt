@@ -60,8 +60,9 @@ internal object NativeLibrary {
     @JvmStatic
     external fun nativeSessionSramDirtySeq(handle: Long): Long
 
+    /** Entrega la partida de ese instante en `holder[0]`, del tamaño exacto (en GBA puede crecer de 512 B a 8 KiB). */
     @JvmStatic
-    external fun nativeSessionSramCopy(handle: Long, out: ByteArray): Int
+    external fun nativeSessionSramCopy(handle: Long, holder: Array<ByteArray?>): Int
 
     /** Entrega el estado en `holder[0]`. */
     @JvmStatic
@@ -145,4 +146,77 @@ internal object NativeLibrary {
 
     @JvmStatic
     external fun nativeSessionDetachSurface(handle: Long)
+
+    // ---- N8: consolas y Game Boy Advance ----
+
+    /** `(ancho shl 16) or alto` del framebuffer de la consola (`Console.native`); 0 si no existe. */
+    @JvmStatic
+    external fun nativeConsoleScreenSize(console: Int): Int
+
+    /** ¿Es [bios] la BIOS oficial de GBA (16 KiB y SHA-256)? La misma comprobación que hace la carga. */
+    @JvmStatic
+    external fun nativeGbaBiosIsOfficial(bios: ByteArray?): Boolean
+
+    /** Sesión de la consola [console] (`Console.native`); 0 si no existe o falta memoria. */
+    @JvmStatic
+    external fun nativeSessionCreateConsole(console: Int): Long
+
+    /** `(ancho shl 16) or alto` del framebuffer de la sesión. */
+    @JvmStatic
+    external fun nativeSessionScreenSize(handle: Long): Int
+
+    /** El mayor `.sav` posible de la ROM cargada (en GBA con EEPROM sin ajuste, 8 KiB [+16] aunque hoy mida 512 B). */
+    @JvmStatic
+    external fun nativeSessionSramCapacity(handle: Long): Int
+
+    /**
+     * Carga un ROM de GBA en una sesión de GBA. [bios] (opcional) solo se usa si es la oficial; si no, HLE.
+     * [unixTime] es la hora UTC: el puente la pasa a hora local para el RTC. [saveType] = `GbaSaveType.native`,
+     * [rtc] = `GbaRtc.native`; fuera de rango, 17.
+     */
+    @JvmStatic
+    external fun nativeSessionLoadGba(
+        handle: Long,
+        rom: ByteArray,
+        bios: ByteArray?,
+        unixTime: Long,
+        saveType: Int,
+        rtc: Int,
+    ): Int
+
+    /** Rellena [ints] (8), [fingerprint] (32), [title] (13) y [codes] (8). Solo sesión GBA cargada y sin arrancar. */
+    @JvmStatic
+    external fun nativeSessionGbaRomInfo(
+        handle: Long,
+        ints: IntArray,
+        fingerprint: ByteArray,
+        title: ByteArray,
+        codes: ByteArray,
+    ): Int
+
+    /** Núcleo GBA suelto (`CoreBridge(Console.GBA)`). */
+    @JvmStatic
+    external fun nativeGbaCreate(): Long
+
+    @JvmStatic
+    external fun nativeGbaDestroy(handle: Long)
+
+    @JvmStatic
+    external fun nativeGbaLoadRom(handle: Long, rom: ByteArray, bios: ByteArray?, unixTime: Long, saveType: Int, rtc: Int): Int
+
+    @JvmStatic
+    external fun nativeGbaRomInfo(
+        handle: Long,
+        ints: IntArray,
+        fingerprint: ByteArray,
+        title: ByteArray,
+        codes: ByteArray,
+        requestedSaveType: Int,
+    ): Int
+
+    @JvmStatic
+    external fun nativeGbaRunFrame(handle: Long)
+
+    @JvmStatic
+    external fun nativeGbaCopyFrame(handle: Long, destination: IntArray): Int
 }

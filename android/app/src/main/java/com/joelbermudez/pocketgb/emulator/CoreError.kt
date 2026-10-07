@@ -5,7 +5,8 @@ sealed class CoreError(message: String) : RuntimeException(message) {
     class NullArgument : CoreError("El núcleo recibió un argumento nulo.")
     class OutOfMemory : CoreError("No hay memoria suficiente para cargar el ROM.")
     class RomTooSmall : CoreError("El archivo es demasiado pequeño para ser un ROM de Game Boy.")
-    class RomTooLarge : CoreError("El ROM supera el límite de 8 MiB.")
+    /** [limitMiB]: 8 en Game Boy, 32 en Game Boy Advance. */
+    class RomTooLarge(limitMiB: Int = 8) : CoreError("El ROM supera el límite de $limitMiB MiB.")
     class RomTruncated : CoreError("El archivo es menor que el tamaño declarado en su cabecera.")
     class BadRomSizeCode : CoreError("La cabecera declara un tamaño de ROM inválido.")
     class BadRamSizeCode : CoreError("La cabecera declara un tamaño de RAM inválido.")
@@ -20,15 +21,23 @@ sealed class CoreError(message: String) : RuntimeException(message) {
     class BufferTooSmall : CoreError("El búfer de destino es demasiado pequeño.")
     class InvalidArgument : CoreError("El núcleo recibió una opción fuera de rango.")
     class NotCompatibilityMode : CoreError("El juego no corre en modo compatibilidad de Game Boy Color.")
+    class BadGbaHeader : CoreError("El archivo no tiene una cabecera válida de Game Boy Advance.")
+    class BiosSize : CoreError("La BIOS de Game Boy Advance no mide 16 KiB.")
+    class StateConfig : CoreError("El estado es de otra configuración del juego (tipo de partida, reloj o BIOS).")
     class Unknown(val code: Int) : CoreError("Error desconocido del núcleo: $code")
 
     companion object {
-        fun fromResult(code: Int): CoreError? = when (code) {
+        /**
+         * Traduce un código del espacio común de `native_session.h`: los `gb_result`, 17 (argumento inválido) y los
+         * de GBA traducidos (los comunes al código GB equivalente y 18..20). [console] solo cambia el límite que
+         * cita [RomTooLarge].
+         */
+        fun fromResult(code: Int, console: Console = Console.GB): CoreError? = when (code) {
             0 -> null
             1 -> NullArgument()
             2 -> OutOfMemory()
             3 -> RomTooSmall()
-            4 -> RomTooLarge()
+            4 -> RomTooLarge(console.maxRomBytes / (1024 * 1024))
             5 -> RomTruncated()
             6 -> BadRomSizeCode()
             7 -> BadRamSizeCode()
@@ -42,6 +51,9 @@ sealed class CoreError(message: String) : RuntimeException(message) {
             15 -> StateCorrupt()
             16 -> BufferTooSmall()
             17 -> InvalidArgument()
+            18 -> BadGbaHeader()
+            19 -> BiosSize()
+            20 -> StateConfig()
             else -> Unknown(code)
         }
     }
