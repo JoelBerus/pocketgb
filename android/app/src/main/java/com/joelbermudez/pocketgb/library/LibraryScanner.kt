@@ -26,7 +26,12 @@ class DocumentReadException(val remote: Boolean, cause: Throwable? = null) : IOE
  * N1-H4: el proveedor devolvió la carpeta a medias (`EXTRA_LOADING`: aún cargando; `EXTRA_ERROR`: con error). [nodes]
  * es lo que sí listó; el escaneo lo usa pero queda incompleto (no poda ni traslada nada).
  */
-class PartialListingException(val nodes: List<TreeNode>, reason: String) : IOException(reason)
+class PartialListingException(
+    val nodes: List<TreeNode>,
+    reason: String,
+    /** `EXTRA_LOADING`: se puede volver a mirar en unos segundos (N1-V2). */
+    val loading: Boolean = false,
+) : IOException(reason)
 
 /**
  * N1-H6: cabeceras ya leídas, por documento sin cambios (id de documento, tamaño y fecha del proveedor). Un ROM que
@@ -52,6 +57,7 @@ class HeaderCache private constructor(private val byKey: Map<Key, String>) {
                 val id = stamp.documentId ?: continue
                 val size = stamp.size?.takeIf { it > 0 } ?: continue
                 val modified = stamp.lastModified?.takeIf { it > 0 } ?: continue
+                if (stamp.headerCarried) continue // N1-V2-H1: no se leyó con esa fecha: no vale como caché
                 val header = stamp.header ?: continue
                 if (RomHeader.fromIdentity(header) != null) map[Key(id, size, modified)] = header
             }
@@ -104,6 +110,8 @@ data class ScanStats(
     val truncated: Boolean = false,
     /** N1-H6: cabeceras tomadas de la caché ([HeaderCache]) sin abrir el ROM. */
     val headerCacheHits: Int = 0,
+    /** N1-V2: carpetas que el proveedor aún estaba cargando (`EXTRA_LOADING`), incluidas en [folderErrors]. */
+    val loadingFolders: Int = 0,
 ) {
     /** Todas las carpetas a su alcance se listaron: lo que no aparece es que no está (N1a poda y traslada solo así). */
     val complete: Boolean get() = folderErrors == 0 && !truncated
@@ -170,10 +178,11 @@ object LibraryScanner {
         var folderErrors = 0
         var truncated = false
         var headerCacheHits = 0
+        var loadingFolders = 0
 
         fun build() = ScanStats(
             folderQueries, headReads, documentsSeen, hiddenSkipped, reservedSkipped, setAsideSkipped,
-            tooDeepSkipped, folderErrors, truncated, headerCacheHits,
+            tooDeepSkipped, folderErrors, truncated, headerCacheHits, loadingFolders,
         )
     }
 
@@ -204,6 +213,7 @@ object LibraryScanner {
             } catch (partial: PartialListingException) {
                 // N1-H4: lo listado vale, pero el escaneo queda incompleto (Drive aún cargando o con error).
                 stats.folderErrors++
+                if (partial.loading) stats.loadingFolders++
                 partial.nodes
             } catch (error: TreePermissionException) {
                 // Perder el permiso tumba el escaneo: la biblioteca parcial sería engañosa.

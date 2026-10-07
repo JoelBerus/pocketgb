@@ -57,4 +57,4 @@ Si el mismo juego está dos veces (aunque se llame distinto), en cuanto PocketGB
 
 En Drive, mirar cada carpeta es una consulta por internet. El **primer escaneo** abre además cada juego para leer su cabecera, lo que puede descargarlo: con muchas subcarpetas y juegos **puede tardar**, déjalo terminar con conexión. Después, PocketGB recuerda la cabecera de cada archivo y solo abre los juegos nuevos o cambiados; cada vez que vuelves a la app se vuelve a mirar la lista de carpetas.
 
-Si Drive aún está cargando una carpeta cuando PocketGB la mira, lo que no haya llegado todavía no se da por borrado: se recoge en el siguiente escaneo.
+Si Drive aún está cargando una carpeta cuando PocketGB la mira, lo que no haya llegado todavía no se da por borrado: PocketGB vuelve a mirar sola a los pocos segundos (hasta tres veces) y, si no, en el siguiente escaneo.

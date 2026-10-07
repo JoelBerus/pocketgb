@@ -22,9 +22,14 @@ data class DocumentStamp(
     val documentId: String? = null,
     /** N1-H1: [RomHeader.identity] de la cabecera; `null` si no se pudo leer. */
     val header: String? = null,
+    /**
+     * N1-V2-H1: [header] no se leyó en este escaneo (documento sin descargar o ilegible): es la del escaneo anterior en la
+     * misma ruta, con el mismo tamaño. Sirve para comparar, pero no alimenta la caché de cabeceras.
+     */
+    val headerCarried: Boolean = false,
 ) {
     /** Lo que se compara para reconocer el documento en otra ruta: nombre, tamaño, fecha y cabecera (sin el id). */
-    internal val identity: DocumentStamp get() = if (documentId == null) this else copy(documentId = null)
+    internal val identity: DocumentStamp get() = copy(documentId = null, headerCarried = false)
 
     /** Clave de la regla de renombrado: tamaño, fecha y cabecera (sin nombre ni id). */
     internal val renameKey: Triple<Long?, Long?, String?> get() = Triple(size, lastModified, header)
@@ -69,7 +74,23 @@ data class Tombstone(
     val known: Boolean = false,
     /** Epoch ms del escaneo en que desapareció. */
     val goneAt: Long = 0,
-)
+    /** N1-V2-H4: registros provisionales por ruta (sin huella) que tenía; vuelven solo si la lápida coincide. */
+    val favorite: Boolean = false,
+    val lastPlayed: Long? = null,
+    val hidden: Boolean = false,
+    val alias: String? = null,
+) {
+    /**
+     * El documento vuelve a [path] con [current]: mismo tamaño y cabecera; o, si la lápida no tenía cabecera, mismo
+     * tamaño y fecha, y tampoco ahora hay cabecera.
+     */
+    internal fun matchesAt(path: String, current: DocumentStamp): Boolean {
+        if (path != this.path) return false
+        if (stamp.sameContentAs(current)) return true
+        return stamp.header == null && current.header == null && (stamp.size ?: 0L) > 0L && stamp.size == current.size &&
+            (stamp.lastModified ?: 0L) > 0L && stamp.lastModified == current.lastModified
+    }
+}
 
 object Tombstones {
     const val MAX_ENTRIES = 200
@@ -123,16 +144,23 @@ object MoveDetection {
  * N1a · aplica un escaneo a las preferencias sin calcular ninguna huella:
  * - Con el escaneo **completo** ([ScanStats.complete]), las rutas reconocidas como movidas ([MoveDetection]) se llevan su
  *   huella y sus registros por ruta (favorito, fecha, oculto y alias provisionales, y «ya visto»). Las que desaparecen
- *   sin reconocerse dejan una **lápida** ([Tombstone]) y se olvida su huella (lo guardado por huella no se toca). Una ruta
- *   que aparece y coincide con una lápida (la misma ruta con el mismo tamaño y cabecera, u otra ruta con el sello entero
- *   y sin ambigüedad) recupera su huella, su «ya visto» y sus registros por ruta (N1-H4).
- * - Una huella heredada así queda **sin confirmar** ([LibraryPreferencesData.inferredFingerprints]) hasta que se lee el
- *   ROM (abrirlo o ver su detalle); los ajustes del juego la confirman antes de escribir (N1-H1).
- * - Una ruta que sigue en su sitio con otro tamaño u otra cabecera olvida su huella: es otro ROM. Riesgo residual: otro
- *   ROM con el mismo tamaño y la misma cabecera (p. ej. un parche aplicado encima que no recalcula los checksums) conserva
- *   la huella anterior hasta que se abre (abrir siempre calcula la huella real del ROM).
- * - Con un escaneo incompleto (una carpeta falló, vino a medias o se llegó al tope) solo se anotan los sellos vistos: nada
- *   se traslada ni se olvida. Un listado vacío no cambia nada (un proveedor en la nube con un fallo pasajero).
+ *   sin reconocerse dejan una **lápida** ([Tombstone]) con su huella y sus registros por ruta (N1-V2-H4), que dejan de
+ *   estar en la ruta. Una ruta que aparece y coincide con una lápida (la misma ruta con el mismo contenido, u otra ruta
+ *   con el sello entero y sin ambigüedad) los recupera (N1-H4).
+ * - Una ruta que sigue en su sitio con otro tamaño u otra cabecera es otro ROM: olvida su huella, deja de estar «vista» y
+ *   sus registros por ruta pasan a una lápida (N1-V2-H4), también con un escaneo incompleto (la ruta sí se listó).
+ * - Si en la misma ruta cambian la fecha o el id, o esta vez no se pudo leer la cabecera, la huella se mantiene pero pasa
+ *   a **sin confirmar** (N1-V2-H1). Una cabecera que no se pudo leer se toma del escaneo anterior (mismo tamaño), marcada
+ *   como heredada para que no alimente la caché de cabeceras.
+ * - Una huella heredada (movimiento, lápida o cambio leve) queda en [LibraryPreferencesData.inferredFingerprints] hasta que
+ *   se lee el ROM (abrirlo o ver su detalle); los ajustes del juego la confirman antes de escribir (N1-H1).
+ * - Con un escaneo incompleto (una carpeta falló, vino a medias o se llegó al tope) solo se refrescan los sellos de rutas ya
+ *   conocidas: nada se traslada ni se olvida, y las rutas nuevas no se anotan, para que el siguiente escaneo completo
+ *   reconozca el movimiento (N1-V2-H2). Un listado vacío no cambia nada.
+ * Riesgos residuales: otro ROM con el mismo tamaño y la misma cabecera en la misma ruta (un parche que no recalcula los
+ * checksums) conserva la huella hasta que se lee; y la caché de cabeceras (N1-H6) da por buena la cabecera de un
+ * documento con el mismo id, tamaño y fecha (en ms) aunque su contenido hubiera cambiado. Abrir siempre calcula la huella
+ * real, así que nunca se abre la partida de otro juego.
  * Si no hay nada que cambiar devuelve un valor igual (no provoca escrituras).
  */
 fun LibraryPreferencesData.reconciled(
@@ -141,65 +169,112 @@ fun LibraryPreferencesData.reconciled(
     now: Long = System.currentTimeMillis(),
 ): LibraryPreferencesData {
     if (entries.isEmpty()) return this
-    val current = entries.associate { it.id to DocumentStamp.of(it) }
+    val read = entries.associate { it.id to DocumentStamp.of(it) }
+    // N1-V2-H1: sin cabecera esta vez, se conserva la del escaneo anterior en la misma ruta si el tamaño no cambió.
+    val current = read.mapValues { (path, stamp) ->
+        val previous = documents[path]
+        if (stamp.header == null && previous?.header != null && (previous.size == null || stamp.size == null || previous.size == stamp.size)) {
+            stamp.copy(header = previous.header, headerCarried = true)
+        } else {
+            stamp
+        }
+    }
     var data = this
     val moves = if (complete) MoveDetection.detect(documents, current) else emptyMap()
     for ((from, to) in moves) data = data.withPathMoved(from, to)
 
-    var tombstones = data.tombstones
-    if (complete) {
-        // Lápidas de lo que desaparece sin reconocerse (con algo con que reconocerlo después).
-        val gone = documents.keys - current.keys - moves.keys
-        val fresh = gone.mapNotNull { path ->
-            val stamp = documents.getValue(path)
-            if ((stamp.size ?: 0L) <= 0L || stamp.header == null) return@mapNotNull null
-            Tombstone(path, stamp, data.fingerprints[path], path in data.knownIds, now)
-        }
-        tombstones = tombstones.filter { it.path !in gone } + fresh
-
-        // Rutas nuevas (ni vistas antes ni recién movidas) que vuelven: primero la misma ruta, después otra sin ambigüedad.
-        val appeared = current.keys - documents.keys - moves.values.toSet()
-        val used = HashSet<Tombstone>()
-        val restoredPaths = HashSet<String>()
-        for (path in appeared) {
-            val tomb = tombstones.firstOrNull { it.path == path && it.stamp.sameContentAs(current.getValue(path)) } ?: continue
-            data = data.withRestored(tomb, path, current.keys)
-            used += tomb
-            restoredPaths += path
-        }
-        val remaining = tombstones.filter { it !in used && it.stamp.isComplete }
-        val appearedLeft = (appeared - restoredPaths).associateWith { current.getValue(it) }.filterValues { it.isComplete }
-        val byKey = remaining.associateBy { "lápida:" + it.path }
-        for ((key, to) in MoveDetection.match(byKey.mapValues { it.value.stamp }, appearedLeft)) {
-            val tomb = byKey.getValue(key)
-            data = data.withRestored(tomb, to, current.keys)
-            used += tomb
-        }
-        tombstones = tombstones.filter { it !in used && now - it.goneAt <= Tombstones.MAX_AGE_MS }
-            .sortedByDescending { it.goneAt }
-            .take(Tombstones.MAX_ENTRIES)
-    }
-
+    // Misma ruta, otro contenido (otro tamaño u otra cabecera): es otro ROM.
     val changed = current.filter { (path, stamp) -> documents[path]?.differsFrom(stamp) == true }.keys
+    // Misma ruta, cambio leve: otra fecha u otro id, o la cabecera no se pudo leer. La huella sigue, pero sin confirmar.
+    val softened = current.filter { (path, stamp) ->
+        val previous = documents[path] ?: return@filter false
+        path !in changed && path in data.fingerprints && (
+            read.getValue(path).header == null ||
+                (previous.lastModified != null && stamp.lastModified != null && previous.lastModified != stamp.lastModified) ||
+                (previous.documentId != null && stamp.documentId != null && previous.documentId != stamp.documentId)
+            )
+    }.keys
+    val gone = if (complete) documents.keys - current.keys - moves.keys else emptySet()
+    val leaving = gone + changed
+    val appeared = if (complete) current.keys - documents.keys - moves.values.toSet() else emptySet()
+
+    // Lápidas que coinciden con lo que hay ahora en su misma ruta (vuelve el documento o vuelve el contenido anterior).
+    val samePath = (appeared + changed).mapNotNull { path ->
+        data.tombstones.firstOrNull { it.matchesAt(path, current.getValue(path)) }?.let { path to it }
+    }.toMap()
+    // Lo que se va (o es otro ROM) deja su lápida con huella, «ya visto» y registros por ruta, que dejan la ruta.
+    val fresh = leaving.map { path -> data.tombstoneOf(path, documents.getValue(path), now) }
+    data = data.withoutPathRecords(leaving).copy(
+        fingerprints = data.fingerprints - changed,
+        inferredFingerprints = data.inferredFingerprints - changed,
+        knownIds = data.knownIds - changed,
+    )
+    var tombstones = data.tombstones.filter { it.path !in leaving && it !in samePath.values } + fresh
+    for ((path, tomb) in samePath) data = data.withRestored(tomb, path)
+    if (complete) {
+        // Otra ruta: el sello entero y sin ambigüedad.
+        val left = (appeared - samePath.keys).associateWith { current.getValue(it) }.filterValues { it.isComplete }
+        val candidates = tombstones.filter { it.stamp.isComplete }.associateBy { "lápida:" + it.path + "@" + it.goneAt }
+        val used = HashSet<Tombstone>()
+        for ((key, to) in MoveDetection.match(candidates.mapValues { it.value.stamp }, left)) {
+            val tomb = candidates.getValue(key)
+            data = data.withRestored(tomb, to)
+            used += tomb
+        }
+        tombstones = tombstones.filter { it !in used }
+    }
+    tombstones = tombstones.filter { now - it.goneAt <= Tombstones.MAX_AGE_MS }
+        .sortedByDescending { it.goneAt }
+        .take(Tombstones.MAX_ENTRIES)
+
     val fingerprints = if (complete) data.fingerprints.filterKeys { it in current } else data.fingerprints
-    val inferred = if (complete) data.inferredFingerprints.filter { it in current }.toSet() else data.inferredFingerprints
+    val inferred = (if (complete) data.inferredFingerprints.filter { it in current }.toSet() else data.inferredFingerprints) +
+        softened.filter { it in fingerprints }
     return data.copy(
-        fingerprints = if (changed.isEmpty()) fingerprints else fingerprints - changed,
-        inferredFingerprints = if (changed.isEmpty()) inferred else inferred - changed,
-        documents = if (complete) current else data.documents + current,
+        fingerprints = fingerprints,
+        inferredFingerprints = inferred,
+        // N1-V2-H2: con un escaneo incompleto solo se refrescan las rutas que ya se conocían.
+        documents = if (complete) current else data.documents + current.filterKeys { it in data.documents },
         tombstones = tombstones,
     )
 }
 
-/** Recupera lo que guardaba la lápida [tomb] en la ruta [to]. */
-private fun LibraryPreferencesData.withRestored(tomb: Tombstone, to: String, present: Set<String>): LibraryPreferencesData {
-    // Los registros por ruta siguen bajo la ruta vieja (nunca se podan): se mueven si esa ruta no está ocupada.
-    val moved = if (tomb.path != to && tomb.path !in present) withPathMoved(tomb.path, to) else this
+/** Lápida de [path] con su último sello, su huella, si se había visto y sus registros por ruta. */
+private fun LibraryPreferencesData.tombstoneOf(path: String, stamp: DocumentStamp, now: Long) = Tombstone(
+    path = path,
+    stamp = stamp,
+    fingerprint = fingerprints[path],
+    known = path in knownIds,
+    goneAt = now,
+    favorite = path in favorites,
+    lastPlayed = lastPlayed[path],
+    hidden = path in hiddenPaths,
+    alias = aliasesByPath[path],
+)
+
+/** Quita de [paths] los registros provisionales por ruta (pasan a sus lápidas). */
+private fun LibraryPreferencesData.withoutPathRecords(paths: Set<String>): LibraryPreferencesData {
+    if (paths.isEmpty()) return this
+    return copy(
+        favorites = favorites - paths,
+        lastPlayed = lastPlayed - paths,
+        hiddenPaths = hiddenPaths - paths,
+        aliasesByPath = aliasesByPath - paths,
+    )
+}
+
+/** Recupera en la ruta [to] lo que guardaba la lápida [tomb]: huella (sin confirmar), «ya visto» y registros por ruta. */
+private fun LibraryPreferencesData.withRestored(tomb: Tombstone, to: String): LibraryPreferencesData {
     val fingerprint = tomb.fingerprint
-    return moved.copy(
-        fingerprints = if (fingerprint != null) moved.fingerprints + (to to fingerprint) else moved.fingerprints,
-        inferredFingerprints = if (fingerprint != null) moved.inferredFingerprints + to else moved.inferredFingerprints,
-        knownIds = if (tomb.known) moved.knownIds + to else moved.knownIds,
+    val keepOwn = fingerprints[to] != null && to !in inferredFingerprints
+    return copy(
+        fingerprints = if (fingerprint != null && !keepOwn) fingerprints + (to to fingerprint) else fingerprints,
+        inferredFingerprints = if (fingerprint != null && !keepOwn) inferredFingerprints + to else inferredFingerprints,
+        knownIds = if (tomb.known) knownIds + to else knownIds,
+        favorites = if (tomb.favorite) favorites + to else favorites,
+        lastPlayed = tomb.lastPlayed?.let { lastPlayed + (to to it) } ?: lastPlayed,
+        hiddenPaths = if (tomb.hidden) hiddenPaths + to else hiddenPaths,
+        aliasesByPath = tomb.alias?.let { aliasesByPath + (to to it) } ?: aliasesByPath,
     )
 }
 
@@ -210,12 +285,17 @@ internal fun LibraryPreferencesData.withPathMoved(from: String, to: String): Lib
         return this - from + (to to value)
     }
     fun Set<String>.moved(): Set<String> = if (from in this) this - from + to else this
-    val movedFingerprint = fingerprints[from] != null
+    // N1-V2-H2: si la ruta nueva ya tiene una huella confirmada (se abrió antes de reconocer el movimiento), manda esa.
+    val keepOwn = fingerprints[to] != null && to !in inferredFingerprints
+    val movedFingerprint = fingerprints[from]
     return copy(
-        // Una huella vieja anotada en la ruta nueva no vale: manda la del documento movido (o ninguna).
-        fingerprints = (fingerprints - to).moved(),
+        fingerprints = when {
+            keepOwn -> fingerprints - from
+            movedFingerprint != null -> fingerprints - from + (to to movedFingerprint)
+            else -> fingerprints - from - to
+        },
         // La huella trasladada queda sin confirmar hasta que se lea el ROM (N1-H1).
-        inferredFingerprints = (inferredFingerprints - from - to) + if (movedFingerprint) setOf(to) else emptySet(),
+        inferredFingerprints = (inferredFingerprints - from - to) + if (!keepOwn && movedFingerprint != null) setOf(to) else emptySet(),
         favorites = favorites.moved(),
         lastPlayed = lastPlayed.moved(),
         hiddenPaths = hiddenPaths.moved(),

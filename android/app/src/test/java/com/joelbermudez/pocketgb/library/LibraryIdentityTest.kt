@@ -211,6 +211,36 @@ class LibraryIdentityTest {
     }
 
     @Test
+    fun aForeignVersionThatChangesTheTypeOfAKnownKeyIsReadTolerantlyProtectedAndNeverQuarantined() {
+        // PROBE3 (N1-V2-H3): una versión futura guarda `favorites` como objeto.
+        val original = """{"formatVersion":9,"favorites":{"Rojo.gb":true},"favoriteFingerprints":["fp"],"layout":"LIST"}"""
+        val file = File(tmp.root, "p.json").apply { writeText(original) }
+        val store = LibraryPreferencesFile(file)
+        val data = store.load()
+        assertTrue(store.writeProtected)
+        assertEquals("lo legible se usa", setOf("fp"), data.favoriteFingerprints)
+        assertEquals(LibraryLayout.LIST, data.layout)
+        assertTrue("lo ilegible se ignora", data.favorites.isEmpty())
+        assertTrue(file.parentFile!!.listFiles()!!.none { it.name.contains(".corrupt") })
+        assertEquals(original, file.readText())
+    }
+
+    @Test
+    fun aVersionTwoFileFromTheFirstN1DeliveryIsReadAndWrittenAsVersionThree() {
+        val file = File(tmp.root, "p.json").apply {
+            writeText("""{"formatVersion":2,"favoriteFingerprints":["fp"],"documents":{"Rojo.gb":{"name":"Rojo.gb","size":1}}}""")
+        }
+        val store = LibraryPreferencesFile(file)
+        val data = store.load()
+        assertFalse(store.writeProtected)
+        assertEquals(3, LibraryPreferencesFormat.CURRENT)
+        assertEquals(LibraryPreferencesFormat.CURRENT, data.formatVersion)
+        assertTrue(data.tombstones.isEmpty() && data.inferredFingerprints.isEmpty())
+        store.save(data)
+        assertTrue(file.readText().contains("\"formatVersion\":3"))
+    }
+
+    @Test
     fun aLegacyFileWithAnExplicitVersionOneIsMigrated() {
         val file = File(tmp.root, "p.json").apply {
             writeText("""{"formatVersion":1,"favorites":["Rojo.gb"],"fingerprints":{"Rojo.gb":"fp"}}""")

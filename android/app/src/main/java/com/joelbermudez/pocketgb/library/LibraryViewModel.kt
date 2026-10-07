@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,6 +51,11 @@ class LibraryViewModel(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     /** N1b: cuánto costó cada escaneo (la app lo anota en el registro del sistema). */
     private val scanLog: (ScanStats) -> Unit = {},
+    /**
+     * N1-V2: si el proveedor aún estaba cargando alguna carpeta (`EXTRA_LOADING`), se vuelve a escanear tras esta espera,
+     * como mucho [MAX_LOADING_RETRIES] veces seguidas.
+     */
+    private val loadingRetryDelayMs: Long = 3_000L,
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state.asStateFlow()
@@ -157,6 +163,7 @@ class LibraryViewModel(
     }
 
     fun chooseFolder(uri: String) = launchFolderOperation { isCurrent ->
+        loadingRetries.set(0)
         try {
             folders.select(uri)
             // Otra carpeta: el primer escaneo no marca nada como nuevo (K19).
@@ -178,7 +185,23 @@ class LibraryViewModel(
     }
 
     /** Vuelve a listar la carpeta; cancela el escaneo anterior. */
-    fun rescan() = launchFolderOperation { isCurrent -> scan(isCurrent) }
+    fun rescan() {
+        loadingRetries.set(0)
+        launchFolderOperation { isCurrent -> scan(isCurrent) }
+    }
+
+    /** Reintentos seguidos por carpetas que el proveedor aún cargaba (N1-V2); vuelve a 0 con un escaneo completo. */
+    private val loadingRetries = AtomicInteger()
+
+    /** Programa otro escaneo dentro de [loadingRetryDelayMs] si no se agotaron los reintentos ni hubo otra operación. */
+    private fun scheduleLoadingRetry() {
+        if (loadingRetries.incrementAndGet() > MAX_LOADING_RETRIES) return
+        val mine = generation.get()
+        scope.launch(io) {
+            delay(loadingRetryDelayMs)
+            if (generation.get() == mine) launchFolderOperation { isCurrent -> scan(isCurrent) }
+        }
+    }
 
     fun forgetFolder() = launchFolderOperation { isCurrent ->
         try {
@@ -203,6 +226,7 @@ class LibraryViewModel(
             context.ensureActive()
             if (isCurrent()) _state.value = state
         }
+        var stillLoading = false
         val outcome: LibraryState = try {
             val uri = folders.currentUri()
             if (uri == null) {
@@ -239,6 +263,8 @@ class LibraryViewModel(
             context.ensureActive()
             _lastScan.value = result.stats
             scanLog(result.stats)
+            stillLoading = result.stats.loadingFolders > 0
+            if (result.stats.complete) loadingRetries.set(0)
             ensureLoaded()
             // N1a: movimientos reconocidos por su sello (sin leer los ROMs) antes de decidir qué es «Nuevo».
             mutate { it.reconciled(result.entries, result.stats.complete) }
@@ -258,6 +284,7 @@ class LibraryViewModel(
             LibraryState.Failed(LibraryError.Unreadable)
         }
         publish(outcome)
+        if (stillLoading && isCurrent()) scheduleLoadingRetry()
     }
 
     /** Intenta cargar las preferencias si aún no lo están; si el disco falla, se sigue sin ellas. */
@@ -418,8 +445,11 @@ class LibraryViewModel(
         }
     }
 
-    private companion object {
-        const val PROGRESS_STEP = 5
+    companion object {
+        private const val PROGRESS_STEP = 5
+
+        /** N1-V2: reintentos seguidos como mucho cuando el proveedor aún cargaba alguna carpeta. */
+        const val MAX_LOADING_RETRIES = 3
     }
 
     private fun entryFor(id: String): RomEntry? = when (val current = _state.value) {
