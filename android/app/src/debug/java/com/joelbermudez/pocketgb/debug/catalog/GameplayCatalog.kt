@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,16 +26,12 @@ import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.SessionState
 import com.joelbermudez.pocketgb.game.GameNotice
 import com.joelbermudez.pocketgb.game.GameSession
-import com.joelbermudez.pocketgb.game.StatesUi
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlsOrientation
-import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.ui.gameplay.GameplayScreen
 import com.joelbermudez.pocketgb.ui.gameplay.ImmersiveMode
-import com.joelbermudez.pocketgb.ui.gameplay.StatesDialogPreview
-import com.joelbermudez.pocketgb.ui.gameplay.StatesSheet
 import com.joelbermudez.pocketgb.ui.gameplay.noticeText
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import java.io.File
@@ -142,24 +137,8 @@ internal val gameplayCatalogScreens: Map<String, @Composable (DebugIntent) -> Un
     screen("gameplay-header-damaged") { i ->
         GameplayCatalogScreen(i.gameplaySettings(), rom = "damaged", notice = GameNotice.HeaderDamaged)
     }
-    screen("load-state-confirm") { StatesDialogCatalog(StatesDialogPreview.LOAD, StateSlot.MANUAL2) }
-    screen("replace-state-confirm") { StatesDialogCatalog(StatesDialogPreview.REPLACE, StateSlot.MANUAL1) }
-}
-
-@Composable
-private fun StatesDialogCatalog(kind: StatesDialogPreview, slot: StateSlot) {
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
-        val states = remember {
-            StatesUi(
-                entries = mapOf(
-                    StateSlot.AUTO to StateStore.Entry(StateSlot.AUTO, 1_759_700_000_000, CatalogStates.thumbnail(1), false),
-                    StateSlot.MANUAL1 to StateStore.Entry(StateSlot.MANUAL1, 1_759_650_000_000, CatalogStates.thumbnail(2), false),
-                    StateSlot.MANUAL2 to StateStore.Entry(StateSlot.MANUAL2, 1_759_600_000_000, CatalogStates.thumbnail(3), false),
-                ),
-            )
-        }
-        StatesSheet(false, states, remember { SnackbarHostState() }, {}, {}, { _, _ -> }, {}, previewDialog = kind to slot)
-    }
+    screen("load-state-confirm") { Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) { MomentsCatalogSheet(false, preview = com.joelbermudez.pocketgb.ui.moments.MomentsPreview.LOAD) } }
+    screen("replace-state-confirm") { Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) { MomentsCatalogSheet(false, preview = com.joelbermudez.pocketgb.ui.moments.MomentsPreview.CREATE) } }
 }
 
 /** Capturas de estado sintéticas (degradado + rejilla), las mismas en cada ejecución. */

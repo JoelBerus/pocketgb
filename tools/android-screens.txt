@@ -304,3 +304,20 @@ n5-cover-dialog-failed portrait light
 n5-pause portrait dark
 n5-settings-library portrait light swipe=up
 n5-cover-dialog-actions portrait light swipe=up
+n6-moments portrait light
+n6-moments portrait dark
+n6-moments-empty portrait light
+n6-moments-load portrait light
+n6-moments-recover portrait light
+n6-moments-edit portrait light
+n6-moments-ax5 portrait light fontScale=2.0
+n6-pause portrait dark
+n6-pause-moments portrait dark
+n6-pause-create portrait dark
+n6-pause-load-config portrait dark
+n6-pause-recover portrait dark
+n6-details-progress portrait light
+n6-details-progress portrait dark
+n6-game-center portrait light
+n6-progress-editor portrait light
+n6-progress-editor portrait dark

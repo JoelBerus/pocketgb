@@ -22,6 +22,7 @@ import com.joelbermudez.pocketgb.saves.ExactContinuation
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.GameSettingsSaveCheck
 import com.joelbermudez.pocketgb.saves.LaunchMode
+import com.joelbermudez.pocketgb.saves.MomentStore
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.ResumableCore
 import com.joelbermudez.pocketgb.saves.ResumeFailure
@@ -175,6 +176,12 @@ class GameLauncher(
      * ([GbaBios]) no llega al núcleo y se emula (HLE). Bloquea: se llama en [io].
      */
     private val biosReader: () -> ByteArray? = { null },
+    /** N6: raíz de los momentos (`moments/`); `null` = sin momentos (pruebas antiguas). */
+    private val momentsRoot: File? = null,
+    /** N6: progreso por huella (cabecera del ROM para el lector Pokémon). */
+    private val progress: com.joelbermudez.pocketgb.progress.ProgressStore? = null,
+    /** N6: nombre visible de una ranura migrada («Ranura 1», «Rescate»…) a partir de su origen (`slot1`, `rescue`…). */
+    private val migratedName: (String) -> String = { it },
 ) {
     /**
      * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
@@ -248,6 +255,23 @@ class GameLauncher(
             try { states.recoverOrphans() } catch (_: IOException) {}
             val index = SavesIndex(savesDirectory, fileOps)
             index.recoverOrphans()
+            // N6: momentos (temporales y archivos sin confirmar) y migración de las ranuras 1–4 y RESCUE, con el lease ya
+            // adquirido. Un fallo no impide jugar: las ranuras siguen en su sitio y se migran en la próxima apertura.
+            val moments = momentsRoot?.let { MomentStore(it, fingerprint, fileOps) }
+            var migratedRescue = false
+            if (moments != null) {
+                try {
+                    moments.recoverOrphans()
+                    val hadRescue = states.hasRescue() || (fileOps.exists(states.directory) &&
+                        fileOps.list(states.directory).any { it.startsWith("rescue-") && it.endsWith(".state") })
+                    if (moments.migrateSlots(states, migratedName) > 0 && hadRescue) migratedRescue = true
+                } catch (_: IOException) {
+                } catch (_: RuntimeException) {
+                }
+            }
+            if (console == Console.GB && rom.size >= com.joelbermudez.pocketgb.progress.PokemonReader.HEADER_BYTES) {
+                try { progress?.recordHeader(fingerprint, rom.copyOf(com.joelbermudez.pocketgb.progress.PokemonReader.HEADER_BYTES)) } catch (_: Exception) {}
+            }
 
             var target: com.joelbermudez.pocketgb.saves.SaveTarget? = null
             var saveStore: SaveStore? = null
@@ -352,10 +376,15 @@ class GameLauncher(
                 lease = lease,
                 title = entry.alias ?: info.title,
                 unsavedCartridge = unsavedCartridge,
+                moments = moments,
+                momentConfig = momentConfigFor(console, resolved, gbaOptions),
             )
             handedOver = true
             // Cabecera con checksum incorrecto (K15): se abre igual y se avisa al empezar.
-            val notices = if (info.headerChecksumOk) emptyList() else listOf(GameNotice.HeaderDamaged)
+            val notices = buildList {
+                if (!info.headerChecksumOk) add(GameNotice.HeaderDamaged)
+                if (migratedRescue) add(GameNotice.RescueMoment)
+            }
             return OpenResult.Opened(game, notices, resumed)
         } catch (error: CoreError) {
             return OpenResult.Failed(OpenError.Core(error))
@@ -383,6 +412,14 @@ class GameLauncher(
             } catch (_: RuntimeException) {
             }
         }
+    }
+
+    /** N6 (ND13): la configuración de la sesión que se guarda con cada momento. */
+    private fun momentConfigFor(console: Console, gb: EmulationOptions, gba: GbaOptions): Map<String, String> = when (console) {
+        Console.GB -> mapOf("console" to "GB", "model" to gb.model.name, "palette" to gb.compatPalette.toString())
+        Console.GBA -> mapOf(
+            "console" to "GBA", "gbaSaveType" to gba.saveType.name, "gbaRtc" to gba.rtc.name, "gbaBios" to gba.useBios.toString(),
+        )
     }
 
     /** Huella (SHA-256 del ROM completo) y marca CGB (`0x143` con el bit 7) para pedir las opciones a los ajustes. */

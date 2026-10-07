@@ -171,7 +171,8 @@ internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
     a6CatalogScreens + a7CatalogScreens + a7Aliases.mapValues { (_, target) -> a6CatalogScreens.getValue(target) } +
         a7ComposedScreens(a6CatalogScreens) + a9CatalogScreens + n1CatalogScreens + n2CatalogScreens + n3CatalogScreens +
         n4CatalogScreens + n8CatalogScreens +
-        com.joelbermudez.pocketgb.debug.catalog.n5CatalogScreens
+        com.joelbermudez.pocketgb.debug.catalog.n5CatalogScreens +
+        com.joelbermudez.pocketgb.debug.catalog.n6CatalogScreens
 
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {

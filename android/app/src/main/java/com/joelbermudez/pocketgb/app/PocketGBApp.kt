@@ -112,6 +112,17 @@ private fun AppContent(
     val gameSaves: @Composable (String, () -> Unit) -> Unit = { fingerprint, onBack ->
         SavesScreen(savesBrowser, gameplay, onBack = onBack, onlyFingerprint = fingerprint)
     }
+    val momentLibrary = remember(context) {
+        com.joelbermudez.pocketgb.saves.MomentLibrary(
+            momentsRoot = File(context.filesDir, "moments"),
+            statesRoot = File(context.filesDir, "states"),
+            savesDirectory = File(context.filesDir, "saves"),
+            migratedName = { com.joelbermudez.pocketgb.game.migratedMomentName(context, it) },
+        )
+    }
+    val gameMoments: @Composable (String, () -> Unit) -> Unit = { gameId, onBack ->
+        com.joelbermudez.pocketgb.ui.moments.GameMomentsRoute(library, gameplay, momentLibrary, gameId, onBack)
+    }
     val libraryDeps = LibraryRouteDeps(
         library = library,
         play = play,
@@ -119,6 +130,7 @@ private fun AppContent(
         resumable = resumable,
         gameplaySettings = gameplaySettings,
         saves = gameSaves,
+        moments = gameMoments,
     )
 
     AppScaffold(navigationState) {
@@ -154,7 +166,7 @@ private fun AppContent(
                             LibraryRouteContent(LibraryRoute.Root, navigationState, libraryDeps)
                         }
                     }
-                    is LibraryRoute.Details, is LibraryRoute.Category, is LibraryRoute.GameSaves -> NavEntry(route) {
+                    is LibraryRoute.Details, is LibraryRoute.Category, is LibraryRoute.GameSaves, is LibraryRoute.Moments -> NavEntry(route) {
                         LibraryRouteContent(route as LibraryRoute, navigationState, libraryDeps)
                     }
                     FavoritesRoute.Root -> NavEntry(route) {
@@ -166,6 +178,7 @@ private fun AppContent(
                             onPlayFromStart = playFromStart,
                             resumable = resumable,
                             onOpenSaves = { navigationState.push(FavoritesRoute.GameSaves(it)) },
+                            onOpenMoments = { navigationState.push(FavoritesRoute.Moments(it)) },
                         )
                     }
                     is FavoritesRoute.Details -> NavEntry(route) {
@@ -175,9 +188,11 @@ private fun AppContent(
                             onPlayFromStart = playFromStart,
                             resumable = resumable,
                             onOpenSaves = { navigationState.push(FavoritesRoute.GameSaves(it)) },
+                            onOpenMoments = { navigationState.push(FavoritesRoute.Moments(it)) },
                         )
                     }
                     is FavoritesRoute.GameSaves -> NavEntry(route) { gameSaves(route.fingerprint) { navigationState.pop() } }
+                    is FavoritesRoute.Moments -> NavEntry(route) { gameMoments(route.gameId) { navigationState.pop() } }
                     SettingsRoute.Root -> NavEntry(route) {
                         SettingsScreen(
                             onEmulation = { navigationState.push(SettingsRoute.SettingsEmulation) },

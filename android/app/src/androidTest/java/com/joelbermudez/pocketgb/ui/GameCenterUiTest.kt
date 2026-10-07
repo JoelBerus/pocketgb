@@ -133,7 +133,7 @@ class GameCenterUiTest {
                 AppNavigationState().also { if (start != LibraryRoute.Root) it.push(start) }
             }
             navigation = state
-            val deps = LibraryRouteDeps(vm, {}, {}, emptySet(), repository) { _, _ -> }
+            val deps = LibraryRouteDeps(vm, {}, {}, emptySet(), repository, saves = { _, _ -> })
             NavDisplay(
                 backStack = state.currentBackStack,
                 onBack = { state.pop() },
@@ -232,16 +232,20 @@ class GameCenterUiTest {
     }
 
     @Test
-    fun upcomingRowsAreDisabledForTalkBackAndHidingAsksFirst() {
+    fun progressOpensItsEditorAndHidingAsksFirst() {
         show()
         openCenterFor("TETRA")
-        // N5: «Portada» ya funciona (su fila tiene «Cambiar»); solo «Progreso» sigue próximamente.
+        // N5: «Portada» ya funciona (su fila tiene «Cambiar»); N6: «Progreso» también (abre hitos y lector).
         compose.onNodeWithTag("game-center-cover-change").performScrollTo().assertIsEnabled()
-        for (tag in listOf("game-center-progress")) {
-            compose.onNodeWithTag(tag).performScrollTo()
-                .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Disabled))
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "No disponible todavía"))
-        }
+        compose.onNodeWithTag("game-center-progress").performScrollTo()
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Disabled))
+            .performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("progress-dialog").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("progress-template-pokemon").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("progress-template-pokemon").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("progress-milestone-Liga Pokémon").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("progress-dialog-close").performScrollTo().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("progress-dialog").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("game-center-hide").performScrollTo().performClick()
         compose.onNodeWithText("Ocultar", substring = false).performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("game-settings").fetchSemanticsNodes().isEmpty() }
