@@ -38,6 +38,16 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | A9-5 | Renombrar Rojo («Rojo de Joel») desde el detalle, el menú de la portada y Ajustes del juego | El nombre se ve en biblioteca, Continuar jugando, Favoritos, detalle y pausa; el buscador lo encuentra; el archivo de la carpeta no cambia |
 | A9-6 | Vaciar el nombre | Vuelve «POKEMON RED» |
 
+### Android N1 · carpetas e identidad ([guía](guia/carpetas-android.md))
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| N1-1 | En Drive, crear `Roms/Pokémon/1ª generación/` y mover ahí Rojo **con su `.sav`**; volver a la app | Rojo sigue favorito, con su nombre, su portada y «Continuar»; el detalle dice «Pokémon › 1ª generación · …»; no sale como «Nuevo» |
+| N1-2 | Abrir Rojo tras moverlo y guardar en el juego | El `.sav` nuevo aparece en la carpeta nueva; en la vieja no queda nada |
+| N1-3 | Crear `_Revisar/` y `PocketGB/` en `Roms` con un juego dentro de cada una | Esos juegos no salen en la biblioteca |
+| N1-4 | Primer escaneo de la carpeta con todas las subcarpetas (con conexión) | Termina; anotar cuánto tarda. `adb logcat -s PocketGB/Library` muestra cuántas consultas hizo |
+| N1-5 | Dejar dos copias del mismo juego en carpetas distintas y abrir el detalle de ambas | «Duplicado» en las dos tarjetas y «También en: …» en el detalle |
+
 ## iPhone
 
 | # | Prueba | Resultado esperado |

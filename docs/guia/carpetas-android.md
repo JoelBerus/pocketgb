@@ -1,0 +1,56 @@
+# Organizar tus juegos en carpetas (Android)
+
+PocketGB lee los juegos de **la carpeta que eliges** en la app (en el teléfono de Joel, `Roms` de Google Drive) y de las carpetas que tenga dentro. No copia ni cambia tus ROMs: solo los lee.
+
+## Ejemplo
+
+```
+Roms/                                   ← la carpeta que eliges en la app
+  Pokémon/
+    1ª generación/
+      Pokemon Red.gb
+      Pokemon Red.sav                   ← la partida, junto al juego y con su mismo nombre
+    2ª generación/
+      Pokemon Gold.gbc
+      Pokemon Gold.sav
+  Tetris.gb                             ← también vale en la carpeta principal
+  PocketGB/                             ← de la app: no pongas juegos aquí
+  _Revisar/                             ← apartada: PocketGB no mira dentro
+```
+
+Por ahora la biblioteca muestra todos los juegos juntos. En el detalle de cada juego ves dónde está, por ejemplo «Pokémon › 2ª generación · Pokemon Gold.gbc». Más adelante, las carpetas de primer nivel serán categorías.
+
+## Las reglas
+
+- **Hasta 5 niveles de carpetas** dentro de la que elegiste. `Roms/A/B/C/D/E/juego.gb` se ve; un nivel más hondo, no.
+- **Lo que empieza por `.`** (punto) se ignora: son archivos y carpetas ocultos del sistema.
+- **Las carpetas que empiezan por `_`** (guion bajo) quedan **apartadas**: PocketGB no mira dentro. Sirven para dejar a un lado lo que no quieres ver, por ejemplo `_Revisar/` o `_Repetidos/`. Un archivo que empieza por `_` sí se lee.
+- **`PocketGB/`** en la carpeta principal es de la app (más adelante guardará ahí lo que envíes a otro equipo y lo que exportes). No se mira como biblioteca, así que no pongas juegos dentro. Una carpeta `PocketGB` dentro de otra carpeta sí se mira.
+- Solo se leen archivos **`.gb` y `.gbc`** de hasta 8 MiB. Los **`.zip` no se leen**: descomprímelos antes.
+- Como mucho se miran **5 000 archivos y carpetas** en total. Si tu carpeta tiene más, algunos juegos no aparecerán.
+
+## La partida va junto al juego
+
+El archivo `.sav` con el **mismo nombre** que el ROM, en la **misma carpeta**, es la copia de tu partida que comparten tus otros emuladores y equipos. PocketGB guarda además la suya en el teléfono, que es la que manda, con copias de respaldo.
+
+Si en una misma carpeta tienes dos juegos con el mismo nombre y distinta extensión (`Juego.gb` y `Juego.gbc`), PocketGB no escribe su `.sav` junto a ellos para no mezclar las partidas; te lo avisa al abrirlos.
+
+## Mover o renombrar juegos
+
+Puedes reorganizar la carpeta cuando quieras. Al volver a la app, PocketGB reconoce el juego en su sitio nuevo **sin descargarlo**, por su nombre, su tamaño y su fecha. Se conservan el favorito, el nombre que le pusiste, si estaba oculto, sus ajustes, su partida, sus estados y su portada.
+
+- **Mueve el `.sav` con el juego** (en Drive, selecciona los dos y muévelos juntos). Si mueves solo el ROM, no pasa nada malo: PocketGB usa la partida del teléfono y crea un `.sav` nuevo junto al juego; el viejo se queda donde estaba, sin tocarlo.
+- Si cambias el nombre del archivo a la vez que lo mueves, también lo reconoce, salvo que haya otro archivo con el mismo tamaño y la misma fecha.
+- Si no puede estar seguro (por ejemplo, mueves a la vez dos copias idénticas, o el proveedor no informa del tamaño o de la fecha), el juego aparece como nuevo hasta que lo abres o entras en su detalle: en ese momento recupera todo. No se pierde nada.
+
+## Juegos repetidos
+
+Si el mismo juego está dos veces (aunque se llame distinto), en cuanto PocketGB lo sabe verás **«Duplicado»** en su tarjeta y, en el detalle, **«También en: …»** con las otras ubicaciones.
+
+- Las copias **comparten** la partida del teléfono, los estados, los ajustes, la portada, el favorito y el nombre que le pusiste: para PocketGB son el mismo juego.
+- Cada copia tiene su propio `.sav` al lado. Se pone al día cuando abres **esa** copia. Si al abrir una copia su `.sav` es más nuevo que la partida del teléfono (por ejemplo, porque llegó de otro equipo), se usa ese y la del teléfono queda como copia de respaldo en Ajustes › Partidas.
+- Lo más sencillo es dejar una sola copia y apartar las demás en `_Revisar/`.
+
+## Google Drive
+
+En Drive, mirar cada carpeta es una consulta por internet y leer la cabecera de cada juego puede descargarlo. El **primer escaneo** de una carpeta con muchas subcarpetas **puede tardar**: déjalo terminar con conexión. Cada vez que vuelves a la app se mira de nuevo la carpeta.
