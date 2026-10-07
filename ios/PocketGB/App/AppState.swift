@@ -92,6 +92,10 @@ final class AppState {
     var libraryPath: [LibraryRoute] = []
     var favoritesPath: [LibraryRoute] = []
     var libraryFilter: LibraryFilter = .all
+    /// Categoría (carpeta de primer nivel) elegida en la biblioteca (N3b); `.all` no filtra.
+    var libraryCategory: LibraryCategory = .all
+    /// Grupo flotante de la biblioteca en horizontal (N3b).
+    let libraryTools = LibraryToolsState()
     var librarySearch = ""
     var librarySearchPresented = false
     /// Controles y pantalla del gameplay (D4).

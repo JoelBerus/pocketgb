@@ -59,6 +59,26 @@ final class ScreenshotTests: XCTestCase {
             // Un `-screen` que el router DEBUG no conoce es un error del catálogo.
             XCTAssertFalse(app.descendants(matching: .any)["debug-unknown-screen"].exists,
                            "Pantalla desconocida en screens.txt: \(name)")
+            // `-uiDrag x0,y0,x1,y1` (N3): arrastre entre dos puntos normalizados de la app. En
+            // horizontal desplaza la biblioteca (y encoge la barra de pestañas) donde `-uiSwipeUp` no.
+            if let i = args.firstIndex(of: "-uiDrag"), i + 1 < args.count {
+                let v = args[i + 1].split(separator: ",").compactMap { Double($0) }
+                XCTAssertEqual(v.count, 4, "-uiDrag necesita x0,y0,x1,y1 en \(name)")
+                if v.count == 4 {
+                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: v[0], dy: v[1]))
+                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: v[2], dy: v[3]))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                    Thread.sleep(forTimeInterval: 1)
+                }
+            }
+            // `-uiTap <id>` (N3): toca un botón (abre un panel o la búsqueda) antes de la captura.
+            if let i = args.firstIndex(of: "-uiTap"), i + 1 < args.count {
+                let target = app.descendants(matching: .any).matching(identifier: args[i + 1]).firstMatch
+                XCTAssertTrue(target.waitForExistence(timeout: 5), "No existe \(args[i + 1]) en \(name)")
+                XCTAssertTrue(target.isHittable, "\(args[i + 1]) no se puede tocar en \(name)")
+                target.tap()
+                Thread.sleep(forTimeInterval: 1.5)
+            }
 
             let shot = XCUIScreen.main.screenshot()
             let file = "\(name)-\(orientation)-\(style).png"

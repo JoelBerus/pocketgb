@@ -704,3 +704,52 @@ Antes de aceptar una pantalla:
 - Los estados DEBUG no se compilan en Release.
 - Ninguna captura o placeholder contiene material protegido.
 - La UI no introduce red, ATS, `URLSession`, `Network` ni paquetes runtime.
+
+## 15. Biblioteca y detalle adaptables (N3)
+
+Plan: [hitos/N-README.md](../hitos/N-README.md) §4 N3. Todo se decide por el **espacio disponible** (tamaño del área segura o `verticalSizeClass`), nunca por el modelo de iPhone (ND8: sin iPad).
+
+### 15.1 Título legible (N3a)
+- Altura compacta (horizontal): `navigationBarTitleDisplayMode(.inline)` y `scrollEdgeEffectStyle(.hard, for: .top)` en Biblioteca y Favoritos. En vertical, título grande y borde `.soft` como antes.
+- Texto sobre una captura: el botón «Continuar» del carril lleva debajo un velo inferior (`ControlScrim` al 45 %, degradado de 64 pt). Las insignias de estado de las tarjetas ya iban sobre un círculo oscuro.
+- En horizontal, el título de sección («Todos los juegos», el filtro o la categoría) queda fijado bajo la barra (`LazyVStack(pinnedViews: .sectionHeaders)`) con el fondo opaco del contenido, sin vidrio.
+
+### 15.2 Biblioteca en horizontal (N3b)
+- Sin segmentado ni buscador arriba. `.searchable` (bajo el título, `.searchToolbarBehavior(.minimize)`) solo existe mientras se busca (también si se gira con la búsqueda abierta): lo abre la lupa y se quita después de la animación de cierre.
+- **Dónde van las herramientas** (`LibraryToolsPlacement`, decisión común con Android tras la auditoría de N3): en reposo (sin desplazar, barra de pestañas desplegada) Buscar, Filtros, Categorías y Vista son botones de la barra de navegación junto a «…», con sus paneles **hacia abajo**; al desplazar (barra encogida en burbuja) desaparecen de la barra y aparece el **grupo flotante propio** a la derecha, en la fila de la burbuja, con sus paneles **hacia arriba**; al volver arriba, al revés. El estado de la barra se reinicia al cambiar de pestaña, de ruta, de orientación o de carpeta y al cerrar la búsqueda, así que el grupo nunca coincide con la barra desplegada.
+- **Grupo flotante propio** (`LibraryToolsGroup`): cuatro botones redondos de 48 pt en un `GlassEffectContainer` («Herramientas de la biblioteca» para VoiceOver; visor de contenido grande con texto grande). Vive encima del `TabView` (coordenadas de la ventana; dentro de la pestaña no recibía toques a la altura de la barra). La barra no publica si está encogida: se deduce como ella misma decide (`onScrollDown`), con la distancia de la burbuja medida en iOS 26.5 (`LibraryToolsPosition`).
+- En vertical, el modo del título no se fija (con `.automatic` explícito desaparecía el buscador bajo el título grande); solo en altura compacta pasa a `.inline`.
+- Paneles: popover de 400 pt (`presentationCompactAdaptation(.popover)`) anclado al botón, con opciones en cápsulas que fluyen en filas. Desde el grupo se abre hacia arriba (`arrowEdge: .bottom`) y su alto máximo acaba en la **cabecera de sección entera** (título y carpeta), fijada bajo la barra al desplazar: nunca la tapa (con más opciones, se desplaza dentro). Desde la barra se abre hacia abajo (`arrowEdge: .top`) hasta encima de la barra de pestañas; en reposo puede tapar parte del contenido de la derecha mientras está abierto.
+- `tabViewBottomAccessory(isEnabled:)` se probó y se descartó (capturas en la evidencia de N3): desplegado añade una barra a todo el ancho encima de la tab bar (≈ 50 pt de los ≈ 400 del horizontal), encogido es una cápsula larga casi vacía sobre el contenido, y en la prueba el popover de un botón dentro del accesorio no se abrió.
+- En vertical solo se añade la lupa en la barra («como una opción más»); el menú «…» gana «Categoría».
+- Categorías: carpetas de primer nivel de `folderPath` más «Sin categoría» (raíz), con su número de juegos; «Todas» quita el filtro.
+
+### 15.3 Detalle (N3a)
+- `DetailLayout`: dos columnas si ancho > alto o ancho ≥ 600 pt. Izquierda: la imagen entera, con la proporción de la consola, como mucho la mitad del ancho útil y el alto disponible. Derecha: cabecera, Jugar/Continuar (visible sin desplazar), estadísticas, cable, acciones, información técnica y ocultar, con su propio scroll.
+- Una columna (vertical): la imagen ocupa como máximo el 45 % del alto, centrada.
+- Favorito/Estados/Ajustes pasan a columna si no caben en una fila (AX5, columna estrecha).
+- «Información técnica» (`DisclosureGroup`, plegada): título de cabecera, cartucho (GB) o tipo de partida y código del juego (GBA), ROM, partida guardada (RAM · batería · reloj), checksums (el global solo en GB) y SHA-256 completo seleccionable con «Copiar huella». Una advertencia lleva símbolo y texto.
+
+### 15.4 Proporción de las imágenes (N3a)
+- `ArtworkStyle.console` (detalle, vista previa del menú contextual): marco 10:9 o 3:2 y la captura entera.
+- `ArtworkStyle.card` (cuadrícula, lista, carriles): marco 10:9 común y la captura lo rellena centrada sin deformarse (una de GBA pierde algo de los lados), como el «Encaje» de N5.
+- `SaveStateCard`: la proporción de su miniatura (240×160 en GBA) o, vacía, la de la consola del juego abierto.
+
+| # | ID | Pantalla/estado | Orientación | Apariencia | Debe verse | Error visual |
+|---:|---|---|---|---|---|---|
+| N3-1 | `library-landscape` | Biblioteca horizontal arriba | landscape | ambos | Título en línea con Buscar, Filtros, Categorías, Vista y «…» en la barra; carril con tarjetas del ancho de una columna; sin grupo flotante | Buscador o segmentado arriba; grupo sobre la tab bar |
+| N3-2 | `library-landscape-scrolled` | Con scroll | landscape | light | Burbuja a la izquierda y el grupo a la derecha en su misma fila; en la barra solo «…»; cabecera de sección fijada | Grupo flotando lejos de la burbuja o botones repetidos |
+| N3-3 | `library-landscape-search` | Lupa de la barra | landscape | light | Campo de búsqueda activo arriba; sin grupo | Búsqueda que no se abre |
+| N3-4 | `library-landscape-filters` / `-categories` / `-view` | Paneles del grupo | landscape | ambos | Popover hacia arriba anclado al botón, cápsulas, opción elegida con marca; cabecera de sección visible | Panel que tapa la cabecera o se corta |
+| N3-4b | `library-landscape-bar-filters` / `-bar-categories` / `-bar-view` | Paneles de la barra | landscape | ambos | Popover hacia abajo anclado al botón de la barra | Panel cortado o bajo la tab bar |
+| N3-4c | `library-landscape-panel-ax5` / `-panel-reduce-transparency` | Paneles con AX5 y sin transparencia | landscape | ambos | Cápsulas en más filas sin recortes; superficies sólidas | Texto recortado o vidrio persistente |
+| N3-5 | `library-landscape-category` | Categoría elegida | landscape | light | Título de sección «Blargg» y solo sus juegos | Título genérico |
+| N3-6 | `library-landscape-white` | Portada casi blanca bajo el título | landscape | ambos | «Biblioteca» legible sobre el borde duro | Título perdido sobre blanco |
+| N3-7 | `library-landscape-ax5` | AX5 en horizontal | landscape | light | Una columna, textos completos, grupo accesible | Texto recortado |
+| N3-8 | `game-details-gb` / `-gba` | Detalle | ambas | ambos | Horizontal: dos columnas, imagen entera 10:9 o 3:2 y Jugar visible; vertical: imagen ≤ 45 % | Imagen gigante, estirada o recortada |
+| N3-9 | `game-details-technical` / `-gba-technical` | Información técnica | ambas | ambos | Filas con datos reales del ROM de prueba y SHA-256 completo | Valores cortados |
+| N3-10 | `game-details-ax5` | Detalle AX5 | ambas | light | Reflow sin cortes, acciones en columna | Texto recortado |
+| N3-11 | `save-states-gba` | Estados de un juego GBA | portrait | dark | Miniatura 3:2 y ranuras vacías 3:2, sin «Dañado» | Miniatura estirada a 10:9 |
+| N3-12 | `favorites-landscape` | Favoritos horizontal | landscape | dark | Título en línea con borde duro | Título grande perdido |
+
+Las capturas N3 se toman en iPhone SE (3.ª gen), iPhone 17 Pro y iPhone 17 Pro Max (`SIM_DEVICE`).

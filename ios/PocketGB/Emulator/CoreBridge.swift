@@ -84,6 +84,17 @@ struct RomInfo: Sendable {
     var eepromSizeFixed = false
     /// Game Boy Advance: se usó la BIOS del usuario (si no, HLE).
     var biosLoaded = false
+    /// Información técnica del detalle (N3a). Game Boy: tamaño que declara la cabecera; GBA: el archivo.
+    var romBytes = 0
+    /// Solo Game Boy: checksum global de la cabecera (la consola real no lo comprueba).
+    var globalChecksumOK = true
+    /// SHA-256 completo del ROM (64 hex); `fingerprint` son sus 32 primeros.
+    var sha256 = ""
+    /// Game Boy Advance: medio de guardado efectivo (`GBA_SAVE_*`), código del juego, fabricante y versión.
+    var gbaSaveType: UInt8 = 0
+    var gameCode = ""
+    var makerCode = ""
+    var version = 0
 }
 
 /// Dueño del puntero `gb*`. La instancia del núcleo no es thread-safe:
@@ -127,9 +138,13 @@ final class CoreBridge: ConsoleCore {
             raw.prefix(16).map { String(format: "%02x", $0) }.joined()
         }
         ramBytesAtLoad = Int(info.sram_bytes)
-        return RomInfo(title: title, cartType: info.cart_type, sramBytes: Int(info.sram_bytes),
-                       hasBattery: info.has_battery, hasRTC: info.has_rtc,
-                       headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
+        var rom = RomInfo(title: title, cartType: info.cart_type, sramBytes: Int(info.sram_bytes),
+                          hasBattery: info.has_battery, hasRTC: info.has_rtc,
+                          headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
+        rom.romBytes = Int(info.rom_bytes)
+        rom.globalChecksumOK = info.global_checksum_ok
+        rom.sha256 = withUnsafeBytes(of: info.fingerprint) { raw in raw.map { String(format: "%02x", $0) }.joined() }
+        return rom
     }
 
     /// Solo para `LinkCable`: el puntero `gb*` sigue siendo de este objeto, que debe seguir

@@ -74,6 +74,8 @@ final class ShellFolderPickerTests: XCTestCase {
 final class ShellLibraryTests: XCTestCase {
     @MainActor
     func testDetailsAndHideGame() throws {
+        // N3: en horizontal no hay filtro segmentado; el catálogo puede acabar en horizontal.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard"]
         app.launch()

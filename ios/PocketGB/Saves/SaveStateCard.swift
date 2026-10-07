@@ -7,11 +7,15 @@ struct SaveStateCard: View {
     let slot: StateSlot
     let entry: StateStore.Entry?
     let selected: Bool
+    /// Consola del juego abierto: da la proporción de una ranura vacía (N3a; 3:2 en GBA).
+    var console: Console = .gameBoy
 
     var body: some View {
+        let image = thumbnail
         VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
-            preview
-                .aspectRatio(10.0 / 9.0, contentMode: .fit)
+            Color.clear
+                .aspectRatio(ArtworkStyle.aspectRatio(of: image?.size, fallback: console), contentMode: .fit)
+                .overlay { preview(image) }
                 .clipShape(RoundedRectangle(cornerRadius: PocketRadius.saveStatePreview, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: PocketRadius.saveStatePreview, style: .continuous)
@@ -50,9 +54,16 @@ struct SaveStateCard: View {
         return GameStatus.stateDate(entry.date)
     }
 
-    @ViewBuilder private var preview: some View {
-        if let data = entry?.thumbnail, entry?.corrupt == false, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().interpolation(.none)
+    /// La miniatura guardada (240×160 en GBA), salvo en un estado dañado.
+    private var thumbnail: UIImage? {
+        guard let data = entry?.thumbnail, entry?.corrupt == false else { return nil }
+        return UIImage(data: data)
+    }
+
+    /// La miniatura con su propia proporción: nunca se estira a 10:9 (N3a).
+    @ViewBuilder private func preview(_ image: UIImage?) -> some View {
+        if let image {
+            Image(uiImage: image).resizable().interpolation(.none).aspectRatio(contentMode: .fill)
         } else {
             ZStack {
                 PocketColor.backgroundElevated

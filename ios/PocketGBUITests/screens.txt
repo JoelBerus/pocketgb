@@ -174,3 +174,38 @@ game-details-folders-ax5 portrait light -screen game-details-folders-ax5 -demoLi
 library-preferences-quarantined portrait light -screen library-preferences-quarantined -demoLibrary standard
 # Auditoría N1, H1: la partida que pierde frente a un .sav ajeno queda apartada y restaurable
 settings-save-backups   portrait  light -screen settings-save-backups -demoSaveState slots
+
+# ---- N3 · Biblioteca y detalle adaptables (iOS). `-demoLibrary adaptive`: más juegos libres en
+# carpetas (categorías), CGB-ACID2 con captura casi blanca y arm.gba con captura de 240×160.
+# Tamaños: el script toma SIM_DEVICE (iPhone SE (3rd generation), iPhone 17 Pro, iPhone 17 Pro Max).
+# En horizontal se desplaza con `-uiDrag` (`-uiSwipeUp` no mueve la lista en horizontal).
+library-landscape            landscape light -screen library-landscape -demoLibrary adaptive
+library-landscape            landscape dark  -screen library-landscape -demoLibrary adaptive
+library-landscape-scrolled   landscape light -screen library-landscape-scrolled -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1
+library-landscape-search     landscape light -screen library-landscape-search -demoLibrary adaptive -uiTap library-search-button
+library-landscape-filters    landscape light -screen library-landscape-filters -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-filters
+library-landscape-categories landscape dark  -screen library-landscape-categories -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-categories
+library-landscape-view       landscape light -screen library-landscape-view -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-view
+library-landscape-category   landscape light -screen library-landscape-category -demoLibrary adaptive -uiDrag 0.5,0.6,0.5,0.1
+library-landscape-white      landscape light -screen library-landscape-white -demoLibrary adaptive -uiDrag 0.5,0.5,0.5,0.25
+library-landscape-white      landscape dark  -screen library-landscape-white -demoLibrary adaptive -uiDrag 0.5,0.5,0.5,0.25
+library-landscape-ax5        landscape light -screen library-landscape-ax5 -demoLibrary adaptive -contentSizeCategory accessibility5 -uiDrag 0.5,0.6,0.5,0.1
+library-white                portrait  dark  -screen library-white -demoLibrary adaptive -uiSwipeUp
+favorites-landscape          landscape dark  -screen favorites-landscape -demoLibrary adaptive
+game-details-gb              portrait  light -screen game-details-gb -demoLibrary adaptive -demoROMDir $FIXTURES
+game-details-gb              landscape light -screen game-details-gb -demoLibrary adaptive -demoROMDir $FIXTURES
+game-details-gba             portrait  dark  -screen game-details-gba -demoLibrary adaptive -demoROMDir $FIXTURES
+game-details-gba             landscape dark  -screen game-details-gba -demoLibrary adaptive -demoROMDir $FIXTURES
+game-details-technical       landscape light -screen game-details-technical -demoLibrary adaptive -demoROMDir $FIXTURES -expandTechnicalInfo -uiDrag 0.75,0.75,0.75,0.15
+game-details-technical       portrait  dark  -screen game-details-technical -demoLibrary adaptive -demoROMDir $FIXTURES -expandTechnicalInfo -uiSwipeUp
+game-details-gba-technical   landscape dark  -screen game-details-gba-technical -demoLibrary adaptive -demoROMDir $FIXTURES -expandTechnicalInfo -uiDrag 0.75,0.75,0.75,0.15
+game-details-ax5             landscape light -screen game-details-ax5 -demoLibrary adaptive -demoROMDir $FIXTURES -contentSizeCategory accessibility5
+game-details-ax5             portrait  light -screen game-details-ax5 -demoLibrary adaptive -demoROMDir $FIXTURES -contentSizeCategory accessibility5 -expandTechnicalInfo -uiSwipeUp
+save-states-gba              portrait  dark  -screen save-states-gba -rom $FIXTURES/arm.gba
+# N3 (auditoría): en reposo las herramientas van en la barra con paneles hacia abajo; al
+# desplazar, el grupo (paneles hacia arriba). Paneles con AX5 y sin transparencia.
+library-landscape-bar-filters    landscape light -screen library-landscape-bar-filters -demoLibrary adaptive -uiTap library-bar-filters
+library-landscape-bar-categories landscape dark  -screen library-landscape-bar-categories -demoLibrary adaptive -uiTap library-bar-categories
+library-landscape-bar-view       landscape light -screen library-landscape-bar-view -demoLibrary adaptive -uiTap library-bar-view
+library-landscape-panel-ax5      landscape light -screen library-landscape-panel-ax5 -demoLibrary adaptive -contentSizeCategory accessibility5 -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-categories
+library-landscape-panel-reduce-transparency landscape dark -screen library-landscape-panel-reduce-transparency -demoLibrary adaptive -reduceTransparency -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-filters

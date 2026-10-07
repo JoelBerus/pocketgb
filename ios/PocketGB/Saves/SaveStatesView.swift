@@ -17,7 +17,8 @@ struct SaveStatesView: View {
                 LazyVGrid(columns: columns, spacing: PocketSpacing.md) {
                     ForEach(StateSlot.allCases) { slot in
                         Button { selected = slot } label: {
-                            SaveStateCard(slot: slot, entry: entries[slot], selected: selected == slot)
+                            SaveStateCard(slot: slot, entry: entries[slot], selected: selected == slot,
+                                          console: state.session?.info.console ?? .gameBoy)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("state-\(slot.fileStem)")
