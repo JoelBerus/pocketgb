@@ -14,6 +14,7 @@ import com.joelbermudez.pocketgb.game.OpenResult
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomSource
 import com.joelbermudez.pocketgb.saves.FlushResult
+import com.joelbermudez.pocketgb.saves.LaunchMode
 import com.joelbermudez.pocketgb.saves.SaveSizes
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.SramFlushPolicy
@@ -29,7 +30,9 @@ import kotlinx.coroutines.withContext
  *
  * - `save-stress`: abre la ROM contador por el camino real (lanzador, `SaveCoordinator`, escritura atómica) con
  *   un debounce de 20 ms (muchísimas escrituras con rotación de backups) y, en paralelo, pausa/reanuda y
- *   guarda estados al azar, hasta que el script mata el proceso.
+ *   guarda estados al azar, hasta que el script mata el proceso. A9: abre con «Continuar» exacto (si el estado AUTO
+ *   no vale, con «Jugar desde el inicio», como la app) y guarda el AUTO de segundo plano al azar: si la continuación
+ *   cargara una partida vieja, el contador retrocedería y `save-verify` lo detectaría.
  * - `save-verify`: en el proceso nuevo, tras `recoverOrphans`, comprueba el invariante y escribe una línea
  *   `SAVE-VERIFY OK|FAIL <detalle>` en logcat (etiqueta [TAG]).
  */
@@ -78,14 +81,17 @@ object SaveStress {
             statesRoot = statesRoot(context),
             policy = { SramFlushPolicy({ System.nanoTime() / 1_000_000 }, debounceMs = 20, safetyNetMs = 60_000) },
         )
-        val opened = launcher.openBlocking(entry) as? OpenResult.Opened
+        val resume = launcher.openBlocking(entry, mode = LaunchMode.RESUME)
+        val opened = resume as? OpenResult.Opened
+            ?: launcher.openBlocking(entry) as? OpenResult.Opened
             ?: run {
                 Log.e(TAG, "SAVE-STRESS ERROR no se pudo abrir")
                 return
             }
+        val mode = if (resume is OpenResult.Opened) "resumed" else "fresh(${(resume as? OpenResult.Failed)?.error})"
         val game = opened.game
         game.start()
-        Log.i(TAG, "SAVE-STRESS READY fp=${fp.take(8)}")
+        Log.i(TAG, "SAVE-STRESS READY fp=${fp.take(8)} mode=$mode")
         val random = Random()
         var rounds = 0
         while (true) {
@@ -100,6 +106,8 @@ object SaveStress {
                 }
             }
             if (rounds % 3 == 0) runCatching { game.saveState(StateSlot.MANUAL1) }
+            // A9: el AUTO de segundo plano (`ON_STOP`): con la sesión aparcada y tras el vaciado.
+            if (rounds % 4 == 1) runCatching { game.saveAutoStateIfParked() }
             Thread.sleep(random.nextInt(15).toLong())
             game.resume()
             rounds++
@@ -145,12 +153,15 @@ object SaveStress {
                 EmulatorSession().use { session ->
                     session.load(rom, 0L)
                     session.loadSram(data)
-                    // Un estado a medias nunca debe ser visible: o está completo o no existe.
-                    val state = File(statesRoot(context), "$fp/${StateSlot.MANUAL1.fileStem}.state")
-                    if (state.exists()) {
+                    // Un estado a medias nunca debe ser visible: o está completo o no existe (también el AUTO y el AUTO
+                    // obsoleto apartado de A9).
+                    val states = StateStore(statesRoot(context), fp)
+                    val files = listOf(states.stateFile(StateSlot.MANUAL1), states.stateFile(StateSlot.AUTO), states.obsoleteAutoFile)
+                        .filter { it.exists() }
+                    if (files.isNotEmpty()) {
                         session.start()
                         session.pause()
-                        session.loadStateRaw(state.readBytes())
+                        for (file in files) session.loadStateRaw(file.readBytes())
                     }
                 }
             } catch (error: Exception) {

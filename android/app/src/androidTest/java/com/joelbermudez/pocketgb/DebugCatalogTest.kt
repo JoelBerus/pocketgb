@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -75,7 +76,15 @@ class DebugCatalogTest {
         }
         launch("exit-risk").use { compose.onNodeWithTag("exit-risk-confirm").assertIsDisplayed() }
         launch("saves-settings").use { compose.onNodeWithText("POKÉMON RED").assertIsDisplayed() }
-        launch("library-detail-played").use { compose.onNodeWithText("Continuar").assertIsDisplayed() }
+        // A9 (cambia J8): jugado sin estado automático vigente = «Jugar»; con él, «Continuar» y «Jugar desde el inicio».
+        launch("library-detail-played").use { compose.onNodeWithText("Jugar").assertIsDisplayed() }
+        launch("details-resume-exact").use {
+            compose.onNodeWithText("Continuar").assertIsDisplayed()
+            compose.onNodeWithText("Jugar desde el inicio").assertIsDisplayed()
+            compose.onNodeWithTag("game-details-title").assertTextEquals("Rojo de Joel")
+        }
+        launch("details-rename").use { compose.onNodeWithTag("rename-field").assertTextContains("Rojo de Joel") }
+        launch("resume-failed").use { compose.onNodeWithTag("resume-failed-play").assertIsDisplayed() }
         launch("save-warning").use { compose.onNodeWithTag("warning-ok").assertIsDisplayed() }
         launch("save-problem").use {
             compose.onNodeWithTag("save-problem-indicator").assertIsDisplayed()
