@@ -52,6 +52,25 @@ tasks.configureEach {
     if (name != "copyScreenManifest" && (name.contains("AndroidTest") || name.startsWith("lint"))) dependsOn(copyScreenManifest)
 }
 
+// N8: ROMs libres de GBA para los instrumentados JNI, solo si ya están en disco (nunca se versionan, regla dura 1):
+// jsmolka/gba-tests (MIT, tools/fetch-gba-test-roms.sh --solo-jsmolka) y las homebrew propias de gba/tests/homebrew
+// (MIT, make -C gba homebrew). Los tests que las necesitan se saltan con un aviso si faltan.
+android.sourceSets.getByName("androidTest").assets.srcDir("build/generated/gbaTestRoms")
+val copyGbaTestRoms = tasks.register<Copy>("copyGbaTestRoms") {
+    from(layout.projectDirectory.dir("../../gba/tests/roms/gba-tests")) {
+        include("arm/arm.gba", "thumb/thumb.gba", "save/flash128.gba", "ppu/stripes.gba", "ppu/shades.gba")
+        eachFile { path = name }
+    }
+    from(layout.projectDirectory.dir("../../gba/build/hb")) {
+        include("eeprom.gba", "eeprom8k.gba", "ppu_scene_11.gba")
+    }
+    includeEmptyDirs = false
+    into(layout.buildDirectory.dir("generated/gbaTestRoms/gba"))
+}
+tasks.configureEach {
+    if (name != "copyGbaTestRoms" && (name.contains("AndroidTest") || name.startsWith("lint"))) dependsOn(copyGbaTestRoms)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)

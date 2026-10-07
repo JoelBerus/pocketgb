@@ -1,6 +1,6 @@
 # N1 Android: evidencia (identidad por huella y carpetas)
 
-Rama `n1-android-identidad` desde `a9-android-paridad` (`5036468`), con `a9-android-paridad` fusionada de nuevo en `620f447` (corrección del catálogo A9-H1 y respuesta a su auditoría) y en `809f419` (`b4c453b`, A9 cerrado). Plan: [N-README §3.1, §3.2 y §4 N1](../hitos/N-README.md), decisiones ND2 y ND11. Estado: **auditado (Opus: APROBAR CON CAMBIOS, regla 6 limpia) y respondido** ([informe](N1-android-opus.md), [respuesta](N1-android-respuesta.md)); `siguiente-nivel` fusionada en `a77a8d9`. La verificación vigente es la de [Respuesta a la auditoría](#respuesta-a-la-auditoría-h1h8); las secciones anteriores describen la primera entrega. iOS (N1 iOS) es otro lote.
+Rama `n1-android-identidad` desde `a9-android-paridad` (`5036468`), con `a9-android-paridad` fusionada de nuevo en `620f447` (corrección del catálogo A9-H1 y respuesta a su auditoría) y en `809f419` (`b4c453b`, A9 cerrado). Plan: [N-README §3.1, §3.2 y §4 N1](../hitos/N-README.md), decisiones ND2 y ND11. Estado: **auditado en dos vueltas (Opus: APROBAR CON CAMBIOS ambas; regla 6 limpia) y respondido** ([informe](N1-android-opus.md), [segunda vuelta](N1-android-opus-v2.md), [respuesta](N1-android-respuesta.md)); `siguiente-nivel` fusionada en `a77a8d9`. La verificación vigente es la de [Segunda vuelta](#segunda-vuelta-v2-h1v2-h4); las secciones anteriores describen entregas previas. iOS (N1 iOS) es otro lote.
 
 ## Qué se hizo
 
@@ -201,3 +201,36 @@ En la app, la caché sale de los sellos guardados, así que desde el segundo esc
 - Residual de H1: otro ROM con el mismo tamaño y la misma cabecera (un parche aplicado encima sin recalcular los checksums) conserva la huella anterior hasta abrirlo o ver su detalle; abrir calcula siempre la huella real y los ajustes solo se escriben con la huella confirmada.
 - Las lápidas devuelven también el «ya visto»: un juego que vuelve en 30 días no sale «Nuevo» (cambio de comportamiento respecto a A6-H8, que la auditoría pedía).
 - Sin verificar en Drive real: si su proveedor pone `EXTRA_LOADING` o `EXTRA_ERROR` en los listados, y si conserva id, tamaño y fecha (de eso dependen la caché de cabeceras y reconocer movimientos).
+
+## Segunda vuelta (V2-H1…V2-H4)
+
+Detalle en [la respuesta](N1-android-respuesta.md#segunda-vuelta). Commits: `c0278de` (informe) y `3f52932` (correcciones, solo en `library/`, sus tests, la guía y la spec; N3 Android parte de `4ef80c1`).
+
+### Qué cambia
+- **Cabecera conservada y huella sin confirmar (V2-H1):** sin cabecera esta vez (documento sin descargar o ilegible), el sello guarda la del escaneo anterior en la misma ruta (mismo tamaño) como `headerCarried`, que la caché de cabeceras ignora. Con otra fecha u otro id, o sin cabecera, la huella de esa ruta sigue pero sin confirmar.
+- **Escaneos incompletos (V2-H2):** solo refrescan rutas ya conocidas; las nuevas esperan a un escaneo completo, que reconoce el movimiento.
+- **Versión ajena (V2-H3):** se decide antes de decodificar; decodificación clave a clave, protegida y nunca en cuarentena.
+- **Registros por ruta en la lápida (V2-H4):** lo marcado sin huella (favorito, «jugado», oculto, alias) de una ruta que se va o que pasa a ser otro ROM se guarda en su lápida y solo vuelve si coincide.
+- **Notas:** reescaneo automático a los 3 s si una carpeta seguía cargando (`EXTRA_LOADING`), hasta 3 veces; `formatVersion` 3 (lee v2); residual de la caché de cabeceras (mismo id, tamaño y fecha en ms con otro contenido) documentado en `DocumentCache.kt`.
+
+### Comandos y salidas (desde limpio, `git archive 3f52932`)
+`./gradlew --no-daemon --max-workers=1 --continue :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug :app:assembleDebugAndroidTest`
+```
+> Task :app:assembleDebug
+> Task :app:assembleRelease
+> Task :app:lintDebug
+> Task :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL in 4m 26s
+```
+- JVM: **561 tests, 0 fallos, 0 errores, 0 omitidos** (+10 de esta vuelta). `ProcessKillTest`: `kills en bucle=196, con .tmp huérfano=129, guardados completados=256`.
+- Lint: `0 errors, 20 warnings` (los mismos de antes; ninguno nuevo).
+- `aapt2 dump permissions` del Release: sin `INTERNET`.
+- Instrumentados completos dentro de `with-lock.sh emu`: `BUILD SUCCESSFUL in 5m 12s`; XML **386 tests, 0 fallos, 0 errores, 0 omitidos** (`SafFoldersTest` 4, `MoveRomEndToEndTest` 3, `GameSettingsConfirmTest` 1, `SafLibraryTest` 15, `SafMirrorTest` 34, `CatalogCoverageTest` 9).
+- Kill-test con el APK Debug del build limpio: `OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)`; `OK: 50/50 iteraciones con el invariante intacto`.
+- Mutaciones (seis a la vez, copia aparte): **10 fallos de 178** en `library.*`, entre ellos los tests de las cuatro sondas y los dos de reintentos.
+- Capturas: esta vuelta no toca la UI (ni cadenas ni pantallas), así que no se regeneraron; siguen valiendo las de la vuelta anterior.
+
+### Riesgos y no verificado (añadido)
+- Las lápidas guardan también lo marcado sin huella; pasados 30 días (o más de 200 lápidas) se pierde, igual que la huella de la lápida. Lo guardado por huella nunca se pierde.
+- Mientras un escaneo es incompleto, un juego movido puede salir «Nuevo» y sin sus marcas hasta el siguiente escaneo completo (el reintento automático lo acorta si la causa era `EXTRA_LOADING`).
+- Sin verificar con Drive real: con qué frecuencia pone `EXTRA_LOADING` y si tres reintentos a 3 s bastan.

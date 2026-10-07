@@ -39,7 +39,13 @@ object LibraryPreferencesFormat {
     const val LEGACY = 1
 
     /** N1a: favoritos, «jugado», ocultos y alias por huella; la ruta solo es provisional; caché de sellos por ruta. */
-    const val CURRENT = 2
+    const val V2 = 2
+
+    /**
+     * N1-V2: además lápidas (`tombstones`) y huellas sin confirmar (`inferredFingerprints`). Un archivo v2 se lee igual
+     * (esas claves toman su valor vacío) y se escribe como v3; una app v2 no sobrescribirá un v3 (lo verá como futuro).
+     */
+    const val CURRENT = 3
 }
 
 /**
@@ -458,32 +464,47 @@ class LibraryPreferencesFile(
     }
 
     /**
-     * Decodifica (N1-H2/H3). La versión se lee aparte y con tolerancia, y el resto se decodifica sin ella, así que una
-     * versión rara nunca hace que el archivo entero se aparte como corrupto:
-     * - sin `formatVersion` (o `null`) o `1`: A5–A9, se migra ([LibraryPreferencesData.migrated]);
-     * - la actual (también `2.0` o `"2"`): se usa tal cual;
-     * - futura, no entera, no numérica o menor que 1: se usa lo que esta versión entiende, sin migrar, y el archivo
-     *   queda protegido contra escritura ([writeProtected]) para no perder lo que esa otra versión guardó.
+     * Decodifica (N1-H2/H3, N1-V2-H3). La versión se decide **antes** de decodificar, leída con tolerancia:
+     * - sin `formatVersion` (o `null`) o `1`: A5–A9, se decodifica y se migra ([LibraryPreferencesData.migrated]);
+     * - `2` o la actual (también `2.0` o `"3"`): se decodifica tal cual;
+     * - futura, no entera, no numérica o menor que 1: versión ajena. Se decodifica con tolerancia (las claves que esta
+     *   versión no sabe leer se ignoran una a una), sin migrar, y el archivo queda protegido contra escritura
+     *   ([writeProtected]). Un archivo de versión ajena nunca se aparta como corrupto.
+     * Solo un JSON ilegible, o uno de versión conocida que no se puede decodificar, devuelve `null` (se aparta).
      */
-    private fun decode(text: String): LibraryPreferencesData? = try {
-        val root = json.parseToJsonElement(text) as? JsonObject
-        if (root == null) {
+    private fun decode(text: String): LibraryPreferencesData? {
+        val root = try {
+            json.parseToJsonElement(text) as? JsonObject
+        } catch (_: SerializationException) {
             null
-        } else {
-            val data = json.decodeFromString(LibraryPreferencesData.serializer(), JsonObject(root - VERSION_KEY).toString())
-            when (val version = versionOf(root[VERSION_KEY])) {
-                LibraryPreferencesFormat.LEGACY -> data.migrated()
-                LibraryPreferencesFormat.CURRENT -> data.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
-                else -> {
-                    foreignVersion = root[VERSION_KEY].toString()
-                    data.copy(formatVersion = version ?: LibraryPreferencesFormat.CURRENT)
-                }
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return null
+        val body = JsonObject(root - VERSION_KEY)
+        return when (val version = versionOf(root[VERSION_KEY])) {
+            LibraryPreferencesFormat.LEGACY -> decodeStrict(body)?.migrated()
+            LibraryPreferencesFormat.V2, LibraryPreferencesFormat.CURRENT ->
+                decodeStrict(body)?.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
+            else -> {
+                foreignVersion = root[VERSION_KEY].toString()
+                decodeTolerant(body).copy(formatVersion = version ?: LibraryPreferencesFormat.CURRENT)
             }
         }
+    }
+
+    private fun decodeStrict(body: JsonObject): LibraryPreferencesData? = try {
+        json.decodeFromString(LibraryPreferencesData.serializer(), body.toString())
     } catch (_: SerializationException) {
         null
     } catch (_: IllegalArgumentException) {
         null
+    }
+
+    /** Clave a clave: lo que esta versión no sabe leer (otro tipo en una versión futura) se ignora; nunca falla. */
+    private fun decodeTolerant(body: JsonObject): LibraryPreferencesData {
+        decodeStrict(body)?.let { return it }
+        val readable = body.filter { (key, value) -> decodeStrict(JsonObject(mapOf(key to value))) != null }
+        return decodeStrict(JsonObject(readable)) ?: LibraryPreferencesData()
     }
 
     /**

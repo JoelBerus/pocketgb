@@ -31,9 +31,9 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-1. **Ola 1 de [N-README](hitos/N-README.md) §5:** N2 iOS (controles), A9 Android (renombrar y continuación exacta), N2 Android (controles) y lector de progreso Pokémon en C. Cada lote en su worktree desde `siguiente-nivel`, con auditoría Opus antes de fusionar.
-2. **Joel:** las pruebas de partidas de [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md) (Android A6, A8, A9; iPhone I1) antes de N7.
-3. Ratificar al cerrar cada hito las decisiones provisionales que el plan toca (J8, K9, K10, R14, G7-3; ver N-README §2).
+1. **Fase «siguiente nivel» ([N-README](hitos/N-README.md)), rama `siguiente-nivel`:** fusionados A9, N2 (iOS y Android), N1 (iOS y Android), N6-C (lector Pokémon) y N8 nativo, cada uno con su auditoría Opus respondida. Verificación del conjunto desde limpio (2026-10-07): Android 571 JVM / 0 fallos, lint 0 errores, APK Debug y Release; iOS 235 tests y Release (tras N1). En curso: N3 iOS y N3 Android. Después: N4 → N5 / N8 Kotlin → N6 → N7 → N9.
+2. **Joel:** las pruebas de partidas de [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md) antes de N7, y las nuevas filas de A9/N1/N2 cuando instale la rama.
+3. Decisiones de Joel registradas en N-README §2 (ND1–ND16).
 
 ## Deuda y pendientes conocidos
 - `make -C gba test` completo solo corre en Linux/CI (el Mac carece de `ld.lld` y de los ROMs de SingleStepTests); en el Mac se ejecuta `--unit`, ASan manual y los homebrew.

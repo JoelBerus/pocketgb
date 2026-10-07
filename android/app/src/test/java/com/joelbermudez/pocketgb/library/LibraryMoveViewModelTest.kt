@@ -46,10 +46,17 @@ class LibraryMoveViewModelTest {
     private class MovableTree : DocumentTree {
         @Volatile var dirs: Map<String?, List<TreeNode>> = emptyMap()
         @Volatile var failing: Set<String> = emptySet()
+        /** Carpetas que el proveedor da «aún cargando» (EXTRA_LOADING) las próximas N veces. */
+        val loadingFor = java.util.concurrent.ConcurrentHashMap<String, Int>()
         val heads = HashMap<String, ByteArray>()
         val headReads = AtomicInteger()
         override fun children(directoryId: String?): List<TreeNode> {
             if (directoryId in failing) throw IOException("Drive sin red")
+            val pending = directoryId?.let { loadingFor[it] } ?: 0
+            if (pending > 0) {
+                loadingFor[directoryId!!] = pending - 1
+                throw PartialListingException(emptyList(), "cargando", loading = true)
+            }
             return dirs[directoryId].orEmpty()
         }
         override fun readHead(node: TreeNode, limit: Int): ByteArray {
@@ -81,7 +88,7 @@ class LibraryMoveViewModelTest {
     private val fingerprintByte: Byte = 0x42
     private val fingerprint = "42".repeat(32)
 
-    private fun viewModel(scans: MutableList<ScanStats> = mutableListOf()) = LibraryViewModel(
+    private fun viewModel(scans: MutableList<ScanStats> = mutableListOf(), retryDelayMs: Long = 3_000L) = LibraryViewModel(
         folders = Folders(),
         openTree = { tree },
         roms = RomSource { _, _ ->
@@ -98,7 +105,8 @@ class LibraryMoveViewModelTest {
         preferencesFile = prefsFile,
         io = Dispatchers.IO,
         scope = scope,
-        scanLog = { scans += it },
+        scanLog = { synchronized(scans) { scans += it } },
+        loadingRetryDelayMs = retryDelayMs,
     )
 
     private fun <T> await(block: suspend () -> T): T = runBlocking { withTimeout(10_000) { block() } }
@@ -227,7 +235,7 @@ class LibraryMoveViewModelTest {
     @Test
     fun preferencesFromAFutureVersionAreUsedButNeverWritten() {
         // N1-H2: un preferences.json de una versión más nueva no se sobrescribe; la UI lo avisa.
-        val original = """{"formatVersion":3,"favoriteFingerprints":["$fingerprint"],"categorias":{"Pokémon":["x"]}}"""
+        val original = """{"formatVersion":4,"favoriteFingerprints":["$fingerprint"],"categorias":{"Pokémon":["x"]}}"""
         File(temp.root, "preferences.json").writeText(original)
         layoutBefore()
         val vm = viewModel()
@@ -239,5 +247,36 @@ class LibraryMoveViewModelTest {
         assertTrue(await { vm.flushPreferences() } is PersistResult.Failed)
         assertEquals("Rojo de Joel", vm.prefs.value.displayTitle(red))
         assertEquals("el archivo no se toca", original, File(temp.root, "preferences.json").readText())
+    }
+
+    @Test
+    fun aFolderStillLoadingIsScannedAgainShortlyWithoutTheUserAsking() {
+        // N1-V2: Drive da la carpeta «aún cargando» dos veces; la app reintenta sola y acaba viendo el juego.
+        layoutBefore()
+        tree.loadingFor["Pokémon/Gen 1"] = 2
+        val scans = mutableListOf<ScanStats>()
+        val vm = viewModel(scans, retryDelayMs = 50L)
+        vm.rescan()
+        val ready = await { vm.state.first { it is LibraryState.Ready && it.entries.any { e -> e.title == "POKEMON RED" } } }
+        assertTrue(ready is LibraryState.Ready)
+        assertEquals(3, synchronized(scans) { scans.size })
+        assertTrue(vm.lastScan.value!!.complete)
+    }
+
+    @Test
+    fun loadingRetriesStopAfterTheLimit() {
+        layoutBefore()
+        tree.loadingFor["Pokémon/Gen 1"] = 1_000
+        val scans = mutableListOf<ScanStats>()
+        val vm = viewModel(scans, retryDelayMs = 20L)
+        vm.rescan()
+        await { vm.state.first { it is LibraryState.Ready } }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (synchronized(scans) { scans.size } < 1 + LibraryViewModel.MAX_LOADING_RETRIES && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        Thread.sleep(500) // un reintento de más ya habría llegado
+        assertEquals("el escaneo y tres reintentos", 1 + LibraryViewModel.MAX_LOADING_RETRIES, synchronized(scans) { scans.size })
+        assertEquals(1 + LibraryViewModel.MAX_LOADING_RETRIES, synchronized(scans) { scans.count { it.loadingFolders == 1 } })
     }
 }

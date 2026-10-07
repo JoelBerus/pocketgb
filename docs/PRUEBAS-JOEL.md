@@ -4,7 +4,7 @@ Nada de esto se ha verificado en dispositivo real (el emulador no cubre audio, m
 
 ## Android
 
-Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por USB ([07-instalacion-android.md](07-instalacion-android.md)).
+Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por USB ([07-instalacion-android.md](07-instalacion-android.md)). La versión Debug compila el código nativo con `-O2`, así que sirve también para las pruebas de rendimiento (60 fps, ms/frame).
 
 | # | Prueba | Resultado esperado |
 |---|---|---|

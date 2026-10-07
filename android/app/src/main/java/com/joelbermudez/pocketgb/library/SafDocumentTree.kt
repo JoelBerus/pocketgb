@@ -95,7 +95,11 @@ class SafDocumentTree(
             val loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
             val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
             if (loading || providerError != null) {
-                throw PartialListingException(result, if (loading) "El proveedor aún está cargando la carpeta" else "El proveedor informó un error")
+                throw PartialListingException(
+                    result,
+                    if (loading) "El proveedor aún está cargando la carpeta" else "El proveedor informó un error",
+                    loading = loading,
+                )
             }
             return result
         }

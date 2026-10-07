@@ -165,7 +165,8 @@ class LibraryMoveDetectionTest {
         val after = prefs.reconciled(listOf(moved), complete = false)
         assertNull("una carpeta falló: «A/Rojo.gb» puede seguir ahí", after.fingerprints[moved.id])
         assertEquals(fp, after.fingerprints[old.id])
-        assertTrue(old.id in after.documents && "B/Azul.gb" in after.documents && moved.id in after.documents)
+        assertTrue(old.id in after.documents && "B/Azul.gb" in after.documents)
+        assertFalse("N1-V2-H2: la ruta nueva no se anota hasta un escaneo completo", moved.id in after.documents)
     }
 
     @Test
@@ -205,7 +206,9 @@ class LibraryMoveDetectionTest {
         val old = rom("Rojo.gb", 32768, 1_000L, documentId = "drive:1")
         val prefs = scanned(old).recordFingerprint(old.id, fp)
         for (same in listOf(rom("Rojo.gb", 32768, 9_000L, documentId = "drive:1"), rom("Rojo.gb", 32768, 1_000L, documentId = "drive:2"))) {
-            assertEquals(fp, prefs.reconciled(listOf(same), complete = true).fingerprints[same.id])
+            val after = prefs.reconciled(listOf(same), complete = true)
+            assertEquals(fp, after.fingerprints[same.id])
+            assertFalse("N1-V2-H1: pasa a sin confirmar", after.hasConfirmedFingerprint(same))
         }
     }
 
@@ -367,5 +370,102 @@ class LibraryMoveDetectionTest {
         val bounded = LibraryPreferencesData(tombstones = many).reconciled(listOf(rom("Otro.gb", 1)), complete = true, now = 300L)
         assertEquals(Tombstones.MAX_ENTRIES, bounded.tombstones.size)
         assertEquals(Tombstones.MAX_ENTRIES + 19L, bounded.tombstones.first().goneAt)
+    }
+
+    // ---- N1-V2: segunda vuelta de la auditoría (sondas convertidas en tests) ----
+
+    @Test
+    fun aScanWithoutHeaderKeepsTheLastHeaderUnconfirmsTheFingerprintAndAnotherRomStillLosesIt() {
+        // PROBE1: Rojo.gb con huella y alias → un escaneo sin cabecera (sin descargar) → otro ROM del mismo tamaño.
+        val rojo = rom("Rojo.gb", 32768, 1_000L, documentId = "d1")
+        var prefs = scanned(rojo).recordFingerprint(rojo.id, fp).setAlias(rojo, "Rojo de Joel")
+        prefs = prefs.reconciled(listOf(rom("Rojo.gb", 32768, 1_000L, documentId = "d1", header = null)), complete = true)
+        assertEquals("la huella sigue", fp, prefs.fingerprints["Rojo.gb"])
+        assertFalse("pero sin confirmar: detalle y ajustes releen el ROM", prefs.hasConfirmedFingerprint(rojo))
+        val stamp = prefs.documents.getValue("Rojo.gb")
+        assertEquals("se conserva la cabecera anterior", red, stamp.header)
+        assertTrue(stamp.headerCarried)
+        assertTrue("no alimenta la caché de cabeceras", HeaderCache.from(prefs.documents.values).lookup(
+            TreeNode("d1", "Rojo.gb", isDirectory = false, sizeBytes = 32768, lastModified = 1_000L),
+        ) == null)
+        val otro = rom("Rojo.gb", 32768, 2_000L, documentId = "d2", header = header(0x42))
+        val after = prefs.reconciled(listOf(otro), complete = true)
+        assertNull("la cabecera conservada delata al otro ROM", after.fingerprints[otro.id])
+        assertEquals("ROJO", after.displayTitle(otro))
+    }
+
+    @Test
+    fun aMoveFirstSeenInAnIncompleteScanIsRecognisedByTheNextCompleteOne() {
+        // PROBE2: A/Rojo.gb → escaneo incompleto que ya ve B/Rojo.gb (la carpeta A falló) → escaneo completo.
+        val old = rom("A/Rojo.gb")
+        var prefs = scanned(old).recordFingerprint(old.id, fp).toggleFavorite(old).acknowledge(setOf(old.id))
+        val moved = rom("B/Rojo.gb")
+        prefs = prefs.reconciled(listOf(moved), complete = false)
+        prefs = prefs.reconciled(listOf(moved), complete = true)
+        assertEquals("huella trasladada", fp, prefs.fingerprints[moved.id])
+        assertTrue(prefs.isFavorite(moved))
+        assertTrue("no es «Nuevo»", moved.id in prefs.knownIds)
+    }
+
+    @Test
+    fun aMoveDoesNotOverwriteAFingerprintConfirmedInTheMeantime() {
+        val old = rom("A/Rojo.gb")
+        var prefs = scanned(old).recordFingerprint(old.id, fp)
+        val moved = rom("B/Rojo.gb")
+        prefs = prefs.reconciled(listOf(moved), complete = false).recordFingerprint(moved.id, "cd".repeat(32)) // se abrió
+        prefs = prefs.reconciled(listOf(moved), complete = true)
+        assertEquals("cd".repeat(32), prefs.fingerprints[moved.id])
+        assertTrue(prefs.hasConfirmedFingerprint(moved))
+    }
+
+    @Test
+    fun pathRecordsOfARomReplacedInPlaceGoToItsTombstoneAndComeBackWithIt() {
+        // PROBE4a: favorito, alias y oculto sin huella en X.gb; otro ROM ocupa X.gb (otra cabecera).
+        val x = rom("X.gb", 32768, 1_000L)
+        var prefs = scanned(x).toggleFavorite(x).setAlias(x, "Rojo de Joel").hide(x).acknowledge(setOf(x.id))
+        val other = rom("X.gb", 32768, 2_000L, header = header(0x42))
+        prefs = prefs.reconciled(listOf(other), complete = true)
+        assertFalse(prefs.isFavorite(other))
+        assertFalse(prefs.isHidden(other))
+        assertEquals("X", prefs.displayTitle(other))
+        assertFalse("otro ROM: «Nuevo»", other.id in prefs.knownIds)
+        val tomb = prefs.tombstones.single()
+        assertTrue(tomb.favorite && tomb.hidden && tomb.alias == "Rojo de Joel")
+        // Al abrir el otro ROM nada se migra a su huella.
+        val opened = prefs.recordFingerprint(other.id, "cd".repeat(32))
+        assertTrue(opened.hiddenFingerprints.isEmpty() && opened.favoriteFingerprints.isEmpty() && opened.aliasesByFingerprint.isEmpty())
+        // Vuelve el original a X.gb: recupera lo suyo.
+        prefs = prefs.reconciled(listOf(x), complete = true)
+        assertTrue(prefs.isFavorite(x))
+        assertTrue(prefs.isHidden(x))
+        assertEquals("Rojo de Joel", prefs.displayTitle(x))
+        assertTrue(x.id in prefs.knownIds)
+    }
+
+    @Test
+    fun aHiddenRomWithoutFingerprintThatIsDeletedDoesNotHideTheNextRomAtItsPath() {
+        // PROBE4b: oculto sin huella → borrado → otro ROM con el mismo nombre.
+        val x = rom("X.gb", 32768, 1_000L)
+        var prefs = scanned(x, rom("Y.gb", 1)).hide(x).acknowledge(setOf(x.id, "Y.gb"))
+        prefs = prefs.reconciled(listOf(rom("Y.gb", 1)), complete = true).let { it.copy(knownIds = it.knownIds - x.id) }
+        assertTrue("el oculto se va con la lápida", prefs.hiddenPaths.isEmpty())
+        val next = rom("X.gb", 65536, 5_000L, header = header(0x42))
+        prefs = prefs.reconciled(listOf(rom("Y.gb", 1), next), complete = true)
+        assertFalse(prefs.isHidden(next))
+        assertFalse(next.id in prefs.knownIds)
+        // Y el mismo X de antes, si vuelve, sí sale oculto.
+        val back = scanned(x, rom("Y.gb", 1)).hide(x)
+            .reconciled(listOf(rom("Y.gb", 1)), complete = true)
+            .reconciled(listOf(rom("Y.gb", 1), x), complete = true)
+        assertTrue(back.isHidden(x))
+    }
+
+    @Test
+    fun aTombstoneWithoutHeaderMatchesTheSamePathBySizeAndDate() {
+        val x = rom("X.gb", 32768, 1_000L, header = null)
+        val prefs = scanned(x, rom("Y.gb", 1)).toggleFavorite(x)
+            .reconciled(listOf(rom("Y.gb", 1)), complete = true)
+        assertTrue(prefs.reconciled(listOf(rom("Y.gb", 1), x), complete = true).isFavorite(x))
+        assertFalse(prefs.reconciled(listOf(rom("Y.gb", 1), rom("X.gb", 32768, 9_000L, header = null)), complete = true).isFavorite(x))
     }
 }
