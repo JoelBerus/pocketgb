@@ -75,12 +75,29 @@ enum DebugScreen: String, CaseIterable {
     case linkPartnerPickerAX5 = "link-partner-picker-ax5"
     case linkOpenRefused = "link-open-refused"
     case linkContinueWarning = "link-continue-warning"
+    // N2: cruceta que responde por dirección (abren además `-rom`; `-uiPressedDpad` simula el dedo)
+    case gameplayDpadUp = "gameplay-dpad-up"
+    case gameplayDpadUpright = "gameplay-dpad-upright"
+    case gameplayDpadUpClear = "gameplay-dpad-up-clear"
+    case gameplayDpadUpReduceTransparency = "gameplay-dpad-up-reduce-transparency"
+    case gameplayArrowsUp = "gameplay-arrows-up"
+    case gameplayArrowsUpright = "gameplay-arrows-upright"
+    case gameplayArrowsUpReduceTransparency = "gameplay-arrows-up-reduce-transparency"
+    case gameplayArrowsSpacing70 = "gameplay-arrows-spacing-70"
+    case gameplayArrowsSpacing150 = "gameplay-arrows-spacing-150"
+    case gameplayGBADpadUp = "gameplay-gba-dpad-up"
+    case gameplayGBAArrowsUp = "gameplay-gba-arrows-up"
+    case customizeControlsDpad = "customize-controls-dpad"
+    case customizeControlsArrows = "customize-controls-arrows"
+    case settingsControlsAX5 = "settings-controls-ax5"
     // N1 (iOS): carpetas anidadas, duplicados y preferencias apartadas (`-demoLibrary folders`)
     case libraryFolders = "library-folders"
     case libraryFoldersList = "library-folders-list"
     case gameDetailsFolders = "game-details-folders"
     case gameDetailsFoldersAX5 = "game-details-folders-ax5"
     case libraryPreferencesQuarantined = "library-preferences-quarantined"
+    // Auditoría N1, H1: copia apartada (no rota) en Ajustes › Partidas › juego (`-demoSaveState slots`)
+    case settingsSaveBackups = "settings-save-backups"
     // N3 (iOS): biblioteca y detalle adaptables (`-demoLibrary adaptive`; ver `applyAdaptive`)
     case libraryLandscape = "library-landscape"
     case libraryLandscapeScrolled = "library-landscape-scrolled"
@@ -168,6 +185,9 @@ enum DebugScreenRouter {
         case .settingsSaves:
             state.selectedTab = .settings
             state.settingsPath = [.saves]
+        case .settingsSaveBackups:
+            state.selectedTab = .settings
+            state.settingsPath = [.saves, .backups(fingerprint: "demo-dmg-acid2")]
         case .gameSettings:
             state.libraryPath = [.details(id: demoFavorite, source: demoFavorite)]
             // Un juego de Game Boy con paleta personalizada (Global/Personalizado visibles).
@@ -191,6 +211,13 @@ enum DebugScreenRouter {
             state.settingsPath = [.display]
         case .gameplayPortraitArrows, .gameplayLandscapeArrows, .gameplayController, .gameplayFastForward:
             break
+        case .gameplayDpadUp, .gameplayDpadUpright, .gameplayDpadUpClear, .gameplayDpadUpReduceTransparency,
+             .gameplayArrowsUp, .gameplayArrowsUpright, .gameplayArrowsUpReduceTransparency, .gameplayArrowsSpacing70,
+             .gameplayArrowsSpacing150, .gameplayGBADpadUp, .gameplayGBAArrowsUp:
+            break   // los fijan `-dpadStyle`, `-arrowSpacing` y `-uiPressedDpad` (ControlsOverlayView)
+        case .settingsControlsAX5:
+            state.selectedTab = .settings
+            state.settingsPath = [.controls]
         case .gameplayLinkPortrait, .gameplayLinkLandscape, .gameplayLinkSwitched, .gameplayLinkPause,
              .gameplayLinkReduceTransparency:
             break   // se aplican al abrir el cable (`afterGameOpened`)
@@ -227,7 +254,8 @@ enum DebugScreenRouter {
             state.alertTitle = issue.title
             state.alertMessage = issue.message
         case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
-             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5:
+             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5,
+             .customizeControlsDpad, .customizeControlsArrows:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:
@@ -250,6 +278,8 @@ enum DebugScreenRouter {
         switch screen {
         case .customizeControlsSize:
             state.editorSelection = .a
+        case .customizeControlsDpad, .customizeControlsArrows:
+            state.editorSelection = .dpad
         case .gameplayFastForward:
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
@@ -295,6 +325,17 @@ enum DebugScreenRouter {
             try? StateStore(root: states, fingerprint: fp).save(Data(repeating: 7, count: 40_000), thumbnail: nil, to: .auto)
         }
         try? Data(repeating: 0, count: 23_000).write(to: artwork.appendingPathComponent("demo.png"))
+        // Fechas fijas (capturas deterministas) y, solo en su captura, una copia apartada (H1).
+        let dmg = SaveStore(directory: saves, fingerprint: "demo-dmg-acid2")
+        if DebugArguments.screen == DebugScreen.settingsSaveBackups.rawValue {
+            try? dmg.keepMirrorLoser(Data(repeating: 9, count: 8_192), now: Date(timeIntervalSince1970: 1_790_100_000))
+        }
+        let fixed: [(URL, TimeInterval)] = [(dmg.saveURL, 1_790_600_000), (dmg.backupURL(1), 1_790_500_000),
+                                            (dmg.backupURL(2), 1_790_400_000)]
+            + dmg.keptCopies().map { ($0.url, 1_790_100_000) }
+        for (url, time) in fixed {
+            try? fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: time)], ofItemAtPath: url.path)
+        }
         return (saves, states, artwork)
     }()
 

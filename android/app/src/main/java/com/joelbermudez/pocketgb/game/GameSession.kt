@@ -159,6 +159,14 @@ class GameSession(
     /** Fábrica del hilo de reparación; inyectable en pruebas para simular un fallo al arrancarlo (A5V6-H3). */
     private val repairThreadFactory: (Runnable, String) -> Thread =
         { body, name -> Thread(body, name).apply { isDaemon = true } },
+    /** Nombre del juego en la pausa: el alias si el usuario lo renombró (A9), o el título de la cabecera. */
+    val title: String = info.title,
+    /**
+     * Hay partida que guardar pero esta sesión no la cargó ni la guarda (`.sav` de tamaño incorrecto o ilegible, J10).
+     * El AUTO que hubiera antes puede ser la única copia de un progreso: la primera escritura del AUTO de esta sesión
+     * lo aparta en vez de pisarlo (A9-H2).
+     */
+    private val unsavedCartridge: Boolean = false,
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -203,6 +211,22 @@ class GameSession(
 
     /** `true` si la SRAM de esta sesión se persiste. */
     val persists: Boolean get() = coordinator.hasTarget
+
+    /**
+     * El núcleo es de fiar para guardar un estado AUTO: hay destino y su persistencia no se desactivó tras un rollback
+     * fallido (o la sesión nunca tuvo destino). Con un núcleo dudoso no se escribe AUTO (A9-H4).
+     */
+    private val coreTrusted: Boolean get() = target == null || coordinator.hasTarget
+
+    /** Esta sesión ya escribió su propio AUTO (los siguientes lo sustituyen; ver [unsavedCartridge]). */
+    @Volatile private var autoWritten = false
+
+    /**
+     * El AUTO es ahora el «deshacer» de un «Guardar actual y cargar» (A9-H3): hasta salir, el AUTO de segundo plano no
+     * lo pisa. La salida lo escribe como antes de A9 (el anillo «Antes de cargar» llegará en N6).
+     */
+    @Volatile var autoHoldsLoadUndo = false
+        private set
 
     private val coordinator = SaveCoordinator(
         source = object : SramSource {
@@ -307,13 +331,18 @@ class GameSession(
         } catch (error: CoreError) {
             throw StateError.Core(error)
         }
+        val preserveForeignAuto = slot == StateSlot.AUTO && unsavedCartridge && !autoWritten
         try {
-            coordinator.runOnSaveThread { states.save(saved.bytes, FramePng.encode(saved.pixels), slot) }
+            coordinator.runOnSaveThread {
+                if (preserveForeignAuto) states.setAsideAuto() // A9-H2: el AUTO de antes de esta sesión no se pisa
+                states.save(saved.bytes, FramePng.encode(saved.pixels), slot)
+            }
         } catch (error: IOException) {
             throw StateError.Io(error)
         } catch (error: TimeoutException) {
             throw StateError.Io(error)
         }
+        if (slot == StateSlot.AUTO) autoWritten = true
     }
 
     /**
@@ -330,7 +359,10 @@ class GameSession(
         } catch (error: TimeoutException) {
             throw StateError.Io(error)
         }
-        if (saveCurrentToAuto && slot != StateSlot.AUTO) saveState(StateSlot.AUTO)
+        if (saveCurrentToAuto && slot != StateSlot.AUTO) {
+            saveState(StateSlot.AUTO)
+            autoHoldsLoadUndo = true // A9-H3: desde aquí el AUTO es el «deshacer» de esta carga
+        }
         val previous = try {
             session.saveState()
         } catch (_: SessionError.NotParked) {
@@ -542,14 +574,36 @@ class GameSession(
         }
         if (session.state.value == SessionState.Paused) {
             if (flushSafe) {
-                // AUTO al salir: la continuación exacta (su fallo no impide salir).
-                try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
+                // AUTO al salir: la continuación exacta (su fallo no impide salir). Nunca desde un núcleo dudoso (A9-H4).
+                if (coreTrusted) try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
             } else {
                 saveRescueState() // J6: ranura de rescate aparte, que nunca pisa nada en silencio
             }
         }
         tryClose()
         return ExitResult.Clean
+    }
+
+    /**
+     * Segundo plano (`ON_STOP`, A9; iOS `enterBackground`, D81-H4/D81V2-H3): con la sesión YA aparcada, vacía la SRAM y,
+     * solo si quedó a salvo, guarda el estado AUTO, en ese orden (la fecha del estado queda posterior a la de la
+     * partida). Así «Continuar» retoma la posición aunque el sistema mate la app sin pasar por Salir. No pausa ni
+     * reanuda nada (eso lo hace el ciclo de vida en el hilo principal) y su fallo nunca toca la partida. Sin guardado
+     * de confianza (persistencia desactivada tras un rollback fallido) no se escribe: el núcleo no es de fiar. Tampoco
+     * mientras el AUTO sea el «deshacer» de un «Guardar actual y cargar» ([autoHoldsLoadUndo], A9-H3).
+     * Bloquea: llamar fuera del hilo principal. @return `true` si se escribió el AUTO.
+     */
+    fun saveAutoStateIfParked(): Boolean {
+        if (isClosed || session.state.value != SessionState.Paused) return false
+        if (!coreTrusted) return false
+        if (autoHoldsLoadUndo) return false // A9-H3: no pisar el «deshacer» de una carga hasta salir
+        if (coordinator.hasTarget && !flushNow().isSafe) return false
+        return try {
+            saveState(StateSlot.AUTO)
+            true
+        } catch (_: Exception) {
+            false // reanudada a la vez (no aparcada) o disco: la partida ya está a salvo igualmente
+        }
     }
 
     /** Estado de rescate (J6) en su ranura propia, directo (no depende del hilo de guardado, que pudo atascarse). */
@@ -573,7 +627,7 @@ class GameSession(
             if (isClosed) return RescueOutcome.Closed
             val safe = !coordinator.hasTarget || flushNow().isSafe
             if (safe) {
-                if (session.state.value == SessionState.Paused) {
+                if (session.state.value == SessionState.Paused && coreTrusted) {
                     try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
                 }
                 tryClose()

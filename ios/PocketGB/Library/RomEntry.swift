@@ -52,6 +52,9 @@ struct RomEntry: Identifiable, Hashable, Sendable {
     var isNew = false
     /// Fecha de modificación del archivo: con el tamaño, valida la caché de huellas (N1a).
     var modificationDate: Date?
+    /// Fecha del último cambio de atributos (ctime): `utimes`, `touch -r` o `cp -p` pueden fijar
+    /// la de modificación, pero esta la pone siempre el sistema (auditoría N1, H3).
+    var attributeModificationDate: Date?
     /// Huella del ROM (los 32 hex del SHA-256 del núcleo) si ya se conoce: de la caché, del
     /// cálculo en segundo plano o de la última apertura. Partidas, estados, portadas y
     /// metadatos van por ella; la ruta (`id`) solo identifica el archivo.

@@ -85,7 +85,7 @@ fun GameArtwork(
             .then(if (decorative) Modifier.clearAndSetSemantics {} else Modifier),
     ) {
         if (image != null) {
-            val description = stringResource(R.string.game_artwork_description, entry.title)
+            val description = stringResource(R.string.game_artwork_description, entry.displayTitle)
             Image(
                 bitmap = image,
                 contentDescription = description,
@@ -96,7 +96,7 @@ fun GameArtwork(
         } else {
             GamePlaceholder(
                 seed = fingerprint ?: entry.id,
-                title = entry.title,
+                title = entry.displayTitle,
                 isColor = entry.isColor,
                 modifier = Modifier.fillMaxSize(),
                 compact = compact,

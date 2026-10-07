@@ -278,8 +278,8 @@ Settings/
 ### 6.1 Límites reales de las APIs
 
 - No existe una API pública de Liquid Glass que permita indicar blur, saturación, brillo, borde o refracción numéricos. Los valores CSS de la propuesta no se trasladan a SwiftUI.
-- `Glass.clear` sí existe, pero no ofrece contraste adaptativo suficiente en todos los fondos. Requiere un scrim oscuro localizado bajo cada control.
-- No existe un parámetro público `glassOpacity`. El ajuste 30/50/70/100 modifica el alpha de la superficie UIKit de vidrio y del scrim, nunca el contenedor táctil.
+- `Glass.clear` sí existe, pero no ofrece contraste adaptativo suficiente en todos los fondos. Requiere oscurecer localmente cada control: desde N2, un velo con la forma exacta **encima** del vidrio y una sombra suave centrada debajo (un scrim expandido **debajo** del vidrio se refracta en su borde y se ve como un doble anillo).
+- No existe un parámetro público `glassOpacity`. El ajuste 30/50/70/100 modifica el alpha de la superficie UIKit de vidrio, del velo y de la sombra, nunca el contenedor táctil.
 - No existe `glass.modal`. Sheets, alerts, menus y context menus deben usar su material nativo.
 - `glassEffectID` no transforma cualquier vista arbitraria: coordina formas Liquid Glass dentro de un `GlassEffectContainer`.
 - No existe una API pública que entregue la geometría de Dynamic Island. Solo se usan safe-area insets.
@@ -375,7 +375,7 @@ No existe una variante pixel de SF. No se incorpora Silkscreen ni otra fuente ex
 
 | Token | Valor |
 |---|---|
-| `controlPress` | 70 ms, ease-out, scale 0.90 |
+| `controlPress` | 70 ms, ease-out, scale 0.90 (A, B, Start, Select, L, R). La cruceta no se escala: solo se marca el brazo o la flecha pulsada (N2) |
 | `controlRelease` | 90 ms, ease-out |
 | `hudMorph` | 220 ms, spring |
 | `toast` | entrada 180 ms, visible 2.5 s, salida 180 ms |
@@ -390,7 +390,7 @@ Ninguna animación bloquea input, flush o cambio de orientación.
 | Evento | Feedback |
 |---|---|
 | A/B/Start/Select | `UIImpactFeedbackGenerator(style: .light)`, una vez al entrar en pressed |
-| Cambio de sector D-pad | `UISelectionFeedbackGenerator` |
+| Dirección nueva en la cruceta | `UISelectionFeedbackGenerator` cuando se activa una dirección que no estaba activa, tras la histéresis (regla común con Android, N2, `DpadHapticGate`): ↑ → ↑→ vibra; ↑→ → ↑ no; ↑ → nada → ↑ sí |
 | Guardar estado | `UINotificationFeedbackGenerator(.success)` |
 | Error de carga/guardado | `.error` |
 | Confirmación destructiva | `.warning` |
@@ -415,9 +415,9 @@ Se respeta el toggle global `Haptic Feedback`. No se dispara háptica por cada f
 | `GameplayHUD` | SwiftUI | L2 | collapsed/expanded | visible, auto-hide, saving | `GlassEffectContainer`, `glassEffectID` |
 | `ControlsOverlay` | SwiftUI wrapper | L2 | portrait/landscape/editor | active, hidden, controller, RT | `UIViewRepresentable` |
 | `ControlsOverlayView` | UIKit | L2 | GB/GBC | idle, pressed, editing, hidden | `UIGlassEffect`, `UIGlassContainerEffect` |
-| `DPadControl` | UIKit layer/view | L2 | cruz | zona muerta, 8 direcciones, editing | vidrio nativo; cálculo propio |
-| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + scrim |
-| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + scrim |
+| `DPadControl` | UIKit layer/view | L2 | cruz o flechas separadas | zona muerta 30 % con histéresis, diagonales normales/reducidas/desactivadas, brazo o flecha pulsada, editing (tamaño y separación) | vidrio nativo; cálculo propio |
+| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2); el anillo de color es el borde |
+| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2) |
 | `GameViewport` | SwiftUI/UIKit | L1 | fit/integer/fill | loading, running, paused, error | `MTKView` |
 | `PauseView` | SwiftUI | L3 | medium/large | paused, saving, error | `sheet`, `presentationDetents` |
 | `SaveStateCard` | SwiftUI | L1 | manual/auto/empty | default, selected, corrupt | sin vidrio |
@@ -457,7 +457,7 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 21 | `gameplay-portrait` | Juego vertical | portrait | dark | Viewport 10:9 arriba y controles sólidos/claros debajo | Controles sobre Dynamic Island o viewport estirado |
 | 22 | ~~`gameplay-portrait-hud`~~ | Sustituida (decisión de Joel, 2026-09-30) | portrait | dark | El botón de pausa abre directamente la sheet de opciones: ver `gameplay-pause`. El avance rápido está junto a él (`gameplay-fast-forward`) | — |
 | 23 | `gameplay-landscape` | Juego horizontal | landscape | dark | Viewport a máxima altura, controles dentro del safe area | Controles bajo Island o Home Indicator |
-| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias a scrim | Controles blancos desaparecidos |
+| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias al velo y la sombra (N2) | Controles blancos desaparecidos |
 | 25 | `gameplay-landscape-hidden` | Show On Touch oculto | landscape | dark | Solo juego y pista temporal | Áreas invisibles bloqueando HUD o gestos |
 | 26 | `gameplay-pause` | Pause sheet | portrait | dark | Frame atenuado, Resume dominante y Exit separado | Pausa como botón aislado sin contexto |
 | 27 | `save-states` | 4 manuales + auto | portrait | dark | Capturas, timestamps, selección y slot vacío | Estados mezclados con SRAM |
@@ -486,6 +486,17 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 50 | `link-partner-picker-ax5` | Selector con AX5 | portrait | light | Filas y pie con reflow, títulos completos | Texto recortado |
 | 51 | `link-open-refused` | Cable rechazado | portrait | ambos | Alerta con el motivo («Elige otro juego…») | Abrir igualmente o error genérico |
 | 52 | `link-continue-warning` | Aviso de continuación | portrait | light | Alerta «¿Conectar sin continuar?» con «Conectar igualmente» y «Cancelar» | Perder el punto de continuación sin avisar |
+| 53 | `gameplay-dpad-up` | Cruz con ↑ pulsado (N2) | ambas | ambos | Solo el brazo ↑ hundido (gris oscuro, triángulo blanco, ≥ 3:1 frente a la cruz); el resto de la cruz, el círculo y los botones sin cambios; un solo borde fino | Toda la cruceta iluminada o encogida; doble anillo; brazo pulsado tenue |
+| 54 | `gameplay-dpad-upright` | Cruz en diagonal | portrait | dark | Brazos ↑ y → hundidos | Toda la cruz o un solo brazo |
+| 55 | `gameplay-dpad-up-clear` | Cruz ↑ al 30 % | landscape | dark | Start/Select y cruz legibles sobre el blanco del juego, sin anillo oscuro exterior | Etiquetas perdidas o scrim desplazado |
+| 56 | `gameplay-dpad-up-reduce-transparency` | Cruz ↑ sin transparencia | ambas | dark | Superficies sólidas, borde de 1,5 pt, solo ↑ marcado | Vidrio persistente |
+| 57 | `gameplay-arrows-up` | Flechas con ↑ pulsado | ambas | ambos | Solo el disco ↑ casi blanco con el triángulo oscuro (≥ 3:1); flechas `arrowtriangle` proporcionales | Las cuatro flechas iluminadas |
+| 58 | `gameplay-arrows-upright` | Flechas en diagonal | portrait | dark | Círculos ↑ y → iluminados | — |
+| 59 | `gameplay-arrows-up-reduce-transparency` | Flechas sin transparencia | ambas | dark | Cuatro círculos sólidos, ↑ casi blanco | Vidrio persistente |
+| 60 | `gameplay-arrows-spacing-70` / `-150` | Separación 0,7 y 1,5 | portrait (y landscape en 1,5) | dark | Flechas más juntas (sin tocarse ni cambiar de tamaño) o más separadas, dentro del área segura | Flechas que se solapan o se salen |
+| 61 | `gameplay-gba-dpad-up` / `gameplay-gba-arrows-up` | GBA horizontal, cruceta al 60 % | landscape | dark | Flechas visibles a tamaño pequeño, solo ↑ marcado | Flechas de tamaño fijo desbordadas |
+| 62 | `customize-controls-dpad` / `customize-controls-arrows` | Editor con la cruceta elegida | ambas | dark | Tamaño − / +; con flechas, además «Separación» − / + | Separación con la cruz o sin restablecer |
+| 63 | `settings-controls-ax5` | Ajustes › Controles con AX5 | portrait | light | «Diagonales» con reflow | Texto recortado |
 
 La pantalla real del launch de iOS termina antes de que el UI test pueda capturarla de forma fiable. `launch` es una ruta DEBUG que renderiza la misma composición para revisión; el launch asset real se valida en dispositivo.
 
@@ -517,22 +528,26 @@ La pantalla real del launch de iOS termina antes de que el UI test pueda captura
 
 ### 10.3 Vidrio claro y contraste
 
-Cada control landscape tiene tres capas independientes:
+Cada control landscape tiene estas capas (N2: sin el scrim expandido de antes, que el vidrio refractaba en su borde y se veía como un doble anillo oscuro desplazado):
 
 ```text
-área táctil UIKit — siempre del mismo tamaño
-└─ scrim localizado oscuro — forma del control, expandida 2–4 pt
-   └─ UIVisualEffectView + UIGlassEffect clear
-      └─ label/símbolo vibrante
+área táctil UIKit — siempre del mismo tamaño (sigue a la geometría, también la separación de flechas)
+└─ sombra suave centrada — `shadowPath` con la forma exacta, sin desplazamiento (radio 4 pt)
+   └─ UIVisualEffectView + UIGlassEffect clear — `cornerConfiguration = .capsule()`, sin recortar su borde
+      └─ velo oscuro con la forma exacta, encima del vidrio (contraste sin refracción)
+         └─ un solo trazo fino y uniforme (1 pt; en A/B el anillo de color es el borde)
+            └─ label/símbolo
 ```
 
 Reglas:
 
-- El scrim se mantiene incluso si el frame es blanco.
+- La sombra y el velo se mantienen incluso si el frame es blanco.
 - Opacidad seleccionable: 30, 50, 70 o 100 %.
-- Cambia el alpha del scrim y de la superficie visual, no el alpha de `ControlsOverlayView`.
+- Cambia el alpha del vidrio, del velo y de la sombra, no el alpha de `ControlsOverlayView`.
 - El label no baja de 70 %.
-- En pressed, la superficie aumenta contraste y hace scale 0.90; el hit frame no cambia.
+- En pressed, A/B/Start/Select/L/R aclaran su superficie y hacen scale 0.90; el hit frame no cambia.
+- La cruceta nunca se escala ni se ilumina entera: el motor le pasa su máscara de direcciones y solo se marca el brazo de la cruz o la flecha separada pulsada (dos en diagonal). Brazo pulsado: gris oscuro opaco (`ControlPalette.crossPressed`, sin atenuar por la opacidad) con el triángulo blanco; flecha pulsada: disco blanco al 90 % con el triángulo oscuro. Contraste pulsado/neutro ≥ 3:1 en vertical, en horizontal (30–100 %) y con Reduce Transparency, calculado en `DpadContrastTests` y medido en las capturas (N2-H1).
+- Flechas: `arrowtriangle.{up,right,down,left}.fill` con tamaño proporcional al control (0,42 × el grosor del brazo en la cruz; 0,36 × el diámetro de cada flecha separada). La cruz conserva su forma Game Boy con un hundido central sutil.
 - A y B se distinguen por label, posición y anillo cálido/frío.
 - Reduce Transparency reemplaza el vidrio por relleno sólido oscuro ≥90 %, borde de 1.5 pt y texto al 100 %.
 - No se mezcla `.regular` y `.clear` dentro del mismo conjunto de controles.
@@ -548,9 +563,11 @@ Reglas:
 - Zona A+B invisible.
 - Deslizamiento B→A sin levantar.
 - D-pad capturado hasta `touchesEnded`.
-- Zona muerta del 25 %.
-- Ocho sectores de 45°.
-- Prohibición de direcciones opuestas.
+- Zona muerta del 30 % del radio; un dedo que ya pulsa se suelta por debajo del 24 % (histéresis radial).
+- Diagonales según Ajustes › Controles (N2): «Normales» (ocho sectores de 45°), «Reducidas» (por defecto: diagonal solo a ±15° de 45°, rectas de 60°) o «Desactivadas» (cuatro rectas).
+- Histéresis angular: la dirección de un dedo se mantiene hasta 8° más allá del borde de su sector.
+- Prohibición de direcciones opuestas: también con dos dedos en la cruceta (se quitan en la máscara táctil) y con dedo y mando a la vez (se quitan tras el OR, `EmulatorSession.combinedButtons`).
+- Flechas separadas: separación k de 0,7 a 1,5 por disposición (fórmula común con Android): diámetro fijo 0,36 W; centro de cada flecha a 0,32 W × k del centro con k ≥ 1 y, por debajo, en línea recta hasta 0,265 W con k = 0,7 (nunca se solapan). El marco y la zona táctil crecen o encogen con ella. Todo el disco de cada flecha pulsa su dirección (sin diagonal; el dedo la mantiene hasta 4 pt fuera del disco) y la zona muerta acaba 2 pt antes del borde interior de las flechas; entre flechas decide el ángulo.
 - Máscara táctil combinada por OR con la del mando físico.
 
 El efecto visual nunca decide qué control está pulsado; solo representa el estado calculado por el motor de input.

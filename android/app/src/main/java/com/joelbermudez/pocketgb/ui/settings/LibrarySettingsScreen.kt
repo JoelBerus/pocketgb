@@ -218,10 +218,10 @@ fun LibrarySettingsContent(
             } else {
                 items(hidden, key = { it.id }) { entry ->
                     ListItem(
-                        headlineContent = { Text(entry.title) },
+                        headlineContent = { Text(entry.displayTitle) },
                         supportingContent = { Text(entry.fileName, maxLines = 1) },
                         trailingContent = {
-                            val showDescription = stringResource(R.string.library_settings_show_description, entry.title)
+                            val showDescription = stringResource(R.string.library_settings_show_description, entry.displayTitle)
                             TextButton(
                                 onClick = { onUnhide(entry) },
                                 modifier = Modifier

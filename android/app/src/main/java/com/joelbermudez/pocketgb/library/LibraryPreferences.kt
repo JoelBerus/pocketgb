@@ -46,6 +46,10 @@ data class LibraryPreferencesData(
     val sort: LibrarySort = LibrarySort.TITLE,
     /** K19: ids ya vistos y reconocidos (abiertos o presentes en el primer escaneo de la carpeta). */
     val knownIds: Set<String> = emptySet(),
+    /** A9: nombre visible estable por huella, cuando ya se conoce el contenido del ROM (iOS D8.1). */
+    val aliasesByFingerprint: Map<String, String> = emptyMap(),
+    /** A9: nombre visible provisional por id (ruta) antes de conocer la huella; se migra al conocerla. */
+    val aliasesByPath: Map<String, String> = emptyMap(),
 ) {
     fun acknowledge(ids: Set<String>) = if (knownIds.containsAll(ids)) this else copy(knownIds = knownIds + ids)
 
@@ -62,10 +66,53 @@ data class LibraryPreferencesData(
     fun toggleFavorite(entry: RomEntry) =
         copy(favorites = if (isFavorite(entry)) favorites - entry.id else favorites + entry.id)
 
+    /** Al abrir un juego: fecha y huella. Un alias provisional por ruta pasa a la huella (iOS `recordPlayed`). */
     fun recordPlayed(id: String, fingerprint: String, at: Long) =
-        copy(lastPlayed = lastPlayed + (id to at), fingerprints = fingerprints + (id to fingerprint))
+        copy(lastPlayed = lastPlayed + (id to at)).recordFingerprint(id, fingerprint)
 
-    fun recordFingerprint(id: String, fingerprint: String) = copy(fingerprints = fingerprints + (id to fingerprint))
+    /** Huella conocida (al abrir o al ver el detalle). Migra el alias provisional por ruta a la huella. */
+    fun recordFingerprint(id: String, fingerprint: String): LibraryPreferencesData {
+        val pathAlias = aliasesByPath[id]
+        return copy(
+            fingerprints = fingerprints + (id to fingerprint),
+            aliasesByFingerprint = if (pathAlias != null) aliasesByFingerprint + (fingerprint to pathAlias) else aliasesByFingerprint,
+            aliasesByPath = if (pathAlias != null) aliasesByPath - id else aliasesByPath,
+        )
+    }
+
+    /** Alias del juego, o `null` si se muestra el título de la cabecera. */
+    fun aliasOf(entry: RomEntry): String? {
+        val fingerprint = fingerprints[entry.id]
+        if (fingerprint != null) aliasesByFingerprint[fingerprint]?.let { return it }
+        return aliasesByPath[entry.id]
+    }
+
+    /** Nombre que ve el usuario: el alias o, si no hay, el título de la cabecera. */
+    fun displayTitle(entry: RomEntry): String = aliasOf(entry) ?: entry.title
+
+    /** [entry] con su alias aplicado ([RomEntry.displayTitle]); el título de la cabecera no cambia. */
+    fun withAlias(entry: RomEntry): RomEntry {
+        val alias = aliasOf(entry)
+        return if (alias == entry.alias) entry else entry.copy(alias = alias)
+    }
+
+    /**
+     * Renombrar (A9, semántica de iOS D8.1): solo cambia la presentación, nunca el ROM ni sus partidas. Se recorta,
+     * los saltos de línea pasan a espacios y se limita a [Alias.MAX_LENGTH] caracteres visibles. Vacío (o igual al
+     * título de la cabecera) vuelve al título de la cabecera. Va por huella si se conoce y por ruta si no.
+     */
+    fun setAlias(entry: RomEntry, value: String): LibraryPreferencesData {
+        val alias = Alias.normalize(value)?.takeUnless { it == entry.title }
+        val fingerprint = fingerprints[entry.id]
+        return if (fingerprint != null) {
+            copy(
+                aliasesByFingerprint = if (alias == null) aliasesByFingerprint - fingerprint else aliasesByFingerprint + (fingerprint to alias),
+                aliasesByPath = aliasesByPath - entry.id,
+            )
+        } else {
+            copy(aliasesByPath = if (alias == null) aliasesByPath - entry.id else aliasesByPath + (entry.id to alias))
+        }
+    }
 
     fun hide(entry: RomEntry): LibraryPreferencesData {
         val fingerprint = fingerprints[entry.id]
@@ -94,10 +141,11 @@ object LibraryQuery {
         LibraryFilter.FAVORITES -> isFavorite
     }
 
+    /** Busca en el alias (si lo hay), en el título de la cabecera y en el nombre del archivo (A9). */
     fun matches(entry: RomEntry, query: String): Boolean {
         val q = fold(query.trim())
         if (q.isEmpty()) return true
-        return fold(entry.title).contains(q) || fold(entry.fileName).contains(q)
+        return fold(entry.displayTitle).contains(q) || fold(entry.title).contains(q) || fold(entry.fileName).contains(q)
     }
 
     fun visible(
@@ -106,9 +154,10 @@ object LibraryQuery {
         filter: LibraryFilter,
         query: String,
     ): List<RomEntry> {
-        val shown = entries.filter {
-            !prefs.isHidden(it) && matches(it, filter, prefs.isFavorite(it)) && matches(it, query)
-        }
+        // Con el alias aplicado (A9): la búsqueda, el orden y la UI usan el nombre visible.
+        val shown = entries.filter { !prefs.isHidden(it) && matches(it, filter, prefs.isFavorite(it)) }
+            .map(prefs::withAlias)
+            .filter { matches(it, query) }
         return when (prefs.sort) {
             LibrarySort.TITLE -> shown.sortedWith(LibraryScanner.titleOrder)
             LibrarySort.RECENT -> shown.sortedWith(
@@ -120,7 +169,7 @@ object LibraryQuery {
 
     /** Juegos que el usuario ocultó, para poder mostrarlos de nuevo. */
     fun hidden(entries: List<RomEntry>, prefs: LibraryPreferencesData): List<RomEntry> =
-        entries.filter { prefs.isHidden(it) }.sortedWith(LibraryScanner.titleOrder)
+        entries.filter { prefs.isHidden(it) }.map(prefs::withAlias).sortedWith(LibraryScanner.titleOrder)
 
     /** Máximo de juegos del carril «Continuar jugando» (K10). */
     const val CONTINUE_LIMIT = 5
@@ -141,11 +190,49 @@ object LibraryQuery {
         }
             .sortedByDescending { prefs.lastPlayedAt(it) }
             .take(limit)
+            .map(prefs::withAlias)
 
     private fun fold(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD)
             .filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
             .lowercase()
+}
+
+/** Normalización del alias (A9): misma regla que iOS D8.1 (`setAlias`), sin partir caracteres visibles. */
+object Alias {
+    /** Máximo de caracteres visibles (grafemas) de un alias, como iOS. */
+    const val MAX_LENGTH = 80
+
+    /** Recortado, con los saltos de línea y tabuladores como espacios y limitado a [MAX_LENGTH]; `null` si queda vacío. */
+    fun normalize(value: String): String? {
+        val flat = value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').trim()
+        if (flat.isEmpty()) return null
+        return truncate(flat, MAX_LENGTH).trimEnd()
+    }
+
+    /** Los primeros [max] grafemas de [text] (un emoji o una letra con acento combinante cuentan como uno). */
+    fun truncate(text: String, max: Int): String {
+        val iterator = java.text.BreakIterator.getCharacterInstance()
+        iterator.setText(text)
+        var end = 0
+        var count = 0
+        while (count < max) {
+            val next = iterator.next()
+            if (next == java.text.BreakIterator.DONE) return text
+            end = next
+            count++
+        }
+        return text.substring(0, end)
+    }
+
+    /** Cuántos grafemas tiene [text] (para el contador del campo). */
+    fun length(text: String): Int {
+        val iterator = java.text.BreakIterator.getCharacterInstance()
+        iterator.setText(text)
+        var count = 0
+        while (iterator.next() != java.text.BreakIterator.DONE) count++
+        return count
+    }
 }
 
 /** Resultado de intentar llevar las preferencias a disco. */

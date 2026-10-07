@@ -27,6 +27,17 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | A17 | Girar el teléfono varias veces jugando | No se pausa el juego, no se corta el audio, no se pierde la partida |
 | A18 | Tablet o plegable (si tienes) | Barra lateral (rail) en pantalla ancha; sin corte de contenido; área segura respetada con recorte de cámara |
 
+### Android A9 · renombrar y continuar ([guía](guia/partidas-continuar-y-renombrar.md))
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| A9-1 | Rojo: jugar sin guardar en el juego unos minutos, Salir y pulsar «Continuar» | Vuelve al sitio exacto (mismo mapa, misma música) |
+| A9-2 | Igual, pero saliendo con el botón de inicio y cerrando la app desde el selector | «Continuar» vuelve al sitio en que se dejó al pasar a segundo plano |
+| A9-3 | Guardar en el juego, salir y volver a abrir con «Jugar desde el inicio» | Pantalla de título; al cargar, la partida guardada |
+| A9-4 | Con un `.sav` más nuevo junto al ROM (copiado de otro equipo), pulsar «Continuar» | Aviso «No se pudo continuar» y «Jugar desde el inicio» abre el `.sav` nuevo, sin pisarlo |
+| A9-5 | Renombrar Rojo («Rojo de Joel») desde el detalle, el menú de la portada y Ajustes del juego | El nombre se ve en biblioteca, Continuar jugando, Favoritos, detalle y pausa; el buscador lo encuentra; el archivo de la carpeta no cambia |
+| A9-6 | Vaciar el nombre | Vuelve «POKEMON RED» |
+
 ## iPhone
 
 | # | Prueba | Resultado esperado |

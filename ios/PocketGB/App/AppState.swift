@@ -139,7 +139,10 @@ final class AppState {
     var debugShowsLaunch = false
     var debugOpensControlsEditor = false
 
-    private(set) var session: EmulatorSession?
+    private(set) var session: EmulatorSession? {
+        // Con un juego abierto, el cálculo de huellas en segundo plano se pausa (auditoría N1, H7).
+        didSet { library.setHashingPaused(session != nil) }
+    }
     /// Cable link virtual (M9): con un cable abierto, `session` es la de `link` y no hay estados.
     private(set) var link: LinkSession?
     /// Juego desde cuyo detalle se pide conectar (sheet del selector de pareja).
@@ -159,6 +162,8 @@ final class AppState {
     private(set) var resumableFingerprints: Set<String> = []
     /// Huellas cuya continuación ya se comprobó (una huella nueva vuelve a comprobar).
     @ObservationIgnored private var checkedFingerprints: Set<String> = []
+    /// Las comprobaciones de continuación van en serie: una lenta no pisa a una posterior.
+    @ObservationIgnored private var continuationTask: Task<Void, Never>?
 
     /// BIOS de Game Boy Advance en la carpeta de juegos (Ajustes › Emulación). `nil` hasta
     /// que se comprueba.
@@ -175,6 +180,7 @@ final class AppState {
         let fixedControls = inMemory || DebugArguments.value("-controlOpacity") != nil
             || DebugArguments.value("-controlsVisibility") != nil
             || DebugArguments.value("-dpadStyle") != nil
+            || DebugArguments.value("-dpadDiagonals") != nil || DebugArguments.value("-arrowSpacing") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
         // Con ajustes solo en memoria no hay copia antigua que importar (y no se marca como hecho).
         if !fixedControls { libraryPrefs.importLegacyGameSettings(gameplay.data.perGame) }
@@ -208,15 +214,17 @@ final class AppState {
     }
 
     /// N1a: las huellas que llegan del escaneo se llevan los metadatos provisionales por ruta, y
-    /// los problemas del archivo de preferencias se avisan (nunca se pierden en silencio).
+    /// los problemas del archivo de preferencias se avisan (nunca se pierden en silencio). Solo las
+    /// huellas nuevas vuelven a mirar su estado automático (auditoría N1, H7).
     private func wireLibraryIdentity() {
-        library.onFingerprintsResolved = { [weak self] resolved in
-            guard let self else { return }
-            libraryPrefs.adopt(resolved)
-            if !Set(resolved.values).isSubset(of: checkedFingerprints) { refreshContinuations() }
-        }
-        libraryPrefs.onIssue = { [weak self] issue in self?.showAlert(issue.title, issue.message) }
-        if let issue = libraryPrefs.issue { showAlert(issue.title, issue.message) }
+        LibraryIdentityWiring.connect(
+            library: library, prefs: libraryPrefs,
+            alert: { [weak self] title, message in self?.showAlert(title, message) },
+            fingerprintsResolved: { [weak self] fingerprints in
+                guard let self else { return }
+                let added = fingerprints.subtracting(checkedFingerprints)
+                if !added.isEmpty { refreshContinuations(adding: added) }
+            })
     }
 
     /// El juego con su huella actual (una vista puede guardar una copia anterior al cálculo).
@@ -310,7 +318,9 @@ final class AppState {
                 guard mode == .resumeAutomatic else {
                     return GameOpeningPayload(rom: rom, automaticState: nil, fingerprint: romFingerprint)
                 }
-                guard let fingerprint else { throw ContinuationOpenError.unavailable }
+                // El estado automático se busca con la huella de los bytes leídos (la del núcleo), no
+                // con la pista de la caché, que puede ser de otro archivo (auditoría N1, H5).
+                guard let fingerprint = romFingerprint ?? fingerprint else { throw ContinuationOpenError.unavailable }
                 let states = StateStore(root: try StateStore.defaultRoot(), fingerprint: fingerprint)
                 let saves = SaveStore(directory: try SaveStore.defaultDirectory(), fingerprint: fingerprint)
                 guard states.automaticEntry(newerThan: saves.modificationDate) != nil else {
@@ -411,10 +421,12 @@ final class AppState {
         let metadata = entries.map { (id: $0.id, fileName: $0.fileName) }
         Task.detached(priority: .userInitiated) { [weak self] in
             var loaded = games
+            var fingerprints: [String?] = Array(repeating: nil, count: games.count)
             var failure: (index: Int, error: Error)?
             for i in loaded.indices {
                 do {
                     loaded[i].rom = try LibraryScanner.readROM(urls[i], limit: LibraryScanner.romLimit(for: .gameBoy))
+                    fingerprints[i] = RomFingerprint.compute(data: loaded[i].rom, console: .gameBoy)
                     loaded[i].mirrorSnapshot = loaded[i].mirror?.snapshot() ?? .absent
                 } catch {
                     failure = (i, error)
@@ -424,16 +436,23 @@ final class AppState {
             let result: Result<[LinkSession.Game], Error> =
                 failure.map { .failure($0.error) } ?? .success(loaded)
             let failedIndex = failure?.index ?? 0
-            await self?.finishOpeningLink(result: result, ids: ids, fileNames: metadata.map(\.fileName),
-                                          shared: shared, failedIndex: failedIndex)
+            let finalFingerprints = fingerprints
+            await self?.finishOpeningLink(result: result, ids: ids, fingerprints: finalFingerprints,
+                                          fileNames: metadata.map(\.fileName), shared: shared,
+                                          failedIndex: failedIndex)
         }
     }
 
-    private func finishOpeningLink(result: Result<[LinkSession.Game], Error>, ids: [String], fileNames: [String],
-                                   shared: [Bool], failedIndex: Int) {
+    private func finishOpeningLink(result: Result<[LinkSession.Game], Error>, ids: [String], fingerprints: [String?],
+                                   fileNames: [String], shared: [Bool], failedIndex: Int) {
         opening = false
         switch result {
-        case .success(let games):
+        case .success(var games):
+            // Ajustes de cada juego por la huella de los bytes leídos (auditoría N1, H5).
+            for i in games.indices where i < ids.count {
+                let overrides = libraryPrefs.overrides(fingerprint: fingerprints[i], path: ids[i])
+                games[i].emulation = gameplay.data.emulation(with: overrides)
+            }
             startLink(games: games, entryIDs: ids, sharedMirrors: shared)
         case .failure(let error as CocoaError) where error.code == .fileReadTooLarge:
             showAlert("No se puede abrir “\(fileNames[failedIndex])”", RomEntry.Problem.tooLarge.message)
@@ -709,8 +728,19 @@ final class AppState {
         known.formUnion(libraryPrefs.data.games.keys)
         known.formUnion(library.entries.compactMap(\.fingerprint))
         checkedFingerprints = known
-        let fingerprints = known
-        Task.detached(priority: .utility) { [weak self] in
+        checkContinuations(known, replacing: true)
+    }
+
+    /// Solo las huellas nuevas (p. ej. un juego movido que se acaba de reconocer).
+    private func refreshContinuations(adding added: Set<String>) {
+        checkedFingerprints.formUnion(added)
+        checkContinuations(added, replacing: false)
+    }
+
+    private func checkContinuations(_ fingerprints: Set<String>, replacing: Bool) {
+        let previous = continuationTask
+        continuationTask = Task.detached(priority: .utility) { [weak self] in
+            await previous?.value
             guard let statesRoot = try? StateStore.defaultRoot(),
                   let savesDirectory = try? SaveStore.defaultDirectory() else { return }
             let valid = Set(fingerprints.filter { fingerprint in
@@ -718,7 +748,14 @@ final class AppState {
                 let saves = SaveStore(directory: savesDirectory, fingerprint: fingerprint)
                 return states.automaticEntry(newerThan: saves.modificationDate) != nil
             })
-            await MainActor.run { self?.resumableFingerprints = valid }
+            await MainActor.run {
+                guard let self else { return }
+                if replacing {
+                    self.resumableFingerprints = valid
+                } else {
+                    self.resumableFingerprints.formUnion(valid)
+                }
+            }
         }
     }
 

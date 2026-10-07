@@ -148,7 +148,7 @@ fun GameplayHost(
             .collect { palette -> runCatching { game.setCompatPalette(palette) } }
     }
 
-    val observer = remember(game) { SessionLifecycleObserver(game, viewModel::onFlushResult) }
+    val observer = remember(game) { SessionLifecycleObserver(game, viewModel::onFlushResult, viewModel::onStopped) }
     DisposableEffect(game, lifecycle) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -198,7 +198,7 @@ fun GameplayHost(
             GameMenu.Pause -> PauseSheet(
                 landscape = landscape,
                 busy = busy,
-                title = game.info.title,
+                title = game.title,
                 onContinue = viewModel::continueGame,
                 onStates = viewModel::openStates,
                 onCustomize = viewModel::openControlsEditor,

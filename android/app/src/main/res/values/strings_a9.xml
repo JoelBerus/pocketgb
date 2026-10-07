@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A9 · Paridad Android: renombrar (alias) y continuación exacta (cambia J8, ND6). Solo cadenas de este lote. -->
+<resources>
+    <!-- Continuar exacto y Jugar desde el inicio -->
+    <string name="a9_continue">Continuar</string>
+    <string name="a9_play_from_start">Jugar desde el inicio</string>
+    <string name="a9_resume_hint">«Continuar» te devuelve justo a donde lo dejaste. «Jugar desde el inicio» arranca el juego con tu partida guardada.</string>
+    <string name="a9_resume_failed_title">No se pudo continuar</string>
+    <string name="a9_resume_failed_body">%1$s Puedes conservar tu partida y jugar desde el inicio.</string>
+    <string name="a9_resume_failed_missing">No hay un estado automático de este juego.</string>
+    <string name="a9_resume_failed_unreadable">No se pudo leer el estado automático.</string>
+    <string name="a9_resume_failed_not_current">El estado automático ya no corresponde a tu partida actual: el juego guardó después.</string>
+    <string name="a9_resume_failed_incompatible">El estado automático es de otro modelo de consola o de otro juego. Si cambiaste «Color en juegos de Game Boy» (o el «Color» de este juego), vuelve al valor anterior para retomarlo.</string>
+    <string name="a9_resume_failed_corrupt">El estado automático está dañado o es de una versión que esta app no lee.</string>
+    <string name="a9_resume_failed_save_not_loaded">Tu partida no se pudo leer o tiene un tamaño que este juego no acepta, así que no se puede comprobar el estado automático. Se conserva tal cual.</string>
+    <string name="a9_resume_failed_play">Jugar desde el inicio</string>
+
+    <!-- Renombrar -->
+    <string name="a9_rename">Renombrar</string>
+    <string name="a9_rename_title">Renombrar</string>
+    <string name="a9_rename_label">Nombre</string>
+    <string name="a9_rename_footer">Vacía el campo para volver a «%1$s». El archivo y las partidas no cambian.</string>
+    <string name="a9_rename_counter">%1$d/%2$d</string>
+    <string name="a9_rename_save">Guardar</string>
+    <string name="a9_rename_cancel">Cancelar</string>
+    <string name="a9_details_more">Más opciones</string>
+    <string name="a9_game_settings_name">Nombre</string>
+    <string name="a9_game_settings_name_header">Cartucho: %1$s</string>
+</resources>

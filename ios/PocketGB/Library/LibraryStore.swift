@@ -39,7 +39,8 @@ final class LibraryStore {
     private(set) var scanProgress: ScanProgress?
     /// Aviso breve tras un escaneo con novedades ("2 juegos nuevos").
     private(set) var summary: String?
-    /// El último escaneo llegó al tope de `LibraryScanner.maxEntries` juegos.
+    /// El último escaneo llegó al tope de juegos (`maxEntries`) o de elementos recorridos
+    /// (`maxVisitedItems`). Se muestra en Ajustes › Biblioteca mientras dure.
     private(set) var limitReached = false
     /// Calculando huellas en segundo plano (N1a).
     private(set) var isHashing = false
@@ -68,7 +69,11 @@ final class LibraryStore {
     @ObservationIgnored private let cacheQueue = DispatchQueue(label: "PocketGB.fingerprint-cache", qos: .utility)
     @ObservationIgnored private var scanTask: Task<Void, Never>?
     @ObservationIgnored private var hashTask: Task<Void, Never>?
+    /// Cada arranque de la cola tiene su número: uno cancelado no marca el fin del siguiente.
+    @ObservationIgnored private var hashRun = 0
     @ObservationIgnored private var unsavedCacheItems = 0
+    /// Con un juego abierto el cálculo se pausa (no compite con la emulación; auditoría N1, H7).
+    @ObservationIgnored private(set) var hashingPaused = false
 
     init(storage: BookmarkStorage = UserDefaultsBookmarkStorage(),
          cacheURL: URL? = FingerprintCacheData.defaultURL(),
@@ -209,7 +214,7 @@ final class LibraryStore {
         startHashing(resolved.jobs, generation: generation)
 
         if found.limitReached {
-            showSummary("Se muestran los primeros \(LibraryScanner.maxEntries.formatted()) juegos")
+            showSummary("La carpeta es demasiado grande: no se leyó entera")
         } else if newCount > 0 {
             showSummary(newCount == 1 ? "1 juego nuevo" : "\(newCount) juegos nuevos")
         }
@@ -222,7 +227,9 @@ final class LibraryStore {
     /// con un escaneo nuevo; los resultados llegan por lotes.
     private func startHashing(_ jobs: [LibraryIdentity.Job], generation: Int) {
         hashTask?.cancel()
-        guard !jobs.isEmpty else {
+        hashRun += 1
+        let run = hashRun
+        guard !jobs.isEmpty, !hashingPaused else {
             isHashing = false
             return
         }
@@ -241,7 +248,8 @@ final class LibraryStore {
                 } catch {
                     // Un archivo que no se puede leer se queda sin huella (como en el escaneo).
                 }
-                if batch.count >= 16 || ContinuousClock.now - lastFlush > .milliseconds(400) {
+                // Lotes de 32 archivos o 0,75 s: menos trabajo en el hilo principal por archivo.
+                if batch.count >= 32 || ContinuousClock.now - lastFlush > .milliseconds(750) {
                     let done = batch
                     batch = []
                     lastFlush = .now
@@ -249,16 +257,30 @@ final class LibraryStore {
                 }
             }
             let rest = batch
-            await self?.finishHashing(rest, generation: generation)
+            await self?.finishHashing(rest, generation: generation, run: run)
         }
     }
 
-    private func finishHashing(_ rest: [(job: LibraryIdentity.Job, fingerprint: String)], generation: Int) {
+    private func finishHashing(_ rest: [(job: LibraryIdentity.Job, fingerprint: String)], generation: Int, run: Int) {
+        // Lo calculado antes de una pausa o cancelación vale igual (misma carpeta).
         if !rest.isEmpty { applyFingerprints(rest, generation: generation) }
         guard generation == scanGeneration else { return }
-        isHashing = false
         unsavedCacheItems = 0
         persistCache()
+        if run == hashRun { isHashing = false }
+    }
+
+    /// Pausa o reanuda el cálculo de huellas (la app lo pausa mientras hay un juego abierto). Al
+    /// reanudar se vuelve a pedir solo lo que siga sin huella verificada.
+    func setHashingPaused(_ paused: Bool) {
+        guard paused != hashingPaused else { return }
+        hashingPaused = paused
+        if paused {
+            hashTask?.cancel()
+            isHashing = false
+        } else if finishedGeneration == scanGeneration, !entries.isEmpty {
+            startHashing(LibraryIdentity.resolve(entries, cache: cache).jobs, generation: scanGeneration)
+        }
     }
 
     private func applyFingerprints(_ results: [(job: LibraryIdentity.Job, fingerprint: String)], generation: Int) {
@@ -268,7 +290,7 @@ final class LibraryStore {
         var updated = entries
         var resolved: [String: String] = [:]
         for (job, fp) in results {
-            cache.items[job.path] = .init(size: job.size, modified: job.modified, fingerprint: fp)
+            cache.items[job.path] = job.cacheItem(fp)
             resolved[job.path] = fp
             if let i = index[job.path] { updated[i].fingerprint = fp }
         }
@@ -288,7 +310,8 @@ final class LibraryStore {
     func learnFingerprint(_ fingerprint: String, forPath path: String) {
         guard let i = entries.firstIndex(where: { $0.id == path }) else { return }
         let entry = entries[i]
-        cache.items[path] = .init(size: entry.sizeBytes, modified: entry.modificationDate, fingerprint: fingerprint)
+        cache.items[path] = .init(size: entry.sizeBytes, modified: entry.modificationDate,
+                                  changed: entry.attributeModificationDate, fingerprint: fingerprint)
         guard entry.fingerprint != fingerprint else {
             persistCache()
             return
@@ -338,4 +361,24 @@ final class LibraryStore {
         self.summary = summary
     }
     #endif
+}
+
+/// Cableado de la identidad (N1a) entre la biblioteca, las preferencias y la app: las huellas que
+/// llegan del escaneo se llevan los metadatos provisionales por ruta, y los problemas del archivo
+/// de preferencias se avisan (al arrancar y al escribir). Separado de `AppState` para probarlo.
+@MainActor
+enum LibraryIdentityWiring {
+    /// - Parameters:
+    ///   - alert: muestra un aviso (título, texto).
+    ///   - fingerprintsResolved: huellas recién conocidas, después de unir los metadatos.
+    static func connect(library: LibraryStore, prefs: LibraryPreferences,
+                        alert: @escaping (String, String) -> Void,
+                        fingerprintsResolved: @escaping (Set<String>) -> Void) {
+        library.onFingerprintsResolved = { [weak prefs] resolved in
+            prefs?.adopt(resolved)
+            fingerprintsResolved(Set(resolved.values))
+        }
+        prefs.onIssue = { issue in alert(issue.title, issue.message) }
+        if let issue = prefs.issue { alert(issue.title, issue.message) }
+    }
 }

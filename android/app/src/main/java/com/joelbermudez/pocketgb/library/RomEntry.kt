@@ -27,7 +27,16 @@ data class RomEntry(
     val isNew: Boolean = false,
     /** K20: fecha de modificación (epoch ms) del `.sav` junto al ROM, solo informativa. `null` si no hay o no se sabe. */
     val mirrorSaveDate: Long? = null,
+    /**
+     * A9: nombre que eligió el usuario (Renombrar), aplicado por [LibraryPreferencesData.withAlias]; el escáner nunca
+     * lo pone. Solo es presentación: el ROM, su `.sav` y sus estados no cambian.
+     */
+    val alias: String? = null,
 ) {
+    /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
+    val displayTitle: String
+        get() = alias ?: title
+
     val subfolder: String
         get() = id.substringBeforeLast('/', missingDelimiterValue = "")
 

@@ -201,6 +201,79 @@ struct LibraryIdentityTests {
         #expect(try Data(contentsOf: prefsURL) == bytes)
     }
 
+    /// H2: un archivo de una versión futura que esta no sabe decodificar no se aparta ni se pisa.
+    @Test func undecodableNewerVersionIsBlockedNotQuarantined() throws {
+        try writePrefs(#"{"version":3,"games":[1,2],"otra":"cosa"}"#)
+        let bytes = try Data(contentsOf: prefsURL)
+        let prefs = LibraryPreferences(fileURL: prefsURL)
+        #expect(prefs.issue == .newerVersion(3))
+        #expect(prefs.data.games.isEmpty)
+        prefs.toggleFavorite(Self.entry("a.gb"))
+        prefs.waitForPendingWrites()
+        #expect(try Data(contentsOf: prefsURL) == bytes)
+        let names = try FileManager.default.contentsOfDirectory(atPath: prefsURL.deletingLastPathComponent().path)
+        #expect(names == ["preferences.json"])
+    }
+
+    /// H4: solo un archivo **sin** `version` es del formato 1; `null`, `1`, texto o booleano van a
+    /// cuarentena (con sus bytes) en lugar de migrarse o leerse como formato 2 y sobrescribirse.
+    @Test func invalidVersionValuesAreQuarantinedNotMigrated() throws {
+        for (i, text) in [#"{"version":null,"favorites":["a.gb"]}"#, #"{"version":1,"favorites":["a.gb"]}"#,
+                          #"{"version":"2","games":{}}"#, #"{"version":true}"#, #"{"version":2.5}"#].enumerated() {
+            let url = dir.appendingPathComponent("caso\(i)/preferences.json")
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+            let prefs = LibraryPreferences(fileURL: url)
+            guard case .quarantined(let name) = prefs.issue else {
+                Issue.record("\(text): se esperaba la cuarentena, no \(String(describing: prefs.issue))")
+                continue
+            }
+            let moved = url.deletingLastPathComponent().appendingPathComponent(name)
+            #expect(try Data(contentsOf: moved) == Data(text.utf8), "\(text)")
+            #expect(!FileManager.default.fileExists(
+                atPath: url.deletingLastPathComponent().appendingPathComponent("preferences.v1.json").path))
+            #expect(!prefs.isFavorite(Self.entry("a.gb")))
+        }
+    }
+
+    /// H10: una copia `preferences.v1.json` previa con otro contenido no se pisa: la copia exacta va a
+    /// `preferences.v1-<fecha>.json`.
+    @Test func legacyBackupNeverOverwritesAPreviousCopy() throws {
+        try writePrefs(Self.v1Fixture)
+        let original = try Data(contentsOf: prefsURL)
+        let folder = prefsURL.deletingLastPathComponent()
+        let partial = Data("copia a medias".utf8)
+        try partial.write(to: folder.appendingPathComponent("preferences.v1.json"))
+        let prefs = LibraryPreferences(fileURL: prefsURL)
+        prefs.waitForPendingWrites()
+        #expect(prefs.issue == nil && prefs.isFavorite(Self.entry("nunca.gb")))
+        #expect(try Data(contentsOf: folder.appendingPathComponent("preferences.v1.json")) == partial)
+        let copies = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { $0.hasPrefix("preferences.v1-") && $0.hasSuffix(".json") }
+        #expect(copies.count == 1)
+        #expect(try Data(contentsOf: folder.appendingPathComponent(copies[0])) == original)
+        #expect(LibraryPreferences.fileVersion(try Data(contentsOf: prefsURL)) == 2)
+    }
+
+    /// H10: si la copia del formato 1 no se puede escribir, no se migra en disco: el original queda
+    /// intacto, se usa en memoria y se avisa.
+    @Test func legacyMigrationIsBlockedWhenTheBackupFails() throws {
+        try writePrefs(Self.v1Fixture)
+        let original = try Data(contentsOf: prefsURL)
+        let folder = prefsURL.deletingLastPathComponent()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        let prefs = LibraryPreferences(fileURL: prefsURL)
+        guard case .migrationBackupFailed = prefs.issue else {
+            Issue.record("Se esperaba .migrationBackupFailed, no \(String(describing: prefs.issue))")
+            return
+        }
+        #expect(prefs.isFavorite(Self.entry("nunca.gb")))                   // migrado en memoria
+        prefs.toggleFavorite(Self.entry("otro.gb"))
+        prefs.waitForPendingWrites()
+        #expect(try Data(contentsOf: prefsURL) == original)
+    }
+
     @Test func writeErrorsAreReportedOncePerStreak() throws {
         let blocker = dir.appendingPathComponent("Bloqueo")
         try Data("no soy carpeta".utf8).write(to: blocker)
@@ -361,6 +434,129 @@ struct LibraryIdentityTests {
         #expect(try Data(contentsOf: store.backupURL(1)) == older)
         #expect(outcome.target?.mirror?.url == mirrorB.url)
         #expect(try store.load() == newer)
+        // H1: además, el perdedor queda en una copia apartada que no rota; abrir otra vez no la repite.
+        #expect(store.keptCopies().count == 1)
+        #expect(try Data(contentsOf: try #require(store.keptCopies().first).url) == older)
+        _ = try SaveOpening.prepare(store: store, mirror: mirrorB, snapshot: mirrorB.snapshot(), validSizes: [8_192])
+        #expect(store.keptCopies().count == 1)
+    }
+
+    /// H1 (regla 6): la copia B de un duplicado tiene su propio `.sav` **más nuevo** con otra partida.
+    /// Gana por fecha (como siempre), pero la partida local que pierde no se va con la rotación:
+    /// tras 6 guardados sigue apartada y se puede restaurar.
+    @Test func newerMirrorOfADuplicateKeepsTheLocalOutsideTheRotation() throws {
+        let saves = dir.appendingPathComponent("Saves", isDirectory: true)
+        try FileManager.default.createDirectory(at: saves, withIntermediateDirectories: true)
+        let store = SaveStore(directory: saves, fingerprint: "fp-dup")
+        let playA = Data(repeating: 0xA, count: 8_192)
+        let playB = Data(repeating: 0xB, count: 8_192)
+        try store.save(playA)                                                // partida de la copia A
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3_600)],
+                                              ofItemAtPath: store.saveURL.path)
+        let mirrorB = SaveMirror(romURL: dir.appendingPathComponent("Copias/juego.gb"))
+        try FileManager.default.createDirectory(at: mirrorB.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try playB.write(to: mirrorB.url)                                     // otra partida, más nueva
+        let outcome = try SaveOpening.prepare(store: store, mirror: mirrorB, snapshot: mirrorB.snapshot(),
+                                              validSizes: [8_192])
+        #expect(outcome.data == playB)
+        #expect(try store.load() == playB)
+        let kept = try #require(store.keptCopies().first)
+        #expect(try Data(contentsOf: kept.url) == playA)
+        #expect(kept.url.lastPathComponent.hasPrefix("fp-dup.mirror-"))
+        for byte in UInt8(1)...6 { try store.save(Data(repeating: byte, count: 8_192)) }
+        let inBackups = store.backups().contains { (try? Data(contentsOf: store.backupURL($0.index))) == playA }
+        #expect(!inBackups)                                                  // la rotación ya lo perdió…
+        #expect(try Data(contentsOf: kept.url) == playA)                     // …pero sigue apartada
+        try store.restore(kept: kept)
+        #expect(try store.load() == playA)
+        #expect(try Data(contentsOf: store.backupURL(1)) == Data(repeating: 6, count: 8_192))
+        #expect(FileManager.default.fileExists(atPath: kept.url.path))
+    }
+
+    /// H1: un `.sav` de otro juego con el mismo nombre que el ROM, más nuevo o más viejo: el que
+    /// pierde siempre queda apartado. Un espejo que escribió PocketGB no crea copias apartadas.
+    @Test func foreignSaveWithTheSameNameIsAlwaysKept() throws {
+        let saves = dir.appendingPathComponent("Saves", isDirectory: true)
+        try FileManager.default.createDirectory(at: saves, withIntermediateDirectories: true)
+        let mine = Data(repeating: 1, count: 8_192)
+        let foreign = Data(repeating: 2, count: 8_192)
+        for (i, foreignIsNewer) in [true, false].enumerated() {
+            let store = SaveStore(directory: saves, fingerprint: "fp-ajeno-\(i)")
+            try store.save(mine)
+            let mirror = SaveMirror(romURL: dir.appendingPathComponent("Juegos\(i)/Juego.gb"))
+            try FileManager.default.createDirectory(at: mirror.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try foreign.write(to: mirror.url)
+            let older = Date(timeIntervalSinceNow: -3_600)
+            try FileManager.default.setAttributes([.modificationDate: older],
+                                                  ofItemAtPath: (foreignIsNewer ? store.saveURL : mirror.url).path)
+            let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
+                                                  validSizes: [8_192])
+            #expect(outcome.data == (foreignIsNewer ? foreign : mine))
+            let kept = store.keptCopies()
+            #expect(kept.count == 1)
+            #expect(try Data(contentsOf: try #require(kept.first).url) == (foreignIsNewer ? mine : foreign))
+        }
+        // Espejo reconocido como escritura propia: se resuelve como antes, sin copia apartada.
+        let owned = SaveStore(directory: saves, fingerprint: "fp-propio")
+        try owned.save(mine)
+        let mirror = SaveMirror(romURL: dir.appendingPathComponent("Propio/Juego.gb"))
+        try FileManager.default.createDirectory(at: mirror.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try foreign.write(to: mirror.url)
+        try owned.recordSuccessfulMirror(foreign, observedDate: mirror.modificationDate)
+        _ = try SaveOpening.prepare(store: owned, mirror: mirror, snapshot: mirror.snapshot(), validSizes: [8_192])
+        #expect(owned.keptCopies().isEmpty)
+    }
+
+    /// H12: el cableado de `AppState` (`LibraryIdentityWiring`): aviso al arrancar con preferencias
+    /// apartadas, aviso de un fallo de escritura y metadatos provisionales unidos a la huella.
+    @Test func wiringAdoptsMetadataAndReportsIssues() async throws {
+        try writePrefs("{dañado")
+        let prefs = LibraryPreferences(fileURL: prefsURL)
+        let library = dir.appendingPathComponent("Juegos", isDirectory: true)
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        let rom = LibraryScannerTests.rom(title: "CABLEADO")
+        try rom.write(to: library.appendingPathComponent("x.gb"))
+        let store = makeStore(dir.appendingPathComponent("cache.json"))
+        var alerts: [String] = []
+        var resolved: [Set<String>] = []
+        LibraryIdentityWiring.connect(library: store, prefs: prefs, alert: { title, _ in alerts.append(title) },
+                                      fingerprintsResolved: { resolved.append($0) })
+        #expect(alerts == ["Preferencias de la biblioteca dañadas"])
+
+        prefs.toggleFavorite(Self.entry("x.gb"))                             // provisional, sin huella
+        store.choose(folder: library)
+        await store.waitUntilIdle()
+        let fp = try #require(store.entries.first?.fingerprint)
+        #expect(fp == (try CoreBridge().loadROM(rom, unixTime: 0).fingerprint))
+        #expect(prefs.data.games[fp]?.favorite == true && prefs.data.pendingByPath.isEmpty)
+        #expect(resolved.contains { $0.contains(fp) })
+
+        // Un fallo de escritura posterior también llega como aviso.
+        let blocker = dir.appendingPathComponent("Bloqueo")
+        try Data("no soy carpeta".utf8).write(to: blocker)
+        let failing = LibraryPreferences(fileURL: blocker.appendingPathComponent("Library/preferences.json"))
+        LibraryIdentityWiring.connect(library: makeStore(dir.appendingPathComponent("cache2.json")), prefs: failing,
+                                      alert: { title, _ in alerts.append(title) }, fingerprintsResolved: { _ in })
+        failing.toggleFavorite(Self.entry("a.gb"))
+        failing.waitForPendingWrites()
+        #expect(alerts.last == "No se pudieron guardar las preferencias")
+    }
+
+    /// H7: con un juego abierto el cálculo de huellas se pausa; al cerrarlo se reanuda con lo pendiente.
+    @Test func hashingPausesWhileAGameIsOpenAndResumes() async throws {
+        let library = dir.appendingPathComponent("Juegos", isDirectory: true)
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        let rom = LibraryScannerTests.rom(title: "PAUSA")
+        try rom.write(to: library.appendingPathComponent("p.gb"))
+        let store = makeStore(dir.appendingPathComponent("cache.json"))
+        store.setHashingPaused(true)
+        store.choose(folder: library)
+        await store.waitUntilIdle()
+        #expect(store.entries.count == 1 && store.entries.first?.fingerprint == nil && !store.isHashing)
+        store.setHashingPaused(false)
+        await store.waitUntilIdle()
+        #expect(store.entries.first?.fingerprint == RomFingerprint.compute(data: rom, console: .gameBoy))
+        #expect(!store.isHashing)
     }
 
     @Test func learnedFingerprintFromTheCoreUpdatesTheEntry() async throws {

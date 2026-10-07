@@ -88,6 +88,17 @@ struct LibraryFoldersTests {
         #expect(LibraryScanner.maxEntries == 5_000)
     }
 
+    /// H11: el tope también cuenta lo recorrido, no solo los ROMs: un árbol enorme sin ROMs para.
+    @Test func visitedItemsCapStopsAHugeTreeWithoutROMs() throws {
+        for i in 0..<8 { try write(Data("x".utf8), "Basura/\(i).txt") }
+        try write(LibraryScannerTests.rom(title: "Z"), "z.gb")
+        let capped = LibraryScanner.scanResult(folder: dir, visitLimit: 5)
+        #expect(capped.limitReached && capped.entries.isEmpty)
+        let full = LibraryScanner.scanResult(folder: dir)
+        #expect(!full.limitReached && full.entries.map(\.id) == ["z.gb"])
+        #expect(LibraryScanner.maxVisitedItems == 50_000)
+    }
+
     @Test func symlinkedFoldersAreNotFollowed() throws {
         try write(LibraryScannerTests.rom(title: "X"), "A/x.gb")
         try FileManager.default.createSymbolicLink(at: dir.appendingPathComponent("Enlace"),

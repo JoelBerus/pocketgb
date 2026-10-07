@@ -261,6 +261,13 @@ enum SaveOpening {
         case .none:
             return Outcome(data: nil, target: makeTarget(usableMirror), warning: nil)
         case let .load(data, backupOther, installLocal, updateMirror, mirrorIgnored, quarantineLocal):
+            // Auditoría N1, H1 (regla 6): un espejo que PocketGB no escribió y que difiere de la
+            // local se resuelve por fecha; el perdedor, sea cual sea, va además a una copia apartada
+            // que no rota (el anillo de 5 backups lo desplazaría en 5 guardados).
+            if let local, let mirrorCandidate, !mirrorIsOwned, !mirrorIgnored, !quarantineLocal,
+               local.data != mirrorCandidate.data {
+                try store.keepMirrorLoser(data == mirrorCandidate.data ? local.data : mirrorCandidate.data)
+            }
             if let backupOther { try store.addBackup(backupOther) }
             if quarantineLocal { try store.quarantineCurrent() }
             if installLocal { try store.save(data) }

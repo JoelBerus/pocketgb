@@ -12,8 +12,15 @@ enum RomFingerprint {
     /// Bloque de lectura: memoria acotada aunque el ROM mida 32 MiB.
     static let chunkBytes = 1 << 20
 
+    /// Tipos de cartucho (0x147) que acepta `cart_features` en `core/src/cart.c`.
+    static let supportedCartTypes: Set<UInt8> = [0x00, 0x01, 0x02, 0x03, 0x0F, 0x10, 0x11, 0x12, 0x13,
+                                                 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E]
+    /// Códigos de RAM (0x149) válidos: `ram_sizes[6]` en `core/src/cart.c`.
+    static let ramCodeCount = 6
+
     /// Bytes que hashea el núcleo, o nil si lo rechazaría antes (mismas comprobaciones, en el
-    /// mismo orden, que `cart_load` y `gba_load_rom`).
+    /// mismo orden, que `cart_load` y `gba_load_rom`: tamaño, código de ROM, ROM truncado,
+    /// código de RAM y MBC soportado).
     static func hashedLength(console: Console, header: Data, fileSize: Int) -> Int? {
         let bytes = [UInt8](header.prefix(RomHeader.minimumBytes))
         switch console {
@@ -27,7 +34,9 @@ enum RomFingerprint {
             let code = Int(bytes[0x148])
             guard code <= 8 else { return nil }
             let size = (32 * 1024) << code
-            return size <= fileSize ? size : nil
+            guard size <= fileSize, Int(bytes[0x149]) < ramCodeCount,
+                  supportedCartTypes.contains(bytes[0x147]) else { return nil }
+            return size
         }
     }
 
@@ -46,7 +55,11 @@ enum RomFingerprint {
     /// coordinada forzaría la descarga.
     static func isLocallyAvailable(_ url: URL) -> Bool {
         let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .isRegularFileKey]
-        guard let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { return false }
+        // Valores frescos: la URL puede traer los del escaneo, y iOS pudo expulsar el archivo
+        // de iCloud entre medias (auditoría N1, H8).
+        var fresh = url
+        fresh.removeAllCachedResourceValues()
+        guard let values = try? fresh.resourceValues(forKeys: keys), values.isRegularFile == true else { return false }
         guard values.isUbiquitousItem == true else { return true }
         return values.ubiquitousItemDownloadingStatus != .notDownloaded
     }
@@ -87,13 +100,23 @@ enum RomFingerprint {
     }
 }
 
-/// Caché persistida (ruta, tamaño, fecha de modificación) → huella (N1a, plan §3.1), en
-/// `Application Support/Library/fingerprint-cache.json`. Es solo una caché: si se pierde o
-/// se daña, se vuelve a calcular; nunca guarda metadatos del usuario.
+/// Caché persistida (ruta, tamaño, fecha de modificación, fecha de cambio) → huella (N1a, plan
+/// §3.1), en `Application Support/Library/fingerprint-cache.json`. Es solo una caché: si se
+/// pierde o se daña, se vuelve a calcular; nunca guarda metadatos del usuario.
+///
+/// La fecha de cambio (ctime, `attributeModificationDateKey`) evita dar por buena la huella de
+/// otro ROM con el mismo tamaño y la misma fecha de modificación en la misma ruta (sets con
+/// fechas fijas, `cp -p`, `touch -r`): `utimes` puede fijar la de modificación, pero cualquier
+/// escritura o `utimes` pone la de cambio a «ahora» y nadie puede volver a fijarla. Se prefirió
+/// al inodo (`fileIdentifierKey`), que una sobrescritura en el sitio conserva y que un proveedor
+/// de archivos no garantiza estable. Coste: un cambio solo de metadatos (p. ej. iCloud al
+/// descargar) obliga a recalcular, nunca a usar una huella equivocada (auditoría N1, H3).
 struct FingerprintCacheData: Codable, Equatable, Sendable {
     struct Item: Codable, Equatable, Sendable {
         var size: Int
         var modified: Date?
+        /// ctime al calcular la huella; nil en las entradas de la versión 1 (se recalculan).
+        var changed: Date?
         var fingerprint: String
     }
 
@@ -105,7 +128,7 @@ struct FingerprintCacheData: Codable, Equatable, Sendable {
         case missing
     }
 
-    static let currentVersion = 1
+    static let currentVersion = 2
     var version = currentVersion
     /// Carpeta de la biblioteca a la que se refieren las rutas; otra carpeta vacía la caché.
     var root: String?
@@ -120,9 +143,10 @@ struct FingerprintCacheData: Codable, Equatable, Sendable {
         items = (try? c.decodeIfPresent([String: Item].self, forKey: .items)) ?? [:]
     }
 
-    func lookup(path: String, size: Int, modified: Date?) -> Lookup {
+    func lookup(path: String, size: Int, modified: Date?, changed: Date?) -> Lookup {
         guard let item = items[path] else { return .missing }
-        if item.size == size, let a = item.modified, let b = modified, abs(a.timeIntervalSince(b)) < 0.001 {
+        if item.size == size, let a = item.modified, let b = modified, abs(a.timeIntervalSince(b)) < 0.001,
+           let c = item.changed, let d = changed, abs(c.timeIntervalSince(d)) < 0.000_001 {
             return .verified(item.fingerprint)
         }
         return .stale(item.fingerprint)
@@ -157,6 +181,11 @@ enum LibraryIdentity {
         let console: Console
         let size: Int
         let modified: Date?
+        let changed: Date?
+
+        func cacheItem(_ fingerprint: String) -> FingerprintCacheData.Item {
+            .init(size: size, modified: modified, changed: changed, fingerprint: fingerprint)
+        }
     }
 
     struct Resolution: Sendable {
@@ -176,7 +205,8 @@ enum LibraryIdentity {
         var jobs: [Job] = []
         for i in result.indices {
             let entry = result[i]
-            let lookup = cache.lookup(path: entry.id, size: entry.sizeBytes, modified: entry.modificationDate)
+            let lookup = cache.lookup(path: entry.id, size: entry.sizeBytes, modified: entry.modificationDate,
+                                      changed: entry.attributeModificationDate)
             switch lookup {
             case .verified(let fp):
                 result[i].fingerprint = fp
@@ -189,7 +219,8 @@ enum LibraryIdentity {
             }
             if entry.isPlayable {
                 jobs.append(Job(path: entry.id, url: entry.url, console: entry.console,
-                                size: entry.sizeBytes, modified: entry.modificationDate))
+                                size: entry.sizeBytes, modified: entry.modificationDate,
+                                changed: entry.attributeModificationDate))
             }
         }
         markDuplicates(&result)

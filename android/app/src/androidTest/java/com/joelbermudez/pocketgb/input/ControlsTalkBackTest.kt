@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.joelbermudez.pocketgb.R
 import java.util.concurrent.CopyOnWriteArrayList
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import com.joelbermudez.pocketgb.settings.DpadStyle
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,6 +92,33 @@ class ControlsTalkBackTest {
             val bounds = android.graphics.Rect().also(info::getBoundsInParent)
             assertTrue("$id ancho ${bounds.width() / density} dp", bounds.width() / density >= 47.5f)
             assertTrue("$id alto ${bounds.height() / density} dp", bounds.height() / density >= 47.5f)
+        }
+    }
+
+    @Test
+    fun theDpadNodeFollowsSeparatedArrowsAtEverySeparationAndKeepsItsActions() {
+        for (separation in listOf(0.7f, 1f, 1.5f)) {
+            onMain {
+                view.renderOptions = view.renderOptions.copy(dpadStyle = DpadStyle.ARROWS)
+                view.controlLayout = ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(separation = separation)
+            }
+            settle()
+            val info = node(ControlId.DPAD)
+            assertEquals("Cruceta", info.contentDescription.toString())
+            val bounds = android.graphics.Rect().also(info::getBoundsInParent)
+            assertTrue("separación $separation: ancho ${bounds.width() / density} dp", bounds.width() / density >= 47.5f)
+            assertTrue("separación $separation: alto ${bounds.height() / density} dp", bounds.height() / density >= 47.5f)
+            // El nodo envuelve las cuatro flechas separadas.
+            val geometry = view.controlGeometry
+            DpadShape.arrowCircles(geometry.frames.getValue(ControlId.DPAD), geometry.dpadSeparation).values.forEach { c ->
+                assertTrue(c.centerX - c.radius >= bounds.left - 1f && c.centerX + c.radius <= bounds.right + 1f)
+                assertTrue(c.centerY - c.radius >= bounds.top - 1f && c.centerY + c.radius <= bounds.bottom + 1f)
+            }
+            // Siguen ofreciéndose las cuatro acciones de dirección y funcionan.
+            masks.clear()
+            assertTrue(onMain { provider.performAction(ControlId.DPAD.ordinal, R.id.a11y_action_up, null) })
+            assertTrue(masks.contains(GameBoyButton.UP.mask))
+            settle()
         }
     }
 

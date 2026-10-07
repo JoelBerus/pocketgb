@@ -1,10 +1,13 @@
 package com.joelbermudez.pocketgb.debug
 
 import android.content.Intent
+import com.joelbermudez.pocketgb.input.GameBoyButton
 import com.joelbermudez.pocketgb.settings.AppearanceState
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import com.joelbermudez.pocketgb.settings.DiagonalMode
 import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
+import com.joelbermudez.pocketgb.settings.StoredControlLayout
 import com.joelbermudez.pocketgb.settings.ThemeMode
 import com.joelbermudez.pocketgb.ui.a11y.AccessibilityOverrides
 import com.joelbermudez.pocketgb.ui.a11y.ContrastLevel
@@ -46,6 +49,12 @@ internal data class DebugIntent(
     val contrast: ContrastLevel? = null,
     /** A7 L2: reducir movimiento forzado; `null` lo lee del sistema. */
     val reduceMotion: Boolean? = null,
+    /** N2: diagonales de la cruceta (`normal`, `reduced`, `disabled`); por defecto las de fábrica (reducidas). */
+    val diagonals: DiagonalMode = DiagonalMode.REDUCED,
+    /** N2: separación de las flechas separadas 0,7..1,5 (en las dos orientaciones); `null` = 1,0. */
+    val separation: Float? = null,
+    /** N2: direcciones de la cruceta dibujadas como pulsadas (máscara de [GameBoyButton]); solo se dibujan, no mandan nada. */
+    val pressedDpad: Int = 0,
 ) {
     /** Señales de accesibilidad forzadas por los argumentos (fuente grande sale de [fontScale] en `LocalDensity`). */
     fun accessibilityOverrides(): AccessibilityOverrides = AccessibilityOverrides(
@@ -63,10 +72,24 @@ internal data class DebugIntent(
         colorForGameBoy = color,
         compatPalette = palette,
         showTouchControlsWithController = showTouch,
+        diagonalMode = diagonals,
+        portraitLayout = StoredControlLayout(separation = separation ?: 1f),
+        landscapeLayout = StoredControlLayout(separation = separation ?: 1f),
     ).sanitized()
 
     companion object {
         private fun flag(value: String?): Boolean = value == "1" || value == "true"
+
+        /** `up`, `down`, `left`, `right` o una diagonal (`upright`, `upleft`, `downright`, `downleft`). */
+        internal fun pressedMask(value: String?): Int {
+            val name = value?.lowercase() ?: return 0
+            var mask = 0
+            if ("up" in name) mask = mask or GameBoyButton.UP.mask
+            if ("down" in name) mask = mask or GameBoyButton.DOWN.mask
+            if ("left" in name) mask = mask or GameBoyButton.LEFT.mask
+            if ("right" in name) mask = mask or GameBoyButton.RIGHT.mask
+            return mask
+        }
 
         fun from(intent: Intent): DebugIntent? {
             val screen = intent.getStringExtra("screen") ?: return null
@@ -109,6 +132,13 @@ internal data class DebugIntent(
                     else -> null
                 },
                 reduceMotion = text("reduceMotion")?.let { flag(it) },
+                diagonals = when (text("diagonals")) {
+                    "normal" -> DiagonalMode.NORMAL
+                    "disabled" -> DiagonalMode.DISABLED
+                    else -> DiagonalMode.REDUCED
+                },
+                separation = text("separation")?.toFloatOrNull(),
+                pressedDpad = pressedMask(text("pressed")),
             )
         }
     }

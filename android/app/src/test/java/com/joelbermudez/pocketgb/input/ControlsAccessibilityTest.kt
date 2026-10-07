@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.input
 
+import com.joelbermudez.pocketgb.settings.DpadStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -72,6 +73,35 @@ class ControlsAccessibilityTest {
             val bounds = ControlsAccessibilityModel.nodeBounds(geometry, id)
             assertTrue("$id ancho ${bounds.width / density} dp", bounds.width / density >= 47.99f)
             assertTrue("$id alto ${bounds.height / density} dp", bounds.height / density >= 47.99f)
+        }
+    }
+
+    @Test
+    fun dpadNodeStaysAtLeast48DpAndInsideTheAreaWithSeparatedArrowsAtEverySeparation() {
+        val density = 2.625f
+        val area = ControlBounds(0f, 0f, 411f * density, 800f * density)
+        for (separation in listOf(0.7f, 1f, 1.5f)) {
+            for (scale in listOf(0.6f, 1f, 1.6f)) {
+                val geometry = ControlGeometry(
+                    layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT)
+                        .copy(scales = mapOf(ControlId.DPAD to scale), separation = separation),
+                    orientation = ControlsOrientation.PORTRAIT,
+                    area = area,
+                    density = density,
+                    sizeScale = 0.85f,
+                    dpadStyle = DpadStyle.ARROWS,
+                )
+                val bounds = ControlsAccessibilityModel.nodeBounds(geometry, ControlId.DPAD)
+                assertTrue("separación $separation escala $scale: ancho ${bounds.width / density} dp", bounds.width / density >= 47.99f)
+                assertTrue("separación $separation escala $scale: alto ${bounds.height / density} dp", bounds.height / density >= 47.99f)
+                assertTrue(bounds.left >= -0.01f && bounds.right <= area.right + 0.01f && bounds.top >= -0.01f && bounds.bottom <= area.bottom + 0.01f)
+                // El nodo envuelve todo el grupo de flechas.
+                val frame = geometry.frames.getValue(ControlId.DPAD)
+                DpadShape.arrowCircles(frame, geometry.dpadSeparation).values.forEach { circle ->
+                    assertTrue(circle.centerX - circle.radius >= bounds.left - 0.01f && circle.centerX + circle.radius <= bounds.right + 0.01f)
+                    assertTrue(circle.centerY - circle.radius >= bounds.top - 0.01f && circle.centerY + circle.radius <= bounds.bottom + 0.01f)
+                }
+            }
         }
     }
 

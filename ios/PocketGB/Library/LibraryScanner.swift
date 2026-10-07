@@ -14,6 +14,9 @@ enum LibraryScanner {
     static let maxFolderDepth = 5
     /// Tope de juegos por escaneo: una carpeta enorme no bloquea la app.
     static let maxEntries = 5_000
+    /// Tope de elementos recorridos (archivos y carpetas de cualquier tipo): un árbol enorme sin
+    /// ROMs tampoco bloquea el escaneo (auditoría N1, H11).
+    static let maxVisitedItems = 50_000
     /// Carpeta de la app en la raíz de la biblioteca (ND11).
     static let appFolderName = "PocketGB"
 
@@ -24,7 +27,7 @@ enum LibraryScanner {
 
     private static let keys: [URLResourceKey] = [
         .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey,
-        .contentModificationDateKey,
+        .contentModificationDateKey, .attributeModificationDateKey,
         .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
         .ubiquitousItemIsDownloadingKey,
     ]
@@ -40,9 +43,9 @@ enum LibraryScanner {
         scanResult(folder: folder, progress: progress).entries
     }
 
-    static func scanResult(folder: URL, limit: Int = maxEntries,
+    static func scanResult(folder: URL, limit: Int = maxEntries, visitLimit: Int = maxVisitedItems,
                            progress: (Int, Int) -> Void = { _, _ in }) -> ScanResult {
-        let found = listing(in: folder, limit: limit)
+        let found = listing(in: folder, limit: limit, visitLimit: visitLimit)
         var entries: [RomEntry] = []
         entries.reserveCapacity(found.candidates.count)
         for (i, candidate) in found.candidates.enumerated() {
@@ -65,6 +68,8 @@ enum LibraryScanner {
     struct Listing: Sendable {
         var candidates: [Candidate] = []
         var limitReached = false
+        /// Elementos recorridos (para el tope `maxVisitedItems`).
+        var visited = 0
     }
 
     /// Archivos candidatos: la carpeta y sus subcarpetas hasta `maxFolderDepth` niveles.
@@ -72,9 +77,9 @@ enum LibraryScanner {
         listing(in: folder).candidates
     }
 
-    static func listing(in folder: URL, limit: Int = maxEntries) -> Listing {
+    static func listing(in folder: URL, limit: Int = maxEntries, visitLimit: Int = maxVisitedItems) -> Listing {
         var listing = Listing()
-        walk(folder, folders: [], limit: limit, into: &listing)
+        walk(folder, folders: [], limit: limit, visitLimit: visitLimit, into: &listing)
         return listing
     }
 
@@ -85,7 +90,8 @@ enum LibraryScanner {
         return atRoot && name.compare(appFolderName, options: .caseInsensitive) == .orderedSame
     }
 
-    private static func walk(_ directory: URL, folders: [String], limit: Int, into listing: inout Listing) {
+    private static func walk(_ directory: URL, folders: [String], limit: Int, visitLimit: Int,
+                             into listing: inout Listing) {
         guard !listing.limitReached,
               let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)
         else { return }
@@ -93,11 +99,16 @@ enum LibraryScanner {
         let sorted = items.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .literal) == .orderedAscending }
         let prefix = folders.isEmpty ? "" : folders.joined(separator: "/") + "/"
         for item in sorted {
+            listing.visited += 1
+            guard listing.visited <= visitLimit else {
+                listing.limitReached = true
+                return
+            }
             let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             if values?.isDirectory == true && values?.isSymbolicLink != true {
                 let name = item.lastPathComponent
                 guard !isReservedFolder(name, atRoot: folders.isEmpty), folders.count < maxFolderDepth else { continue }
-                walk(item, folders: folders + [name], limit: limit, into: &listing)
+                walk(item, folders: folders + [name], limit: limit, visitLimit: visitLimit, into: &listing)
                 if listing.limitReached { return }
             } else if values?.isDirectory != true, let c = candidate(item, prefix: prefix) {
                 guard listing.candidates.count < limit else {
@@ -141,7 +152,8 @@ enum LibraryScanner {
             return RomEntry(id: relativePath, url: url, fileName: fileName, title: shown,
                             isColor: isColor ?? isColorByName, sizeBytes: size, headerChecksumOK: checksumOK,
                             cloud: cloud, problem: problem, mirrorSaveDate: mirrorDate,
-                            modificationDate: values?.contentModificationDate)
+                            modificationDate: values?.contentModificationDate,
+                            attributeModificationDate: values?.attributeModificationDate)
         }
 
         // Sin descargar: se muestra con el nombre del archivo y el estado de nube.
