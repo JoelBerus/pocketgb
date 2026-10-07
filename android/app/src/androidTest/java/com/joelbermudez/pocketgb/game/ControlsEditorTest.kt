@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.joelbermudez.pocketgb.emulator.SessionState
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlsOrientation
+import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsFile
 import com.joelbermudez.pocketgb.testing.waitUntil
 import org.junit.After
@@ -103,6 +104,55 @@ class ControlsEditorTest {
         assertTrue(waitUntil(5_000) { h.settings.state.value.isFactoryLayout(orientation) })
         assertTrue(h.settings.state.value.layout(orientation).positions.isEmpty())
         assertNull(h.settings.state.value.layout(orientation).scales[ControlId.A])
+    }
+
+    /** Toca (sin arrastrar) el centro de fábrica de la cruceta para elegirla. */
+    private fun selectDpad() {
+        val size = h.compose.onNodeWithTag("game-controls").fetchSemanticsNode().size
+        val dpad = com.joelbermudez.pocketgb.input.ControlLayout.defaults(orientation()).centers.getValue(ControlId.DPAD)
+        h.compose.onNodeWithTag("game-controls").performTouchInput {
+            down(Offset(size.width * dpad.x, size.height * dpad.y))
+            up()
+        }
+    }
+
+    @Test
+    fun separationOfTheSeparatedArrowsStepsByTenPercentWithinLimitsAndResetReturnsItToOne() {
+        h.settings.update { it.copy(dpadStyle = DpadStyle.ARROWS) }
+        openEditor()
+        val orientation = orientation()
+        selectDpad()
+        h.waitTag("editor-separation")
+        h.compose.onNode(hasText("Separación · 100 %")).assertIsDisplayed()
+
+        h.compose.onNodeWithTag("editor-farther").performClick()
+        h.compose.waitUntil(5_000) { h.compose.onAllNodes(hasText("Separación · 110 %")).fetchSemanticsNodes().isNotEmpty() }
+        assertEquals(1.1f, h.settings.state.value.layout(orientation).separation, 0.001f)
+        val other = if (orientation == ControlsOrientation.PORTRAIT) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
+        assertEquals("la otra orientación no cambia", 1f, h.settings.state.value.layout(other).separation, 0f)
+        // Persistido en disco por orientación.
+        assertTrue(waitUntil(5_000) { GameplaySettingsFile(h.settingsFile).load().layout(orientation).separation > 1.05f })
+
+        repeat(5) { h.compose.onNodeWithTag("editor-farther").performClick() }
+        h.compose.waitUntil(5_000) { h.compose.onAllNodes(hasText("Separación · 150 %")).fetchSemanticsNodes().isNotEmpty() }
+        h.compose.onNodeWithTag("editor-farther").assertIsNotEnabled()
+
+        repeat(9) { h.compose.onNodeWithTag("editor-closer").performClick() }
+        h.compose.waitUntil(5_000) { h.compose.onAllNodes(hasText("Separación · 70 %")).fetchSemanticsNodes().isNotEmpty() }
+        h.compose.onNodeWithTag("editor-closer").assertIsNotEnabled()
+        assertEquals(0.7f, h.settings.state.value.layout(orientation).separation, 0.001f)
+
+        h.compose.onNodeWithTag("editor-reset").performClick()
+        assertTrue(waitUntil(5_000) { h.settings.state.value.layout(orientation).separation == 1f })
+        assertTrue(h.settings.state.value.isFactoryLayout(orientation))
+    }
+
+    @Test
+    fun theSeparationControlsOnlyAppearForTheArrowsStyleAndTheDpad() {
+        openEditor() // cruz por defecto
+        selectDpad()
+        h.waitTag("editor-size")
+        h.compose.onNodeWithTag("editor-separation").assertDoesNotExist()
     }
 
     @Test

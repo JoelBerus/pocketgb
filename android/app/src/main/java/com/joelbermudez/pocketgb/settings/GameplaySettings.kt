@@ -26,6 +26,11 @@ const val MAX_CONTROL_SCALE = 1.6f
 const val MIN_SIZE_SCALE = 0.85f
 const val MAX_SIZE_SCALE = 1.15f
 
+/** Separación de las flechas separadas (N2, ND10): 1,0 = la distribución de fábrica; se guarda por orientación. */
+const val MIN_DPAD_SEPARATION = 0.7f
+const val MAX_DPAD_SEPARATION = 1.5f
+const val DPAD_SEPARATION_STEP = 0.1f
+
 private val FINGERPRINT = Regex("^[0-9a-f]{64}$")
 
 fun isValidFingerprint(value: String): Boolean = FINGERPRINT.matches(value)
@@ -35,6 +40,13 @@ enum class ControlsVisibility { ALWAYS, ON_TOUCH, HIDDEN }
 
 @Serializable
 enum class DpadStyle { CROSS, ARROWS }
+
+/**
+ * Cuánto cuentan las diagonales de la cruceta (N2). [NORMAL]: ocho sectores de 45° (las diagonales ocupan la mitad del
+ * ángulo). [REDUCED]: la diagonal solo vale a ±15° de los 45°. [DISABLED]: solo cuatro direcciones.
+ */
+@Serializable
+enum class DiagonalMode { NORMAL, REDUCED, DISABLED }
 
 /**
  * Mapeo del mando físico (A7): `bindings` va de `PadAction.name` a `KeyEvent.KEYCODE_*`. Lo que no esté en `bindings`
@@ -95,11 +107,15 @@ data class ControllerMappingData(val bindings: Map<String, Int> = emptyMap()) {
     }
 }
 
-/** Espejo serializable de `ControlLayout`: posiciones 0..1 relativas a la zona de controles y escalas 0,6..1,6. */
+/**
+ * Espejo serializable de `ControlLayout`: posiciones 0..1 relativas a la zona de controles, escalas 0,6..1,6 y la
+ * separación de las flechas separadas 0,7..1,5 (N2; los archivos anteriores no la traen y valen 1,0).
+ */
 @Serializable
 data class StoredControlLayout(
     val positions: Map<ControlId, NormalizedPoint> = emptyMap(),
     val scales: Map<ControlId, Float> = emptyMap(),
+    val separation: Float = 1f,
 )
 
 /** Ajustes de un juego; `null` = usa el ajuste global. */
@@ -139,6 +155,8 @@ data class GameplaySettingsData(
     val landscapeLayout: StoredControlLayout = StoredControlLayout(),
     val integerScaleLandscape: Boolean = true,
     val dpadStyle: DpadStyle = DpadStyle.CROSS,
+    /** Diagonales de la cruceta (N2). Por defecto «Reducidas»: la diagonal solo vale cerca de los 45°. */
+    val diagonalMode: DiagonalMode = DiagonalMode.REDUCED,
     /** 0..1, ganancia lineal. */
     val volume: Float = 1f,
     val colorForGameBoy: Boolean = false,
@@ -189,6 +207,15 @@ data class GameplaySettingsData(
         return withLayout(orientation, current.copy(scales = current.scales + (id to next)))
     }
 
+    /** Cambia la separación de las flechas separadas en pasos de 0,1 (recorte 0,7..1,5), solo en esa orientación. */
+    fun adjustSeparation(orientation: ControlsOrientation, delta: Float): GameplaySettingsData {
+        val current = layout(orientation)
+        val next = (((current.separation.finiteOr(1f) + delta) * 10f).roundToInt() / 10f)
+            .coerceIn(MIN_DPAD_SEPARATION, MAX_DPAD_SEPARATION)
+        return withLayout(orientation, current.copy(separation = next))
+    }
+
+    /** Devuelve la disposición de esa orientación a la de fábrica: posiciones, tamaños y separación (1,0). */
     fun resetLayout(orientation: ControlsOrientation): GameplaySettingsData =
         withLayout(orientation, StoredControlLayout())
 
@@ -200,7 +227,8 @@ data class GameplaySettingsData(
             val factory = defaults.centers[id]
             factory != null && abs(factory.x - point.x) < EPSILON && abs(factory.y - point.y) < EPSILON
         }
-        return positionsMatch && stored.scales.all { (_, scale) -> abs(scale - 1f) < EPSILON }
+        return positionsMatch && stored.scales.all { (_, scale) -> abs(scale - 1f) < EPSILON } &&
+            abs(stored.separation - 1f) < EPSILON
     }
 
     /** Ajustes de un juego; al quedar todo en «Global» se borra la entrada. */
@@ -245,4 +273,5 @@ private fun GameOverrides.sanitized() =
 private fun StoredControlLayout.sanitized() = StoredControlLayout(
     positions = positions.filterValues { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f },
     scales = scales.filterValues { it.isFinite() }.mapValues { it.value.coerceIn(MIN_CONTROL_SCALE, MAX_CONTROL_SCALE) },
+    separation = separation.finiteOr(1f).coerceIn(MIN_DPAD_SEPARATION, MAX_DPAD_SEPARATION),
 )
