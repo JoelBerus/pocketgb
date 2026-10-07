@@ -189,8 +189,6 @@ private fun N5Covers(preference: CoverPreference = CoverPreference.IMAGES, conte
     CompositionLocalProvider(LocalCoverRepository provides repository, content = content)
 }
 
-private val n5OwnCovers: Set<String> = listOf(N5Data.island, N5Data.blocks, N5Data.turbo).map(N5Data::fingerprint).toSet()
-
 private val n5Actions = GameActions(
     onOpenDetails = {},
     onToggleFavorite = {},
@@ -225,7 +223,6 @@ private fun N5Library(layout: LibraryLayout = LibraryLayout.GRID, filter: Librar
                 onRescan = {},
                 actions = n5Actions,
                 // Como en N8: las huellas con portada propia se dan ya hechas (sin la carga asíncrona del carril).
-                artworkFingerprints = n5OwnCovers,
                 onOpenCategory = {},
             )
         }
@@ -360,7 +357,6 @@ internal val n5CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
                     onChooseFolder = {},
                     onRescan = {},
                     actions = n5Actions,
-                    artworkFingerprints = n5OwnCovers,
                     onOpenCategory = {},
                 )
             }

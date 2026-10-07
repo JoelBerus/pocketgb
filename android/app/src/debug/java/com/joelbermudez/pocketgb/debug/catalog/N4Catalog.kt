@@ -190,7 +190,6 @@ private fun N4Home(
                     onChooseFolder = {},
                     onRescan = {},
                     actions = n4Actions,
-                    artworkFingerprints = N4Data.entries.map(N4Data::fingerprint).toSet(),
                     onOpenCategory = { category = it },
                     tag = tag,
                     onTagChange = { tag = it },

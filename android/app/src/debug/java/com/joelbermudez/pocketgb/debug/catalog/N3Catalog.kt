@@ -55,10 +55,8 @@ private object N3Data {
 
     fun fingerprintOf(entry: RomEntry): String? = byId[entry.id]
 
-    private val covered = listOf(0, 1, 2, 3, 4)
-    val coveredFingerprints: Set<String> = covered.map(::fingerprint).toSet()
 
-    /** «COLOR DEMO» (3) se jugó y tiene portada, pero no se puede continuar. */
+    /** «COLOR DEMO» (3) se jugó, pero no se puede continuar. */
     val resumableFingerprints: Set<String> = listOf(0, 1, 2, 4).map(::fingerprint).toSet()
 
     fun prefs(layout: LibraryLayout = LibraryLayout.GRID, now: Long = System.currentTimeMillis()): LibraryPreferencesData {
@@ -178,7 +176,6 @@ private fun N3Library(
                 onChooseFolder = {},
                 onRescan = {},
                 actions = n3Actions,
-                artworkFingerprints = N3Data.coveredFingerprints,
                 onOpenCategory = { category = it },
             )
         }

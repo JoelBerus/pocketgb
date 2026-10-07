@@ -93,7 +93,6 @@ class TouchTargetTest {
                 actions = GameActions(onOpenDetails = {}, onToggleFavorite = {}, onHide = {}, onPlay = {}),
                 newGamesSummary = 0,
                 onNewGamesSummaryShown = {},
-                artworkFingerprints = emptySet(),
             )
         }
     }

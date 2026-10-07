@@ -174,7 +174,6 @@ private fun N8Library(initialFilter: LibraryFilter = LibraryFilter.ALL, preset: 
                 onChooseFolder = {},
                 onRescan = {},
                 actions = n8Actions,
-                artworkFingerprints = N8Data.entries.map(N8Data::fingerprint).toSet(),
                 onOpenCategory = {},
             )
         }

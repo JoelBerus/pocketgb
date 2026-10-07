@@ -68,17 +68,6 @@ private fun coverVersion(repository: CoverRepository): Any {
     return listOf(captures, pinned, imported, own, settings)
 }
 
-/** Huellas con portada propia (captura o imagen importada): carril «Continuar jugando» (K10). */
-@Composable
-fun rememberArtworkFingerprints(): Set<String> {
-    val repository = rememberCoverRepository()
-    val version = coverVersion(repository)
-    val set by produceState(emptySet<String>(), repository, version) {
-        value = withContext(Dispatchers.IO) { repository.fingerprintsWithCover() }
-    }
-    return set
-}
-
 /** Portada que se ve de [entry] (N5): la primera fuente que se lea bien, o la generada. */
 @Composable
 fun rememberCover(entry: RomEntry, fingerprint: String?): ShownCover {

@@ -122,7 +122,7 @@ Tomadas por el desarrollador durante la noche del 2026-10-06 para poder avanzar.
 | K4–K5 | Gameplay siempre oscuro y a pantalla completa (barras transitorias, recorte `SHORT_EDGES`, exclusión de gestos). |
 | K6–K7 | Ajustes por juego indexados por huella SHA-256, en `gameplay-settings.json` atómico. |
 | K8 | Cambiar Color/Paleta con el juego abierto se aplica en la próxima apertura (paleta en caliente solo si ya está en modo compatibilidad CGB). |
-| K9–K10 | Portada = último fotograma al cerrar la sesión; carril «Continuar jugando» de hasta 5 juegos solo con portada. |
+| K9–K10 | Portada = último fotograma al cerrar la sesión; carril «Continuar jugando» de hasta 5 juegos (K10 «solo con portada» **sustituida** por Joel el 2026-10-07, ND17: basta con ser reanudable; sin portada se ve la generada). |
 | K11–K13 | Portada generada determinista; controles con opacidad {30,50,70,100} %, escala global y por control; HUD con Pausa y avance rápido cíclico. |
 | K14–K16 | Confirmaciones de estados, aviso de cabecera dañada y almacenamiento con borrado solo de portadas. |
 | K17–K20 | Acerca de con licencias, ajustes de biblioteca duplicados en Ajustes, «Nuevo» por `knownIds` y fecha informativa del `.sav` espejo. |
