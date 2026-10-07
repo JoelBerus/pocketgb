@@ -12,7 +12,6 @@
     <string name="n6_moments_suggested">Momento %1$d</string>
     <string name="n6_moments_empty">Aún no hay momentos. Crea uno desde la pausa del juego: guarda el instante exacto y la partida de ese instante.</string>
     <string name="n6_moments_all">Todos</string>
-    <string name="n6_moments_filter">Filtrar por etiqueta</string>
     <string name="n6_moments_no_collection">Sin colección</string>
     <string name="n6_moment_load">Cargar</string>
     <string name="n6_moment_edit">Editar</string>
@@ -61,8 +60,6 @@
     <string name="n6_no_sram">Este momento no guardó la partida.</string>
     <string name="n6_wrong_size">La partida de este momento no tiene un tamaño válido para este juego.</string>
     <string name="n6_details_moments">Momentos</string>
-    <string name="n6_details_moments_count">%1$d momentos</string>
-    <string name="n6_guide_title">Cómo funcionan los momentos</string>
     <string name="n6_guide_body">Un momento guarda el instante exacto del juego y la partida de ese instante. Cargarlo cambia la partida; antes se guarda tu posición en «Antes de cargar». Organízalos por colección («Principal», «Experimentos»…) y etiquetas.</string>
     <string name="n6_progress_title">Progreso</string>
     <string name="n6_progress_time">Tiempo de juego</string>
@@ -82,7 +79,6 @@
     <string name="n6_progress_add">Añadir hito</string>
     <string name="n6_progress_add_hint">Nuevo hito</string>
     <string name="n6_progress_remove">Quitar el hito %1$s</string>
-    <string name="n6_progress_edit">Editar progreso</string>
     <string name="n6_progress_center">Hitos, porcentaje y lector de Pokémon</string>
     <string name="n6_reader_title">Leído de la partida</string>
     <string name="n6_reader_player">Jugador</string>
@@ -95,7 +91,6 @@
     <string name="n6_reader_suggest">Marcar %1$d medallas</string>
     <string name="n6_hours_minutes">%1$d h %2$d min</string>
     <string name="n6_minutes">%1$d min</string>
-    <string name="n6_moments_count_a11y">Momentos de %1$s</string>
     <string name="n6_close">Cerrar</string>
     <string name="n6_config_model">modelo</string>
     <string name="n6_config_palette">paleta</string>
