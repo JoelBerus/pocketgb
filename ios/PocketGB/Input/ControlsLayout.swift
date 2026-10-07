@@ -22,23 +22,35 @@ struct ControlsLayout: Codable, Equatable, Sendable {
     var centers: [ControlID: CGPoint]
     /// Tamaño de cada control respecto al normal (1 = 100 %), ajustado en el editor.
     var scales: [ControlID: CGFloat] = [:]
+    /// Flechas separadas (N2, ND10): distancia de cada flecha al centro respecto a la normal
+    /// (1 = 100 %). Solo cuenta con el estilo «Flechas separadas»; la cruz la ignora.
+    var arrowSpacing: CGFloat = 1
 
     static let scaleRange: ClosedRange<CGFloat> = 0.6...1.6
+    static let arrowSpacingRange: ClosedRange<CGFloat> = 0.7...1.5
 
-    init(centers: [ControlID: CGPoint], scales: [ControlID: CGFloat] = [:]) {
+    init(centers: [ControlID: CGPoint], scales: [ControlID: CGFloat] = [:], arrowSpacing: CGFloat = 1) {
         self.centers = centers
         self.scales = scales
+        self.arrowSpacing = arrowSpacing
     }
 
-    // `scales` es opcional: un layout guardado antes se sigue leyendo.
+    // `scales` y `arrowSpacing` son opcionales: un layout guardado antes se sigue leyendo.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         centers = try c.decode([ControlID: CGPoint].self, forKey: .centers)
         scales = (try? c.decodeIfPresent([ControlID: CGFloat].self, forKey: .scales)) ?? [:]
+        arrowSpacing = (try? c.decodeIfPresent(CGFloat.self, forKey: .arrowSpacing)) ?? 1
     }
 
     func scale(_ id: ControlID) -> CGFloat {
         min(max(scales[id] ?? 1, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
+    }
+
+    /// Separación de las flechas, siempre dentro de 0,7…1,5 (un valor guardado fuera se recorta).
+    var spacing: CGFloat {
+        guard arrowSpacing.isFinite else { return 1 }
+        return min(max(arrowSpacing, Self.arrowSpacingRange.lowerBound), Self.arrowSpacingRange.upperBound)
     }
 
     /// Disposición por defecto. Game Boy: imagen 10:9. Game Boy Advance (`shoulders`): imagen 3:2,
@@ -113,16 +125,21 @@ enum ControlHit: Hashable, Sendable {
 struct ControlsGeometry: Equatable, Sendable {
     let frames: [ControlID: CGRect]
     let abFrame: CGRect
+    /// Separación de las flechas si la cruceta usa el estilo «Flechas separadas» (nil: la cruz).
+    let dpadArrowSpacing: CGFloat?
 
     /// Resuelve un layout dentro de `area` (bounds menos safe area). Cada control se clama
     /// para quedar entero dentro del área: nunca bajo la Dynamic Island ni el Home Indicator.
-    /// `shoulders`: dibuja y atiende L y R (solo Game Boy Advance).
+    /// `shoulders`: dibuja y atiende L y R (solo Game Boy Advance). Con `dpadStyle == .separated`
+    /// el marco de la cruceta crece o encoge con la separación de las flechas, y con él su zona táctil.
     init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics,
-         shoulders: Bool = false) {
+         shoulders: Bool = false, dpadStyle: DpadStyle = .cross) {
         var frames: [ControlID: CGRect] = [:]
+        dpadArrowSpacing = dpadStyle == .separated ? layout.spacing : nil
         for id in ControlID.allCases where shoulders || !id.isShoulder {
             let base = metrics.size(id)
-            let k = layout.scale(id)
+            var k = layout.scale(id)
+            if id == .dpad && dpadStyle == .separated { k *= DpadArrows.extentFactor(spacing: layout.spacing) }
             let size = CGSize(width: base.width * k, height: base.height * k)
             let rel = layout.center(id, orientation: orientation, shoulders: shoulders)
             let center = Self.clamp(CGPoint(x: area.minX + area.width * rel.x, y: area.minY + area.height * rel.y),
@@ -178,33 +195,217 @@ struct ControlsGeometry: Equatable, Sendable {
         hypot(p.x - r.midX, p.y - r.midY) <= r.width / 2
     }
 
-    /// D-pad: 8 sectores de 45°, zona muerta del 25 % del radio, nunca direcciones opuestas.
-    /// Funciona fuera del radio (el dedo queda capturado hasta que se levanta).
-    func dpadMask(at p: CGPoint) -> UInt8 {
+    /// Cruceta: dirección del punto `p` según el modo de diagonales y la dirección que ya
+    /// tenía ese dedo (histéresis). Funciona fuera del radio (el dedo queda capturado).
+    /// Con flechas separadas (N2-H2), todo el disco de cada flecha pulsa su dirección (también
+    /// sus bordes interior y laterales, sin diagonal) y la zona muerta no pasa del borde
+    /// interior de las flechas; entre flechas y fuera de ellas decide el ángulo.
+    func dpadMask(at p: CGPoint, diagonals: DpadDiagonals, previous: UInt8 = 0) -> UInt8 {
         guard let r = frames[.dpad] else { return 0 }
-        return Self.dpadMask(dx: p.x - r.midX, dy: p.y - r.midY, radius: r.width / 2)
+        var maxDeadZone = CGFloat.infinity
+        if let spacing = dpadArrowSpacing {
+            let arrows = DpadArrows.rects(in: r, spacing: spacing)
+            for (disc, direction) in zip(arrows, DpadDirection.arms) {
+                // El dedo que ya pulsa esta flecha la mantiene hasta salir un margen más allá.
+                let hold = previous == direction ? DpadTuning.arrowHoldMargin : 0
+                if hypot(p.x - disc.midX, p.y - disc.midY) <= disc.width / 2 + hold { return direction }
+            }
+            maxDeadZone = DpadArrows.innerEdge(in: r, spacing: spacing) - DpadTuning.arrowInnerMargin
+        }
+        return Self.dpadMask(dx: p.x - r.midX, dy: p.y - r.midY, radius: r.width / 2,
+                             diagonals: diagonals, previous: previous, maxDeadZone: maxDeadZone)
     }
 
-    static func dpadMask(dx: CGFloat, dy: CGFloat, radius: CGFloat) -> UInt8 {
-        guard hypot(dx, dy) >= radius * 0.25 else { return 0 }
-        let angle = atan2(-dy, dx)   // 0 = derecha, sentido antihorario (y de pantalla hacia abajo)
-        let turn: CGFloat = 2 * .pi
-        let shifted = (angle + turn + .pi / 8).truncatingRemainder(dividingBy: turn)
-        let sector = Int(shifted / (.pi / 4)) % 8
-        let right = UInt8(GB_BTN_RIGHT), up = UInt8(GB_BTN_UP), left = UInt8(GB_BTN_LEFT), down = UInt8(GB_BTN_DOWN)
-        return [right, right | up, up, up | left, left, left | down, down, down | right][sector]
+    /// Cruceta (N2): zona muerta del 30 % del radio (como mucho `maxDeadZone` pt); diagonal solo
+    /// a ±`diagonals.halfAngle` de 45°, 135°…; nunca direcciones opuestas. Con `previous`
+    /// distinto de cero hay histéresis: se suelta por debajo del 24 % del radio y la dirección
+    /// actual se mantiene hasta que el dedo pasa `hysteresisDegrees` más allá del borde de su
+    /// sector, así un temblor del dedo en la frontera no hace parpadear entre direcciones.
+    /// `radius == 0`: sin zona muerta (mando).
+    static func dpadMask(dx: CGFloat, dy: CGFloat, radius: CGFloat, diagonals: DpadDiagonals,
+                         previous: UInt8 = 0, maxDeadZone: CGFloat = .infinity) -> UInt8 {
+        let distance = hypot(dx, dy)
+        let fraction = previous == 0 ? DpadTuning.deadZone : DpadTuning.releaseZone
+        let limit = previous == 0 ? maxDeadZone : maxDeadZone * DpadTuning.releaseZone / DpadTuning.deadZone
+        guard distance > 0, distance >= min(radius * fraction, max(limit, 0)) else { return 0 }
+        var angle = atan2(-dy, dx) * 180 / .pi   // 0 = derecha, antihorario (y de pantalla hacia abajo)
+        if angle < 0 { angle += 360 }
+        if previous != 0, let center = DpadDirection.angle(of: previous) {
+            let half = DpadDirection.isDiagonal(previous) ? diagonals.halfAngle : 45 - diagonals.halfAngle
+            if DpadDirection.separation(angle, center) <= half + DpadTuning.hysteresisDegrees { return previous }
+        }
+        return DpadDirection.raw(angle: angle, diagonals: diagonals)
+    }
+}
+
+/// Ajustes finos de la cruceta táctil (N2, docs/hitos/N-README.md §4).
+enum DpadTuning {
+    /// Fracción del radio por debajo de la cual un dedo nuevo no pulsa nada.
+    static let deadZone: CGFloat = 0.30
+    /// Un dedo que ya pulsa una dirección se suelta solo por debajo de esta fracción.
+    static let releaseZone: CGFloat = 0.24
+    /// Grados que el dedo debe pasar del borde de su sector para cambiar de dirección.
+    static let hysteresisDegrees: CGFloat = 8
+    /// Flechas separadas: la zona muerta acaba este margen (pt) antes del borde interior.
+    static let arrowInnerMargin: CGFloat = 2
+    /// Flechas separadas: el dedo mantiene su flecha hasta salir este margen (pt) del disco.
+    static let arrowHoldMargin: CGFloat = 4
+}
+
+/// Cuánto ángulo ocupan las diagonales de la cruceta táctil (Ajustes › Controles).
+enum DpadDiagonals: String, Codable, CaseIterable, Sendable {
+    /// Ocho sectores iguales de 45°.
+    case normal
+    /// Diagonal solo a ±15° de 45° (por defecto): las direcciones rectas ocupan 60°.
+    case reduced
+    /// Solo arriba, abajo, izquierda y derecha.
+    case off
+
+    var title: String {
+        switch self {
+        case .normal: "Normales"
+        case .reduced: "Reducidas"
+        case .off: "Desactivadas"
+        }
+    }
+
+    /// Mitad del sector de cada diagonal, en grados.
+    var halfAngle: CGFloat {
+        switch self {
+        case .normal: 22.5
+        case .reduced: 15
+        case .off: 0
+        }
+    }
+}
+
+/// Direcciones de la cruceta como máscaras del núcleo y su ángulo (0° = derecha, antihorario).
+enum DpadDirection {
+    static let right = UInt8(GB_BTN_RIGHT), up = UInt8(GB_BTN_UP)
+    static let left = UInt8(GB_BTN_LEFT), down = UInt8(GB_BTN_DOWN)
+    /// Orden de brazos y flechas en el dibujo (arriba, derecha, abajo, izquierda).
+    static let arms: [UInt8] = [up, right, down, left]
+    /// Las ocho direcciones en orden antihorario desde la derecha (cada 45°).
+    static let ordered: [UInt8] = [right, right | up, up, up | left, left, left | down, down, down | right]
+
+    static func angle(of mask: UInt8) -> CGFloat? {
+        ordered.firstIndex(of: mask).map { CGFloat($0) * 45 }
+    }
+
+    static func isDiagonal(_ mask: UInt8) -> Bool { mask.nonzeroBitCount == 2 }
+
+    /// Quita las direcciones opuestas (arriba+abajo, izquierda+derecha) de una máscara de botones:
+    /// dos dedos en la cruceta, o dedo y mando a la vez, nunca llegan así al núcleo (N2-H3).
+    static func withoutOpposites(_ mask: UInt16) -> UInt16 {
+        let vertical = UInt16(up | down), horizontal = UInt16(left | right)
+        var mask = mask
+        if mask & vertical == vertical { mask &= ~vertical }
+        if mask & horizontal == horizontal { mask &= ~horizontal }
+        return mask
+    }
+
+    /// Distancia angular entre dos ángulos en grados (0…180).
+    static func separation(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+        let d = abs(a - b).truncatingRemainder(dividingBy: 360)
+        return min(d, 360 - d)
+    }
+
+    /// Dirección sin histéresis: diagonal dentro de ±`halfAngle` de su eje; si no, la recta más cercana.
+    static func raw(angle: CGFloat, diagonals: DpadDiagonals) -> UInt8 {
+        for i in stride(from: 1, to: 8, by: 2) where separation(angle, CGFloat(i) * 45) < diagonals.halfAngle {
+            return ordered[i]
+        }
+        let quadrant = Int(((angle + 45).truncatingRemainder(dividingBy: 360)) / 90) % 4
+        return [right, up, left, down][quadrant]
+    }
+}
+
+/// Háptica de la cruceta (N2, regla común con Android): vibra cuando se activa una dirección
+/// que no estaba activa. ↑ → ↑→ vibra (se activa →); ↑→ → ↑ no; ↑ → nada → ↑ sí.
+/// Temblar dentro de la misma dirección no vibra (la histéresis evita los parpadeos).
+struct DpadHapticGate: Sendable {
+    private(set) var last: UInt8 = 0
+
+    mutating func shouldFire(mask: UInt8) -> Bool {
+        defer { last = mask }
+        return mask & ~last != 0
+    }
+}
+
+/// Geometría de las flechas separadas (N2, ND10; fórmula común con Android). Círculos de
+/// diámetro fijo 0,36 × el ancho normal W de la cruceta. Su centro está a 0,32 W × k del centro
+/// para k ≥ 1 y, por debajo, se comprime en línea recta hasta 0,265 W con k = 0,7: así nunca
+/// se solapan ni cambian de tamaño. Con k = 1 coincide con la geometría de antes de N2.
+enum DpadArrows {
+    static let diameterRatio: CGFloat = 0.36
+    static let offsetRatio: CGFloat = 0.32
+    /// Distancia al centro con la separación mínima (0,7).
+    static let minOffsetRatio: CGFloat = 0.265
+
+    /// Distancia del centro de cada flecha al de la cruceta, en anchos normales W.
+    static func offsetRatio(spacing: CGFloat) -> CGFloat {
+        let k = max(spacing, ControlsLayout.arrowSpacingRange.lowerBound)
+        if k >= 1 { return offsetRatio * k }
+        let low = ControlsLayout.arrowSpacingRange.lowerBound
+        return minOffsetRatio + (k - low) / (1 - low) * (offsetRatio - minOffsetRatio)
+    }
+
+    /// Lado del marco de la cruceta respecto al ancho normal (1 con separación 1).
+    static func extentFactor(spacing: CGFloat) -> CGFloat {
+        2 * offsetRatio(spacing: spacing) + diameterRatio
+    }
+
+    /// Distancia del centro de la cruceta al borde interior de las flechas.
+    static func innerEdge(in rect: CGRect, spacing: CGFloat) -> CGFloat {
+        let base = rect.width / extentFactor(spacing: spacing)
+        return base * (offsetRatio(spacing: spacing) - diameterRatio / 2)
+    }
+
+    /// Círculos de arriba, derecha, abajo e izquierda dentro del marco `rect` de la cruceta.
+    static func rects(in rect: CGRect, spacing: CGFloat) -> [CGRect] {
+        let base = rect.width / extentFactor(spacing: spacing)
+        let d = base * diameterRatio
+        let offset = base * offsetRatio(spacing: spacing)
+        return [CGPoint(x: 0, y: -offset), CGPoint(x: offset, y: 0), CGPoint(x: 0, y: offset), CGPoint(x: -offset, y: 0)]
+            .map { CGRect(x: rect.midX + $0.x - d / 2, y: rect.midY + $0.y - d / 2, width: d, height: d) }
+    }
+}
+
+/// Geometría de la cruz estilo Game Boy dentro del marco de la cruceta.
+enum DpadCross {
+    static let lengthRatio: CGFloat = 0.76
+    static let thicknessRatio: CGFloat = 0.29
+
+    /// Brazos de arriba, derecha, abajo e izquierda: desde el cuadrado central hasta la punta.
+    static func arms(in rect: CGRect) -> [CGRect] {
+        let length = rect.width * lengthRatio, t = rect.width * thicknessRatio
+        let reach = (length - t) / 2
+        return [
+            CGRect(x: rect.midX - t / 2, y: rect.midY - length / 2, width: t, height: reach),
+            CGRect(x: rect.midX + t / 2, y: rect.midY - t / 2, width: reach, height: t),
+            CGRect(x: rect.midX - t / 2, y: rect.midY + t / 2, width: t, height: reach),
+            CGRect(x: rect.midX - length / 2, y: rect.midY - t / 2, width: reach, height: t),
+        ]
+    }
+
+    /// Centro de cada brazo (para las flechas y para simular un toque en las capturas).
+    static func armCenters(in rect: CGRect) -> [CGPoint] {
+        arms(in: rect).map { CGPoint(x: $0.midX, y: $0.midY) }
     }
 }
 
 /// Motor de input táctil: tabla dedo → control y máscara resultante (SPEC §10.4).
 /// Los dedos se identifican con un entero (en la vista, `ObjectIdentifier` del `UITouch`).
+/// Cada dedo de la cruceta guarda su dirección actual: es la base de la histéresis.
 struct ControlsInputEngine: Sendable {
     var geometry: ControlsGeometry?
+    var diagonals: DpadDiagonals = .reduced
     private(set) var touches: [Int: ControlHit] = [:]
-    private var points: [Int: CGPoint] = [:]
+    private var dpadDirections: [Int: UInt8] = [:]
 
-    init(geometry: ControlsGeometry? = nil) {
+    init(geometry: ControlsGeometry? = nil, diagonals: DpadDiagonals = .reduced) {
         self.geometry = geometry
+        self.diagonals = diagonals
     }
 
     /// Devuelve true si el toque abrió el menú (no se registra como botón).
@@ -212,39 +413,47 @@ struct ControlsInputEngine: Sendable {
         guard let hit = geometry?.hit(at: p) else { return false }
         if hit == .control(.menu) { return true }
         touches[id] = hit
-        points[id] = p
+        dpadDirections[id] = hit == .control(.dpad) ? geometry?.dpadMask(at: p, diagonals: diagonals) ?? 0 : nil
         return false
     }
 
     /// El D-pad captura su dedo; A, B, A+B, Start y Select se pueden deslizar (B→A).
     mutating func moved(_ id: Int, to p: CGPoint) {
         guard let current = touches[id] else { return }
-        points[id] = p
-        guard current != .control(.dpad) else { return }
+        if current == .control(.dpad) {
+            dpadDirections[id] = geometry?.dpadMask(at: p, diagonals: diagonals, previous: dpadDirections[id] ?? 0) ?? 0
+            return
+        }
         if let hit = geometry?.hit(at: p), hit != .control(.menu), hit != .control(.dpad) {
             touches[id] = hit
         } else {
             touches[id] = nil
-            points[id] = nil
         }
     }
 
     mutating func ended(_ id: Int) {
         touches[id] = nil
-        points[id] = nil
+        dpadDirections[id] = nil
     }
 
     /// Rotación, edición o controles ocultos: suelta todo (máscara cero).
     mutating func cancelAll() {
         touches.removeAll()
-        points.removeAll()
+        dpadDirections.removeAll()
     }
 
+    /// Direcciones de la cruceta pulsadas ahora: OR de sus dedos sin direcciones opuestas.
+    var dpadMask: UInt8 {
+        UInt8(DpadDirection.withoutOpposites(UInt16(dpadDirections.values.reduce(0, |))))
+    }
+
+    /// Hay al menos un dedo que empezó en la cruceta (aunque esté en la zona muerta).
+    var dpadFingerDown: Bool { !dpadDirections.isEmpty }
+
     var mask: UInt16 {
-        var mask: UInt16 = 0
-        for (id, hit) in touches {
+        var mask = UInt16(dpadMask)
+        for hit in touches.values {
             switch hit {
-            case .control(.dpad): mask |= UInt16(points[id].flatMap { geometry?.dpadMask(at: $0) } ?? 0)
             case .control(.a): mask |= UInt16(GB_BTN_A)
             case .control(.b): mask |= UInt16(GB_BTN_B)
             case .ab: mask |= UInt16(GB_BTN_A | GB_BTN_B)
@@ -252,23 +461,24 @@ struct ControlsInputEngine: Sendable {
             case .control(.select): mask |= UInt16(GB_BTN_SELECT)
             case .control(.l): mask |= UInt16(GBA_BTN_L)
             case .control(.r): mask |= UInt16(GBA_BTN_R)
-            case .control(.menu): break
+            case .control(.dpad), .control(.menu): break
             }
         }
         return mask
     }
 
-    /// Controles que se ven pulsados (A+B enciende los dos).
+    /// Controles que se ven pulsados (A+B enciende los dos). La cruceta entra si alguna
+    /// dirección está pulsada; qué brazo se resalta lo dice `dpadMask`.
     var pressed: Set<ControlID> {
         var set: Set<ControlID> = []
-        for (id, hit) in touches {
+        for hit in touches.values {
             switch hit {
             case .ab: set.formUnion([.a, .b])
-            case .control(.dpad):
-                if let p = points[id], geometry?.dpadMask(at: p) ?? 0 != 0 { set.insert(.dpad) }
+            case .control(.dpad): break
             case .control(let c): set.insert(c)
             }
         }
+        if dpadMask != 0 { set.insert(.dpad) }
         return set
     }
 }

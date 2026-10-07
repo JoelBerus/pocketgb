@@ -23,17 +23,22 @@ struct GameDetailsView: View {
                     .frame(maxWidth: .infinity)
                     .accessibilityIdentifier("game-details-artwork")
                 VStack(alignment: .leading, spacing: PocketSpacing.xs) {
-                    HStack(spacing: PocketSpacing.xs) {
-                        ConsoleChip(badge: entry.badge)
-                        Text(entry.subfolder.isEmpty ? entry.fileName : "\(entry.subfolder) · \(entry.fileName)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    // Carpetas y archivo (N1b): «Pokémon › 2ª generación · archivo.gb». Si no cabe en
+                    // una línea junto a las insignias, va debajo y entera (nunca recortada).
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: PocketSpacing.xs) {
+                            badges(entry)
+                            location(entry).lineLimit(1).fixedSize()
+                        }
+                        VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
+                            HStack(spacing: PocketSpacing.xs) { badges(entry) }
+                            location(entry).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Text(state.libraryPrefs.displayTitle(entry))
                         .font(.title2.bold())
                         .fixedSize(horizontal: false, vertical: true)
+                    if entry.isDuplicate { alsoIn(entry) }
                 }
                 stats(entry)
                 primaryAction(entry)
@@ -72,6 +77,34 @@ struct GameDetailsView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder private func badges(_ entry: RomEntry) -> some View {
+        ConsoleChip(badge: entry.badge)
+        if entry.isDuplicate { DuplicateBadge() }
+    }
+
+    private func location(_ entry: RomEntry) -> some View {
+        Text(entry.locationText)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Ubicación: \(entry.locationText)")
+            .accessibilityIdentifier("game-details-location")
+    }
+
+    /// Duplicados (N1a): las otras rutas con el mismo ROM. Comparten partida, estados y ajustes.
+    private func alsoIn(_ entry: RomEntry) -> some View {
+        let paths = entry.duplicatePaths.map(RomEntry.displayPath)
+        return Label {
+            Text("También en: \(paths.joined(separator: "; "))")
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "doc.on.doc")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("game-details-also-in")
     }
 
     /// Última vez jugado, partida junto al ROM y tamaño, en tres columnas.

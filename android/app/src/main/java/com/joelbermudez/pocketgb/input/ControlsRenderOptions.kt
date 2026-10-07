@@ -1,7 +1,43 @@
 package com.joelbermudez.pocketgb.input
 
+import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.graphics.toArgb
+import com.joelbermudez.pocketgb.settings.DiagonalMode
 import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
+import com.joelbermudez.pocketgb.ui.theme.PocketDarkColorScheme
+
+/**
+ * Colores de los controles (N2), tomados de los roles tonales del esquema Material del juego (siempre oscuro): sin
+ * vidrio. [pressed] sobre [surface] da al menos 3:1 en los tres esquemas (estándar, medio y alto contraste).
+ */
+data class ControlsPalette(
+    /** Fondo del disco de la cruz. */
+    val base: Int,
+    /** Brazos, flechas y botones sin pulsar. */
+    val surface: Int,
+    /** Símbolos y etiquetas sobre [surface] (el rol `onSurface`: texto con al menos 4,5:1 aun con el 70 % de alfa). */
+    val onSurface: Int,
+    /** Brazo, flecha o botón pulsado. */
+    val pressed: Int,
+    /** Símbolos y etiquetas sobre [pressed]. */
+    val onPressed: Int,
+    /** Contorno de los controles neutros. */
+    val outline: Int,
+) {
+    companion object {
+        fun from(scheme: ColorScheme) = ControlsPalette(
+            base = scheme.surface.toArgb(),
+            surface = scheme.surfaceVariant.toArgb(),
+            onSurface = scheme.onSurface.toArgb(),
+            pressed = scheme.primary.toArgb(),
+            onPressed = scheme.onPrimary.toArgb(),
+            outline = scheme.outline.toArgb(),
+        )
+
+        val Default: ControlsPalette = from(PocketDarkColorScheme)
+    }
+}
 
 /**
  * Cómo se dibujan los controles (K12). La opacidad {30, 50, 70, 100} % es solo visual: el área táctil no cambia.
@@ -13,39 +49,52 @@ data class ControlsRenderOptions(
     val showMenu: Boolean = false,
     /** Contraste alto del sistema (R10): relleno sólido ≥ 90 %, anillo de 2 dp opaco y etiquetas opacas, sin importar la opacidad elegida. */
     val highContrast: Boolean = false,
+    /** Qué diagonales cuentan en la cruceta (N2). */
+    val diagonals: DiagonalMode = DiagonalMode.REDUCED,
+    val palette: ControlsPalette = ControlsPalette.Default,
 ) {
     val opacityFraction: Float get() = opacity.coerceIn(0, 100) / 100f
 
-    /** Las etiquetas nunca bajan del 70 % de opacidad: se leen aunque el relleno sea casi transparente. */
-    val labelFraction: Float get() = maxOf(opacity, MIN_LABEL_OPACITY).coerceAtMost(100) / 100f
-
-    /** Alfa del relleno de un control, ya multiplicado por el desvanecido [fade]. */
-    fun fillAlpha(pressed: Boolean, fade: Float): Float {
-        val base = if (pressed) FILL_PRESSED_ALPHA else FILL_ALPHA
-        return if (highContrast) maxOf(base, SOLID_ALPHA) * fade else base * opacityFraction * fade
+    /**
+     * Alfa del relleno de un control, ya multiplicado por el desvanecido [fade]. El neutro sigue la opacidad elegida; el
+     * pulsado no: pulsar siempre se ve (N2), aunque los controles sean casi transparentes.
+     */
+    fun fillAlpha(pressed: Boolean, fade: Float): Float = when {
+        highContrast -> maxOf(if (pressed) FILL_PRESSED_ALPHA else FILL_ALPHA, SOLID_ALPHA) * fade
+        pressed -> FILL_PRESSED_ALPHA * fade
+        else -> FILL_ALPHA * opacityFraction * fade
     }
 
     /** Alfa del anillo: los acentos (A, B) casi opacos; el neutro, a media opacidad salvo en contraste alto. */
     fun ringAlpha(accent: Boolean, fade: Float): Float =
         if (highContrast) fade else (if (accent) 0.95f else 0.5f) * opacityFraction * fade
 
-    /** Alfa de etiquetas y flechas. */
-    fun labelAlpha(fade: Float): Float = if (highContrast) fade else labelFraction * fade
+    /**
+     * Alfa de etiquetas y símbolos: siempre opacos (N2). La opacidad elegida cambia los rellenos, no el texto: con él al
+     * 70 % el contraste real de START/SELECT caía por debajo de 4,5:1 sobre un fotograma gris.
+     */
+    fun labelAlpha(fade: Float): Float = fade
 
     /** Grosor del anillo (el mismo con contraste alto: cambia su opacidad, que pasa a 100 %). */
     val ringWidthDp: Float get() = RING_WIDTH_DP
 
-    /** Alfa de la capa oscura detrás de cada control. */
-    fun scrimAlpha(fade: Float): Float = if (highContrast) 0.5f * fade else 0.28f * opacityFraction * fade
+    /**
+     * Alfa de la capa oscura detrás de cada control: crece con la opacidad (`0,3 + 0,3 × opacidad`, fórmula propia de
+     * Android) y nunca desaparece, así el pulsado se distingue también sobre un fotograma blanco. La capa tiene la forma
+     * exacta del control (ver `GameControlsView.drawScrim`), sin halo.
+     */
+    fun scrimAlpha(fade: Float): Float = if (highContrast) 0.5f * fade else (SCRIM_BASE + SCRIM_PER_OPACITY * opacityFraction) * fade
 
     companion object {
-        const val MIN_LABEL_OPACITY = 70
         const val FILL_ALPHA = 0.72f
         const val FILL_PRESSED_ALPHA = 0.92f
         const val SOLID_ALPHA = 0.95f
         const val RING_WIDTH_DP = 2f
+        const val SCRIM_BASE = 0.3f
+        const val SCRIM_PER_OPACITY = 0.3f
 
-        fun from(settings: GameplaySettingsData) = ControlsRenderOptions(settings.opacity, settings.dpadStyle)
+        fun from(settings: GameplaySettingsData) =
+            ControlsRenderOptions(settings.opacity, settings.dpadStyle, diagonals = settings.diagonalMode)
     }
 }
 

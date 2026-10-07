@@ -11,13 +11,16 @@ struct LinkRequest: Identifiable, Equatable {
 
 /// Candidatos para conectar con un juego (función pura, M9 §2.2).
 enum LinkPartners {
-    /// Fuera el mismo juego, los de Game Boy Advance, los ocultos, los que tienen problema y los que
-    /// no están descargados. No se filtra por «con partida»: solo se ordena. Orden: jugados (el más
-    /// reciente primero), luego con `.sav` junto al ROM, luego por título.
+    /// Fuera el mismo juego (también sus duplicados, con la misma huella, que `LinkSession` rechazaría
+    /// como el mismo juego; auditoría N1, H9), los de Game Boy Advance, los ocultos, los que tienen
+    /// problema y los que no están descargados. No se filtra por «con partida»: solo se ordena.
+    /// Orden: jugados (el más reciente primero), luego con `.sav` junto al ROM, luego por título.
     static func candidates(for source: RomEntry, in entries: [RomEntry], prefs: LibraryPreferencesData) -> [RomEntry] {
-        entries
+        let sourceFingerprint = prefs.fingerprint(of: source)
+        return entries
             .filter { $0.id != source.id && $0.console == .gameBoy && $0.problem == nil
-                && $0.cloud == .current && !prefs.isHidden($0) }
+                && $0.cloud == .current && !prefs.isHidden($0)
+                && (sourceFingerprint == nil || prefs.fingerprint(of: $0) != sourceFingerprint) }
             .sorted { a, b in
                 let da = prefs.lastPlayedDate(a), db = prefs.lastPlayedDate(b)
                 if (da != nil) != (db != nil) { return da != nil }

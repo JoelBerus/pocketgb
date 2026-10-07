@@ -46,9 +46,12 @@ struct SaveBackupsView: View {
     @Environment(AppState.self) private var state
     let fingerprint: String
     @State private var backups: [(index: Int, date: Date?)] = []
+    /// Partidas apartadas al abrir el juego (no rotan; auditoría N1, H1).
+    @State private var kept: [SaveStore.KeptCopy] = []
     @State private var currentDate: Date?
     @State private var title = ""
     @State private var pending: Int?
+    @State private var pendingKept: SaveStore.KeptCopy?
     @State private var message: String?
 
     var body: some View {
@@ -79,6 +82,28 @@ struct SaveBackupsView: View {
             } footer: {
                 Text("Restaurar no borra nada: la partida actual se guarda antes como copia.")
             }
+            if !kept.isEmpty {
+                Section {
+                    ForEach(kept, id: \.url) { copy in
+                        HStack {
+                            VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
+                                Text("Apartada al abrir el juego")
+                                Text(copy.date.map(Self.format) ?? "Fecha desconocida")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Restaurar") { pendingKept = copy }
+                                .pocketGlassButton()
+                        }
+                        .accessibilityIdentifier("save-kept-copy")
+                    }
+                } header: {
+                    Text("Copias apartadas")
+                } footer: {
+                    Text("Partidas que perdieron frente a otra al abrir el juego, por ejemplo el .sav de otra copia del mismo juego en otra carpeta. No se borran ni se sustituyen con el tiempo.")
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
@@ -94,6 +119,16 @@ struct SaveBackupsView: View {
         } message: {
             Text("La partida actual se guardará como copia antes de restaurar, así que podrás volver a ella.")
         }
+        .confirmationDialog("¿Restaurar la copia apartada?",
+                            isPresented: Binding(get: { pendingKept != nil }, set: { if !$0 { pendingKept = nil } }),
+                            titleVisibility: .visible) {
+            Button("Restaurar copia") {
+                if let copy = pendingKept { restore(copy) }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("La partida actual se guardará como copia antes de restaurar y la copia apartada se conserva.")
+        }
         .alert("Partidas", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -107,12 +142,13 @@ struct SaveBackupsView: View {
     }
 
     private func store() -> SaveStore? {
-        (try? SaveStore.defaultDirectory()).map { SaveStore(directory: $0, fingerprint: fingerprint) }
+        state.storageDirectories.saves.map { SaveStore(directory: $0, fingerprint: fingerprint) }
     }
 
     private func reload() {
         guard let store = store() else { return }
         backups = store.backups()
+        kept = store.keptCopies()
         currentDate = store.modificationDate
         title = SavesIndex(directory: store.directory).load()[fingerprint]?.title ?? ""
     }
@@ -121,6 +157,18 @@ struct SaveBackupsView: View {
         guard let store = store() else { return }
         do {
             try store.restore(backup: n)
+            state.didRestoreSave(fingerprint: fingerprint)
+            message = "Copia restaurada. La partida anterior quedó como copia más reciente."
+        } catch {
+            message = "No se pudo restaurar: \(error.localizedDescription). No se ha cambiado nada."
+        }
+        reload()
+    }
+
+    private func restore(_ copy: SaveStore.KeptCopy) {
+        guard let store = store() else { return }
+        do {
+            try store.restore(kept: copy)
             state.didRestoreSave(fingerprint: fingerprint)
             message = "Copia restaurada. La partida anterior quedó como copia más reciente."
         } catch {

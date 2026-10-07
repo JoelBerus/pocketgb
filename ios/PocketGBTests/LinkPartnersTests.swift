@@ -13,6 +13,13 @@ struct LinkPartnersTests {
 
     let source = entry("rojo.gb", "Rojo")
 
+    /// Metadatos provisionales por ruta (N1a: juegos sin huella conocida).
+    static func meta(_ change: (inout GameMetadata) -> Void) -> GameMetadata {
+        var m = GameMetadata()
+        change(&m)
+        return m
+    }
+
     @Test func excludesTheSameGameAdvanceHiddenProblemsAndNotDownloaded() {
         let entries = [
             source,
@@ -24,7 +31,7 @@ struct LinkPartnersTests {
             Self.entry("bajando.gb", "Bajando", cloud: .downloading),
         ]
         var prefs = LibraryPreferencesData()
-        prefs.hiddenPaths = ["oculto.gb"]
+        prefs.pendingByPath = ["oculto.gb": Self.meta { $0.hidden = true }]
         #expect(LinkPartners.candidates(for: source, in: entries, prefs: prefs).map(\.id) == ["amarillo.gbc"])
     }
 
@@ -37,7 +44,8 @@ struct LinkPartnersTests {
             Self.entry("new.gb", "Nuevo"),
         ]
         var prefs = LibraryPreferencesData()
-        prefs.lastPlayed = ["old.gb": Date(timeIntervalSince1970: 100), "new.gb": Date(timeIntervalSince1970: 200)]
+        prefs.pendingByPath = ["old.gb": Self.meta { $0.lastPlayed = Date(timeIntervalSince1970: 100) },
+                               "new.gb": Self.meta { $0.lastPlayed = Date(timeIntervalSince1970: 200) }]
         #expect(LinkPartners.candidates(for: source, in: entries, prefs: prefs).map(\.id)
                 == ["new.gb", "old.gb", "b.gb", "a.gb", "c.gb"])
     }
@@ -47,10 +55,24 @@ struct LinkPartnersTests {
         #expect(LinkPartners.candidates(for: source, in: entries, prefs: LibraryPreferencesData()).count == 1)
     }
 
+    /// Auditoría N1, H9: la otra copia de un duplicado (misma huella) no se ofrece.
+    @Test func excludesDuplicatesOfTheSource() {
+        var source = Self.entry("A/rojo.gb", "Rojo")
+        source.fingerprint = "fp-rojo"
+        var copy = Self.entry("B/rojo.gb", "Rojo")
+        copy.fingerprint = "fp-rojo"
+        var other = Self.entry("azul.gb", "Azul")
+        other.fingerprint = "fp-azul"
+        let unknown = Self.entry("sin-huella.gb", "Sin huella")
+        let ids = LinkPartners.candidates(for: source, in: [source, copy, other, unknown],
+                                          prefs: LibraryPreferencesData()).map(\.id)
+        #expect(ids.sorted() == ["azul.gb", "sin-huella.gb"])
+    }
+
     @Test func titleOrderUsesTheAlias() {
         let entries = [Self.entry("x.gb", "Zeta"), Self.entry("y.gb", "Alfa")]
         var prefs = LibraryPreferencesData()
-        prefs.aliasesByPath = ["x.gb": "Aaa"]
+        prefs.pendingByPath = ["x.gb": Self.meta { $0.alias = "Aaa" }]
         #expect(LinkPartners.candidates(for: source, in: entries, prefs: prefs).map(\.id) == ["x.gb", "y.gb"])
     }
 }

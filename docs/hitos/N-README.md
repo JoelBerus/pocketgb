@@ -53,6 +53,9 @@ Principios: **la carpeta es la verdad** (su estructura define las categorías), 
 | ND11 | Nombres reservados en la carpeta: lo que empieza por `.` se ignora; `PocketGB/` (visible) es de la app (intercambio y exportados); las carpetas que empiezan por `_` quedan **apartadas** (no se escanean; p. ej. `_Revisar/`). Joel puede cambiarlo antes de N1b. |
 | ND12 | Momentos, ajustes de inicio y metadatos son **por dispositivo**; viajan dentro del paquete de N7. |
 | ND13 | Política de estados del núcleo: una subida de versión de estado **debe seguir cargando la versión anterior** (migración), y cada momento guarda también la RAM del cartucho del instante, para que la partida sea recuperable aunque el estado ya no cargue. |
+| ND14 | (Joel, 2026-10-07) El botón principal dice «Jugar» si no hay estado automático vigente, aunque el juego se haya jugado (como iOS; decisión A9-4). |
+| ND15 | (Joel, 2026-10-07) El carril «Continuar jugando» de Android muestra solo juegos reanudables, como iOS (A9-5; se aplica en N3 Android). |
+| ND16 | (Joel, 2026-10-07) Se acepta que con opacidad de controles del 30–50 % sobre una escena blanca el contraste pulsado/neutro baje de 3:1 (N2-H4). |
 
 Decisiones provisionales anteriores que este plan toca (Joel las ratifica al cerrar cada hito): **J8** (Android «Continuar» = solo SRAM; cambia en A9), **K9** (portada = último fotograma; pasa a ser una fuente más en N5), **K10** (carril solo con portada; se revisa en N3a/N5), **R14** (lista-detalle desactivada; N3a añade detalle a dos columnas sin activarla), **G7-3** (RTC dentro del `.sav`; base de N8).
 
@@ -89,7 +92,7 @@ Roms/                                   ← la carpeta que eliges en la app
 - **Cargar un momento cambia también la partida del juego** (el estado incluye la RAM del cartucho y se vuelca al `.sav`). Por eso hay confirmación explícita y texto de guía, y antes de cargar se guarda el estado actual en el anillo «Antes de cargar» (3 entradas, fuera de la rotación de 5 backups) con «Recuperar» en un toque. Se unifica el comportamiento del AUTO en las dos apps: cargar no lo pisa.
 - **Exclusión por huella:** importar, cargar un momento o instalar una partida que llega de otro equipo solo ocurre sin sesión abierta o aparcada de esa huella (Android: `FingerprintOwnership`; iOS: equivalente nuevo).
 - **Tiempo de juego:** solo cuenta con el juego corriendo.
-- **Lector Pokémon** (ND5): función C pura en `core/` (`pgb_progress_read`) que identifica los juegos oficiales por título de cabecera y checksum global. Soporta Gen 1 internacional (EN/ES/FR/DE/IT, también Amarillo) y Oro/Plata/Cristal internacional. Solo muestra datos si el checksum interno cuadra. Los offsets salen de fuentes documentales (Bulbapedia, Data Crystal, símbolos de pret: hechos, no código); el código es propio y cita sus fuentes. Los hacks (Prism, Epic Gold) no se leen.
+- **Lector Pokémon** (ND5): función C pura en `core/` (`pgb_progress_read`) que identifica los juegos oficiales por **título de la cabecera + destino no japonés (`0x14A` = 1) + idioma no coreano**, y solo muestra datos si las validaciones internas de la partida cuadran (checksum, bytes 99/127 de la 2.ª generación, rangos de dinero, horas, minutos y segundos, nombre terminado). Soporta Gen 1 internacional (EN/ES/FR/DE/IT; el Amarillo europeo lleva `POKEMON YELAPS` + letra de idioma en la cabecera) y Oro/Plata/Cristal internacional. Los offsets salen de fuentes documentales (pret evaluado con un script, Data Crystal, PKHeX: hechos, no código; Bulbapedia no estuvo accesible); el código es propio y cita sus fuentes. **Enmienda tras la auditoría de N6-C (H2):** el plan original decía «por título de cabecera y checksum global» y «los hacks no se leen»; no se usa el checksum global del ROM. **Riesgo asumido:** un hack que conserve título, destino y disposición oficial de la partida, con su checksum interno correcto (p. ej. uno de Cristal que no cambie la RAM de guardado), sí muestra datos; es de solo lectura y solo informativo. Un hack con otra disposición da «sin datos» por el checksum (es lo esperable de Prism y Epic Gold, que no se han probado). Detalle en [03-core-spec](../03-core-spec.md) §Lector de progreso Pokémon.
 
 ### 3.4 Partidas que viajan (N7)
 - **Linaje** sobre el historial que ya existe de escrituras propias del espejo (`mirror-history.json` en iOS, equivalente en Android), acotado a los últimos N sha:
@@ -164,6 +167,11 @@ Los criterios se verifican con comando y salida (regla dura 7). Para que los lot
   - Flechas: 4 círculos en rombo (diámetro 0,36 × ancho) con iconos Material.
   - Tema Material propio, con contraste pulsado/neutro ≥ 3:1.
 - **Flechas separadas (ambas), ND10:** tamaño (ya existe), separación 0,7–1,5 (nuevo) y mover el grupo (ya existe). Se guarda por disposición (consola × orientación) y se puede restablecer.
+- **Geometría y háptica comunes (decisión del orquestador, 2026-10-07):** las dos apps usan una sola fórmula y una sola regla, para que Joel note lo mismo en ambos teléfonos.
+  - **Separación de las flechas:** el diámetro de cada círculo es 0,36 W fijo (W = ancho nominal del control). La distancia del centro de cada círculo al del grupo es 0,32 W × k para k ≥ 1 y, para k < 1, baja linealmente hasta 0,265 W con k = 0,7: los círculos nunca se solapan y el objetivo táctil se conserva. El marco del grupo mide 0,36 W + 2 × distancia (1,0 W de fábrica, 1,32 W a k = 1,5). Es la fórmula de Android; iOS la adopta.
+  - **Sectores:** histéresis angular de 8°, zona muerta del 30 % con histéresis (0,24) y, con flechas separadas, un toque dentro de un círculo da su dirección, el mismo dedo la conserva hasta salir ~4 dp, la zona muerta se limita al borde interior de los círculos − 2 dp y fuera de los círculos decide el ángulo.
+  - **Háptica:** vibra cuando se activa una dirección que no estaba activa (↑ → ↑→ vibra; ↑→ → ↑ no; ↑ → nada → ↑ sí).
+  - **Opuestas:** nunca llegan al núcleo direcciones opuestas, ni de dos dedos ni de táctil + mando.
 - No cambia la distribución general de los controles ni la posición del juego en ninguna plataforma.
 
 **Criterios:**

@@ -161,3 +161,29 @@ library-duplicates portrait dark
 library-duplicates-list portrait light
 saves-set-aside portrait light
 saves-set-aside portrait dark
+# N2 · controles: cruceta con la estructura de iOS, diagonales y separación de las flechas (pressed= solo dibuja la pulsación)
+n2-cross-up portrait dark pressed=up
+n2-cross-up-landscape landscape dark pressed=up
+n2-cross-diagonal portrait dark pressed=upright
+n2-cross-up-light-frame landscape dark pressed=up rom=light scaleMode=fill
+n2-cross-up-opacity30 landscape dark pressed=up rom=light scaleMode=fill opacity=30
+n2-cross-up-high-contrast portrait dark pressed=up contrast=high
+n2-arrows-up portrait dark dpad=arrows pressed=up
+n2-arrows-up-landscape landscape dark dpad=arrows pressed=up
+n2-arrows-diagonal portrait dark dpad=arrows pressed=upright
+n2-arrows-up-light-frame landscape dark dpad=arrows pressed=up rom=light scaleMode=fill
+n2-arrows-up-opacity30 landscape dark dpad=arrows pressed=up rom=light scaleMode=fill opacity=30
+n2-arrows-up-high-contrast portrait dark dpad=arrows pressed=up contrast=high
+n2-arrows-separation-min portrait dark dpad=arrows separation=0.7 pressed=up
+n2-arrows-separation-max portrait dark dpad=arrows separation=1.5 pressed=up
+n2-arrows-separation-max-landscape landscape dark dpad=arrows separation=1.5 pressed=up
+n2-editor-arrows portrait dark dpad=arrows separation=1.3
+n2-editor-arrows-landscape landscape dark dpad=arrows separation=1.3
+n2-editor-cross portrait dark
+n2-settings-controls portrait light
+n2-settings-controls portrait dark
+n2-settings-controls-scrolled portrait light swipe=up
+n2-settings-controls-scrolled portrait dark swipe=up
+n2-settings-controls-ax5 portrait light fontScale=2.0 swipe=up
+n2-settings-diagonals-ax5 portrait light fontScale=2.0
+n2-settings-diagonals-ax5 portrait dark fontScale=2.0

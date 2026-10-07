@@ -41,16 +41,31 @@ struct EmulationSettingsView: View {
 }
 
 /// Ajustes de un juego (SPEC §8, `SettingsValueBadge`): cada valor dice con texto si es
-/// "Global" o "Personalizado".
+/// "Global" o "Personalizado". Se guardan por huella (N1a): siguen al juego si se mueve de
+/// carpeta y los comparten sus duplicados.
 struct GameSettingsView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
-    let entry: RomEntry
+    /// El juego tal como estaba al abrir la sheet; `entry` lo relee con su huella actual.
+    private let opened: RomEntry
+
+    init(entry: RomEntry) {
+        opened = entry
+    }
+
+    private var entry: RomEntry {
+        state.library.entries.first { $0.id == opened.id } ?? opened
+    }
+
+    private func set(_ overrides: GameOverrides) {
+        state.libraryPrefs.setOverrides(overrides, for: entry)
+    }
 
     var body: some View {
         let gameplay = state.gameplay
-        let overrides = gameplay.data.perGame[entry.id] ?? GameOverrides()
-        let resolved = gameplay.data.emulation(for: entry.id)
+        let entry = self.entry
+        let overrides = state.libraryPrefs.overrides(for: entry)
+        let resolved = gameplay.data.emulation(with: overrides)
         NavigationStack {
             Form {
                 if entry.badge != .gba {
@@ -60,7 +75,7 @@ struct GameSettingsView: View {
                             set: { v in
                                 var o = overrides
                                 o.colorForGameBoy = v == 0 ? nil : v == 1
-                                gameplay.setOverrides(o, for: entry.id)
+                                set(o)
                             })) {
                             Text("Global (\(gameplay.data.colorForGameBoy ? "en color" : "sin color"))").tag(0)
                             Text("En color").tag(1)
@@ -73,7 +88,7 @@ struct GameSettingsView: View {
                             set: { v in
                                 var o = overrides
                                 o.compatPalette = v < 0 ? nil : UInt8(v)
-                                gameplay.setOverrides(o, for: entry.id)
+                                set(o)
                             })) {
                             Text("Global (\(CompatPalette.title(gameplay.data.compatPalette)))").tag(-1)
                             ForEach(0...CompatPalette.count, id: \.self) { Text(CompatPalette.title(UInt8($0))).tag($0) }
@@ -88,11 +103,11 @@ struct GameSettingsView: View {
                     }
                     .disabled(entry.badge != .gb)
                 }
-                if entry.badge == .gba { gbaSection(overrides, gameplay) }
+                if entry.badge == .gba { gbaSection(overrides) }
                 if !overrides.isEmpty {
                     Section {
                         Button("Usar los ajustes globales", systemImage: "arrow.uturn.backward") {
-                            gameplay.setOverrides(GameOverrides(), for: entry.id)
+                            set(GameOverrides())
                         }
                     }
                 }
@@ -122,7 +137,7 @@ extension GameSettingsView {
         return SavesIndex(directory: dir).load()[fingerprint]
     }
 
-    @ViewBuilder func gbaSection(_ overrides: GameOverrides, _ gameplay: GameplaySettings) -> some View {
+    @ViewBuilder func gbaSection(_ overrides: GameOverrides) -> some View {
         let record = detectedRecord
         let detectedMedia = record?.gbaMedia.map { "Detectado (\($0))" } ?? "Detectado"
         let detectedRTC = record?.gbaHasRTC.map { "Detectado (\($0 ? "con reloj" : "sin reloj"))" } ?? "Detectado"
@@ -132,7 +147,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaSaveType = v < 0 ? nil : UInt8(v)
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text(detectedMedia).tag(-1)
                 ForEach(Self.gbaSaveTypes, id: \.value) { Text($0.title).tag(Int($0.value)) }
@@ -144,7 +159,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaRTC = v < 0 ? nil : UInt8(v)
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text(detectedRTC).tag(-1)
                 Text("Con reloj").tag(1)
@@ -157,7 +172,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaUseBIOS = v == 2 ? false : nil
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text("Global (la tuya si existe)").tag(0)
                 Text("Emulada").tag(2)

@@ -3,8 +3,8 @@ import XCTest
 /// Recorre `screens.txt`, abre la app en cada pantalla/estado y guarda una captura.
 /// - `SCREENSHOT_DIR` (vía `TEST_RUNNER_SCREENSHOT_DIR`): carpeta de salida de los PNG.
 /// - `FIXTURE_DIR` (vía `TEST_RUNNER_FIXTURE_DIR`): ROMs de prueba libres.
-/// - `SCREEN_FILTER` (vía `TEST_RUNNER_SCREEN_FILTER`): solo las capturas cuyo nombre lo contiene
-///   (para iterar; el CI no lo define).
+/// - `SCREEN_FILTER` (vía `TEST_RUNNER_SCREEN_FILTER`): solo las capturas cuyo nombre contiene
+///   alguno de sus trozos separados por comas (para iterar; el CI no lo define).
 /// Las capturas también quedan como adjuntos en el .xcresult.
 final class ScreenshotTests: XCTestCase {
     @MainActor
@@ -12,7 +12,7 @@ final class ScreenshotTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         let outDir = env["SCREENSHOT_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let fixtures = env["FIXTURE_DIR"] ?? ""
-        let filter = env["SCREEN_FILTER"].flatMap { $0.isEmpty ? nil : $0 }
+        let filters = (env["SCREEN_FILTER"] ?? "").split(separator: ",").map(String.init)
         let listURL = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "screens", withExtension: "txt"))
         let lines = try String(contentsOf: listURL, encoding: .utf8).split(separator: "\n")
 
@@ -22,7 +22,7 @@ final class ScreenshotTests: XCTestCase {
             let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
             guard parts.count >= 3 else { XCTFail("Línea inválida: \(line)"); continue }
             let (name, orientation, style) = (parts[0], parts[1], parts[2])
-            if let filter, !name.contains(filter) { continue }
+            if !filters.isEmpty, !filters.contains(where: { name.contains($0) }) { continue }
             let args = parts.dropFirst(3).map { $0.replacingOccurrences(of: "$FIXTURES", with: fixtures) }
             // El nombre de la captura es el id de SPEC §9 que abre `-screen` (auditoría D1, H3).
             if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
@@ -47,6 +47,12 @@ final class ScreenshotTests: XCTestCase {
             if args.contains("-uiSwipeUp") {
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 0.5)
+            }
+            // `-uiAssertHittable <id>`: el elemento debe verse en la captura (no tapado ni fuera).
+            if let i = args.firstIndex(of: "-uiAssertHittable"), i + 1 < args.count {
+                let target = app.descendants(matching: .any).matching(identifier: args[i + 1]).firstMatch
+                XCTAssertTrue(target.waitForExistence(timeout: 5), "No existe \(args[i + 1]) en \(name)")
+                XCTAssertTrue(target.isHittable, "\(args[i + 1]) no se ve en \(name)")
             }
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
