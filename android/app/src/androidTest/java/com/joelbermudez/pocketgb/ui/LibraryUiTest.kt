@@ -97,6 +97,8 @@ class LibraryUiTest {
         artwork: Set<String> = emptySet(),
         summary: Int = 0,
         onSummaryShown: () -> Unit = {},
+        /** N3 (ND15): ids que se pueden continuar (estado automático vigente); el carril solo muestra estos. */
+        resumable: Set<String> = emptySet(),
     ) {
         var prefs by remember { mutableStateOf(initial) }
         var query by remember { mutableStateOf("") }
@@ -119,6 +121,7 @@ class LibraryUiTest {
                     onHide = { prefs = prefs.hide(it) },
                     onPlay = if (playFromRecent) ({ played += it.id }) else null,
                     onGameSettings = { settingsOpened = it.id },
+                    canResume = { it.id in resumable },
                 ),
                 newGamesSummary = summary,
                 onNewGamesSummaryShown = onSummaryShown,
@@ -288,6 +291,7 @@ class LibraryUiTest {
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha),
                 artwork = setOf(fingerprintOf(alpha)),
+                resumable = setOf(alpha.id),
             )
         }
         compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
@@ -302,6 +306,7 @@ class LibraryUiTest {
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha),
                 artwork = setOf(fingerprintOf(alpha)),
+                resumable = setOf(alpha.id),
             )
         }
         compose.onNodeWithTag("recent-row").assertIsDisplayed()
@@ -611,6 +616,7 @@ class LibraryUiTest {
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha, red, at = 10L),
                 artwork = setOf(fingerprintOf(alpha)), // red se jugó pero no tiene captura
+                resumable = setOf(alpha.id, red.id),
             )
         }
         compose.onNodeWithTag("recent-row").assertIsDisplayed()
@@ -620,14 +626,16 @@ class LibraryUiTest {
 
     @Test
     fun railDoesNotAppearWhenNoPlayedGameHasArtwork() {
-        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha)) }
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), resumable = setOf(alpha.id)) }
         compose.onAllNodesWithTag("recent-row").assertCountEquals(0)
     }
 
     @Test
     fun railIsHiddenOutsideTheAllFilter() {
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)), resumable = setOf(alpha.id),
+            )
         }
         compose.onAllNodesWithTag("recent-row").assertCountEquals(1)
         compose.onNodeWithTag("filter-GB").performClick()
@@ -638,7 +646,9 @@ class LibraryUiTest {
     fun tappingTheRailCoverOpensTheDetailsAndTheButtonOpensTheGame() {
         playFromRecent = true
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)), resumable = setOf(alpha.id),
+            )
         }
         compose.onNodeWithTag("continue-cover").performClick()
         assertEquals("Alpha.gb", opened)
@@ -900,7 +910,10 @@ class LibraryUiTest {
         val prefs = withPlayed(*recent.toTypedArray())
         compose.setContent {
             WithFontScale(2.0f) {
-                LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+                LibraryHarness(
+                    LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet(),
+                    resumable = recent.map { it.id }.toSet(),
+                )
             }
         }
         compose.waitForIdle()
@@ -916,7 +929,10 @@ class LibraryUiTest {
         val recent = listOf(red, yellow, alpha)
         val prefs = withPlayed(*recent.toTypedArray())
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+            LibraryHarness(
+                LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet(),
+                resumable = recent.map { it.id }.toSet(),
+            )
         }
         compose.waitForIdle()
         val rows = compose.onAllNodesWithTag("continue-card").fetchSemanticsNodes()

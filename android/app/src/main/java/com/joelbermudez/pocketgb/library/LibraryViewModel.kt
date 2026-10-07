@@ -73,6 +73,10 @@ class LibraryViewModel(
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
 
+    /** N3b: categoría elegida (carpeta de primer nivel); como el filtro, solo dura lo que la app esté abierta. */
+    private val _category = MutableStateFlow<LibraryCategory>(LibraryCategory.All)
+    val category: StateFlow<LibraryCategory> = _category.asStateFlow()
+
     /**
      * N1-H2: `preferences.json` es de otra versión de la app (futura o con una versión que no se entiende): no se
      * sobrescribe y los cambios de esta sesión se quedan en memoria. La biblioteca lo avisa.
@@ -318,6 +322,10 @@ class LibraryViewModel(
 
     fun setQuery(value: String) {
         _query.value = value
+    }
+
+    fun setCategory(value: LibraryCategory) {
+        _category.value = value
     }
 
     fun setFilter(value: LibraryFilter) {

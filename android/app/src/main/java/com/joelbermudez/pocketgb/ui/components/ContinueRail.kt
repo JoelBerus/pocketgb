@@ -1,10 +1,12 @@
 package com.joelbermudez.pocketgb.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -12,7 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.FilledTonalButton
@@ -35,48 +38,55 @@ import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.RomEntry
-import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
-
-/** Anchos del carril (K10): la primera tarjeta, más grande; el resto, estrechas. */
-const val RAIL_FIRST_WIDTH_DP = 240
-const val RAIL_OTHER_WIDTH_DP = 170
+import com.joelbermudez.pocketgb.ui.library.GRID_MARGIN_DP
+import com.joelbermudez.pocketgb.ui.library.GRID_SPACING_DP
+import com.joelbermudez.pocketgb.ui.library.RailMetrics
 
 /** Cuántas filas muestra el carril cuando pasa a columna por fuente grande (R9). */
 const val RAIL_LARGE_FONT_ROWS = 3
 
 /**
- * «Continuar jugando» (K10): hasta cinco juegos recientes con portada capturada. El botón «Continuar» flota sobre
- * la portada y abre el juego; tocar la portada abre el detalle. Con fuente grande (R9) deja de ser una fila
- * horizontal y pasa a una columna de hasta [RAIL_LARGE_FONT_ROWS] filas con portada a la izquierda.
+ * «Continuar jugando» (K10, N3a): hasta cinco juegos que se pueden continuar (ND15) con portada capturada. El botón
+ * «Continuar» abre el juego donde se dejó; tocar la portada abre el detalle.
+ *
+ * Cada tarjeta mide una columna de la cuadrícula ([metrics], mismo margen y separación): se ven tantas como columnas,
+ * alineadas con ellas, y al deslizar se ajustan a la columna (sin tarjetas cortadas al soltar). La fila ocupa todo el
+ * ancho hasta el borde izquierdo (el margen es relleno de la fila) y acaba en el margen derecho, como la cuadrícula.
+ * Con fuente grande la portada va a la izquierda y «Continuar» debajo; en vertical con una sola columna las tarjetas
+ * se apilan (hasta [RAIL_LARGE_FONT_ROWS], A7 R9).
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ContinueRail(
     entries: List<RomEntry>,
     prefs: LibraryPreferencesData,
     onOpenDetails: (RomEntry) -> Unit,
     onContinue: (RomEntry) -> Unit,
+    metrics: RailMetrics,
     modifier: Modifier = Modifier,
 ) {
-    val largeFont = LocalLargeFont.current
     Column(modifier.testTag("recent-row"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.continue_playing), style = MaterialTheme.typography.titleMedium)
-        if (largeFont) {
+        if (metrics.stacked) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 entries.take(RAIL_LARGE_FONT_ROWS).forEach { entry ->
                     key(entry.id) {
-                        ContinueCard(entry, prefs, onOpenDetails, onContinue, Modifier.fillMaxWidth(), horizontal = true)
+                        ContinueCard(entry, prefs, onOpenDetails, onContinue, metrics, Modifier.fillMaxWidth())
                     }
                 }
             }
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
-                    ContinueCard(
-                        entry, prefs, onOpenDetails, onContinue,
-                        Modifier.width((if (index == 0) RAIL_FIRST_WIDTH_DP else RAIL_OTHER_WIDTH_DP).dp),
-                        horizontal = false,
-                    )
+            val state = rememberLazyListState()
+            // Solo sangra a la izquierda: a la derecha la fila acaba en el margen, como la cuadrícula, así en reposo no
+            // asoma un trozo de la siguiente tarjeta; al deslizar, las tarjetas salen por el borde izquierdo.
+            LazyRow(
+                state = state,
+                modifier = Modifier.bleedHorizontally(start = GRID_MARGIN_DP.dp, end = NoBleed).testTag("continue-rail-row"),
+                contentPadding = PaddingValues(start = GRID_MARGIN_DP.dp),
+                horizontalArrangement = Arrangement.spacedBy(GRID_SPACING_DP.dp),
+                flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Start),
+            ) {
+                items(entries, key = { it.id }) { entry ->
+                    ContinueCard(entry, prefs, onOpenDetails, onContinue, metrics, Modifier.width(metrics.cardWidthDp.dp))
                 }
             }
         }
@@ -89,9 +99,10 @@ private fun ContinueCard(
     prefs: LibraryPreferencesData,
     onOpenDetails: (RomEntry) -> Unit,
     onContinue: (RomEntry) -> Unit,
+    metrics: RailMetrics,
     modifier: Modifier,
-    horizontal: Boolean,
 ) {
+    val horizontal = metrics.horizontalCards
     val fingerprint = prefs.fingerprints[entry.id]
     val lastPlayed = prefs.lastPlayedAt(entry)
     // Misma etiqueta combinada que la tarjeta de la cuadrícula (R8): título, sistema, favorito, nuevo y última partida.
@@ -133,15 +144,21 @@ private fun ContinueCard(
         // Fuente grande: el botón ocupa todo el ancho bajo portada y texto (en la columna de texto no cabe «Continuar»).
         Column(modifier.testTag("continue-card"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                cover(Modifier.width(RAIL_OTHER_WIDTH_DP.dp))
+                cover(Modifier.width(metrics.artworkWidthDp.dp))
                 texts(Modifier.weight(1f))
             }
-            ContinueButton(entry, continueDescription, onContinue, Modifier.fillMaxWidth())
+            // Apiladas (vertical) a todo el ancho; en fila (horizontal) a su medida y a la izquierda, lejos de la barra
+            // flotante de la derecha.
+            ContinueButton(
+                entry, continueDescription, onContinue,
+                if (metrics.stacked) Modifier.fillMaxWidth() else Modifier,
+            )
         }
     } else {
+        // La portada puede ser más estrecha que la columna si el alto no da (horizontal): se alinea a la izquierda.
         Column(modifier.testTag("continue-card"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            cover(Modifier)
-            texts(Modifier)
+            cover(Modifier.width(metrics.artworkWidthDp.dp))
+            texts(Modifier.fillMaxWidth())
         }
     }
 }

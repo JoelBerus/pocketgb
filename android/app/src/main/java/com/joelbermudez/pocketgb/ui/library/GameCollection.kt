@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -20,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
@@ -102,7 +107,9 @@ fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController)
 
 /**
  * Cuadrícula o lista de juegos con su menú de pulsación larga. Compartida con Favoritos. [header] y [footer]
- * ocupan una fila completa al principio y al final y se desplazan con el contenido.
+ * ocupan una fila completa al principio y al final y se desplazan con el contenido. [pinnedHeader] (N3b, horizontal)
+ * va tras [header] y se queda fijo arriba al desplazar (título de sección). [gridState]/[listState] permiten conservar
+ * la posición al volver de una búsqueda; [bottomPadding] deja aire bajo la última fila (barra flotante).
  */
 @Composable
 fun GameCollection(
@@ -113,6 +120,10 @@ fun GameCollection(
     modifier: Modifier = Modifier,
     header: (@Composable (GameMenuController) -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
+    pinnedHeader: (@Composable () -> Unit)? = null,
+    gridState: LazyGridState? = null,
+    listState: LazyListState? = null,
+    bottomPadding: Dp = 16.dp,
 ) {
     GameMenuHost(actions) { menu ->
         when (layout) {
@@ -122,12 +133,18 @@ fun GameCollection(
               LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize().testTag("library-collection"),
-                contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                state = gridState ?: rememberLazyGridState(),
+                contentPadding = PaddingValues(
+                    start = GRID_MARGIN_DP.dp, top = 12.dp, end = GRID_MARGIN_DP.dp, bottom = bottomPadding,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(GRID_SPACING_DP.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (header != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "header") { header(menu) }
+                }
+                if (pinnedHeader != null) {
+                    stickyHeader(key = "pinned-header") { pinnedHeader() }
                 }
                 items(entries.size, key = { entries[it].id }) { index ->
                     val entry = entries[index]
@@ -152,10 +169,14 @@ fun GameCollection(
             }
             LibraryLayout.LIST -> LazyColumn(
                 modifier = modifier.fillMaxSize().testTag("library-collection"),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+                state = listState ?: rememberLazyListState(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding),
             ) {
                 if (header != null) {
-                    item(key = "header") { Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { header(menu) } }
+                    item(key = "header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp, vertical = 8.dp)) { header(menu) } }
+                }
+                if (pinnedHeader != null) {
+                    stickyHeader(key = "pinned-header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp)) { pinnedHeader() } }
                 }
                 items(entries.size, key = { entries[it].id }) { index ->
                     val entry = entries[index]
