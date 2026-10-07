@@ -27,7 +27,9 @@ add_library(
     "${GBA_ROOT}/src/io.c"
 )
 target_include_directories(pocketgba PRIVATE "${GBA_ROOT}/include" "${GBA_ROOT}/src")
-target_compile_options(pocketgba PRIVATE -Wall -Wextra -Werror -pedantic -fno-common)
+# N8-H1: también en Debug con -O2 (sin perder -g): `installDebug` es la ruta de instalación de Joel y el núcleo GBA a
+# -O0 va 3–5× más lento, así que las pruebas de 60 fps y las medidas de ms/frame no serían las reales.
+target_compile_options(pocketgba PRIVATE -Wall -Wextra -Werror -pedantic -fno-common $<$<CONFIG:Debug>:-O2>)
 set_target_properties(pocketgba PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(
@@ -63,5 +65,6 @@ target_include_directories(
     "${GBA_ROOT}/include"
 )
 
-target_compile_options(pocketgb PRIVATE -Wall -Wextra -Werror -pedantic)
+# N8-H1: el núcleo GB y la sesión nativa (bucle de emulación y blit a la superficie) también con -O2 en Debug.
+target_compile_options(pocketgb PRIVATE -Wall -Wextra -Werror -pedantic $<$<CONFIG:Debug>:-O2>)
 target_link_libraries(pocketgb PRIVATE aaudio android m)

@@ -613,7 +613,7 @@ int native_session_screen_height(native_session *session) {
     return session == NULL ? 0 : session->screen_height;
 }
 
-gb_result native_session_load(
+int native_session_load(
     native_session *session,
     const uint8_t *rom,
     size_t length,
@@ -622,13 +622,14 @@ gb_result native_session_load(
     if (session == NULL || rom == NULL || options == NULL || session->console != NATIVE_CONSOLE_GB) {
         return GB_ERR_NULL_ARG;
     }
+    /* N8-H2: una sola carga por sesión, y solo en NEW (una recarga dejaría la instantánea y los flags de la otra). */
     (void)pthread_mutex_lock(&session->mutex);
-    const bool can_load = !session->thread_started;
+    const bool can_load = !session->thread_started && session->state == NATIVE_SESSION_NEW;
     (void)pthread_mutex_unlock(&session->mutex);
     if (!can_load) {
-        return GB_ERR_NULL_ARG;
+        return NS_BUSY;
     }
-    gb_result result = gb_load_rom(session->core, rom, length, options);
+    const gb_result result = gb_load_rom(session->core, rom, length, options);
     if (result == GB_OK) {
         const size_t sram_size = gb_sram_save_size(session->core);
         uint8_t *snapshot = malloc(sram_size > 0u ? sram_size : 1u);
@@ -651,13 +652,14 @@ gb_result native_session_load(
         session->frames = 0u;
         (void)pthread_mutex_unlock(&session->mutex);
     }
-    return result;
+    return (int)result;
 }
 
-/* Deja el núcleo GBA como recién creado (sin ROM ni BIOS) tras una carga fallida. */
+/* Deja el núcleo GBA como recién creado (sin ROM ni BIOS) tras una carga fallida. Sin memoria para uno nuevo, la sesión
+ * se queda sin núcleo (gba_core = NULL): nunca conserva la BIOS de un intento fallido y toda carga posterior da
+ * GB_ERR_OUT_OF_MEMORY (N8-H2). Sin núcleo, el resto de operaciones no llega a tocarlo: la sesión no sale de NEW. */
 static void reset_gba_core(native_session *session) {
     gba *fresh = gba_create();
-    if (fresh == NULL) return;
     (void)pthread_mutex_lock(&session->mutex);
     gba *previous = session->gba_core;
     session->gba_core = fresh;
@@ -679,13 +681,17 @@ int native_session_load_gba(
     if (session->console != NATIVE_CONSOLE_GBA) {
         return NS_ERR_INVALID_ARGUMENT;
     }
+    /* N8-H2: una sola carga por sesión, y solo en NEW. Una carga fallida deja la sesión en NEW con un núcleo nuevo. */
     (void)pthread_mutex_lock(&session->mutex);
-    const bool can_load = !session->thread_started;
+    const bool can_load = !session->thread_started && session->state == NATIVE_SESSION_NEW;
+    gba *core = session->gba_core;
     (void)pthread_mutex_unlock(&session->mutex);
     if (!can_load) {
-        return GB_ERR_NULL_ARG;
+        return NS_BUSY;
     }
-    gba *core = session->gba_core;
+    if (core == NULL) {
+        return GB_ERR_OUT_OF_MEMORY;
+    }
     gba_result result = GBA_OK;
     /* La BIOS del usuario solo si es la oficial (regla dura 1: nunca viene en la app); si no, HLE. */
     if (native_gba_bios_is_official(bios, bios_length)) {

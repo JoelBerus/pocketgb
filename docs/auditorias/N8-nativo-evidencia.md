@@ -65,13 +65,14 @@ PASS  G1 gba-tests/arm/arm.gba: PASS tests/roms/gba-tests/arm/arm.gba (2 frames)
 - **`make -C gba check-symbols` en macOS.** Falla con `Símbolos repetidos entre núcleos: _sha256`. El filtro `grep -v ' sha256$'` del Makefile no contempla el `_` de Mach-O. Es un fallo previo de la herramienta; en el CI Linux (`gba.yml`) pasa.
   - El mismo cálculo, aceptando el `_`: `GB: 91 GBA: 79 comunes: 0 sin prefijo: 0`.
 - **`make -C gba check-globals` en macOS.** Da falsos positivos con los símbolos `s` de sección de Mach-O (tablas `lJTI`, `ltmp`). Hice la misma comprobación sobre los objetos **ELF de Android** (pocketgba, native_session, pocketgb_jni, audio): ningún símbolo `b/B/d/D/c/C/s/S` en ninguno de los 4 ABI.
-- **`libpocketgb.so` Debug, 4 ABI** (`llvm-nm -D --defined-only`):
+- **`libpocketgb.so` Debug, 4 ABI** (`llvm-nm -D --defined-only`), sobre la rama ya integrada con A9 y las correcciones de la auditoría (N8-H4; A9 añade `nativeSessionSetRtcTime`, de ahí 280 en vez de los 278 de `25756cc`):
 ```
-arm64-v8a:   total=278 gba/arm=79 sha256=1 duplicados=0
-armeabi-v7a: total=278 gba/arm=79 sha256=1 duplicados=0
-x86:         total=278 gba/arm=79 sha256=1 duplicados=0
-x86_64:      total=278 gba/arm=79 sha256=1 duplicados=0
+arm64-v8a:   total=280 gba/arm=79 sha256=1 duplicados=0
+armeabi-v7a: total=280 gba/arm=79 sha256=1 duplicados=0
+x86:         total=280 gba/arm=79 sha256=1 duplicados=0
+x86_64:      total=280 gba/arm=79 sha256=1 duplicados=0
 ```
+RELEASE_SIMBOLOS
 
 ### Desde limpio (aviso del orquestador)
 `git archive HEAD` (`9458375`) en `scratchpad/n8-clean2` + `android/local.properties`. Las ROMs libres se **enlazan** (no se copian al árbol): `gba/tests/roms` y `gba/build/hb`.
@@ -238,6 +239,16 @@ Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 
 `EmulatorSessionTest` (15) incluye la prueba de opuestos de N2 en GB: los 8 bits de GB y la anulación de opuestos siguen igual tras pasar a 16 bits.
 
 ## Rendimiento (orientativo; el dato real es el del teléfono de Joel)
+**Tras N8-H1** (Debug con `-O2` en los núcleos y la sesión, `-g` conservado), app Debug en el emulador, en la misma corrida que el runner `-O2` (load ≈ 31–74):
+
+| ROM | App Debug `-O2` (`millisecondsPerFrameOnThisDevice`) | Runner `-O2` (NDK) en el emulador | Antes de H1 (Debug sin `-O`) |
+|---|---|---|---|
+| arm.gba | 0,61 ms/frame | 0,56 ms (1780 fps) | 2,04 |
+| ppu_scene_11 | 1,94 ms/frame | 1,73 ms (578 fps) | 8,90 |
+| shades.gba | 0,89 ms/frame | 0,80 ms (1251 fps) | 3,51 |
+
+La app Debug queda a menos del 12 % del runner: la diferencia son JNI y la copia de cada frame en la prueba. Antes de H1 era de 3,6 a 4,6 veces más lenta. Medidas anteriores a H1:
+
 | ROM | App Debug en el emulador (CMake Debug, sin `-O`) | Runner `-O2` (NDK) en el emulador | Runner en el Mac (host) |
 |---|---|---|---|
 | arm.gba (bucle `b .` + texto) | 2,04 ms/frame | 0,57 ms (1763 fps) | 0,55 ms (1809 fps) |
@@ -252,8 +263,12 @@ En la corrida desde limpio, con el Mac a load ≈ 680, la app Debug dio 1,88, 16
 - **Audio GBA.** Solo se comprobó que el hilo produce muestras, no que sean iguales a las del runner.
 - **ms/frame en el teléfono de Joel**, Kirby 30 min, capturas GBA y kill-test GBA 50/50. Son criterios de N8 que necesitan la ruta de partidas y la UI (lote N8 Kotlin) o el dispositivo (🤖 Joel).
 - **Interacción del crecimiento de la EEPROM (512 → 8192) con `SaveCoordinator`.** No se verificó cómo reacciona la línea base o la política de vaciado al cambio de tamaño a mitad de sesión.
+- **`time_t` de 32 bits (N8-H5, riesgo residual).** En armeabi-v7a y x86, `time_t` es de 32 bits: a partir de 2038, `native_local_time` no puede convertir y devuelve la hora UTC sin el desplazamiento de zona. El RTC del GBA iría entonces desfasado lo que mida la zona horaria. Es el mismo límite que ya tiene `time(NULL)` en la reanudación GB y GBA de esas ABI. arm64-v8a y x86_64 (los teléfonos actuales) no lo tienen. No se corrige en este lote.
 
 ## Lo que queda para «N8 Kotlin»
+- **Orden `.sav` → estado automático con EEPROM de 8 KiB** (nota de la auditoría). Un estado guardado con la EEPROM ya confirmada en 8 KiB solo carga cuando la partida de 8 KiB se ha cargado antes. Con la EEPROM aún en 512 B, el núcleo lo rechaza como `StateConfig`. Al abrir hay que cargar primero el `.sav` y después el estado automático (lo que ya hace A9 en GB).
+- **Una DMA que confirma 8 KiB sin escribir.** Si el juego confirma 8 KiB solo con una lectura, el núcleo no marca la partida como sucia y no se escribe ningún `.sav`. En la apertura siguiente la EEPROM vuelve a 512 B y la continuación exacta da `StateConfig`. Hay que tratarlo: por ejemplo, vaciar la partida cuando cambie `sramSaveSize`, o aceptar ese `StateConfig` como «empezar desde la partida».
+- **Superficie GBA.** El blit 3:2 y las bandas en INTEGER/FILL ya están comprobados con `PixelCopy` (N8-H3, `GameSurfaceTest.gbaImageKeepsThreeToTwoWithBlackBandsInIntegerAndFill`). Falta que `Viewport` (Kotlin) use la misma geometría para colocar los controles.
 - `RomEntry.console` y `Console.fromFileName`. El escáner acepta `.gba` ≤ 32 MiB (`LibraryScanner.MAX_ROM_BYTES` hoy es 8 MiB) y hay que añadir un filtro GBA.
 - `GameLauncher`:
   - `EmulatorSession(Console.GBA)` + `loadGba(rom, ahora, GbaOptions, bios)`;

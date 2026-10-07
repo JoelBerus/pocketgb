@@ -51,7 +51,8 @@ class CoreBridge(val console: Console = Console.GB) : AutoCloseable {
 
     /**
      * Game Boy Advance: carga el ROM (≤ 32 MiB) con [options]; [bios] solo se usa si es la oficial ([GbaBios]) y
-     * [GbaOptions.useBios]. [unixTimeSeconds] es UTC (el RTC cuenta hora local).
+     * [GbaOptions.useBios]. [unixTimeSeconds] es UTC (el RTC cuenta hora local). Cada carga usa un núcleo nuevo
+     * (N8-H2): una BIOS o un ROM de una carga anterior nunca siguen activos en la siguiente.
      */
     fun loadGbaRom(
         rom: ByteArray,
@@ -62,7 +63,10 @@ class CoreBridge(val console: Console = Console.GB) : AutoCloseable {
         requireConsole(Console.GBA, "cargar un ROM de GBA")
         if (rom.size < Console.GBA.minRomBytes) throw CoreError.RomTooSmall()
         if (rom.size > Console.GBA.maxRomBytes) throw CoreError.RomTooLarge(Console.GBA.maxRomBytes / (1024 * 1024))
-        val nativeHandle = requireHandle()
+        val previous = requireHandle()
+        val nativeHandle = NativeLibrary.nativeGbaCreate().takeIf { it != 0L } ?: throw CoreError.OutOfMemory()
+        handle = nativeHandle
+        NativeLibrary.nativeGbaDestroy(previous)
         checkResult(
             NativeLibrary.nativeGbaLoadRom(
                 nativeHandle, rom, bios.takeIf { options.useBios }, unixTimeSeconds, options.saveType.native, options.rtc.native,

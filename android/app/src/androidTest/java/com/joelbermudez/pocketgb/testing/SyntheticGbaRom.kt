@@ -42,6 +42,17 @@ object SyntheticGbaRom {
         ),
     )
 
+    /** Pantalla en blanco: `DISPCNT = 0x0080` (forced blank, que el núcleo dibuja blanco) y bucle. */
+    fun forcedBlank(title: String = "PGBA BLANCO"): ByteArray = program(
+        title.take(12), "PGBB", null,
+        intArrayOf(
+            0xE3A00301.toInt(), // mov r0, #0x04000000 (DISPCNT)
+            0xE3A01080.toInt(), // mov r1, #0x80
+            0xE1C010B0.toInt(), // strh r1, [r0]
+            0xEAFFFFFE.toInt(), // b .
+        ),
+    )
+
     /** Copia de [rom] con el byte fijo 0xB2 distinto de 0x96 (cabecera inválida para el núcleo). */
     fun withBadFixedByte(rom: ByteArray): ByteArray = rom.copyOf().also { it[0xB2] = 0x00 }
 

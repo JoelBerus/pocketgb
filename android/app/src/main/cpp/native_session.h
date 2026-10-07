@@ -81,7 +81,7 @@ int native_session_console(native_session *session);
 /* Ancho y alto del framebuffer de la consola de la sesión: 160×144 (GB) o 240×160 (GBA). */
 int native_session_screen_width(native_session *session);
 int native_session_screen_height(native_session *session);
-/* Game Boy Advance. Solo antes de arrancar y en una sesión GBA. `bios` (opcional, NULL = HLE) solo se usa si
+/* Game Boy Advance. Solo en NEW (si no, NS_BUSY) y en una sesión GBA. `bios` (opcional, NULL = HLE) solo se usa si
  * es la BIOS oficial (native_gba_bios_is_official); si no, se ignora y el núcleo emula la BIOS. `options->
  * unix_time` es la hora LOCAL. Si falla, el núcleo se recrea limpio (sin ROM ni BIOS). Devuelve un código del
  * espacio común (NS_OK, gb_result equivalentes o NS_ERR_GBA_*). */
@@ -100,8 +100,10 @@ int native_session_gba_rom_info(native_session *session, gba_rom_info *out, bool
  * [+16 de RTC] aunque hoy mida 512 B). Es lo que reserva la instantánea y lo que debe medir el búfer de
  * `native_session_sram_copy`. */
 size_t native_session_sram_capacity(native_session *session);
-/* `options->unix_time` inicializa el RTC del MBC3. Reserva aquí (nunca en el bucle) la instantánea de la SRAM. */
-gb_result native_session_load(
+/* `options->unix_time` inicializa el RTC del MBC3. Reserva aquí (nunca en el bucle) la instantánea de la SRAM. Una sola
+ * carga por sesión: fuera de NEW (ya cargada o detenida) da NS_BUSY sin tocar nada (N8-H2). Devuelve NS_OK, un
+ * gb_result o NS_BUSY. */
+int native_session_load(
     native_session *session,
     const uint8_t *rom,
     size_t length,

@@ -248,7 +248,7 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionLoad(
     options.unix_time = (int64_t)unix_time;
     options.model = (gb_model)model;
     options.compat_palette = (uint8_t)compat_palette;
-    const gb_result result = native_session_load(
+    const int result = native_session_load(
         session,
         (const uint8_t *)bytes,
         (size_t)length,

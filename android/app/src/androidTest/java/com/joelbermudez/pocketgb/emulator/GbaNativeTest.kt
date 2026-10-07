@@ -435,6 +435,61 @@ class GbaNativeTest {
         }
     }
 
+    // ---- N8-H2: una carga por sesión; el núcleo suelto, nuevo en cada carga ----
+
+    @Test
+    fun aSessionLoadsOnceAndAFailedLoadLeavesItNew() {
+        val idle = SyntheticGbaRom.idle()
+        val gba = NativeLibrary.nativeSessionCreateConsole(1)
+        val gb = NativeLibrary.nativeSessionCreateConsole(0)
+        try {
+            // Una carga fallida deja la sesión en NEW y admite otra.
+            assertEquals(18, NativeLibrary.nativeSessionLoadGba(gba, SyntheticGbaRom.withBadFixedByte(idle), null, 0, 0, 0))
+            assertEquals(0, NativeLibrary.nativeSessionLoadGba(gba, idle, null, 0, 0, 0))
+            // Ya cargada: NS_BUSY y nada cambia (la cabecera y la partida siguen siendo las de la primera).
+            assertEquals(-1, NativeLibrary.nativeSessionLoadGba(gba, SyntheticGbaRom.sramWriter(0x11), null, 0, 0, 0))
+            val ints = IntArray(GBA_INFO_INTS)
+            assertEquals(0, NativeLibrary.nativeSessionGbaRomInfo(gba, ints, ByteArray(32), ByteArray(13), ByteArray(8)))
+            assertEquals(GbaSaveType.NONE.native, ints[1])
+            assertEquals(0, NativeLibrary.nativeSessionSramSize(gba))
+            NativeLibrary.nativeSessionStop(gba)
+            assertEquals("detenida tampoco", -1, NativeLibrary.nativeSessionLoadGba(gba, idle, null, 0, 0, 0))
+
+            assertEquals(0, NativeLibrary.nativeSessionLoad(gb, SyntheticRom.romOnly(), 0, 0, 0))
+            assertEquals(-1, NativeLibrary.nativeSessionLoad(gb, SyntheticRom.sramWriter(0x22), 0, 0, 0))
+            assertEquals(0, NativeLibrary.nativeSessionSramSize(gb))
+        } finally {
+            NativeLibrary.nativeSessionDestroy(gba)
+            NativeLibrary.nativeSessionDestroy(gb)
+        }
+        EmulatorSession(Console.GBA).use { session ->
+            session.loadGba(idle)
+            assertThrows(SessionError.InvalidTransition::class.java) { session.loadGba(idle) }
+        }
+    }
+
+    @Test
+    fun coreBridgeUsesAFreshCoreForEachGbaLoad() {
+        CoreBridge(Console.GBA).use { core ->
+            core.loadGbaRom(GbaTestRoms.load("stripes.gba"))
+            repeat(30) { core.runFrame() }
+            val info = core.loadGbaRom(GbaTestRoms.load("shades.gba"))
+            assertEquals("127ce348f17e4d5fd8a0821a7af757eda6109c66c9f7b8f7d1e0fa31831b407d", info.fingerprintHex)
+            val cumulative = MessageDigest.getInstance("SHA-256")
+            val pixels = IntArray(core.screen.pixelCount)
+            repeat(60) {
+                core.runFrame()
+                core.copyFrame(pixels)
+                cumulative.update(frameBytes(pixels))
+            }
+            assertEquals(
+                "tras recargar, los 60 frames son los de un núcleo recién creado",
+                SHADES_CUM_60,
+                cumulative.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) },
+            )
+        }
+    }
+
     // ---- BIOS opcional ----
 
     @Test
