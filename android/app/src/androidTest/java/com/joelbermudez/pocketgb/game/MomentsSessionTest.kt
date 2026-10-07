@@ -70,6 +70,33 @@ class MomentsSessionTest {
         }
     }
 
+    /** N6A-H2: con el anillo lleno, recuperar su entrada más antigua y que falle la carga no la expulsa ni borra. */
+    @Test
+    fun recoveringTheOldestRingEntryWithAFullRingSurvivesAFailedLoad() {
+        openGame(SyntheticRom.sramCounter(), withMoments = true).use { g ->
+            val game = g.game
+            playAndPause(game)
+            val m = game.createMoment("M", null)
+            repeat(3) {
+                playAndPause(game, 150)
+                game.loadMoment(MomentStore.Kind.MOMENT, m.id, m.name, null)
+            }
+            val ring = game.moments().beforeLoad
+            assertEquals(3, ring.size)
+            val oldest = ring.last()
+            val oldestSram = moments(g).loadSram(MomentStore.Kind.BEFORE_LOAD, oldest.id)!!
+            // Fuerza el fallo de applyLoadedState: su estado ya no lo acepta el núcleo.
+            val stateFile = moments(g).stateFile(MomentStore.Kind.BEFORE_LOAD, oldest.id)
+            stateFile.writeBytes(stateFile.readBytes().also { it[it.size / 2] = (it[it.size / 2] + 1).toByte(); it[8] = 0x7f })
+            val before = g.store!!.load()!!
+            assertThrows(StateError.Core::class.java) { game.loadMoment(MomentStore.Kind.BEFORE_LOAD, oldest.id, oldest.name, null) }
+            assertArrayEquals("la partida no cambió", before, g.store!!.load())
+            assertTrue("la entrada recuperada sigue en el anillo", game.moments().beforeLoad.any { it.id == oldest.id })
+            assertArrayEquals("y su RAM sigue en disco", oldestSram, moments(g).loadSram(MomentStore.Kind.BEFORE_LOAD, oldest.id))
+            assertEquals(3, game.moments().beforeLoad.size)
+        }
+    }
+
     @Test
     fun aStateTheCoreNoLongerLoadsStillLetsTheMomentRamBeRecovered() {
         val ownership = FingerprintOwnership()

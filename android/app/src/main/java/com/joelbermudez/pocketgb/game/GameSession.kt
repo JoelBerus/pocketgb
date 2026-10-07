@@ -634,10 +634,15 @@ class GameSession(
             throw StateError.Core(error)
         }
         val sram = currentSram()
-        onSaveThread {
-            store.pushBeforeLoad(MomentStore.Capture(previous.bytes, sram, FramePng.encode(previous.pixels)), label, momentConfig, playTimeMs)
+        // N6A-H2: la entrada recuperada no sale del anillo; las expulsadas se borran solo si la carga se confirma.
+        val pending = onSaveThread {
+            store.pushBeforeLoadDeferred(
+                MomentStore.Capture(previous.bytes, sram, FramePng.encode(previous.pixels)), label, momentConfig, playTimeMs,
+                protect = id.takeIf { kind == MomentStore.Kind.BEFORE_LOAD },
+            )
         }
         applyLoadedState(data, previous)
+        try { onSaveThread { pending.commit() } } catch (_: Exception) {} // huérfanas: las retira recoverOrphans
     }
 
     fun deleteMoment(kind: MomentStore.Kind, id: String) = onSaveThread { momentStore().delete(kind, id) }

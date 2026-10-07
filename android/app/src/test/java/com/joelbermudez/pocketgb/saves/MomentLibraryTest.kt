@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.saves
 
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -34,6 +35,34 @@ class MomentLibraryTest {
             "y también en el anillo",
             library.snapshot(fp).beforeLoad.any { library.store(fp).loadSram(MomentStore.Kind.BEFORE_LOAD, it.id)!!.contentEquals(version(1, 16)) },
         )
+    }
+
+    /** N6A-H2: con el anillo lleno, recuperar su entrada más antigua y fallar al escribir la partida no la pierde. */
+    @Test fun recoveringTheOldestRingEntryWithAFullRingSurvivesAFailedSave() {
+        val failSaves = java.util.concurrent.atomic.AtomicBoolean(false)
+        val savesDir = File(root, "saves")
+        val ops = object : SaveFileOps by PosixSaveFileOps {
+            override fun writeSynced(file: File, data: ByteArray) {
+                if (failSaves.get() && file.absolutePath.startsWith(savesDir.absolutePath)) throw IOException("fallo inyectado")
+                PosixSaveFileOps.writeSynced(file, data)
+            }
+        }
+        val lib = MomentLibrary(File(root, "moments"), File(root, "states"), savesDir, ops = ops, ownership = ownership, migratedName = { it })
+        val store = SaveStore(savesDir, fp, ops)
+        store.save(version(9, 16))
+        (1..3).forEach { lib.store(fp).pushBeforeLoad(MomentStore.Capture(null, version(it, 16), null), "M$it") }
+        val oldest = lib.snapshot(fp).beforeLoad.last()
+        assertArrayEquals(version(1, 16), lib.store(fp).loadSram(MomentStore.Kind.BEFORE_LOAD, oldest.id))
+        failSaves.set(true)
+        assertThrows(IOException::class.java) { lib.installSram(fp, MomentStore.Kind.BEFORE_LOAD, oldest.id, oldest.name, null) }
+        failSaves.set(false)
+        assertArrayEquals("la partida no cambió", version(9, 16), store.load())
+        assertTrue("la entrada recuperada sigue en el anillo", lib.snapshot(fp).beforeLoad.any { it.id == oldest.id })
+        assertArrayEquals("y sus archivos también", version(1, 16), lib.store(fp).loadSram(MomentStore.Kind.BEFORE_LOAD, oldest.id))
+        // Reintento con éxito: se instala y la protegida sigue disponible.
+        lib.installSram(fp, MomentStore.Kind.BEFORE_LOAD, oldest.id, oldest.name, null)
+        assertArrayEquals(version(1, 16), store.load())
+        assertEquals(3, lib.snapshot(fp).beforeLoad.size)
     }
 
     @Test fun theCartridgeRamOfAMomentIsRecoverableEvenIfItsStateNoLongerLoads() {
