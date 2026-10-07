@@ -271,7 +271,9 @@ class ExactContinuationTest {
             assertTrue("deja de ofrecerse «Continuar»", waitUntil(5_000) { fingerprint !in vm.resumable.value })
             vm.playFromStartAfterResumeFailure()
             assertTrue(waitUntil(10_000) { vm.game.value != null })
-            assertArrayEquals(newer, vm.game.value!!.session.copySram())
+            // El ViewModel ya arrancó el juego: la ROM contador solo cambia `$A000`, que parte de la partida más nueva.
+            val sram = vm.game.value!!.session.copySram()
+            assertArrayEquals(newer.copyOfRange(1, newer.size), sram.copyOfRange(1, sram.size))
             vm.exit()
             assertTrue(waitUntil(10_000) { vm.game.value == null })
             assertTrue("al salir hay AUTO nuevo y vuelve «Continuar»", waitUntil(5_000) { fingerprint in vm.resumable.value })
