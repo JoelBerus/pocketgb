@@ -226,18 +226,19 @@ class LibraryIdentityTest {
     }
 
     @Test
-    fun aVersionTwoFileFromTheFirstN1DeliveryIsReadAndWrittenAsVersionThree() {
+    fun aVersionTwoFileFromTheFirstN1DeliveryIsReadAndWrittenAsTheCurrentVersion() {
         val file = File(tmp.root, "p.json").apply {
             writeText("""{"formatVersion":2,"favoriteFingerprints":["fp"],"documents":{"Rojo.gb":{"name":"Rojo.gb","size":1}}}""")
         }
         val store = LibraryPreferencesFile(file)
         val data = store.load()
         assertFalse(store.writeProtected)
-        assertEquals(3, LibraryPreferencesFormat.CURRENT)
+        // N4: la versión actual es la 4 (la 3 de N1-V2 se lee igual, ver LibraryFormatV4Test).
+        assertEquals(4, LibraryPreferencesFormat.CURRENT)
         assertEquals(LibraryPreferencesFormat.CURRENT, data.formatVersion)
         assertTrue(data.tombstones.isEmpty() && data.inferredFingerprints.isEmpty())
         store.save(data)
-        assertTrue(file.readText().contains("\"formatVersion\":3"))
+        assertTrue(file.readText().contains("\"formatVersion\":${LibraryPreferencesFormat.CURRENT}"))
     }
 
     @Test

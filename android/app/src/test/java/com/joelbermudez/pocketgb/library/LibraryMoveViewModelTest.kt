@@ -235,7 +235,8 @@ class LibraryMoveViewModelTest {
     @Test
     fun preferencesFromAFutureVersionAreUsedButNeverWritten() {
         // N1-H2: un preferences.json de una versión más nueva no se sobrescribe; la UI lo avisa.
-        val original = """{"formatVersion":4,"favoriteFingerprints":["$fingerprint"],"categorias":{"Pokémon":["x"]}}"""
+        // N4: la 4 ya es la actual; la futura es la 5.
+        val original = """{"formatVersion":5,"favoriteFingerprints":["$fingerprint"],"categorias":{"Pokémon":["x"]}}"""
         File(temp.root, "preferences.json").writeText(original)
         layoutBefore()
         val vm = viewModel()

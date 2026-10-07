@@ -45,7 +45,14 @@ object LibraryPreferencesFormat {
      * N1-V2: además lápidas (`tombstones`) y huellas sin confirmar (`inferredFingerprints`). Un archivo v2 se lee igual
      * (esas claves toman su valor vacío) y se escribe como v3; una app v2 no sobrescribirá un v3 (lo verá como futuro).
      */
-    const val CURRENT = 3
+    const val V3 = 3
+
+    /**
+     * N4: además etiquetas y categoría virtual por huella (`tagsByFingerprint`, `virtualFoldersByFingerprint`), ajustes
+     * del inicio (`home`) y vista por categoría (`categoryLayouts`), todo por dispositivo (ND12). Un archivo v2 o v3 se
+     * lee igual (esas claves toman su valor vacío) y se escribe como v4; una app v3 no sobrescribirá un v4.
+     */
+    const val CURRENT = 4
 }
 
 /**
@@ -94,6 +101,17 @@ data class LibraryPreferencesData(
      * abrir el juego o ver su detalle ([recordFingerprint]); los ajustes del juego la confirman antes de escribir.
      */
     val inferredFingerprints: Set<String> = emptySet(),
+    /** N4: etiquetas libres por huella, en orden natural ([Tags]). */
+    val tagsByFingerprint: Map<String, List<String>> = emptyMap(),
+    /**
+     * N4 (ND3): categoría virtual por huella («Mostrar en categoría…»): la ruta de carpetas en la que se ve el juego en
+     * vez de la de su carpeta (vacía = «Sin categoría»). La app lo recuerda sin tocar los archivos.
+     */
+    val virtualFoldersByFingerprint: Map<String, List<String>> = emptyMap(),
+    /** N4: ajustes del inicio de este dispositivo (ND12): orden, fijadas, ocultas y fila de Favoritos. */
+    val home: HomeSettings = HomeSettings(),
+    /** N4: vista (cuadrícula o lista) de cada pantalla de categoría ([LibraryCategory.key]); sin valor, [layout]. */
+    val categoryLayouts: Map<String, LibraryLayout> = emptyMap(),
     /** N1a: versión del formato ([LibraryPreferencesFormat]). */
     val formatVersion: Int = LibraryPreferencesFormat.CURRENT,
 ) {
@@ -213,6 +231,72 @@ data class LibraryPreferencesData(
         }
     }
 
+    // ---- N4: etiquetas, categoría virtual y vista por categoría ----
+
+    /** Etiquetas del juego (por su huella conocida, también una heredada sin confirmar: solo para mostrar). */
+    fun tagsOf(entry: RomEntry): List<String> = fingerprints[entry.id]?.let(tagsByFingerprint::get).orEmpty()
+
+    /**
+     * Añade la etiqueta [raw] ([Tags.normalize]) al juego. Solo con la huella confirmada (N1-H1): sin ella no se escribe
+     * nada (quien llama la confirma antes leyendo el ROM). Una etiqueta que ya tiene (sin distinguir mayúsculas ni
+     * acentos) o pasar de [Tags.MAX_PER_GAME] no cambia nada.
+     */
+    fun addTag(entry: RomEntry, raw: String): LibraryPreferencesData {
+        val fingerprint = confirmedFingerprint(entry) ?: return this
+        val current = tagsByFingerprint[fingerprint].orEmpty()
+        val next = Tags.added(current, raw)
+        return if (next == current) this else copy(tagsByFingerprint = tagsByFingerprint + (fingerprint to next))
+    }
+
+    /** Quita la etiqueta [tag] (sin distinguir mayúsculas ni acentos); sin etiquetas no queda entrada. */
+    fun removeTag(entry: RomEntry, tag: String): LibraryPreferencesData {
+        val fingerprint = confirmedFingerprint(entry) ?: return this
+        val current = tagsByFingerprint[fingerprint] ?: return this
+        val next = Tags.removed(current, tag)
+        return when {
+            next == current -> this
+            next.isEmpty() -> copy(tagsByFingerprint = tagsByFingerprint - fingerprint)
+            else -> copy(tagsByFingerprint = tagsByFingerprint + (fingerprint to next))
+        }
+    }
+
+    /** N4 (ND3): categoría virtual del juego, o `null` si se ve en la de su carpeta. */
+    fun virtualFolderOf(entry: RomEntry): List<String>? = fingerprints[entry.id]?.let(virtualFoldersByFingerprint::get)
+
+    /** La categoría en la que se ve el juego: la virtual o la de su carpeta. */
+    fun categoryPathOf(entry: RomEntry): List<String> = virtualFolderOf(entry) ?: entry.folderPath
+
+    /**
+     * «Mostrar en categoría…» (ND3): el juego se ve en [path] (ya validada, [CategoryPaths.parse]; vacía = «Sin
+     * categoría») en vez de en la de su carpeta. Nunca toca el archivo. Elegir su propia carpeta es volver a ella. Solo
+     * con la huella confirmada (N1-H1); si no, no se escribe nada.
+     */
+    fun moveToCategory(entry: RomEntry, path: List<String>): LibraryPreferencesData {
+        val fingerprint = confirmedFingerprint(entry) ?: return this
+        if (path == entry.folderPath) return returnToFolder(entry)
+        if (virtualFoldersByFingerprint[fingerprint] == path) return this
+        return copy(virtualFoldersByFingerprint = virtualFoldersByFingerprint + (fingerprint to path.toList()))
+    }
+
+    /** «Volver a su carpeta»: quita la categoría virtual. */
+    fun returnToFolder(entry: RomEntry): LibraryPreferencesData {
+        val fingerprint = confirmedFingerprint(entry) ?: return this
+        if (fingerprint !in virtualFoldersByFingerprint) return this
+        return copy(virtualFoldersByFingerprint = virtualFoldersByFingerprint - fingerprint)
+    }
+
+    /** Vista de la pantalla de [category]: la suya si se eligió, si no la de la biblioteca. */
+    fun layoutFor(category: LibraryCategory): LibraryLayout = categoryLayouts[category.key] ?: layout
+
+    fun withCategoryLayout(category: LibraryCategory, value: LibraryLayout): LibraryPreferencesData {
+        if (categoryLayouts[category.key] == value) return this
+        val next = (categoryLayouts - category.key).entries.take(HomeSettings.MAX_KEYS - 1).associate { it.key to it.value }
+        return copy(categoryLayouts = next + (category.key to value))
+    }
+
+    private fun confirmedFingerprint(entry: RomEntry): String? =
+        fingerprints[entry.id]?.takeIf { hasConfirmedFingerprint(entry) }
+
     fun hide(entry: RomEntry): LibraryPreferencesData {
         val fingerprint = fingerprints[entry.id]
         return if (fingerprint != null) {
@@ -240,11 +324,15 @@ object LibraryQuery {
         LibraryFilter.FAVORITES -> isFavorite
     }
 
-    /** Busca en el alias (si lo hay), en el título de la cabecera y en el nombre del archivo (A9). */
+    /**
+     * Busca en el alias (si lo hay), en el título de la cabecera y en el nombre del archivo (A9) y, en [entry] presentado,
+     * en la categoría en la que se ve (cada nivel, N4) y en sus etiquetas (N4).
+     */
     fun matches(entry: RomEntry, query: String): Boolean {
         val q = fold(query.trim())
         if (q.isEmpty()) return true
-        return fold(entry.displayTitle).contains(q) || fold(entry.title).contains(q) || fold(entry.fileName).contains(q)
+        return fold(entry.displayTitle).contains(q) || fold(entry.title).contains(q) || fold(entry.fileName).contains(q) ||
+            entry.categoryPath.any { fold(it).contains(q) } || entry.tags.any { fold(it).contains(q) }
     }
 
     fun visible(
@@ -319,10 +407,14 @@ object LibraryQuery {
         return present(entry, prefs, copies(entries, prefs))
     }
 
+    /** Con alias, copias (N1a), etiquetas y categoría virtual (N4) aplicados. */
     private fun present(entry: RomEntry, prefs: LibraryPreferencesData, copies: Map<String, List<RomLocation>>): RomEntry {
         val withAlias = prefs.withAlias(entry)
         val others = copies[entry.id].orEmpty()
-        return if (others == withAlias.alsoAt) withAlias else withAlias.copy(alsoAt = others)
+        val tags = prefs.tagsOf(entry)
+        val virtual = prefs.virtualFolderOf(entry)
+        if (others == withAlias.alsoAt && tags == withAlias.tags && virtual == withAlias.virtualFolderPath) return withAlias
+        return withAlias.copy(alsoAt = others, tags = tags, virtualFolderPath = virtual)
     }
 
     private fun fold(s: String): String =
@@ -466,7 +558,7 @@ class LibraryPreferencesFile(
     /**
      * Decodifica (N1-H2/H3, N1-V2-H3). La versión se decide **antes** de decodificar, leída con tolerancia:
      * - sin `formatVersion` (o `null`) o `1`: A5–A9, se decodifica y se migra ([LibraryPreferencesData.migrated]);
-     * - `2` o la actual (también `2.0` o `"3"`): se decodifica tal cual;
+     * - `2`, `3` o la actual (también `2.0` o `"4"`): se decodifica tal cual (N4: lo nuevo de v4 toma su valor vacío);
      * - futura, no entera, no numérica o menor que 1: versión ajena. Se decodifica con tolerancia (las claves que esta
      *   versión no sabe leer se ignoran una a una), sin migrar, y el archivo queda protegido contra escritura
      *   ([writeProtected]). Un archivo de versión ajena nunca se aparta como corrupto.
@@ -483,7 +575,7 @@ class LibraryPreferencesFile(
         val body = JsonObject(root - VERSION_KEY)
         return when (val version = versionOf(root[VERSION_KEY])) {
             LibraryPreferencesFormat.LEGACY -> decodeStrict(body)?.migrated()
-            LibraryPreferencesFormat.V2, LibraryPreferencesFormat.CURRENT ->
+            LibraryPreferencesFormat.V2, LibraryPreferencesFormat.V3, LibraryPreferencesFormat.CURRENT ->
                 decodeStrict(body)?.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
             else -> {
                 foreignVersion = root[VERSION_KEY].toString()

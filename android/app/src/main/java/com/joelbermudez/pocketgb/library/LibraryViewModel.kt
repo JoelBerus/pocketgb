@@ -79,9 +79,12 @@ class LibraryViewModel(
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
 
-    /** N3b: categoría elegida (carpeta de primer nivel); como el filtro, solo dura lo que la app esté abierta. */
-    private val _category = MutableStateFlow<LibraryCategory>(LibraryCategory.All)
-    val category: StateFlow<LibraryCategory> = _category.asStateFlow()
+    /**
+     * N4: etiqueta elegida en los filtros (`null` = todas); como el filtro, solo dura lo que la app esté abierta. Las
+     * categorías ya no filtran la biblioteca: llevan a su pantalla (N4).
+     */
+    private val _tag = MutableStateFlow<String?>(null)
+    val tag: StateFlow<String?> = _tag.asStateFlow()
 
     /**
      * N1-H2: `preferences.json` es de otra versión de la app (futura o con una versión que no se entiende): no se
@@ -351,8 +354,8 @@ class LibraryViewModel(
         _query.value = value
     }
 
-    fun setCategory(value: LibraryCategory) {
-        _category.value = value
+    fun setTag(value: String?) {
+        _tag.value = value
     }
 
     fun setFilter(value: LibraryFilter) {
@@ -373,6 +376,43 @@ class LibraryViewModel(
 
     /** Renombrar (A9): solo cambia el nombre visible; el ROM, su `.sav` y sus estados no se tocan. Vacío = cabecera. */
     fun setAlias(entry: RomEntry, value: String) = mutate { it.setAlias(entry, value) }
+
+    // ---- N4: etiquetas, categoría virtual, vista por categoría e inicio ----
+
+    /**
+     * Añade una etiqueta (por huella). Solo con la huella confirmada ([LibraryPreferencesData.hasConfirmedFingerprint]):
+     * la UI la confirma antes con [confirmFingerprint]; sin ella no se escribe nada y devuelve `false`.
+     */
+    fun addTag(entry: RomEntry, tag: String): Boolean = mutateIfConfirmed(entry) { it.addTag(entry, tag) }
+
+    fun removeTag(entry: RomEntry, tag: String): Boolean = mutateIfConfirmed(entry) { it.removeTag(entry, tag) }
+
+    /** «Mostrar en categoría…» (ND3): solo lo recuerda la app, nunca mueve el archivo. Con la huella confirmada. */
+    fun moveToCategory(entry: RomEntry, path: List<String>): Boolean = mutateIfConfirmed(entry) { it.moveToCategory(entry, path) }
+
+    /** «Volver a su carpeta». */
+    fun returnToFolder(entry: RomEntry): Boolean = mutateIfConfirmed(entry) { it.returnToFolder(entry) }
+
+    fun setCategoryLayout(category: LibraryCategory, layout: LibraryLayout) = mutate { it.withCategoryLayout(category, layout) }
+
+    /** Ajustes › Biblioteca › Inicio (por dispositivo, ND12). */
+    fun updateHome(change: (HomeSettings) -> HomeSettings) = mutate { it.copy(home = change(it.home)) }
+
+    /**
+     * N1-H1/N4: asegura que la huella de [entry] sale de leer su ROM (abre el detalle si hace falta). `true` si después
+     * está confirmada.
+     */
+    suspend fun confirmFingerprint(entry: RomEntry): Boolean {
+        if (_prefs.value.hasConfirmedFingerprint(entry)) return true
+        if (loadDetails(entry.id) !is DetailsLoad.Loaded) return false
+        return _prefs.value.hasConfirmedFingerprint(entry)
+    }
+
+    private fun mutateIfConfirmed(entry: RomEntry, change: (LibraryPreferencesData) -> LibraryPreferencesData): Boolean {
+        if (!_prefs.value.hasConfirmedFingerprint(entry)) return false
+        mutate(change)
+        return true
+    }
 
     /** Registra que se abrió [entry] (para "Continuar jugando" y la huella). */
     fun recordPlayed(entry: RomEntry, fingerprint: String, at: Long) {
