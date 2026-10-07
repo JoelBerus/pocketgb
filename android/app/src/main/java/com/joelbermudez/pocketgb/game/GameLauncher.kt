@@ -268,13 +268,16 @@ class GameLauncher(
             }
             index.record(fingerprint, info.title, entry.fileName, validSizesForIndex)
 
+            // Hay partida que guardar pero esta sesión no la carga ni la guarda (J10, ilegible, solo un espejo de
+            // tamaño incorrecto): el AUTO no se puede comparar y su contenido puede ser la única copia (A9-H2).
+            val unsavedCartridge = saveStore != null && target == null
             // A9 · «Continuar» exacto: DESPUÉS de resolver la partida (la apertura pudo instalar un espejo más nuevo) y
             // antes de crear el guardado y el hilo. Nunca escribe: si el estado vale, su RAM ya es la de disco.
             var resumed = false
             if (mode == LaunchMode.RESUME) {
                 val core = SessionResumableCore(session, info.sramBytes) { now() / 1000 }
                 val outcome = try {
-                    ExactContinuation.resume(core, states, saveStore?.modificationDateMs)
+                    ExactContinuation.resume(core, states, saveStore?.modificationDateMs, saveLoaded = !unsavedCartridge)
                 } catch (_: RuntimeException) {
                     // Un fallo inesperado del núcleo al copiar o comparar: la sesión se cierra sin guardar y se ofrece
                     // «Jugar desde el inicio» igual que con cualquier otro estado que no vale.
@@ -298,6 +301,7 @@ class GameLauncher(
                 policy = policy(),
                 lease = lease,
                 title = entry.alias ?: info.title,
+                unsavedCartridge = unsavedCartridge,
             )
             handedOver = true
             // Cabecera con checksum incorrecto (K15): se abre igual y se avisa al empezar.

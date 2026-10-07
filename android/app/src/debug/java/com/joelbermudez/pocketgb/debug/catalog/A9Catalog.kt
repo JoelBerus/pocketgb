@@ -25,8 +25,6 @@ import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LocalInitialMenuFor
 import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 
-private typealias CatalogScreen = @Composable (DebugIntent) -> Unit
-
 /** Alias de muestra (A9): el primer juego renombrado, con su huella conocida. */
 private const val DEMO_ALIAS = "Rojo de Joel"
 
@@ -100,7 +98,8 @@ private fun A9Details(prefs: LibraryPreferencesData, canResume: Boolean, menuOpe
 }
 
 /** Pantallas nuevas de A9: renombrar y continuación exacta («Continuar» / «Jugar desde el inicio»). */
-internal val a9CatalogScreens: Map<String, CatalogScreen> = buildMap {
+// Sin typealias propio: `CatalogScreen` ya es privado de A7Catalog.kt en este paquete y Kotlin no admite dos (A9-H1).
+internal val a9CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = buildMap {
     // Detalle con «Continuar» exacto y «Jugar desde el inicio» (estado automático vigente), juego renombrado.
     put("details-resume-exact") { A9Details(remember { renamedPrefs() }, canResume = true) }
     // Diálogo de renombrar sobre el detalle, con el alias actual seleccionado. No pide el foco, pero el sistema puede

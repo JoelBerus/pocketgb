@@ -202,6 +202,8 @@ class GameplayViewModel(
     /** «Jugar desde el inicio» del aviso de [GameDialog.ResumeFailed]: abre solo la partida (`.sav`), sin el estado. */
     fun playFromStartAfterResumeFailure() {
         val failed = _dialog.value as? GameDialog.ResumeFailed ?: return
+        // Si aún hay una apertura o una partida, `open` no haría nada: el aviso se queda para no perder la acción (A9-H5).
+        if (_opening.value || _game.value != null) return
         _dialog.value = null
         open(failed.entry, LaunchMode.FRESH)
     }
@@ -219,7 +221,11 @@ class GameplayViewModel(
             try {
                 when (val result = launcher.open(entry, mode = mode)) {
                     is OpenResult.Failed -> when (val error = result.error) {
-                        is OpenError.ResumeFailed -> onResumeFailed(entry, error)
+                        is OpenError.ResumeFailed -> {
+                            // La apertura ya terminó: «Jugar desde el inicio» del aviso debe poder abrir enseguida (A9-H5).
+                            _opening.value = false
+                            onResumeFailed(entry, error)
+                        }
                         else -> _dialog.value = GameDialog.OpenFailed(error)
                     }
                     is OpenResult.Opened -> {

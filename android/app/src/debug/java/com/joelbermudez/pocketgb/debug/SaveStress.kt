@@ -156,7 +156,7 @@ object SaveStress {
                     // Un estado a medias nunca debe ser visible: o está completo o no existe (también el AUTO y el AUTO
                     // obsoleto apartado de A9).
                     val states = StateStore(statesRoot(context), fp)
-                    val files = listOf(states.stateFile(StateSlot.MANUAL1), states.stateFile(StateSlot.AUTO), states.obsoleteAutoFile)
+                    val files = (listOf(states.stateFile(StateSlot.MANUAL1), states.stateFile(StateSlot.AUTO)) + states.obsoleteAutoFiles())
                         .filter { it.exists() }
                     if (files.isNotEmpty()) {
                         session.start()

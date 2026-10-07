@@ -30,6 +30,7 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
         const val MAX_STATE_BYTES = 4 shl 20
         const val MAX_THUMBNAIL_BYTES = 1 shl 20
         private val MAGIC = "PGBS".toByteArray(Charsets.US_ASCII)
+        private const val OBSOLETE_PREFIX = "auto.obsolete-"
     }
 
     class Entry(val slot: StateSlot, val dateMs: Long, val thumbnail: ByteArray?, val corrupt: Boolean) {
@@ -113,18 +114,28 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
         save(state, thumbnail, StateSlot.RESCUE)
     }
 
-    /** Dónde queda el último estado automático obsoleto que se apartó ([setAsideAuto]). */
-    val obsoleteAutoFile: File get() = File(directory, "auto.obsolete.state")
+    /** Estados automáticos apartados ([setAsideAuto]), por nombre (fecha de apartado). Ninguna ranura los usa. */
+    fun obsoleteAutoFiles(): List<File> =
+        ops.list(directory).filter { it.startsWith(OBSOLETE_PREFIX) && it.endsWith(".state") }.sorted().map { File(directory, it) }
 
     /**
-     * A9: retira el estado automático obsoleto para que «Continuar» deje de ofrecerse, pero SIN borrarlo: se aparta
-     * como [obsoleteAutoFile] (uno por juego; el siguiente lo sustituye). Puede llevar la única copia de una partida que
-     * no se pudo guardar (p. ej. una sesión sin destino por un `.sav` de tamaño incorrecto, J10). La miniatura sí se borra.
+     * A9: retira el estado automático de su ranura sin borrarlo: se aparta como `auto.obsolete-<fecha>-<rand>.state`,
+     * un nombre único que nunca pisa otro apartado (A9-H2). Puede llevar la única copia de un progreso que no se pudo
+     * guardar (sesión sin destino por un `.sav` de tamaño incorrecto, J10). No se borran nunca: son raros (un AUTO
+     * obsoleto al continuar, o el anterior a la primera escritura de una sesión que no guarda) y pesan poco.
+     * La miniatura sí se borra.
      */
-    fun setAsideAuto() {
+    fun setAsideAuto(
+        nowMs: Long = System.currentTimeMillis(),
+        rand: String = java.util.UUID.randomUUID().toString().replace("-", "").take(6),
+    ) {
         val current = stateFile(StateSlot.AUTO)
         if (!ops.exists(current)) return
-        ops.atomicReplace(current, obsoleteAutoFile)
+        var target = File(directory, "$OBSOLETE_PREFIX$nowMs-$rand.state")
+        while (ops.exists(target)) {
+            target = File(directory, "$OBSOLETE_PREFIX$nowMs-${java.util.UUID.randomUUID().toString().replace("-", "").take(6)}.state")
+        }
+        ops.atomicReplace(current, target)
         ops.syncDirectory(directory)
         try { ops.delete(thumbnailFile(StateSlot.AUTO)) } catch (_: IOException) {}
     }
