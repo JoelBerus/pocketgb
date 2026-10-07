@@ -47,6 +47,8 @@ import com.joelbermudez.pocketgb.input.ControlsEditorBinding
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.input.GameControlsOverlay
 import com.joelbermudez.pocketgb.input.SafeInsets
+import com.joelbermudez.pocketgb.settings.DPAD_SEPARATION_STEP
+import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.video.GameSurface
 
@@ -144,6 +146,10 @@ fun GameplayScreen(
                 onDone = onEditingDone,
                 onSmaller = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, -0.1f) } } },
                 onLarger = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, 0.1f) } } },
+                showSeparation = settings.dpadStyle == DpadStyle.ARROWS,
+                separation = settings.layout(orientation).separation,
+                onCloser = { onSettingsChange { it.adjustSeparation(orientation, -DPAD_SEPARATION_STEP) } },
+                onFarther = { onSettingsChange { it.adjustSeparation(orientation, DPAD_SEPARATION_STEP) } },
                 modifier = Modifier
                     .align(if (landscape) Alignment.Center else Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),

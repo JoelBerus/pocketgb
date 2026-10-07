@@ -96,6 +96,7 @@ class GameplaySettingsFile(
             landscapeLayout = field("landscapeLayout", StoredControlLayout.serializer(), d.landscapeLayout),
             integerScaleLandscape = field("integerScaleLandscape", Boolean.serializer(), d.integerScaleLandscape),
             dpadStyle = field("dpadStyle", DpadStyle.serializer(), d.dpadStyle),
+            diagonalMode = field("diagonalMode", DiagonalMode.serializer(), d.diagonalMode),
             volume = field("volume", Float.serializer(), d.volume),
             colorForGameBoy = field("colorForGameBoy", Boolean.serializer(), d.colorForGameBoy),
             compatPalette = field("compatPalette", Int.serializer(), d.compatPalette),

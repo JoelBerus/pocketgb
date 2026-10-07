@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- N2 · Ajustes › Controles: diagonales de la cruceta -->
+    <string name="controls_diagonals_header">Diagonales</string>
+    <string name="controls_diagonals_label">Diagonales de la cruceta</string>
+    <string name="controls_diagonals_normal">Normales</string>
+    <string name="controls_diagonals_reduced">Reducidas</string>
+    <string name="controls_diagonals_disabled">Desactivadas</string>
+    <string name="controls_diagonals_normal_hint">Las diagonales ocupan la mitad del giro</string>
+    <string name="controls_diagonals_reduced_hint">La diagonal solo cuenta si apuntas claramente a la esquina</string>
+    <string name="controls_diagonals_disabled_hint">Solo arriba, abajo, izquierda y derecha</string>
+    <string name="controls_diagonals_footer">Con «Reducidas», pulsar arriba enciende solo arriba aunque el dedo tiemble un poco. No cambia el stick de un mando físico.</string>
+
+    <!-- N2 · Editor de controles: separación de las flechas separadas -->
+    <string name="editor_separation">Separación · %1$d %%</string>
+    <string name="editor_separation_closer">Acercar las flechas</string>
+    <string name="editor_separation_farther">Separar las flechas</string>
+</resources>

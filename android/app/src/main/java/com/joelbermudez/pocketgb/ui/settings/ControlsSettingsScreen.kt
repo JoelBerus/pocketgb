@@ -7,6 +7,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -19,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
+import com.joelbermudez.pocketgb.settings.DiagonalMode
 import com.joelbermudez.pocketgb.settings.DpadStyle
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
@@ -29,7 +35,7 @@ import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
 import com.joelbermudez.pocketgb.ui.settings.components.SwitchRow
 
-/** Ajustes › Controles: opacidad, cruceta, tamaño, visibilidad, háptica y disposición. */
+/** Ajustes › Controles: opacidad, cruceta, diagonales, tamaño, visibilidad, háptica y disposición. */
 @Composable
 fun ControlsSettingsScreen(repository: GameplaySettingsRepository, onBack: () -> Unit, onController: () -> Unit = {}) {
     val data by repository.state.collectAsStateWithLifecycle()
@@ -73,6 +79,32 @@ fun ControlsSettingsContent(
                 onSelect = { value -> onUpdate { it.copy(dpadStyle = value) } },
                 tag = "controls-dpad",
             )
+        }
+        SettingsGroup(
+            header = stringResource(R.string.controls_diagonals_header),
+            footer = stringResource(R.string.controls_diagonals_footer),
+        ) {
+            // Tres nombres largos («Desactivadas») no caben en botones segmentados: lista de opciones con su explicación.
+            listOf(
+                Triple(DiagonalMode.NORMAL, R.string.controls_diagonals_normal, R.string.controls_diagonals_normal_hint),
+                Triple(DiagonalMode.REDUCED, R.string.controls_diagonals_reduced, R.string.controls_diagonals_reduced_hint),
+                Triple(DiagonalMode.DISABLED, R.string.controls_diagonals_disabled, R.string.controls_diagonals_disabled_hint),
+            ).forEachIndexed { index, (mode, label, hint) ->
+                ListItem(
+                    headlineContent = { Text(stringResource(label)) },
+                    supportingContent = { Text(stringResource(hint)) },
+                    leadingContent = { RadioButton(selected = data.diagonalMode == mode, onClick = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .heightIn(min = 56.dp)
+                        .selectable(
+                            selected = data.diagonalMode == mode,
+                            role = Role.RadioButton,
+                            onClick = { onUpdate { it.copy(diagonalMode = mode) } },
+                        )
+                        .testTag("controls-diagonals-$index"),
+                )
+            }
         }
         SettingsGroup(header = stringResource(R.string.controls_group_header)) {
             ChoiceRow(

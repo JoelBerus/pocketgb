@@ -1,5 +1,9 @@
 package com.joelbermudez.pocketgb.input
 
+import com.joelbermudez.pocketgb.settings.DiagonalMode
+import com.joelbermudez.pocketgb.settings.DpadStyle
+import com.joelbermudez.pocketgb.settings.StoredControlLayout
+import kotlin.math.hypot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -97,16 +101,112 @@ class ControlGeometryTest {
     }
 
     @Test
-    fun arrowsUseTheSameSectorsAsTheCross() {
+    fun crossAndArrowsPlaceTheirSymbolsInTheSectorOfTheirDirection() {
         val frame = ControlBounds(100f, 100f, 240f, 240f)
-        val arms = ControlGeometry.dpadArms(frame)
-        assertEquals(setOf(GameBoyButton.UP, GameBoyButton.DOWN, GameBoyButton.LEFT, GameBoyButton.RIGHT), arms.keys)
-        arms.forEach { (button, arm) ->
-            // El centro de cada flecha cae en el sector de su dirección, igual que el brazo de la cruz.
-            val mask = ControlGeometry.dpadMask(arm.centerX - frame.centerX, arm.centerY - frame.centerY, frame.width / 2f)
-            assertEquals("flecha $button", button.mask, mask)
-            assertTrue(arm.left >= frame.left && arm.right <= frame.right && arm.top >= frame.top && arm.bottom <= frame.bottom)
+        val cross = DpadShape.crossArms(frame)
+        val arrows = DpadShape.arrowCircles(frame, separation = 1f)
+        assertEquals(setOf(GameBoyButton.UP, GameBoyButton.DOWN, GameBoyButton.LEFT, GameBoyButton.RIGHT), cross.keys)
+        assertEquals(cross.keys, arrows.keys)
+        DiagonalMode.entries.forEach { mode ->
+            cross.forEach { (button, arm) ->
+                val mask = ControlGeometry.dpadMask(arm.centerX - frame.centerX, arm.centerY - frame.centerY, frame.width / 2f, mode)
+                assertEquals("brazo $button con $mode", button.mask, mask)
+            }
+            arrows.forEach { (button, circle) ->
+                val mask = ControlGeometry.dpadMask(circle.centerX - frame.centerX, circle.centerY - frame.centerY, frame.width / 2f, mode)
+                assertEquals("flecha $button con $mode", button.mask, mask)
+            }
         }
+    }
+
+    @Test
+    fun separatedArrowsMakeTheDpadFrameFollowTheGroupAndNothingElse() {
+        val layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT)
+        val cross = ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.CROSS)
+        assertEquals(140f, cross.frames.getValue(ControlId.DPAD).width, 0.001f)
+        // La separación solo cuenta con flechas: con la cruz el marco no cambia.
+        val crossWide = ControlGeometry(layout.copy(separation = 1.5f), ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.CROSS)
+        assertEquals(140f, crossWide.frames.getValue(ControlId.DPAD).width, 0.001f)
+        assertEquals(1f, crossWide.dpadSeparation, 0f)
+
+        listOf(0.7f, 1f, 1.5f).forEach { separation ->
+            val geometry = ControlGeometry(layout.copy(separation = separation), ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.ARROWS)
+            val dpad = geometry.frames.getValue(ControlId.DPAD)
+            assertEquals("separación $separation", 140f * DpadShape.footprint(separation), dpad.width, 0.01f)
+            // El resto de controles no se mueve ni cambia de tamaño.
+            ControlId.entries.filter { it != ControlId.DPAD }.forEach { id ->
+                assertEquals("$id", cross.frames.getValue(id), geometry.frames.getValue(id))
+            }
+        }
+        val centreShift = ControlGeometry(layout.copy(separation = 1.5f), ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.ARROWS)
+        assertEquals(cross.frames.getValue(ControlId.DPAD).centerX, centreShift.frames.getValue(ControlId.DPAD).centerX, 0.01f)
+        assertEquals(cross.frames.getValue(ControlId.DPAD).centerY, centreShift.frames.getValue(ControlId.DPAD).centerY, 0.01f)
+    }
+
+    @Test
+    fun theTouchZoneOfSeparatedArrowsFollowsTheGroup() {
+        val layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(separation = 1.5f)
+        val geometry = ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.ARROWS)
+        val frame = geometry.frames.getValue(ControlId.DPAD)
+        val circles = DpadShape.arrowCircles(frame, geometry.dpadSeparation)
+        // Cada círculo, hasta su borde exterior, está dentro de la zona táctil de la cruceta…
+        circles.forEach { (button, circle) ->
+            val outer = when (button) {
+                GameBoyButton.UP -> ControlPoint(circle.centerX, circle.centerY - circle.radius + 1f)
+                GameBoyButton.DOWN -> ControlPoint(circle.centerX, circle.centerY + circle.radius - 1f)
+                GameBoyButton.LEFT -> ControlPoint(circle.centerX - circle.radius + 1f, circle.centerY)
+                else -> ControlPoint(circle.centerX + circle.radius - 1f, circle.centerY)
+            }
+            assertEquals("$button", ControlHit.Single(ControlId.DPAD), geometry.hit(outer))
+        }
+        // …y la zona táctil de fábrica (140) ya no la cubre: una zona fija dejaría fuera la punta de las flechas.
+        val factory = ControlGeometry(ControlLayout.defaults(ControlsOrientation.PORTRAIT), ControlsOrientation.PORTRAIT, area, dpadStyle = DpadStyle.ARROWS)
+        val tip = circles.getValue(GameBoyButton.UP).let { ControlPoint(it.centerX, it.centerY - it.radius + 1f) }
+        assertTrue(hypot(tip.x - factory.frames.getValue(ControlId.DPAD).centerX, tip.y - factory.frames.getValue(ControlId.DPAD).centerY) >
+            factory.frames.getValue(ControlId.DPAD).width / 2f)
+    }
+
+    @Test
+    fun separatedArrowsStayInsideTheSafeAreaAtEverySeparationAndSize() {
+        listOf(0.7f, 1f, 1.5f).forEach { separation ->
+            listOf(0.6f, 1f, 1.6f).forEach { scale ->
+                val layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT)
+                    .copy(scales = mapOf(ControlId.DPAD to scale), separation = separation)
+                val geometry = ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, sizeScale = 1.15f, dpadStyle = DpadStyle.ARROWS)
+                val frame = geometry.frames.getValue(ControlId.DPAD)
+                assertTrue("separación $separation escala $scale sale por la izquierda", frame.left >= area.left - 0.01f)
+                assertTrue("separación $separation escala $scale sale por la derecha", frame.right <= area.right + 0.01f)
+                assertTrue(frame.top >= area.top - 0.01f && frame.bottom <= area.bottom + 0.01f)
+                DpadShape.arrowCircles(frame, geometry.dpadSeparation).values.forEach { circle ->
+                    assertTrue(circle.centerX - circle.radius >= area.left - 0.01f && circle.centerX + circle.radius <= area.right + 0.01f)
+                    assertTrue(circle.centerY - circle.radius >= area.top - 0.01f && circle.centerY + circle.radius <= area.bottom + 0.01f)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun storedLayoutCarriesTheSeparationIntoTheRuntimeLayout() {
+        val stored = StoredControlLayout(separation = 1.3f)
+        assertEquals(1.3f, ControlLayout.from(stored, ControlsOrientation.LANDSCAPE).separation, 0f)
+        assertEquals(1f, ControlLayout.defaults(ControlsOrientation.LANDSCAPE).separation, 0f)
+        assertEquals(1.5f, ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(separation = 9f).dpadSeparation(), 0f)
+        assertEquals(0.7f, ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(separation = -1f).dpadSeparation(), 0f)
+    }
+
+    @Test
+    fun theGeometryUsesItsDiagonalModeAndRemembersTheFingerDirection() {
+        val layout = ControlLayout.defaults(ControlsOrientation.PORTRAIT)
+        val frame = ControlGeometry(layout, ControlsOrientation.PORTRAIT, area).frames.getValue(ControlId.DPAD)
+        // A 25° del eje horizontal: «Normales» da diagonal, «Reducidas» solo derecha.
+        val dx = kotlin.math.cos(Math.toRadians(25.0)).toFloat() * frame.width * 0.4f
+        val dy = -kotlin.math.sin(Math.toRadians(25.0)).toFloat() * frame.width * 0.4f
+        val point = ControlPoint(frame.centerX + dx, frame.centerY + dy)
+        val right = GameBoyButton.RIGHT.mask
+        val up = GameBoyButton.UP.mask
+        assertEquals(right or up, ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, diagonals = DiagonalMode.NORMAL).dpadMask(point))
+        assertEquals(right, ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, diagonals = DiagonalMode.REDUCED).dpadMask(point))
+        assertEquals(right, ControlGeometry(layout, ControlsOrientation.PORTRAIT, area, diagonals = DiagonalMode.DISABLED).dpadMask(point))
     }
 
     @Test

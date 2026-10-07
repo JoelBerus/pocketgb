@@ -308,4 +308,108 @@ class GameplaySettingsTest {
         assertFalse(bad.showTouchControlsWithController)
         assertNull(bad.controllerMapping)
     }
+
+    // ---- N2: diagonales y separación de las flechas separadas
+
+    @Test
+    fun diagonalsDefaultToReducedAndSeparationToOne() {
+        val d = GameplaySettingsData()
+        assertEquals(DiagonalMode.REDUCED, d.diagonalMode)
+        assertEquals(1f, d.portraitLayout.separation, 0f)
+        assertEquals(1f, d.landscapeLayout.separation, 0f)
+    }
+
+    @Test
+    fun separationIsStoredPerOrientationInStepsOfOneTenthWithinTheRange() {
+        val p = ControlsOrientation.PORTRAIT
+        val l = ControlsOrientation.LANDSCAPE
+        val wider = GameplaySettingsData().adjustSeparation(p, 0.1f).adjustSeparation(p, 0.1f)
+        assertEquals(1.2f, wider.portraitLayout.separation, 1e-4f)
+        assertEquals("la otra orientación no cambia", 1f, wider.landscapeLayout.separation, 0f)
+        assertEquals(1.2f, ControlLayout.from(wider.portraitLayout, p).separation, 1e-4f)
+        assertEquals(1f, ControlLayout.from(wider.landscapeLayout, l).separation, 1e-4f)
+
+        val max = (1..20).fold(GameplaySettingsData()) { acc, _ -> acc.adjustSeparation(l, 0.1f) }
+        assertEquals(1.5f, max.landscapeLayout.separation, 1e-4f)
+        val min = (1..20).fold(GameplaySettingsData()) { acc, _ -> acc.adjustSeparation(l, -0.1f) }
+        assertEquals(0.7f, min.landscapeLayout.separation, 1e-4f)
+        // Nueve pasos exactos de 0,7 a 1,5, sin deriva de decimales.
+        val steps = generateSequence(min) { it.adjustSeparation(l, 0.1f) }.take(9).map { it.landscapeLayout.separation }.toList()
+        assertEquals(listOf(0.7f, 0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f), steps)
+    }
+
+    @Test
+    fun resetReturnsTheSeparationToOneAndSeparationAloneIsNotTheFactoryLayout() {
+        val p = ControlsOrientation.PORTRAIT
+        val l = ControlsOrientation.LANDSCAPE
+        val changed = GameplaySettingsData().adjustSeparation(p, 0.3f)
+        assertFalse(changed.isFactoryLayout(p))
+        assertTrue(changed.isFactoryLayout(l))
+        val reset = changed.resetLayout(p)
+        assertEquals(1f, reset.portraitLayout.separation, 0f)
+        assertTrue(reset.isFactoryLayout(p))
+        // Mover y cambiar de tamaño también se restablecen junto con la separación.
+        val all = changed.move(p, ControlId.A, NormalizedPoint(0.7f, 0.2f)).resize(p, ControlId.DPAD, 0.2f).resetLayout(p)
+        assertEquals(StoredControlLayout(), all.portraitLayout)
+    }
+
+    @Test
+    fun sanitizedClampsAndRepairsTheSeparation() {
+        val dirty = GameplaySettingsData(
+            portraitLayout = StoredControlLayout(separation = 9f),
+            landscapeLayout = StoredControlLayout(separation = Float.NaN),
+        ).sanitized()
+        assertEquals(1.5f, dirty.portraitLayout.separation, 0f)
+        assertEquals(1f, dirty.landscapeLayout.separation, 0f)
+        assertEquals(0.7f, GameplaySettingsData(portraitLayout = StoredControlLayout(separation = 0.1f)).sanitized().portraitLayout.separation, 0f)
+    }
+
+    @Test
+    fun n2FieldsRoundTripThroughTheAtomicFile() {
+        val data = GameplaySettingsData(dpadStyle = DpadStyle.ARROWS, diagonalMode = DiagonalMode.DISABLED)
+            .adjustSeparation(ControlsOrientation.PORTRAIT, -0.2f)
+            .adjustSeparation(ControlsOrientation.LANDSCAPE, 0.4f)
+        GameplaySettingsFile(file()).save(data)
+        val loaded = GameplaySettingsFile(file()).load()
+        assertEquals(data, loaded)
+        assertEquals(DiagonalMode.DISABLED, loaded.diagonalMode)
+        assertEquals(0.8f, loaded.portraitLayout.separation, 1e-4f)
+        assertEquals(1.4f, loaded.landscapeLayout.separation, 1e-4f)
+    }
+
+    @Test
+    fun aFileFromBeforeN2StillLoadsWithTheNewDefaultsAndKeepsEverythingElse() {
+        // Archivo tal como lo escribía la versión anterior (A7): sin `diagonalMode` ni `separation` en las disposiciones.
+        file().writeText(
+            """{"schema":1,"opacity":50,"visibility":"ON_TOUCH","haptics":false,"sizeScale":1.15,
+               "portraitLayout":{"positions":{"A":{"x":0.7,"y":0.3}},"scales":{"DPAD":1.2}},
+               "landscapeLayout":{"positions":{},"scales":{"B":0.8}},
+               "integerScaleLandscape":false,"dpadStyle":"ARROWS","volume":0.4,"colorForGameBoy":true,"compatPalette":3,
+               "perGame":{"${fp}":{"colorForGameBoy":false,"compatPalette":2}},
+               "controllerMapping":{"bindings":{"A":96}},"showTouchControlsWithController":true}""",
+        )
+        val loaded = GameplaySettingsFile(file()).load()
+        assertEquals(DiagonalMode.REDUCED, loaded.diagonalMode)
+        assertEquals(1f, loaded.portraitLayout.separation, 0f)
+        assertEquals(1f, loaded.landscapeLayout.separation, 0f)
+        assertEquals(50, loaded.opacity)
+        assertEquals(ControlsVisibility.ON_TOUCH, loaded.visibility)
+        assertEquals(DpadStyle.ARROWS, loaded.dpadStyle)
+        assertEquals(NormalizedPoint(0.7f, 0.3f), loaded.portraitLayout.positions.getValue(ControlId.A))
+        assertEquals(1.2f, loaded.portraitLayout.scales.getValue(ControlId.DPAD), 0f)
+        assertEquals(0.8f, loaded.landscapeLayout.scales.getValue(ControlId.B), 0f)
+        assertEquals(GameOverrides(colorForGameBoy = false, compatPalette = 2), loaded.perGame[fp])
+        assertEquals(96, loaded.controllerMapping?.bindings?.get("A"))
+        assertTrue(loaded.showTouchControlsWithController)
+        assertTrue("el archivo anterior no se aparta", file().exists())
+    }
+
+    @Test
+    fun anInvalidDiagonalModeFallsBackToReducedWithoutLosingTheRest() {
+        file().writeText("""{"opacity":100,"diagonalMode":"MUCHAS","portraitLayout":{"separation":"ancha"}}""")
+        val loaded = GameplaySettingsFile(file()).load()
+        assertEquals(DiagonalMode.REDUCED, loaded.diagonalMode)
+        assertEquals(100, loaded.opacity)
+        assertEquals(StoredControlLayout(), loaded.portraitLayout)
+    }
 }
