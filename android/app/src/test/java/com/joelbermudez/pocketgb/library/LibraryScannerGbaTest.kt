@@ -175,4 +175,26 @@ class LibraryScannerGbaTest {
         assertNull(RomHeader.fromGbaIdentity("zz"))
         assertNull("una identidad de GB no es de GBA", RomHeader.fromGbaIdentity(RomHeader.identity(gb("RED"))!!))
     }
+
+    @Test
+    fun movingAGbaRomToAnotherFolderKeepsItsFingerprintFavoriteAndAlias() {
+        val fp = "cd".repeat(32)
+        val heads = mapOf("k" to gba("KIRBY DREAM", code = "A7KE"))
+        val before = LibraryScanner.scan(
+            Tree(mapOf(null to listOf(file("k", "Kirby.gba", modified = 50L)), "d" to emptyList()), heads),
+        ).single()
+        var prefs = LibraryPreferencesData().reconciled(listOf(before), complete = true)
+            .recordFingerprint(before.id, fp)
+            .toggleFavorite(before)
+            .setAlias(before, "Kirby de Joel")
+        // Se mueve a Kirby/ en Drive: otra ruta, mismo nombre, tamaño, fecha y cabecera de GBA.
+        val after = LibraryScanner.scan(
+            Tree(mapOf(null to listOf(dir("d", "Kirby")), "d" to listOf(file("k2", "Kirby.gba", modified = 50L))), mapOf("k2" to heads.getValue("k"))),
+        ).single()
+        assertEquals(listOf("Kirby"), after.folderPath)
+        prefs = prefs.reconciled(listOf(after), complete = true)
+        assertEquals(fp, prefs.fingerprints[after.id])
+        assertTrue(prefs.isFavorite(after))
+        assertEquals("Kirby de Joel", prefs.displayTitle(after))
+    }
 }

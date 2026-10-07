@@ -217,6 +217,29 @@ class GbaGameTest {
     }
 
     @Test
+    fun anEepromConfirmedAs8KiBOnlyByReadingStillGetsAn8KiBSaveSoContinueWorks() {
+        fixtures.put("Lee8K.gba", SyntheticGbaRom.eepromReadOnly8k())
+        val entry = entry("Lee8K.gba")
+        val game = openGame(entry).game
+        assertEquals("sin .sav la EEPROM empieza en 512 B", 512, game.session.sramSaveSize)
+        game.start()
+        assertTrue("la DMA de lectura confirma 8 KiB", waitUntil { game.session.sramSaveSize == 8192 })
+        assertEquals("el juego no escribió nada", 0L, game.session.sramDirtySequence())
+        // Sin pausar: el guardado periódico ve el cambio de tamaño como un guardado más (un cierre forzado ya deja el
+        // `.sav` de 8 KiB). Pausar o salir también lo escriben (comparan el contenido).
+        val local = SaveStore(File(root, "saves"), game.fingerprint).saveFile
+        assertTrue("el .sav de 8 KiB se escribe mientras se juega", waitUntil(15_000) { local.length() == 8192L })
+        game.pause()
+        assertEquals(8192, local.length().toInt())
+        assertEquals(ExitResult.Clean, game.exit())
+        game.close()
+        // Con el `.sav` de 8 KiB, el estado automático (ya con 8 KiB) se puede retomar: no da StateConfig.
+        val resumed = openGame(entry, LaunchMode.RESUME)
+        assertTrue(resumed.resumed)
+        assertEquals(8192, resumed.game.session.sramSaveSize)
+    }
+
+    @Test
     fun forcedSettingsThatDoNotMatchTheSaveWarnAndNeverTouchIt() {
         fixtures.put("Contador.gba", SyntheticGbaRom.sramCounter())
         val entry = entry("Contador.gba")
