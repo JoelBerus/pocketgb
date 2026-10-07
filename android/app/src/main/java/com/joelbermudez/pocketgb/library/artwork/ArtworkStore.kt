@@ -139,6 +139,20 @@ class ArtworkStore(
         return removed
     }
 
+    /** N5A-2: borra las entradas cuya clave no esté en [keep] (y temporales). Devuelve cuántas. */
+    fun retainOnly(keep: Set<String>): Int {
+        var removed = 0
+        for (file in ownFiles()) {
+            val key = file.name.removeSuffix(".png")
+            if ((!file.name.endsWith(".png") || key !in keep) && file.delete()) {
+                synchronized(cache) { cache.remove(key) }
+                removed++
+            }
+        }
+        if (removed > 0) _version.value += 1
+        return removed
+    }
+
     fun has(fingerprint: String): Boolean = isValidFingerprint(fingerprint) && fileFor(fingerprint).isFile
 
     /** Huellas con portada guardada. */

@@ -288,4 +288,40 @@ class CoversTest {
         assertEquals(1, reads)
         assertEquals(CoverKind.GENERATED, repo.resolve(withImage, fp))
     }
+
+    @Test
+    fun pruningKeepsOnlyFolderCopiesOfCurrentEntries() {
+        val folder = ArtworkStore(File(tmp.root, "covers/folder"), executor = null)
+        val repo = CoverRepository(
+            captures = ArtworkStore(File(tmp.root, "artwork"), executor = null),
+            folderCache = folder,
+            readFolderImage = { byteArrayOf(1) },
+            reduce = { byteArrayOf(7) },
+        )
+        val old = entry(coverUri = "content://img").copy(coverStamp = "viejo")
+        val now = entry(coverUri = "content://img").copy(coverStamp = "nuevo")
+        repo.load(old, fp)
+        repo.load(now, fp)
+        assertEquals(2, folder.fingerprints().size)
+        assertEquals(1, repo.pruneFolderCache(listOf(now, entry())))
+        assertEquals(1, folder.fingerprints().size)
+        assertEquals(0, repo.pruneFolderCache(listOf(now)))
+        assertEquals(1, repo.pruneFolderCache(emptyList()))
+        assertTrue(folder.fingerprints().isEmpty())
+    }
+
+    @Test
+    fun storageUsageIgnoresTheSettingsFile() {
+        val files = tmp.newFolder("files")
+        File(files, "covers").mkdirs()
+        File(files, "covers/settings.json").writeText("{}")
+        assertEquals(0L, com.joelbermudez.pocketgb.settings.StorageUsage.measure(files).artwork)
+        File(files, "covers/imported").mkdirs()
+        File(files, "covers/imported/a.png").writeBytes(ByteArray(10))
+        File(files, "covers/folder").mkdirs()
+        File(files, "covers/folder/b.png").writeBytes(ByteArray(5))
+        File(files, "artwork-pinned").mkdirs()
+        File(files, "artwork-pinned/c.png").writeBytes(ByteArray(3))
+        assertEquals(18L, com.joelbermudez.pocketgb.settings.StorageUsage.measure(files).artwork)
+    }
 }

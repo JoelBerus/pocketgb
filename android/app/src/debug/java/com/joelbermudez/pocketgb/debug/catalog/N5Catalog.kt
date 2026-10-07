@@ -1,6 +1,7 @@
 package com.joelbermudez.pocketgb.debug.catalog
 
 import android.graphics.Bitmap
+import androidx.core.graphics.createBitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -117,7 +118,7 @@ internal object N5Data {
 
     /** «Foto» sintética: cielo en degradado, sol y montañas. [hue] cambia la paleta. */
     fun painting(width: Int, height: Int, hue: Int): ByteArray {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
         val skies = listOf(
             intArrayOf(0xFF1D3B6F.toInt(), 0xFFF2A65A.toInt()),

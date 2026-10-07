@@ -17,8 +17,9 @@ data class StorageUsage(val saves: Long = 0, val states: Long = 0, val artwork: 
         fun measure(filesDir: File) = StorageUsage(
             saves = size(File(filesDir, "saves")),
             states = size(File(filesDir, "states")),
-            // N5: capturas, capturas fijadas e imágenes (importadas y copias de las de la carpeta).
-            artwork = size(File(filesDir, "artwork")) + size(File(filesDir, "artwork-pinned")) + size(File(filesDir, "covers")),
+            // N5: capturas, capturas fijadas e imágenes (importadas y copias de las de la carpeta); no `covers/settings.json` (N5A-3).
+            artwork = size(File(filesDir, "artwork")) + size(File(filesDir, "artwork-pinned")) +
+                size(File(filesDir, "covers/imported")) + size(File(filesDir, "covers/folder")),
         )
     }
 }

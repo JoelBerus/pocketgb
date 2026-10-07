@@ -80,9 +80,25 @@ class CoverRepository(
         return ShownCover.GENERATED
     }
 
+    /** Un candado por clave: dos tarjetas del mismo juego no leen la imagen de la carpeta a la vez. */
+    private val folderLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /**
+     * N5A-2: tras un escaneo completo, borra las copias de imágenes de la carpeta que ya no corresponden a ninguna
+     * entrada (la imagen cambió de sello, se movió o se borró). Nunca toca la carpeta del usuario.
+     */
+    fun pruneFolderCache(entries: List<RomEntry>): Int {
+        val keep = entries.mapNotNull(::folderKey).toSet()
+        return folderCache?.retainOnly(keep) ?: 0
+    }
+
     private fun loadFolderImage(entry: RomEntry): ImageBitmap? {
-        val uri = entry.coverUri ?: return null
         val key = folderKey(entry) ?: return null
+        return synchronized(folderLocks.computeIfAbsent(key) { Any() }) { loadFolderImageLocked(entry, key) }
+    }
+
+    private fun loadFolderImageLocked(entry: RomEntry, key: String): ImageBitmap? {
+        val uri = entry.coverUri ?: return null
         if (key in failedFolder) return null
         val cache = folderCache
         cache?.load(key)?.let { return it }
@@ -93,7 +109,7 @@ class CoverRepository(
             return null
         }
         cache?.saveEncoded(key, reduced)
-        return cache?.load(key) ?: ArtworkStore.decodePlain(reduced)
+        return cache?.load(key) ?: runCatching { ArtworkStore.decodePlain(reduced) }.getOrNull()
     }
 
     /** Clave del caché de la imagen de la carpeta: SHA-256 de URI + sello (tiene forma de huella). */
