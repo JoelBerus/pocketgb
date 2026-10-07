@@ -97,6 +97,7 @@ fun GameMetaLine(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+        if (entry.isDuplicate) DuplicateBadge()
         Text(
             gameDetailText(entry, lastPlayedAt),
             modifier = Modifier.weight(1f, fill = false),
@@ -108,13 +109,29 @@ fun GameMetaLine(
     }
 }
 
-/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, problema y última partida. */
+/** N1a: otra copia con la misma huella en la carpeta. Discreta: contorno fino y texto, sin color de alerta. */
+@Composable
+fun DuplicateBadge(modifier: Modifier = Modifier) {
+    Text(
+        stringResource(R.string.n1_duplicate),
+        modifier = modifier
+            .testTag("game-duplicate-badge")
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 1,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, duplicado, problema y última partida. */
 @Composable
 fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
     val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
     val parts = mutableListOf(entry.displayTitle, system)
     if (favorite) parts += stringResource(R.string.game_favorite)
     if (entry.isNew) parts += stringResource(R.string.game_new)
+    if (entry.isDuplicate) parts += stringResource(R.string.n1_duplicate)
     parts += entry.problem?.message ?: if (lastPlayedAt != null) {
         stringResource(R.string.game_status_played, relativeDateText(lastPlayedAt))
     } else {

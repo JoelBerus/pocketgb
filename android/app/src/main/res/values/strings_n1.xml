@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N1 · Identidad y carpetas (Android): duplicados y ruta del juego en el detalle. Solo cadenas de este lote. -->
+<resources>
+    <!-- Insignia discreta en la tarjeta y la fila cuando hay otra copia con la misma huella. -->
+    <string name="n1_duplicate">Duplicado</string>
+    <!-- Detalle: dónde están las otras copias. -->
+    <string name="n1_also_in">También en</string>
+    <!-- «Pokémon › 2ª generación · Pokemon Gold.gbc» -->
+    <string name="n1_location">%1$s · %2$s</string>
+    <!-- Una copia que está en la carpeta elegida, sin subcarpeta. -->
+    <string name="n1_root_folder">Carpeta principal</string>
+    <string name="n1_also_in_footer">Las copias comparten partida, estados, ajustes y portada. Cada una tiene su .sav junto al ROM, que se pone al día al abrir esa copia.</string>
+    <!-- TalkBack: la ruta del juego en el detalle. -->
+    <string name="n1_location_description">Ubicación: %1$s</string>
+</resources>

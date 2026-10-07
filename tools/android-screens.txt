@@ -150,3 +150,12 @@ game-settings-rename portrait light
 game-settings-rename portrait dark
 resume-failed portrait light
 resume-failed portrait dark
+# N1 · identidad y carpetas: ruta profunda en el detalle e insignia «Duplicado» / «También en»
+details-deep-path portrait light
+details-deep-path portrait dark
+details-deep-path-ax5 portrait light fontScale=2.0
+details-duplicate portrait light
+details-duplicate portrait dark
+library-duplicates portrait light
+library-duplicates portrait dark
+library-duplicates-list portrait light

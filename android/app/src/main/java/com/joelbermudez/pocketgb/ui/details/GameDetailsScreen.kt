@@ -66,9 +66,12 @@ import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 import com.joelbermudez.pocketgb.library.ByteFormat
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
+import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.library.RomLocation
+import com.joelbermudez.pocketgb.ui.components.DuplicateBadge
 import com.joelbermudez.pocketgb.ui.components.EmptyState
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.ui.components.ConsoleChip
@@ -98,8 +101,9 @@ fun GameDetailsScreen(
         is LibraryState.Scanning -> current.previous
         else -> emptyList()
     }
-    // Con el alias aplicado (A9): barra superior, título y diálogos muestran el nombre que eligió el usuario.
-    val entry = entries.firstOrNull { it.id == gameId }?.takeUnless { prefs.isHidden(it) }?.let(prefs::withAlias)
+    // Con el alias aplicado (A9): barra superior, título y diálogos muestran el nombre que eligió el usuario. Con las
+    // otras copias de la misma huella (N1a, «También en»).
+    val entry = remember(entries, prefs, gameId) { LibraryQuery.presented(entries, prefs, gameId) }?.takeUnless { prefs.isHidden(it) }
     if (entry == null) {
         if (state is LibraryState.Loading || state is LibraryState.Scanning && entries.isEmpty()) {
             ScanningPane(
@@ -253,14 +257,19 @@ fun GameDetailsContent(
                 Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ConsoleChip(entry.isColor)
+                    // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera en varias líneas.
+                    val location = locationText(entry.location, inRoot = null)
+                    val locationDescription = stringResource(R.string.n1_location_description, location)
                     Text(
-                        if (entry.subfolder.isEmpty()) entry.fileName else "${entry.subfolder} · ${entry.fileName}",
+                        location,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.MiddleEllipsis,
+                        maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("game-details-location").semantics { contentDescription = locationDescription },
                     )
                 }
+                if (entry.isDuplicate) AlsoIn(entry.alsoAt)
             }
 
             val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
@@ -325,6 +334,50 @@ fun GameDetailsContent(
                 onHide()
             },
             onDismiss = { confirmHide = false },
+        )
+    }
+}
+
+/**
+ * «Pokémon › 2ª generación · archivo.gb». En la raíz, solo el archivo, o «Carpeta principal · archivo» si [inRoot] lo pide
+ * (en «También en», donde hace falta decir dónde está).
+ */
+@Composable
+internal fun locationText(location: RomLocation, inRoot: String?): String = when {
+    location.folderPath.isNotEmpty() ->
+        stringResource(R.string.n1_location, location.folderPath.joinToString(" › "), location.fileName)
+    inRoot != null -> stringResource(R.string.n1_location, inRoot, location.fileName)
+    else -> location.fileName
+}
+
+/** N1a: las otras copias del juego (misma huella) y qué comparten. */
+@Composable
+private fun AlsoIn(copies: List<RomLocation>) {
+    val root = stringResource(R.string.n1_root_folder)
+    Column(
+        Modifier.fillMaxWidth().padding(top = 4.dp).testTag("game-details-also-in").semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DuplicateBadge()
+            Text(
+                stringResource(R.string.n1_also_in),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        copies.forEach { copy ->
+            Text(
+                locationText(copy, inRoot = root),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            stringResource(R.string.n1_also_in_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
