@@ -94,6 +94,16 @@ final class GBACoreBridge: ConsoleCore {
         rom.eeprom = eeprom
         rom.eepromSizeFixed = sizeFixed
         rom.biosLoaded = info.bios_loaded
+        rom.romBytes = Int(info.rom_bytes)
+        rom.sha256 = withUnsafeBytes(of: info.fingerprint) { raw in raw.map { String(format: "%02x", $0) }.joined() }
+        rom.gbaSaveType = UInt8(truncatingIfNeeded: info.save_type.rawValue)
+        rom.gameCode = withUnsafeBytes(of: info.game_code) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        rom.makerCode = withUnsafeBytes(of: info.maker_code) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        rom.version = Int(info.version)
         return rom
     }
 

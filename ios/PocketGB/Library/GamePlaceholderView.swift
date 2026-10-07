@@ -90,31 +90,37 @@ struct GamePlaceholderView: View {
 }
 
 /// Portada de un juego (SPEC §8, `GameArtworkView`): la captura local si existe o el
-/// placeholder. Siempre 10:9 y con muestreo nearest para los píxeles del Game Boy.
+/// placeholder, con muestreo nearest para los píxeles. N3a: nunca se deforma. Con `.console`
+/// (detalle) el marco tiene la proporción de la consola (10:9 GB/GBC, 3:2 GBA) y la captura se ve
+/// entera; con `.card` (cuadrícula, lista, carriles) el marco es 10:9 para todas y la captura lo
+/// rellena centrada.
 struct GameArtworkView: View {
     @Environment(AppState.self) private var state
     let entry: RomEntry
     var cornerRadius: CGFloat = PocketRadius.cover
     var compact = false
+    var style: ArtworkStyle = .card
 
     var body: some View {
         let fingerprint = state.libraryPrefs.fingerprint(of: entry)
         let title = state.libraryPrefs.displayTitle(entry)
-        Group {
-            if let image = state.artwork.image(for: fingerprint) {
-                Image(uiImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .accessibilityLabel("Captura de \(title)")
-            } else {
-                GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
-                                    badge: entry.badge, compact: compact)
+        Color.clear
+            .aspectRatio(style.frameAspectRatio(for: entry.console), contentMode: .fit)
+            .overlay {
+                if let image = state.artwork.image(for: fingerprint) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .interpolation(.none)
+                        .aspectRatio(contentMode: .fill)
+                        .accessibilityLabel("Captura de \(title)")
+                } else {
+                    GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
+                                        badge: entry.badge, compact: compact)
+                }
             }
-        }
-        .aspectRatio(10.0 / 9.0, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .task(id: fingerprint) {
-            if let fingerprint { state.artwork.load(fingerprint) }
-        }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .task(id: fingerprint) {
+                if let fingerprint { state.artwork.load(fingerprint) }
+            }
     }
 }

@@ -127,6 +127,48 @@ final class GameArtworkStore {
         }
     }
 
+    /// Portada de demostración con otros píxeles (N3: captura blanca, captura GBA de 240×160).
+    func applyDemo(fingerprint: String, pixels: [UInt32]) {
+        if let cg = Self.makeImage(pixels) {
+            images[fingerprint] = UIImage(cgImage: cg)
+        }
+    }
+
+    /// N3: una captura casi blanca (el peor caso para leer el título encima): fondo blanco, un
+    /// rombo gris muy claro y unas barras grises abajo.
+    nonisolated static func demoWhitePixels() -> [UInt32] {
+        let width = FrameBuffers.width, height = FrameBuffers.height
+        var pixels = [UInt32](repeating: 0xFFFF_FFFF, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                if abs(x - 80) + abs(y - 56) < 40 { pixels[y * width + x] = 0xFFEE_EEEE }
+                if y > 116, y < 124, x > 24, x < 136 { pixels[y * width + x] = 0xFFC8_C8C8 }
+                if y > 128, y < 134, x > 44, x < 116 { pixels[y * width + x] = 0xFFD8_D8D8 }
+            }
+        }
+        return pixels
+    }
+
+    /// N3: arte abstracto de Game Boy Advance (240×160) con un marco en los bordes, para ver que
+    /// la captura 3:2 no se estira (en el detalle se ve entera; en las tarjetas, recortada a 10:9).
+    nonisolated static func demoGBAPixels() -> [UInt32] {
+        let width = ScreenSize.gameBoyAdvance.width, height = ScreenSize.gameBoyAdvance.height
+        // 0xAABBGGRR: en memoria quedan R, G, B, A.
+        let sky: [UInt32] = [0xFFF0_C060, 0xFFE0_A040, 0xFFC8_8030]
+        var pixels = [UInt32](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var color = sky[min(y / 40, 2)]
+                let dx = x - 120, dy = y - 70
+                if dx * dx + dy * dy < 34 * 34 { color = 0xFF30_D0F8 }                 // sol
+                if y > 112 { color = ((x / 12) + (y / 12)) % 2 == 0 ? 0xFF30_8840 : 0xFF20_6830 }
+                if x < 6 || x >= width - 6 || y < 6 || y >= height - 6 { color = 0xFF40_2018 } // marco
+                pixels[y * width + x] = color
+            }
+        }
+        return pixels
+    }
+
     /// Rombos concéntricos en los cuatro tonos verdes del DMG, con un "horizonte".
     nonisolated static func demoPixels() -> [UInt32] {
         // 0xAABBGGRR: en memoria quedan R, G, B, A.

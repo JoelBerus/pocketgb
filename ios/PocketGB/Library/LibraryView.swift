@@ -3,12 +3,24 @@ import SwiftUI
 /// Tab Biblioteca (D2 + D3): la carpeta elegida con sus juegos en cuadrícula o lista,
 /// búsqueda en vivo, filtros Todos/GB/GBC/Favoritos, "Continuar jugando" con la última
 /// captura real y el detalle con zoom desde la portada.
+///
+/// N3 · En altura compacta (horizontal): título en línea con borde de scroll duro (se lee sobre
+/// una captura blanca), sin filtro segmentado ni buscador arriba, título de sección fijado y, a la
+/// derecha, el grupo flotante `LibraryToolsGroup` (Buscar, Filtros, Categorías, Vista/Orden). La
+/// búsqueda se abre con la lupa (en la barra o en el grupo) y desaparece al cancelarla.
 struct LibraryView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Namespace private var zoom
     @State private var scrollOffset: CGFloat = 0
+    /// Horizontal: la búsqueda solo existe mientras se usa (la lupa la abre).
+    @State private var landscapeSearch = false
+    @State private var contentWidth: CGFloat = 0
+
+    /// Horizontal en iPhone: altura compacta.
+    private var compactHeight: Bool { verticalSizeClass == .compact }
 
     private var library: LibraryStore { state.library }
     private var prefs: LibraryPreferences { state.libraryPrefs }
@@ -19,8 +31,15 @@ struct LibraryView: View {
             content
                 .background(PocketColor.backgroundBase.ignoresSafeArea())
                 .navigationTitle("Biblioteca")
+                // N3a: en horizontal, título en línea (el grande no cabe y se perdía sobre la captura).
+                .navigationBarTitleDisplayMode(compactHeight ? .inline : .automatic)
                 .toolbar {
                     if case .ready = library.phase {
+                        // N3b: la búsqueda también como botón de la barra, «como una opción más».
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Buscar", systemImage: "magnifyingglass") { startSearch() }
+                                .accessibilityIdentifier("library-search-button")
+                        }
                         ToolbarItem(placement: .topBarTrailing) { optionsMenu }
                     }
                 }
@@ -105,6 +124,14 @@ struct LibraryView: View {
                     Text(sort.title).tag(sort)
                 }
             }
+            // N3b: la categoría elegida en horizontal se ve y se cambia también en vertical.
+            Picker("Categoría", systemImage: "folder", selection: Binding(get: { state.libraryCategory },
+                                                                          set: { state.libraryCategory = $0 })) {
+                ForEach([LibraryCategory.all] + prefs.categories(library.entries)) { category in
+                    Text(category.title).tag(category)
+                }
+            }
+            .pickerStyle(.menu)
             Divider()
             Button("Volver a escanear", systemImage: "arrow.clockwise") { library.refresh() }
             Button("Cambiar carpeta", systemImage: "folder") { state.chooseFolder() }
@@ -119,34 +146,84 @@ struct LibraryView: View {
         @Bindable var state = state
         let query = state.librarySearch
         let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
-        let shown = prefs.visible(library.entries, filter: state.libraryFilter, query: query)
+        let shown = prefs.visible(library.entries, filter: state.libraryFilter, query: query,
+                                  category: state.libraryCategory)
+        let compact = compactHeight
         return ScrollView {
-            VStack(alignment: .leading, spacing: PocketSpacing.lg) {
-                minimized(filterPicker)
+            LazyVStack(alignment: .leading, spacing: PocketSpacing.lg,
+                       pinnedViews: compact && !searching ? [.sectionHeaders] : []) {
+                if !compact { minimized(filterPicker) }
                 if searching {
                     searchResults(shown, query: query)
                 } else {
-                    if state.libraryFilter == .all, let continueEntries = continueCandidates, !continueEntries.isEmpty {
-                        minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom))
+                    if state.libraryFilter == .all, state.libraryCategory == .all,
+                       let continueEntries = continueCandidates, !continueEntries.isEmpty {
+                        minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom,
+                                                     itemWidth: compact ? gridColumnWidth : nil))
                     }
-                    allGames(shown, folderName: folderName)
+                    Section {
+                        allGames(shown)
+                    } header: {
+                        sectionHeader(folderName: folderName, count: shown.count, pinned: compact)
+                    }
                 }
             }
             .padding(.horizontal, PocketSpacing.md)
-            .padding(.bottom, PocketSpacing.xl)
+            // Horizontal: aire al final para que el grupo flotante no tape la última fila.
+            .padding(.bottom, compact ? 72 : PocketSpacing.xl)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
         }
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        // N3a: en horizontal, borde duro: el título en línea se lee aunque pase una captura blanca.
+        .scrollEdgeEffectStyle(compact ? .hard : .soft, for: .top)
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             max(0, geometry.contentOffset.y + geometry.contentInsets.top)
-        } action: { _, value in
+        } action: { old, value in
             scrollOffset = value
+            let tools = state.libraryTools
+            let minimized = LibraryToolsPosition.minimized(tools.tabBarMinimized, old: old, new: value)
+            if minimized != tools.tabBarMinimized { tools.tabBarMinimized = minimized }
+        }
+        // Borde inferior de la barra de navegación: el de arriba del área segura (una capa vacía
+        // que no recibe toques), para el alto de los paneles del grupo flotante.
+        .overlay {
+            Color.clear
+                .allowsHitTesting(false)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                    state.libraryTools.visibleTop = $0
+                }
         }
         .refreshable { library.refresh() }
-        // Búsqueda bajo el título (`.automatic`) que con `.searchToolbarBehavior(.minimize)`
-        // se pliega a una lupa en la barra y se expande al tocarla (iOS 26).
-        .searchable(text: $state.librarySearch, isPresented: $state.librarySearchPresented,
-                    placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Juegos")
-        .searchToolbarBehavior(.minimize)
+        .modifier(LibrarySearchModifier(enabled: !compact || landscapeSearch || searching,
+                                        text: $state.librarySearch, isPresented: $state.librarySearchPresented))
+        .onChange(of: state.librarySearchPresented) { _, presented in
+            if !presented && state.librarySearch.isEmpty { landscapeSearch = false }
+        }
+        .onChange(of: state.libraryTools.searchRequests) { startSearch() }
+        .onAppear { state.libraryTools.showsGames = true }
+        .onDisappear { state.libraryTools.showsGames = false }
+    }
+
+
+    /// Ancho de una columna de la cuadrícula: en horizontal, el carril «Continuar» usa el mismo
+    /// (como Android en N3a), así las tarjetas no ocupan toda la altura.
+    private var gridColumnWidth: CGFloat? {
+        guard contentWidth > 0 else { return nil }
+        return GridMetrics.columnWidth(containerWidth: contentWidth, minimum: gridMinimum,
+                                       spacing: PocketSpacing.sm)
+    }
+
+    /// Lupa de la barra o del grupo: abre la búsqueda. En horizontal la búsqueda no existe hasta
+    /// entonces (no ocupa la parte de arriba), así que primero se añade y luego se enfoca.
+    private func startSearch() {
+        if !compactHeight || landscapeSearch {
+            state.librarySearchPresented = true
+            return
+        }
+        landscapeSearch = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            state.librarySearchPresented = true
+        }
     }
 
     private func minimized<Content: View>(_ content: Content) -> some View {
@@ -182,30 +259,69 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder private func allGames(_ shown: [RomEntry], folderName: String) -> some View {
-        VStack(alignment: .leading, spacing: PocketSpacing.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(state.libraryFilter == .all ? "Todos los juegos" : state.libraryFilter.title)
-                    .font(.headline)
-                Spacer()
-                Label(folderName, systemImage: "folder")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+    /// Título de la sección: «Todos los juegos», el filtro o la categoría elegidos y la carpeta.
+    /// En horizontal queda fijado arriba (fondo opaco del contenido, sin vidrio).
+    private func sectionHeader(folderName: String, count: Int, pinned: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(sectionTitle)
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.libraryTools.sectionTitleFrame = $0 }
+            Spacer()
+            Label(folderName, systemImage: "folder")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("library-section-title")
+        .padding(.vertical, pinned ? PocketSpacing.xs : 0)
+        .frame(minHeight: pinned ? PocketSpacing.minTouch : nil)
+        .background {
+            // Fijado: fondo opaco del contenido (sin vidrio) que también tapa la franja entre la
+            // barra de navegación y el título, por donde asomaban las tarjetas.
+            if pinned {
+                PocketColor.backgroundBase
+                    .padding(.horizontal, -PocketSpacing.md)
+                    .padding(.top, -PocketSpacing.sm)
             }
-            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// «Todos los juegos», «GBA», «Pokémon» o «Pokémon · GBA».
+    private var sectionTitle: String {
+        let filter = state.libraryFilter
+        switch (state.libraryCategory, filter) {
+        case (.all, .all): return "Todos los juegos"
+        case (.all, _): return filter.title
+        case (let category, .all): return category.title
+        case (let category, _): return "\(category.title) · \(filter.title)"
+        }
+    }
+
+    @ViewBuilder private func allGames(_ shown: [RomEntry]) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.sm) {
             if let progress = library.scanProgress {
                 ScanProgressRow(progress: progress)
             }
             if shown.isEmpty && !library.isScanning {
-                EmptyStateView(
-                    title: state.libraryFilter == .favorites ? "Sin favoritos" : "Sin juegos \(state.libraryFilter.title)",
-                    systemImage: state.libraryFilter == .favorites ? "star" : "square.grid.2x2",
-                    message: state.libraryFilter == .favorites
-                        ? "Mantén pulsado un juego y elige “Añadir a favoritos”."
-                        : "No hay juegos de este sistema en la carpeta.",
-                    primaryTitle: "Ver todos",
-                    primaryAction: { state.libraryFilter = .all })
+                if state.libraryCategory != .all {
+                    EmptyStateView(
+                        title: "Sin juegos en “\(state.libraryCategory.title)”",
+                        systemImage: "folder",
+                        message: "No hay juegos de este filtro en esta categoría.",
+                        primaryTitle: "Ver todas las categorías",
+                        primaryAction: { state.libraryCategory = .all })
+                } else {
+                    EmptyStateView(
+                        title: state.libraryFilter == .favorites ? "Sin favoritos" : "Sin juegos \(state.libraryFilter.title)",
+                        systemImage: state.libraryFilter == .favorites ? "star" : "square.grid.2x2",
+                        message: state.libraryFilter == .favorites
+                            ? "Mantén pulsado un juego y elige “Añadir a favoritos”."
+                            : "No hay juegos de este sistema en la carpeta.",
+                        primaryTitle: "Ver todos",
+                        primaryAction: { state.libraryFilter = .all })
+                }
             } else if prefs.data.layout == .grid {
                 grid(shown)
             } else {
@@ -230,9 +346,10 @@ struct LibraryView: View {
     }
 
     /// Menos columnas antes que truncar (SPEC §13, Dynamic Type).
+    private var gridMinimum: CGFloat { typeSize.isAccessibilitySize ? 280 : 150 }
+
     private var columns: [GridItem] {
-        let minimum: CGFloat = typeSize.isAccessibilitySize ? 280 : 150
-        return [GridItem(.adaptive(minimum: minimum), spacing: PocketSpacing.sm, alignment: .top)]
+        [GridItem(.adaptive(minimum: gridMinimum), spacing: PocketSpacing.sm, alignment: .top)]
     }
 
     private func grid(_ shown: [RomEntry]) -> some View {
@@ -246,7 +363,7 @@ struct LibraryView: View {
                 .contextMenu {
                     GameContextMenu(entry: entry, tab: .library)
                 } preview: {
-                    GameArtworkView(entry: entry)
+                    GameArtworkView(entry: entry, style: .console)
                         .frame(width: 300)
                         .environment(state)
                 }
@@ -338,6 +455,8 @@ struct ContinuePlayingRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let entries: [RomEntry]
     let zoom: Namespace.ID
+    /// Horizontal (N3): el ancho de una columna de la cuadrícula; nil = el de siempre.
+    var itemWidth: CGFloat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.sm) {
@@ -345,17 +464,22 @@ struct ContinuePlayingRow: View {
                 .font(.headline)
             if typeSize.isAccessibilitySize {
                 // Tamaños de accesibilidad: en columna y a todo el ancho (SPEC §13).
+                // En horizontal, del ancho de una columna: a todo el ancho no cabría en la pantalla.
                 VStack(alignment: .leading, spacing: PocketSpacing.md) {
-                    ForEach(entries) { item($0, width: nil) }
+                    ForEach(entries) { item($0, width: itemWidth) }
                 }
             } else {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: PocketSpacing.sm) {
                         ForEach(entries) { entry in
-                            item(entry, width: nil)
-                                .containerRelativeFrame(.horizontal) { length, _ in
-                                    min(max(length * 0.68, 196), 240)
-                                }
+                            if let itemWidth {
+                                item(entry, width: itemWidth)
+                            } else {
+                                item(entry, width: nil)
+                                    .containerRelativeFrame(.horizontal) { length, _ in
+                                        min(max(length * 0.68, 196), 240)
+                                    }
+                            }
                         }
                     }
                     .scrollTargetLayout()
@@ -373,6 +497,17 @@ struct ContinuePlayingRow: View {
         VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
             Button { state.showDetails(entry, in: .library, source: "continue-\(entry.id)") } label: {
                 GameArtworkView(entry: entry)
+                    // N3a: velo inferior bajo «Continuar»: el botón se lee sobre una captura blanca.
+                    .overlay(alignment: .bottom) {
+                        LinearGradient(colors: [.clear, PocketColor.controlScrim.opacity(0.45)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 64)
+                            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: PocketRadius.cover,
+                                                              bottomTrailingRadius: PocketRadius.cover,
+                                                              style: .continuous))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
             }
             .buttonStyle(.plain)
             .matchedTransitionSource(id: "continue-\(entry.id)", in: zoom)
@@ -417,5 +552,80 @@ struct ScanProgressRow: View {
         }
         .frame(minHeight: PocketSpacing.minTouch)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// `.searchable` bajo el título con `.searchToolbarBehavior(.minimize)` (iOS 26), solo cuando está
+/// activado: en horizontal no hay barra de búsqueda arriba hasta que se toca la lupa (N3b).
+struct LibrarySearchModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var text: String
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(text: $text, isPresented: $isPresented,
+                            placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Juegos")
+                .searchToolbarBehavior(.minimize)
+        } else {
+            content
+        }
+    }
+}
+
+/// Columnas de una cuadrícula `.adaptive(minimum:)` (las mismas cuentas que SwiftUI).
+enum GridMetrics {
+    static func columns(containerWidth: CGFloat, minimum: CGFloat, spacing: CGFloat) -> Int {
+        guard containerWidth > 0, minimum > 0 else { return 1 }
+        return max(1, Int((containerWidth + spacing) / (minimum + spacing)))
+    }
+
+    static func columnWidth(containerWidth: CGFloat, minimum: CGFloat, spacing: CGFloat) -> CGFloat {
+        let n = CGFloat(columns(containerWidth: containerWidth, minimum: minimum, spacing: spacing))
+        return max((containerWidth - (n - 1) * spacing) / n, 0)
+    }
+}
+
+/// Posición vertical del grupo flotante de la biblioteca en horizontal (N3b). La barra de
+/// pestañas de iOS 26 no publica si está encogida, así que se deduce como ella misma decide
+/// (`UITabBarController.MinimizeBehavior.onScrollDown`: se encoge al bajar y se despliega al
+/// subir o arriba del todo). Las distancias al borde inferior de la pantalla se midieron en los
+/// simuladores de iOS 26.5 (iPhone SE 3.ª gen y 17 Pro): la burbuja encogida tiene el centro a
+/// 43 pt del borde y la barra desplegada empieza a 65 pt.
+enum LibraryToolsPosition {
+    /// Encogida: el grupo (48 pt) centrado con la burbuja de la izquierda.
+    static let minimizedBottomGap: CGFloat = 43 - 24
+    /// Desplegada: el grupo, 8 pt por encima de la barra.
+    static let expandedBottomGap: CGFloat = 65 + 8
+
+    /// ¿Está encogida la barra tras este desplazamiento? `old`/`new`: desplazamiento vertical.
+    static func minimized(_ current: Bool, old: CGFloat, new: CGFloat) -> Bool {
+        if new <= 8 { return false }          // arriba del todo: desplegada
+        if new - old > 0.5 { return true }    // bajando: se encoge
+        // Subiendo: la barra puede desplegarse (no siempre lo hace con poco recorrido): por si
+        // acaso el grupo sube, para no pisarla nunca.
+        if old - new > 0.5 { return false }
+        return current
+    }
+
+    static let groupHeight: CGFloat = 48
+
+    /// Alto máximo del contenido de un panel que se abre hacia arriba desde el grupo: llega hasta
+    /// la barra de navegación, salvo que el título de sección quede debajo del panel (se solapan
+    /// en horizontal): entonces se queda por debajo del título. 28 pt para la flecha y el aire.
+    /// Nunca menos de dos filas (el panel se desplaza por dentro).
+    static func panelMaxHeight(groupTop: CGFloat, visibleTop: CGFloat, titleFrame: CGRect,
+                               panelMinX: CGFloat) -> CGFloat {
+        guard groupTop > 0 else { return 220 }
+        let titleUnder = !titleFrame.isEmpty && titleFrame.maxX + PocketSpacing.sm > panelMinX
+            && titleFrame.maxY < groupTop
+        let limit = titleUnder ? max(titleFrame.maxY, visibleTop) : visibleTop
+        return max(groupTop - limit - 28, 2 * PocketSpacing.minTouch)
+    }
+
+    /// Distancia del borde inferior de la ventana al borde inferior del grupo.
+    static func bottomGap(minimized: Bool) -> CGFloat {
+        minimized ? minimizedBottomGap : expandedBottomGap
     }
 }

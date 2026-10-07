@@ -81,6 +81,24 @@ enum DebugScreen: String, CaseIterable {
     case gameDetailsFolders = "game-details-folders"
     case gameDetailsFoldersAX5 = "game-details-folders-ax5"
     case libraryPreferencesQuarantined = "library-preferences-quarantined"
+    // N3 (iOS): biblioteca y detalle adaptables (`-demoLibrary adaptive`; ver `applyAdaptive`)
+    case libraryLandscape = "library-landscape"
+    case libraryLandscapeScrolled = "library-landscape-scrolled"
+    case libraryLandscapeSearch = "library-landscape-search"
+    case libraryLandscapeFilters = "library-landscape-filters"
+    case libraryLandscapeCategories = "library-landscape-categories"
+    case libraryLandscapeView = "library-landscape-view"
+    case libraryLandscapeCategory = "library-landscape-category"
+    case libraryLandscapeWhite = "library-landscape-white"
+    case libraryLandscapeAX5 = "library-landscape-ax5"
+    case libraryWhite = "library-white"
+    case favoritesLandscape = "favorites-landscape"
+    case gameDetailsGB = "game-details-gb"
+    case gameDetailsGBA = "game-details-gba"
+    case gameDetailsTechnical = "game-details-technical"
+    case gameDetailsGBATechnical = "game-details-gba-technical"
+    case gameDetailsAX5 = "game-details-ax5"
+    case saveStatesGBA = "save-states-gba"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -215,6 +233,7 @@ enum DebugScreenRouter {
         default:
             state.selectedTab = .library
         }
+        applyAdaptive(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -255,6 +274,7 @@ enum DebugScreenRouter {
         default:
             break
         }
+        afterGameOpenedAdaptive(screen, state)
     }
 
     /// `-demoSaveState slots` en Ajustes: carpetas temporales con partidas, copias, estados y
@@ -437,5 +457,70 @@ enum DebugScreenRouter {
         entry("copia-de-seguridad.gb", "copia-de-seguridad", color: false, problem: .tooLarge),
         entry("notas.gbc", "notas", color: true, problem: .invalidHeader),
     ]
+}
+
+// MARK: - N3 (iOS): biblioteca y detalle adaptables
+
+extension DebugScreenRouter {
+    /// `-demoLibrary adaptive`: la biblioteca estándar y más juegos libres (ROMs de prueba) en
+    /// varias carpetas de primer nivel (categorías), para desplazar en horizontal. CGB-ACID2 lleva
+    /// una captura casi blanca (título legible encima) y arm.gba una de 240×160 (sin estirar).
+    /// `-demoROMDir $FIXTURES` hace que el detalle lea la información técnica de los ROMs reales.
+    static func applyAdaptive(_ screen: DebugScreen, to state: AppState) {
+        guard DebugArguments.demoLibrary == "adaptive" else { return }
+        state.library.applyDemo(phase: .ready(folderName: "Juegos Game Boy"), entries: adaptive)
+        var prefs = state.libraryPrefs.data
+        prefs.fingerprints[adaptiveGBA] = "demo-arm"
+        prefs.layout = .grid
+        state.libraryPrefs.applyDemo(prefs)
+        state.artwork.applyDemo(fingerprint: "demo-cgb-acid2", pixels: GameArtworkStore.demoWhitePixels())
+        state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
+        switch screen {
+        case .libraryLandscapeCategory:
+            state.libraryCategory = .folder("Blargg")
+        case .favoritesLandscape:
+            state.selectedTab = .favorites
+        case .gameDetailsGB, .gameDetailsTechnical, .gameDetailsAX5:
+            state.libraryPath = [.details(id: "dmg-acid2.gb", source: "dmg-acid2.gb")]
+        case .gameDetailsGBA, .gameDetailsGBATechnical:
+            state.libraryPath = [.details(id: adaptiveGBA, source: adaptiveGBA)]
+        default:
+            break
+        }
+    }
+
+    /// `save-states-gba`: con `-rom arm.gba`, guarda un estado real (miniatura de 240×160) y abre
+    /// la pantalla de estados: la miniatura y las ranuras vacías van en 3:2, sin estirar.
+    static func afterGameOpenedAdaptive(_ screen: DebugScreen, _ state: AppState) {
+        guard screen == .saveStatesGBA else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            state.pauseGame()
+            state.saveState(to: .manual1)
+            state.pausePath = [.states]
+        }
+    }
+
+    nonisolated private static let adaptiveGBA = "Pruebas/arm.gba"
+
+    /// Juegos libres de las ROMs de prueba (blargg, mooneye y jsmolka; nunca títulos comerciales).
+    nonisolated private static let adaptive: [RomEntry] = {
+        func make(_ path: String, _ title: String, color: Bool) -> RomEntry {
+            let file = (path as NSString).lastPathComponent
+            return RomEntry(id: path, url: URL(fileURLWithPath: "/demo/\(path)"), fileName: file, title: title,
+                            isColor: color, sizeBytes: 65_536, headerChecksumOK: true, cloud: .current,
+                            problem: nil, mirrorSaveDate: nil)
+        }
+        return standard + [
+            make("Blargg/cpu_instrs.gb", "CPU_INSTRS", color: false),
+            make("Blargg/instr_timing.gb", "INSTR_TIMING", color: false),
+            make("Blargg/mem_timing.gb", "MEM_TIMING", color: false),
+            make("Blargg/dmg_sound.gb", "DMG_SOUND", color: false),
+            make("Mooneye/halt_ime1_timing.gb", "HALT_IME1", color: false),
+            make("Mooneye/boot_regs-cgb.gbc", "BOOT_REGS", color: true),
+            make("Game Boy Advance/thumb.gba", "jsmolka THUMB", color: false),
+            make("Game Boy Advance/memory.gba", "jsmolka MEMORY", color: false),
+        ]
+    }()
 }
 #endif

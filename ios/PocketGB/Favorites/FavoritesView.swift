@@ -5,6 +5,7 @@ import SwiftUI
 struct FavoritesView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Namespace private var zoom
 
     var body: some View {
@@ -32,9 +33,11 @@ struct FavoritesView: View {
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            // N3a: en horizontal, título en línea y borde duro (legible sobre una captura blanca).
+            .scrollEdgeEffectStyle(verticalSizeClass == .compact ? .hard : .soft, for: .top)
             .background(PocketColor.backgroundBase.ignoresSafeArea())
             .navigationTitle("Favoritos")
+            .navigationBarTitleDisplayMode(verticalSizeClass == .compact ? .inline : .automatic)
             .navigationDestination(for: LibraryRoute.self) { route in
                 switch route {
                 case .details(let id, let source):

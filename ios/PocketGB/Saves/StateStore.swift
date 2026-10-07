@@ -57,6 +57,9 @@ struct StateStore: Sendable {
     func stateURL(_ slot: StateSlot) -> URL { directory.appendingPathComponent("\(slot.fileStem).state") }
     func thumbnailURL(_ slot: StateSlot) -> URL { directory.appendingPathComponent("\(slot.fileStem).png") }
 
+    /// Firmas de los estados de los dos núcleos (`core/src/state.c`, `gba/src/gba_state.c`).
+    static let signatures: Set<Data> = [Data("PGBS".utf8), Data("PGBA".utf8)]
+
     /// Ranuras ocupadas.
     func entries() -> [StateSlot: Entry] {
         var result: [StateSlot: Entry] = [:]
@@ -75,9 +78,11 @@ struct StateStore: Sendable {
             defer { try? h.close() }
             return try? h.read(upToCount: 4)
         }
+        // Firma del núcleo: "PGBS" (Game Boy) o "PGBA" (Game Boy Advance). Antes de N3 solo se
+        // aceptaba la de Game Boy y los estados de GBA salían como «Dañado» (y sin «Continuar»).
         return Entry(slot: slot, date: date,
                      thumbnail: withThumbnail ? try? Data(contentsOf: thumbnailURL(slot)) : nil,
-                     corrupt: head != Data("PGBS".utf8))
+                     corrupt: !Self.signatures.contains(head ?? Data()))
     }
 
     /// Estado automático utilizable para “Continuar”. Una SRAM guardada después del
