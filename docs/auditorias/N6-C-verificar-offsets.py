@@ -9,7 +9,13 @@ posición de cada etiqueta en el archivo .sav (SRAM banco 1 = archivo + 0x2000) 
 compara con los números de core/src/progress_pokemon.c.
 
 Uso:   python3 N6-C-verificar-offsets.py CARPETA_CON_LOS_CLONES_DE_PRET [core/src/progress_pokemon.c]
-Salida: una línea por dato (OK o DIFERENTE) y código de salida 0 solo si todo coincide.
+                                          [--extra gen1|gs|c:RUTA_DE_OTRO_CLON ...]
+Salida: una línea por dato (OK o DIFERENTE), por cada juego el número de errores de interpretación
+        (líneas de los .asm que el intérprete no entiende) y cuántos caen dentro de los trozos de RAM
+        de los que depende algún dato medido, y un resumen. Código de salida 0 solo si no hay
+        diferencias ni errores de interpretación dentro de lo medido (un error fuera de esos trozos,
+        p. ej. en las zonas de gráficos, no afecta a los desplazamientos). `--extra` repite la
+        comprobación con otros clones de la misma estructura (p. ej. las ediciones europeas).
 
 Solo se usan HECHOS (posiciones y tamaños); este script es código propio y no copia
 nada de pret (que no declara licencia) ni de PKHeX (GPLv3). Ojo: evalúa con eval()
@@ -232,7 +238,7 @@ def run(ctx, lines, i=0, end=None, stop_at=()):
             try:
                 ctx.pc += ctx.ev(a[0])
             except (Undefined, ValueError) as ex:
-                ctx.errors.append("ds fallido (%s): %r" % (ex, t))
+                ctx.errors.append((ctx.sec, ctx.pc, "ds fallido (%s): %r" % (ex, t)))
             i += 1
             continue
         # macros del usuario
@@ -252,7 +258,7 @@ def run(ctx, lines, i=0, end=None, stop_at=()):
             continue
         # desconocido
         if ctx.mode == "ram":
-            ctx.errors.append("desconocido: %r" % t)
+            ctx.errors.append((ctx.sec, ctx.pc, "desconocido: %r" % t))
         i += 1
     return i
 
@@ -480,17 +486,33 @@ def file_off(ctx, label):
 def wram_rel(ctx, label, base):
     return ctx.labels[label][1] - ctx.labels[base][1]
 
-def load(root, game):
-    repo = os.path.join(root, game)
-    ctx = load_game(repo, None)
-    eval_ram(ctx, [os.path.join(repo, "ram", "wram.asm"), os.path.join(repo, "ram", "sram.asm")])
-    return ctx
+def ram_file(repo, name):
+    """ram/NOMBRE.asm (estructura actual de pret) o NOMBRE.asm en la raíz (desensamblados antiguos)."""
+    for cand in (os.path.join(repo, "ram", name), os.path.join(repo, name)):
+        if os.path.exists(cand):
+            return cand
+    raise SystemExit("no encuentro %s en %s" % (name, repo))
 
-def gen1(root, game):
-    c = load(root, game)
+def load(repo, ranges):
+    """Evalúa la RAM de un clon de pret. `ranges` = pares (etiqueta_inicio, etiqueta_fin) de los
+    trozos de RAM de los que depende algún desplazamiento medido. Devuelve (ctx, estadísticas):
+    errores de interpretación totales y los que caen DENTRO de un trozo medido (esos invalidan
+    la medida y hacen fallar el script)."""
+    ctx = load_game(repo, None)
+    eval_ram(ctx, [ram_file(repo, "wram.asm"), ram_file(repo, "sram.asm")])
+    inside = []
+    for sec, pc, msg in ctx.errors:
+        for a, b in ranges:
+            if ctx.labels[a][0] == sec and ctx.labels[a][1] <= pc <= ctx.labels[b][1]:
+                inside.append("%s..%s: %s" % (a, b, msg))
+                break
+    return ctx, {"total": len(ctx.errors), "inside": inside}
+
+def gen1(repo):
+    c, stats = load(repo, [("wMainDataStart", "wMainDataEnd"), ("sPlayerName", "sGameDataEnd")])
     main_off = file_off(c, "sMainData")
     r = lambda lb: main_off + wram_rel(c, lb, "wMainDataStart")
-    return {
+    rows = {
         "G1_GAME_DATA (sGameData = sPlayerName)": (file_off(c, "sGameData"), k("G1_GAME_DATA")),
         "G1_CHECKSUM (sMainDataCheckSum = sGameDataEnd)": (file_off(c, "sMainDataCheckSum"), k("G1_CHECKSUM")),
         "sGameDataEnd": (file_off(c, "sGameDataEnd"), k("G1_CHECKSUM")),
@@ -506,9 +528,12 @@ def gen1(root, game):
         "wPlayTimeSeconds": (r("wPlayTimeSeconds"), k("G1_PLAY_TIME") + 3),
         "wPlayTimeFrames": (r("wPlayTimeFrames"), k("G1_PLAY_TIME") + 4),
     }
+    return rows, stats
 
-def gen2(root, game, crystal):
-    c = load(root, game)
+def gen2(repo, crystal):
+    c, stats = load(repo, [("wGameData", "wPlayerDataEnd"), ("wCurMapData", "wCurMapDataEnd"),
+                           ("wPokemonData", "wPokemonDataEnd"), ("wOptions", "wOptionsEnd"),
+                           ("sOptions", "sGameDataEnd")])
     g = file_off(c, "sGameData")
     p = file_off(c, "sPokemonData")
     pd = lambda lb: g + wram_rel(c, lb, "wGameData")      # datos del jugador
@@ -519,7 +544,7 @@ def gen2(root, game, crystal):
     assert file_off(c, "sGameDataEnd") == p + wram_rel(c, "wPokemonDataEnd", "wPokemonData")
     t = "C" if crystal else "GS"
     pre = "C_" if crystal else "GS_"
-    return {
+    rows = {
         t + "_CHECK_VALUE_1 (sCheckValue1)": (file_off(c, "sCheckValue1"), k("G2_CHECK_VALUE_1")),
         "G2_GAME_DATA (sGameData)": (g, k("G2_GAME_DATA")),
         t + "_GAME_DATA_END (sGameDataEnd)": (file_off(c, "sGameDataEnd"), k(pre + "GAME_DATA_END")),
@@ -540,28 +565,50 @@ def gen2(root, game, crystal):
         t + "_DEX_SEEN (wPokedexSeen)": (pk("wPokedexSeen"), k(pre + "DEX_SEEN")),
         "NUM_POKEMON": (c.consts["NUM_POKEMON"], k("G2_DEX_BITS")),
     }
+    return rows, stats
 
 def main():
-    if len(sys.argv) not in (2, 3):
+    args = sys.argv[1:]
+    extra = []                                  # (tipo, ruta): gen1 | gs | c
+    core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "core", "src", "progress_pokemon.c")
+    pos = []
+    while args:
+        a = args.pop(0)
+        if a == "--extra" and args:
+            kind, path = args.pop(0).split(":", 1)
+            extra.append((kind, path))
+        else:
+            pos.append(a)
+    if not pos or len(pos) > 2:
         print(__doc__)
         return 2
-    root = sys.argv[1]
-    here = os.path.dirname(os.path.abspath(__file__))
-    load_core_constants(sys.argv[2] if len(sys.argv) == 3 else
-                        os.path.join(here, "..", "..", "core", "src", "progress_pokemon.c"))
-    runs = [("pokered (Rojo/Azul)", gen1, ("pokered",)),
-            ("pokeyellow (Amarillo)", gen1, ("pokeyellow",)),
-            ("pokegold (Oro/Plata)", gen2, ("pokegold", False)),
-            ("pokecrystal (Cristal)", gen2, ("pokecrystal", True))]
+    root = pos[0]
+    if len(pos) == 2:
+        core = pos[1]
+    load_core_constants(core)
+    runs = [("pokered (Rojo/Azul)", gen1, (os.path.join(root, "pokered"),)),
+            ("pokeyellow (Amarillo)", gen1, (os.path.join(root, "pokeyellow"),)),
+            ("pokegold (Oro/Plata)", gen2, (os.path.join(root, "pokegold"), False)),
+            ("pokecrystal (Cristal)", gen2, (os.path.join(root, "pokecrystal"), True))]
+    for kind, path in extra:
+        fn, a = {"gen1": (gen1, ()), "gs": (gen2, (False,)), "c": (gen2, (True,))}[kind]
+        runs.append(("extra %s: %s" % (kind, os.path.basename(os.path.normpath(path))), fn, (path,) + a))
     bad = 0
+    unreliable = 0
     for title, fn, args in runs:
         print("== " + title)
-        for name, (got, want) in fn(root, *args).items():
+        rows, stats = fn(*args)
+        for name, (got, want) in rows.items():
             ok = got == want
             bad += 0 if ok else 1
             print("  %-46s pret=0x%04X  núcleo=0x%04X  %s" % (name, got, want, "OK" if ok else "DIFERENTE"))
-    print("%d diferencias" % bad)
-    return 1 if bad else 0
+        print("  errores de interpretación: %d (dentro de los trozos de RAM medidos: %d)"
+              % (stats["total"], len(stats["inside"])))
+        for line in stats["inside"]:
+            print("    DENTRO DE UN TROZO MEDIDO: " + line)
+        unreliable += len(stats["inside"])
+    print("%d diferencias, %d errores de interpretación dentro de lo medido" % (bad, unreliable))
+    return 1 if (bad or unreliable) else 0
 
 if __name__ == "__main__":
     sys.exit(main())
