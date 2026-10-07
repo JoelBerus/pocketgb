@@ -86,6 +86,18 @@ OK: 50/50 iteraciones con el invariante intacto
 ```
 El contador del `.sav` nunca retrocedió respecto al último confirmado (lo exige `save-verify`): ninguna apertura con «Continuar» cargó una partida vieja.
 
+El script no registra con qué modo abre cada iteración, así que se tomó aparte una muestra de 16 aperturas del mismo estrés con muerte al azar (`force-stop`/`kill -9` alternos; la app recién reinstalada, sin datos), con una verificación al final:
+```
+muestra 1: READY fp=91fc834e mode=fresh(ResumeFailed(reason=MISSING, …))
+muestra 2: READY fp=91fc834e mode=fresh(ResumeFailed(reason=NOT_CURRENT, …))
+muestra 3: READY fp=91fc834e mode=resumed
+muestra 4: READY fp=91fc834e mode=resumed
+…
+muestra 16: READY fp=91fc834e mode=resumed
+verificación final: OK bytes=8192 counter=536 confirmed=536 backups=5 stateTmpFound=0 stateTmpOrphans=0
+```
+Recuento: 4 `resumed`, 9 `NOT_CURRENT` (el juego guardó después del AUTO: se aparta y se abre desde el inicio) y 3 `MISSING` (sin AUTO tras apartarlo o al empezar). Las tres rutas corren bajo muertes del proceso sin romper el invariante.
+
 ### Capturas revisadas
 `SCREENS="…" THEMES="light dark" tools/android-screenshots.sh` (20 PNG, vistos uno a uno): `details-resume-exact`, `details-rename`, `details-more-menu`, `game-context-menu-resume`, `library-renamed`, `game-settings-rename`, `resume-failed` y las afectadas `game-context-menu` (ahora con «Renombrar»), `library-detail` (menú ⋮) y `library-detail-played` («Jugar»), en claro y oscuro. Se ven bien: el alias en la barra, el título, el carril y la hoja de ajustes; «Continuar» + «Jugar desde el inicio»; el contador `12/80` y el pie del diálogo. Observaciones: en `details-rename` aparece el teclado aunque el catálogo no pide el foco (el sistema enfoca el campo del diálogo; en la app se pide igual); en `game-settings-rename` sale el globo «Drag handle» de la hoja (lo mismo pasa con la hoja de ajustes existente); en `resume-failed` los dos botones se apilan por la longitud de «Jugar desde el inicio». El diálogo «No se pudo continuar» va oscuro también sobre la biblioteca clara, como el resto de diálogos de partida (K4, `GameplayRoot`).
 
