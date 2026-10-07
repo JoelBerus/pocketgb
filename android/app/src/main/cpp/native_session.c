@@ -15,6 +15,20 @@
 
 #define FRAME_NANOS 16742706L
 
+/*
+ * Botones que ve el núcleo: el OR de los táctiles y los del mando, sin direcciones opuestas (N2). Si arriba y abajo (o
+ * izquierda y derecha) llegan a la vez, por dos dedos o por táctil y mando, ninguna de las dos se pulsa: la SPEC prohíbe
+ * las opuestas y varios juegos se cuelgan con ellas.
+ */
+static uint8_t combine_buttons(uint8_t touch, uint8_t physical) {
+    uint8_t buttons = (uint8_t)(touch | physical);
+    const uint8_t vertical = (uint8_t)(GB_BTN_UP | GB_BTN_DOWN);
+    const uint8_t horizontal = (uint8_t)(GB_BTN_LEFT | GB_BTN_RIGHT);
+    if ((buttons & vertical) == vertical) buttons = (uint8_t)(buttons & ~vertical);
+    if ((buttons & horizontal) == horizontal) buttons = (uint8_t)(buttons & ~horizontal);
+    return buttons;
+}
+
 struct native_session {
     gb *core;
     pthread_t thread;
@@ -270,7 +284,7 @@ static void *run_session(void *context) {
             return NULL;
         }
         session->state = NATIVE_SESSION_RUNNING;
-        const uint8_t buttons = session->touch_buttons | session->physical_buttons;
+        const uint8_t buttons = combine_buttons(session->touch_buttons, session->physical_buttons);
         const unsigned speed = session->speed;
         const bool timing_reset = session->timing_reset;
         session->timing_reset = false;
@@ -532,7 +546,7 @@ void native_session_set_physical_buttons(native_session *session, uint8_t mask) 
 uint8_t native_session_requested_buttons(native_session *session) {
     if (session == NULL) return 0u;
     (void)pthread_mutex_lock(&session->mutex);
-    const uint8_t buttons = session->touch_buttons | session->physical_buttons;
+    const uint8_t buttons = combine_buttons(session->touch_buttons, session->physical_buttons);
     (void)pthread_mutex_unlock(&session->mutex);
     return buttons;
 }

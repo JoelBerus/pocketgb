@@ -79,7 +79,7 @@ class GamepadState(mapping: ControllerMappingData? = null) {
                 else -> Unit
             }
         }
-        return PadOutput(buttons or cancelOpposites(dpadKeys or hat or stick), actions)
+        return PadOutput(buttons or withoutOpposites(dpadKeys or hat or stick), actions)
     }
 
     private val PadAction.isAppAction get() = this == PadAction.MENU || this == PadAction.FAST_FORWARD
@@ -90,15 +90,6 @@ class GamepadState(mapping: ControllerMappingData? = null) {
         KeyEvent.KEYCODE_DPAD_LEFT -> GameBoyButton.LEFT.mask
         KeyEvent.KEYCODE_DPAD_RIGHT -> GameBoyButton.RIGHT.mask
         else -> 0
-    }
-
-    private fun cancelOpposites(mask: Int): Int {
-        var result = mask
-        val vertical = GameBoyButton.UP.mask or GameBoyButton.DOWN.mask
-        val horizontal = GameBoyButton.LEFT.mask or GameBoyButton.RIGHT.mask
-        if (result and vertical == vertical) result = result and vertical.inv()
-        if (result and horizontal == horizontal) result = result and horizontal.inv()
-        return result
     }
 
     private companion object {

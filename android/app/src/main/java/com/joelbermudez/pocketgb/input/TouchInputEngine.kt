@@ -45,8 +45,9 @@ class TouchInputEngine(var geometry: ControlGeometry) {
         dpadMasks.clear()
     }
 
+    /** Botones que piden los dedos, sin direcciones opuestas: ↑ con un dedo y ↓ con otro no pulsa ninguna. */
     val mask: Int
-        get() = touches.entries.fold(0) { result, (pointerId, hit) ->
+        get() = withoutOpposites(touches.entries.fold(0) { result, (pointerId, hit) ->
             result or when (hit) {
                 ControlHit.AB -> GameBoyButton.A.mask or GameBoyButton.B.mask
                 is ControlHit.Single -> when (hit.id) {
@@ -58,13 +59,13 @@ class TouchInputEngine(var geometry: ControlGeometry) {
                     ControlId.MENU -> 0
                 }
             }
-        }
+        })
 
-    /** Solo la parte de cruceta de [mask]: la usa la háptica al activarse una dirección nueva. */
+    /** Solo la parte de cruceta de [mask] (ya sin opuestas): la usan el dibujo y la háptica. */
     val dpadMask: Int
-        get() = touches.entries.fold(0) { result, (pointerId, hit) ->
+        get() = withoutOpposites(touches.entries.fold(0) { result, (pointerId, hit) ->
             if (hit == ControlHit.Single(ControlId.DPAD)) result or (dpadMasks[pointerId] ?: 0) else result
-        }
+        })
 
     val pressed: Set<ControlId>
         get() = buildSet {

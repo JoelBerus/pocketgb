@@ -412,4 +412,32 @@ class GameplaySettingsTest {
         assertEquals(100, loaded.opacity)
         assertEquals(StoredControlLayout(), loaded.portraitLayout)
     }
+
+    @Test
+    fun aDamagedLayoutFieldLosesOnlyThatFieldNotThePositionsAndScales() {
+        // H7: una `separation` de tipo inválido ya no tira las posiciones y escalas de esa orientación.
+        file().writeText(
+            """{"portraitLayout":{"positions":{"DPAD":{"x":0.3,"y":0.4}},"scales":{"DPAD":1.3},"separation":"lejos"},
+               "landscapeLayout":{"positions":{"XYZ":{"x":0.1,"y":0.1},"A":{"x":"mal","y":0.2},"B":{"x":0.2,"y":0.3}},
+                                  "scales":{"DPAD":"grande","START":0.8},"separation":1.2}}""",
+        )
+        val loaded = GameplaySettingsFile(file()).load()
+        assertEquals(NormalizedPoint(0.3f, 0.4f), loaded.portraitLayout.positions.getValue(ControlId.DPAD))
+        assertEquals(1.3f, loaded.portraitLayout.scales.getValue(ControlId.DPAD), 0f)
+        assertEquals("la separación dañada vuelve a 1,0", 1f, loaded.portraitLayout.separation, 0f)
+        // Entrada a entrada: el control desconocido, el punto dañado y la escala dañada se saltan; lo demás se conserva.
+        assertEquals(setOf(ControlId.B), loaded.landscapeLayout.positions.keys)
+        assertEquals(NormalizedPoint(0.2f, 0.3f), loaded.landscapeLayout.positions.getValue(ControlId.B))
+        assertEquals(mapOf(ControlId.START to 0.8f), loaded.landscapeLayout.scales)
+        assertEquals(1.2f, loaded.landscapeLayout.separation, 1e-4f)
+        assertTrue(file().exists())
+    }
+
+    @Test
+    fun aLayoutThatIsNotAnObjectFallsBackToFactoryWithoutAffectingTheOtherOrientation() {
+        file().writeText("""{"portraitLayout":"hola","landscapeLayout":{"positions":{"A":{"x":0.5,"y":0.5}}}}""")
+        val loaded = GameplaySettingsFile(file()).load()
+        assertEquals(StoredControlLayout(), loaded.portraitLayout)
+        assertEquals(NormalizedPoint(0.5f, 0.5f), loaded.landscapeLayout.positions.getValue(ControlId.A))
+    }
 }

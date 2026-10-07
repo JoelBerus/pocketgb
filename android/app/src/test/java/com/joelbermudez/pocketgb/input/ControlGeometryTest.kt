@@ -335,4 +335,38 @@ class ControlGeometryTest {
             }
         }
     }
+
+    // ---- H5: marco cuadrado aunque la zona sea más baja que ancha
+
+    @Test
+    fun roundControlsStaySquareAndInsideALowControlsArea() {
+        val density = 1f
+        // Zona de controles del AVD en vertical: 360 × 316 dp (más baja que el control a tamaño máximo).
+        val low = ControlBounds(0f, 0f, 360f, 316f)
+        val tall = ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(scales = mapOf(ControlId.DPAD to 1.6f), separation = 1.5f)
+        val arrows = ControlGeometry(tall, ControlsOrientation.PORTRAIT, low, density, sizeScale = 1.15f, dpadStyle = DpadStyle.ARROWS)
+        val frame = arrows.frames.getValue(ControlId.DPAD)
+        assertEquals("el marco sigue cuadrado", frame.width, frame.height, 0.01f)
+        assertTrue(frame.top >= low.top - 0.01f && frame.bottom <= low.bottom + 0.01f)
+        assertTrue(frame.left >= low.left - 0.01f && frame.right <= low.right + 0.01f)
+        DpadShape.arrowCircles(frame, arrows.dpadSeparation).forEach { (button, circle) ->
+            assertTrue("$button sale por arriba", circle.centerY - circle.radius >= low.top - 0.01f)
+            assertTrue("$button sale por abajo", circle.centerY + circle.radius <= low.bottom + 0.01f)
+            assertTrue("$button sale por los lados", circle.centerX - circle.radius >= low.left - 0.01f && circle.centerX + circle.radius <= low.right + 0.01f)
+        }
+        // La cruz al 160 % × 1,15 en una zona de 244 dp de alto: el disco no se sale.
+        val cross = ControlGeometry(
+            ControlLayout.defaults(ControlsOrientation.PORTRAIT).copy(scales = mapOf(ControlId.DPAD to 1.6f)),
+            ControlsOrientation.PORTRAIT, ControlBounds(0f, 0f, 360f, 244f), density, sizeScale = 1.15f,
+        )
+        val disc = cross.frames.getValue(ControlId.DPAD)
+        assertEquals(disc.width, disc.height, 0.01f)
+        assertTrue(disc.top >= -0.01f && disc.bottom <= 244.01f)
+        // A y B también siguen siendo círculos.
+        listOf(ControlId.A, ControlId.B).forEach { id ->
+            val f = ControlGeometry(ControlLayout.defaults(ControlsOrientation.LANDSCAPE), ControlsOrientation.LANDSCAPE, ControlBounds(0f, 0f, 640f, 50f), density)
+                .frames.getValue(id)
+            assertEquals("$id", f.width, f.height, 0.01f)
+        }
+    }
 }

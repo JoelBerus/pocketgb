@@ -156,4 +156,53 @@ class ControlsRenderOptionsTest {
             assertTrue("contraste alto sobre $gray: círculo $circle", circle >= 3.0)
         }
     }
+
+    // ---- H3: contraste COMPUESTO de lo que se dibuja (etiquetas y símbolos), no solo de los colores opacos
+
+    /** Contraste de la etiqueta (o símbolo) de un control frente a su relleno, tal como se componen al dibujarlos. */
+    private fun labelContrast(options: ControlsRenderOptions, gameGray: Int, pressed: Boolean): Double {
+        val p = options.palette
+        val background = doubleArrayOf(gameGray.toDouble(), gameGray.toDouble(), gameGray.toDouble())
+        val scrimmed = over(0, options.scrimAlpha(1f), background)
+        val fill = over(if (pressed) p.pressed else p.surface, options.fillAlpha(pressed, 1f), scrimmed)
+        val label = over(if (pressed) p.onPressed else p.onSurface, options.labelAlpha(1f), fill)
+        return contrast(lum(label), lum(fill))
+    }
+
+    @Test
+    fun labelsStayAtLeastFourPointFiveToOneOverDarkAndMidGrayFramesAtEveryOpacity() {
+        val report = StringBuilder("CONTRASTE DE ETIQUETAS (START/SELECT neutro / pulsado), fondo negro 0, gris 64, gris 128, gris 224, blanco 255\n")
+        for (opacity in listOf(30, 50, 70, 100)) {
+            val options = ControlsRenderOptions(opacity = opacity)
+            report.append("opacidad $opacity %: ")
+            for (gray in listOf(0, 64, 128, 224, 255)) {
+                val neutral = labelContrast(options, gray, pressed = false)
+                val pressed = labelContrast(options, gray, pressed = true)
+                report.append("[%d] %.2f / %.2f  ".format(gray, neutral, pressed))
+                if (gray <= 128) assertTrue("etiqueta neutra al $opacity % sobre $gray: $neutral", neutral >= 4.5)
+                // El pulsado va siempre sobre el relleno opaco (0,92): también cumple sobre blanco.
+                assertTrue("etiqueta pulsada al $opacity % sobre $gray: $pressed", pressed >= 4.5)
+            }
+            report.append('\n')
+        }
+        print(report)
+    }
+
+    @Test
+    fun theDefaultSeventyPercentGivesLabelsOverFourPointFiveOverMidGray() {
+        // El caso que midió la auditoría: START/SELECT al 70 % sobre gris 128 (con onSurfaceVariant y 70 % de alfa: 3,75).
+        val options = ControlsRenderOptions(opacity = 70)
+        assertTrue("${labelContrast(options, 128, pressed = false)}", labelContrast(options, 128, pressed = false) >= 4.5)
+        assertEquals(1f, options.labelAlpha(1f), 0f)
+        assertEquals(0.5f, options.labelAlpha(0.5f), 0f)
+    }
+
+    @Test
+    fun labelsInHighContrastKeepTheirContrastToo() {
+        val options = ControlsRenderOptions(opacity = 30, highContrast = true, palette = ControlsPalette.from(PocketDarkHighContrastColorScheme))
+        for (gray in listOf(0, 128, 255)) {
+            assertTrue("contraste alto sobre $gray: ${labelContrast(options, gray, false)}", labelContrast(options, gray, false) >= 4.5)
+            assertTrue(labelContrast(options, gray, true) >= 4.5)
+        }
+    }
 }

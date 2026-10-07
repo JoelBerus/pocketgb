@@ -22,8 +22,8 @@ object DpadSectors {
     /** Histéresis de la zona muerta: una vez activa, la dirección se mantiene hasta bajar de este radio. */
     const val DEAD_ZONE_RELEASE = 0.24f
 
-    /** Histéresis angular: el sector actual se mantiene este margen más allá de su borde. */
-    const val ANGLE_HYSTERESIS_DEG = 6f
+    /** Histéresis angular: el sector actual se mantiene este margen más allá de su borde (los mismos 8° que en iOS). */
+    const val ANGLE_HYSTERESIS_DEG = 8f
 
     private class Sector(val mask: Int, val centerDeg: Float, val diagonal: Boolean)
 
@@ -54,11 +54,20 @@ object DpadSectors {
     /**
      * Máscara de dirección del punto (`dx`, `dy`) respecto al centro de una cruceta de radio [radius]. [previous] es la
      * máscara que ese mismo dedo tenía en el toque anterior: con ella la zona muerta y los bordes entre sectores tienen
-     * histéresis. Nunca devuelve direcciones opuestas.
+     * histéresis. [deadZoneRadius] es el radio de la zona muerta para activarse (por defecto el 30 % de [radius]; las
+     * flechas separadas lo acortan hasta el borde interior de sus botones); una vez activa se suelta a un 80 % de él
+     * (0,24 / 0,30). Nunca devuelve direcciones opuestas.
      */
-    fun mask(dx: Float, dy: Float, radius: Float, mode: DiagonalMode, previous: Int = 0): Int {
-        val enter = if (previous != 0) DEAD_ZONE_RELEASE else DEAD_ZONE
-        if (hypot(dx, dy) < radius * enter) return 0
+    fun mask(
+        dx: Float,
+        dy: Float,
+        radius: Float,
+        mode: DiagonalMode,
+        previous: Int = 0,
+        deadZoneRadius: Float = radius * DEAD_ZONE,
+    ): Int {
+        val enter = if (previous != 0) deadZoneRadius * (DEAD_ZONE_RELEASE / DEAD_ZONE) else deadZoneRadius
+        if (hypot(dx, dy) < enter) return 0
         var angle = Math.toDegrees(atan2(-dy.toDouble(), dx.toDouble())).toFloat()
         if (angle < 0f) angle += 360f
         if (previous != 0) {
@@ -155,7 +164,20 @@ object DpadShape {
     }
 }
 
-/** Háptica de la cruceta (N2): un toque solo cuando se activa una dirección nueva, no en cada cambio de sector. */
+/**
+ * Háptica de la cruceta (N2), la misma regla que en iOS: vibra cuando se activa una dirección que no estaba activa. ↑ →
+ * ↑→ vibra (se activa →); ↑→ → ↑ no (no se activa nada); ↑ → nada → ↑ sí (tras soltar, ↑ vuelve a activarse).
+ */
 object DpadHaptics {
     fun shouldTick(previous: Int, next: Int): Boolean = next != 0 && (next and previous.inv()) != 0
+}
+
+/** Anula las direcciones opuestas (↑↓, ←→) de una máscara de botones: si llegan las dos, no se pulsa ninguna. */
+fun withoutOpposites(mask: Int): Int {
+    var result = mask
+    val vertical = GameBoyButton.UP.mask or GameBoyButton.DOWN.mask
+    val horizontal = GameBoyButton.LEFT.mask or GameBoyButton.RIGHT.mask
+    if (result and vertical == vertical) result = result and vertical.inv()
+    if (result and horizontal == horizontal) result = result and horizontal.inv()
+    return result
 }

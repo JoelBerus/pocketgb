@@ -269,6 +269,28 @@ class GameControlsViewTest {
     }
 
     @Test
+    fun aTouchInsideAnArrowCircleGivesItsDirectionThroughTheRealViewEvenNearTheSideOfTheButton() {
+        for (diagonals in DiagonalMode.entries) {
+            val masks = mutableListOf<Int>()
+            val view = view(masks)
+            view.renderOptions = ControlsRenderOptions(dpadStyle = DpadStyle.ARROWS, diagonals = diagonals)
+            val frame = view.controlGeometry.frames.getValue(ControlId.DPAD)
+            val circles = DpadShape.arrowCircles(frame, view.controlGeometry.dpadSeparation)
+            circles.forEach { (button, circle) ->
+                // Ocho puntos al 90 % del radio alrededor del centro del botón (los laterales dan >30° respecto al eje del grupo).
+                for (step in 0 until 8) {
+                    val angle = Math.toRadians(step * 45.0)
+                    val x = circle.centerX + (kotlin.math.cos(angle) * circle.radius * 0.9f).toFloat()
+                    val y = circle.centerY + (kotlin.math.sin(angle) * circle.radius * 0.9f).toFloat()
+                    view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, x, y))
+                    assertEquals("$diagonals: $button, punto $step", button.mask, masks.last())
+                    view.dispatchTouchEvent(event(MotionEvent.ACTION_UP, x, y))
+                }
+            }
+        }
+    }
+
+    @Test
     fun hapticTicksOnlyWhenANewDirectionIsActivated() {
         var ticks = 0
         val view = view().apply { sectorFeedback = { ticks += 1 } }

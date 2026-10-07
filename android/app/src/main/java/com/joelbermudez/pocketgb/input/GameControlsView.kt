@@ -16,8 +16,9 @@ import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.DpadStyle
 
 /**
- * Controles táctiles del juego, dibujados con colores fijos sobre una capa oscura localizada (K12): no dependen del
- * tema ni del color dinámico, así que se leen sobre cualquier fotograma. Con [editing] se convierte en el lienzo del
+ * Controles táctiles del juego, dibujados sobre una capa oscura localizada (K12) con los roles tonales del esquema
+ * Material del juego (N2, [ControlsPalette]): el juego es siempre oscuro y sin color dinámico, así que la paleta es la
+ * misma en cualquier tema de la app y se lee sobre cualquier fotograma. Con [editing] se convierte en el lienzo del
  * editor: arrastrar mueve un control, tocar lo elige, y no manda nada al juego.
  */
 class GameControlsView(
@@ -476,10 +477,14 @@ class GameControlsView(
     private fun symbolColor(pressed: Boolean, o: ControlsRenderOptions, fade: Float): Int =
         argb(o.labelAlpha(fade), if (pressed) o.palette.onPressed else o.palette.onSurface)
 
-    /** Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. */
+    /**
+     * Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. Tiene
+     * la forma del control con 1 dp de margen (lo que cubre el contorno): una capa más holgada dejaba un anillo gris
+     * separado del borde sobre escenas claras.
+     */
     private fun drawScrim(canvas: Canvas, id: ControlId, o: ControlsRenderOptions, fade: Float) {
         val b = controlGeometry.frames.getValue(id)
-        val pad = 5f * density
+        val pad = SCRIM_PAD_DP * density
         paint.style = Paint.Style.FILL
         paint.color = argb(o.scrimAlpha(fade), 0)
         when {
@@ -568,6 +573,7 @@ class GameControlsView(
         Color.argb((alpha.coerceIn(0f, 1f) * 255f).toInt(), Color.red(rgb), Color.green(rgb), Color.blue(rgb))
 
     private companion object {
+        const val SCRIM_PAD_DP = 1f
         const val RING_A = 0xFFA04D
         const val RING_B = 0x6CB4FF
     }

@@ -124,8 +124,15 @@ class ControlGeometry(
         val width = base.first * scale * density * footprint
         val height = base.second * scale * density * footprint
         val relative = layout.centers[id] ?: ControlLayout.defaults(orientation).centers.getValue(id)
-        val halfWidth = min(width / 2f, area.width / 2f)
-        val halfHeight = min(height / 2f, area.height / 2f)
+        var halfWidth = min(width / 2f, area.width / 2f)
+        var halfHeight = min(height / 2f, area.height / 2f)
+        if (base.first == base.second) {
+            // Los controles redondos (cruceta, A, B, menú) siguen cuadrados aunque la zona sea más baja que ancha: si no, el
+            // dibujo (que sale del ancho) se saldría del área.
+            val half = min(halfWidth, halfHeight)
+            halfWidth = half
+            halfHeight = half
+        }
         val centerX = (area.left + area.width * relative.x)
             .coerceIn(area.left + halfWidth, area.right - halfWidth)
         val centerY = (area.top + area.height * relative.y)
@@ -169,10 +176,33 @@ class ControlGeometry(
         return null
     }
 
-    /** Dirección bajo [point]; [previous] es la del mismo dedo un instante antes (histéresis, ver [DpadSectors]). */
+    /**
+     * Dirección bajo [point]; [previous] es la del mismo dedo un instante antes (histéresis, ver [DpadSectors]).
+     *
+     * Con flechas separadas manda lo que se ve: un toque dentro de un botón da la dirección de ese botón, y el mismo dedo
+     * la conserva hasta salir [ARROW_HOLD_MARGIN_DP] de él; la zona muerta del centro se acorta hasta el borde interior de
+     * los botones menos [ARROW_DEAD_ZONE_MARGIN_DP]; fuera de los botones (los huecos y el exterior) decide el ángulo.
+     */
     fun dpadMask(point: ControlPoint, previous: Int = 0): Int {
         val frame = frames.getValue(ControlId.DPAD)
-        return dpadMask(point.x - frame.centerX, point.y - frame.centerY, frame.width / 2f, diagonals, previous)
+        val dx = point.x - frame.centerX
+        val dy = point.y - frame.centerY
+        val radius = frame.width / 2f
+        if (dpadStyle != DpadStyle.ARROWS) return dpadMask(dx, dy, radius, diagonals, previous)
+        val circles = DpadShape.arrowCircles(frame, dpadSeparation)
+        circles.forEach { (button, circle) ->
+            if (hypot(point.x - circle.centerX, point.y - circle.centerY) <= circle.radius) return button.mask
+        }
+        val hold = ARROW_HOLD_MARGIN_DP * density
+        circles.forEach { (button, circle) ->
+            if (previous == button.mask && hypot(point.x - circle.centerX, point.y - circle.centerY) <= circle.radius + hold) {
+                return button.mask
+            }
+        }
+        val up = circles.getValue(GameBoyButton.UP)
+        val innerEdge = hypot(up.centerX - frame.centerX, up.centerY - frame.centerY) - up.radius
+        val deadZone = min(radius * DpadSectors.DEAD_ZONE, innerEdge - ARROW_DEAD_ZONE_MARGIN_DP * density).coerceAtLeast(0f)
+        return DpadSectors.mask(dx, dy, radius, diagonals, previous, deadZone)
     }
 
     /**
@@ -203,6 +233,12 @@ class ControlGeometry(
             (width - insets.right).coerceAtLeast(insets.left + 1f),
             (height - insets.bottom).coerceAtLeast(insets.top + 1f),
         )
+
+        /** Flechas separadas: el dedo conserva su botón hasta salir de él este margen. */
+        const val ARROW_HOLD_MARGIN_DP = 4f
+
+        /** Flechas separadas: la zona muerta termina este margen antes del borde interior de los botones. */
+        const val ARROW_DEAD_ZONE_MARGIN_DP = 2f
 
         const val MIN_TOUCH_SIZE = 48f
         const val EDGE_MARGIN_DP = 8f

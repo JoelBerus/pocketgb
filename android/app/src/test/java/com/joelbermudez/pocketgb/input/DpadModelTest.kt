@@ -126,12 +126,15 @@ class DpadModelTest {
     @Test
     fun sectorBordersHaveHysteresis() {
         val m = DiagonalMode.REDUCED
-        // Frontera cardinal/diagonal a 30°: quien está en «derecha» no pasa a la diagonal hasta 36°…
+        // Frontera cardinal/diagonal a 30°: quien está en «derecha» no pasa a la diagonal hasta 38° (histéresis de 8°, como iOS)…
         assertEquals(right, at(34f, m, previous = right))
-        assertEquals(right or up, at(37f, m, previous = right))
-        // …y quien está en la diagonal no vuelve a «derecha» hasta bajar de 24°.
+        assertEquals(right, at(37f, m, previous = right))
+        assertEquals(right or up, at(39f, m, previous = right))
+        // …y quien está en la diagonal no vuelve a «derecha» hasta bajar de 22°.
         assertEquals(right or up, at(26f, m, previous = right or up))
-        assertEquals(right, at(23f, m, previous = right or up))
+        assertEquals(right or up, at(23f, m, previous = right or up))
+        assertEquals(right, at(21f, m, previous = right or up))
+        assertEquals(8f, DpadSectors.ANGLE_HYSTERESIS_DEG, 0f)
         // Sin dirección previa se aplica el borde exacto.
         assertEquals(right or up, at(34f, m, previous = 0))
     }
