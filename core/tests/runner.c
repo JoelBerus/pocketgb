@@ -172,6 +172,7 @@ static int run_unit(void)
         { "cgb", unit_cgb },
         { "link", unit_link },
         { "progress", unit_progress },
+        { "pgbm", unit_pgbm },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -235,6 +236,17 @@ static int fuzz_seeds(const char *dir)
                 return 2;
             snprintf(path, sizeof path, "%s/fuzz_progress/seed_game%u.bin", dir, i);
             rc |= write_file(path, pseed, n);
+        }
+    }
+    /* fuzz_pgbm: paquetes .pgbm sintéticos (mínimo, con tipo desconocido, completo, con CRC roto y modo codificador). */
+    {
+        uint8_t qseed[4096];
+        for (unsigned i = 0; i < UT_PGBM_SEEDS; i++) {
+            size_t n = ut_pgbm_seed(i, qseed, sizeof qseed);
+            if (!n)
+                return 2;
+            snprintf(path, sizeof path, "%s/fuzz_pgbm/seed_%u.bin", dir, i);
+            rc |= write_file(path, qseed, n);
         }
     }
     /* Semillas largas (auditoría M9, H5): los programas de intercambio de

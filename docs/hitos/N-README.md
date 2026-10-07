@@ -107,7 +107,7 @@ Roms/                                   ← la carpeta que eliges en la app
 | Espejo borrado | se recrea desde la local (documentado) |
 | Copias en conflicto del proveedor (`X 2.sav`, `X (1).sav`, `.sync-conflict-…`, «conflicted copy») | se listan como candidatas en Ajustes › Partidas; nunca se borran |
 
-- **Paquete `.pgbm`** (formato propio documentado: mágico, versión, longitudes acotadas y CRC-32; parser en C en `core/` con fuzzer). Lleva la partida (`.sav`), el estado automático si es válido, el sha y el sha base, el equipo de origen, la versión del núcleo, la configuración (§3.3) y los metadatos del juego (alias, etiquetas, hitos y tiempo de juego). Sirve para exportar momentos y para «Enviar a otro dispositivo».
+- **Paquete `.pgbm`** (formato propio documentado en [12-formato-pgbm](../12-formato-pgbm.md), con el esquema normativo de `META`: mágico, versión, longitudes acotadas y CRC-32; parser en C en `core/` con fuzzer). Lleva la partida (`.sav`), el estado automático si es válido, el sha y el sha base, el equipo de origen, la versión del núcleo, la configuración (§3.3) y los metadatos del juego (alias, etiquetas, hitos y tiempo de juego). Sirve para exportar momentos y para «Enviar a otro dispositivo».
 - **Enviar a otro dispositivo:** exportar el `.pgbm` de la partida actual. En Android va directo a `Roms/PocketGB/Intercambio/` (la carpeta de Drive). En el iPhone, con la hoja de compartir (extensión de Google Drive si está instalada, o cualquier otra app). El otro equipo lo importa: Android detecta los paquetes nuevos en `Intercambio/` al abrir la biblioteca, y el iPhone con «Abrir con PocketGB» desde Archivos o Drive. Al importar se aplica el linaje (avance o divergencia) y, si el estado coincide con la partida, se ofrece **«Continuar donde lo dejaste en <equipo>»** (ND6).
 - Exportar también el `.sav` crudo (sirve en otros emuladores). Importar `.sav` y `.pgbm` desde «Abrir con» o desde el detalle, validando el tamaño exacto y la huella, siempre con backup.
 
@@ -289,6 +289,8 @@ Los criterios se verifican con comando y salida (regla dura 7). Para que los lot
 - [ ] Ida y vuelta exportar → importar en cada plataforma y **entre plataformas** (vectores dorados con carga sintética generada en el test, iguales en iOS y Android).
 - [ ] Paquetes hostiles rechazados (fuzz de 600 s, ASan); `*.pgbm` bloqueado por el hook pre-commit.
 - [ ] Importar respalda lo actual y respeta la exclusión por huella.
+- [ ] Importar un `.pgbm` con `SAVE` vacía o de tamaño distinto al del cartucho para un juego con batería no toca el `.sav` y deja backup (tests Swift y JVM).
+- [ ] Un `.pgbm` sin `META` válida (esquema `META v1` de [12-formato-pgbm](../12-formato-pgbm.md)) o con una sección crítica desconocida (`PGBM_ERR_CRITICAL`) se rechaza sin tocar nada (tests Swift y JVM).
 - [ ] Android sin `INTERNET` (test de manifiesto); iOS sin APIs de red.
 - [ ] Prueba de Joel: Rojo iPhone → Android → iPhone con continuación exacta.
 
