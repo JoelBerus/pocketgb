@@ -1,6 +1,6 @@
 # N3 🍎 · Evidencia de biblioteca y detalle adaptables (iOS: N3a + N3b)
 
-> **Auditoría Opus: APROBAR CON CAMBIOS** ([N3-ios-opus.md](N3-ios-opus.md)); respuesta en [N3-ios-respuesta.md](N3-ios-respuesta.md). Tras ella cambió la colocación de las herramientas en horizontal (decisión del orquestador): en reposo van en la barra de navegación y el grupo flotante solo aparece al desplazar. Lo que sigue describe la primera versión salvo donde se indica; la verificación de los cambios de la auditoría está pendiente del entorno (ver la respuesta).
+> **Auditoría Opus: APROBAR CON CAMBIOS** ([N3-ios-opus.md](N3-ios-opus.md)); respuesta en [N3-ios-respuesta.md](N3-ios-respuesta.md). Tras ella cambió la colocación de las herramientas en horizontal (decisión del orquestador): en reposo van en la barra de navegación (paneles hacia abajo) y el grupo flotante solo aparece al desplazar, en la fila de la burbuja. Las secciones 1–6 describen la primera versión; la **§8** recoge la verificación final.
 
 Rama `n3-ios-adaptable` (desde `n1-ios-identidad` en `b216c2a`; después se fusionó `siguiente-nivel` en `da51a57`, con N1 iOS cerrado y N2 iOS), 2026-10-07. Plan: [hitos/N-README.md](../hitos/N-README.md) §1 (peticiones 1, 6, 7 y 15) y §4 N3. Reglas de diseño: [diseno/SPEC.md](../diseno/SPEC.md) §15. Guía para Joel: [guia/biblioteca.md](../guia/biblioteca.md).
 
@@ -138,3 +138,24 @@ Commits: `892918c` (código N3a/N3b), `473e761` (guía, SPEC, 04), `0a65baa` (fu
 ## 7. No verificado
 - En el iPhone de Joel: sensación del grupo y los paneles con el dedo, la burbuja real de su versión de iOS, VoiceOver en horizontal, y la información técnica de sus juegos reales (Pokémon con MBC3+RTC, GBA con Flash y RTC) y de juegos en iCloud sin descargar.
 - iPad (fuera de alcance, ND8); el layout por espacio ya da dos columnas con ≥ 600 pt.
+
+## 8. Verificación tras la auditoría (commit `32b9437` + ajuste del test)
+```
+PocketGBTests, iPhone 17 Pro:   ✔ Test run with 254 tests in 23 suites passed after 12.879 seconds.
+PocketGBTests, iPhone SE (3.ª): ✔ Test run with 254 tests in 23 suites passed after 10.802 seconds.
+AdaptiveLibraryUITests (8 tests), 17 Pro y SE: todos passed (test exit 0)
+tools/ios-screenshots.sh (17 Pro): ✔ 254 tests Swift; Executed 17 tests, with 0 failures (0 unexpected) (UI)
+  testScreenCatalog passed (1356.551 seconds); 165 PNG; xcodebuild Release: exit 0; xcodebuild test: exit 0
+Bloque N3 (28 capturas): SE passed (331.710 s), Pro Max passed (340.766 s)
+Release generic/platform=iOS (CODE_SIGNING_ALLOWED=NO): ** BUILD SUCCEEDED **
+rg -n 'URLSession|NWConnection' ios/PocketGB → sin resultados
+```
+Capturas revisadas (herramienta Read, hojas de contacto) en SE, 17 Pro y Pro Max: ✅
+- `library-landscape` (reposo): Buscar, Filtros, Categorías, Vista y «…» en una cápsula de la barra; sin grupo; tarjetas del carril del ancho de una columna (en el SE, 3 columnas de ≈ 203 pt, como la cuadrícula: H1).
+- `library-landscape-scrolled`: burbuja a la izquierda, grupo a la derecha en su fila; en la barra solo «…»; cabecera fijada.
+- `library-landscape-bar-filters` / `-bar-categories` / `-bar-view`: el panel nace del botón de la barra y se despliega hacia abajo, cubriendo la barra mientras está abierto (nativo de iOS 26).
+- `library-landscape-filters` / `-categories` / `-view` (grupo): panel hacia arriba, cabecera de sección visible encima.
+- `library-landscape-panel-ax5`: cápsulas en varias filas, el panel se desplaza por dentro; `library-landscape-panel-reduce-transparency`: botones del grupo sólidos con borde.
+- `library-landscape-white` (oscuro): «Biblioteca» legible; `game-details-technical` horizontal: borde suave en la columna derecha (H10).
+
+Pendiente del iPhone de Joel: tacto real de los paneles desde la barra y desde el grupo, VoiceOver en horizontal y la burbuja de su versión de iOS.

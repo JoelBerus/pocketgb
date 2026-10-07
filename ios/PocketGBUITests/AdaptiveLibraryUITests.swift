@@ -60,11 +60,15 @@ final class AdaptiveLibraryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["library-search-button"].isHittable)
         for id in Self.panels { XCTAssertTrue(app.buttons["library-bar-\(id)"].isHittable, id) }
 
-        // Filtros › GBA desde la barra: el panel se abre hacia abajo.
+        // Filtros › GBA desde la barra: el panel sale del botón y se despliega hacia abajo (en
+        // iOS 26 el popover de un botón de la barra nace del propio botón y cubre la barra
+        // mientras está abierto).
+        let button = filters.frame
         filters.tap()
         let gba = app.buttons["library-filter-gba"]
         XCTAssertTrue(gba.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(gba.frame.minY, filters.frame.maxY)
+        XCTAssertGreaterThan(gba.frame.midY, button.midY, "El panel no se despliega hacia abajo")
+        XCTAssertGreaterThan(gba.frame.maxY, button.maxY)
         gba.tap()
         XCTAssertTrue(app.buttons["game-card-Pruebas/arm.gba"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["game-card-dmg-acid2.gb"].exists)
