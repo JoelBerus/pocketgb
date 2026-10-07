@@ -58,7 +58,6 @@ private fun CatalogLibrary(
             onRescan = {},
             actions = actions,
             newGamesSummary = newGamesSummary,
-            artworkFingerprints = CatalogData.coveredFingerprints,
         )
     }
 }

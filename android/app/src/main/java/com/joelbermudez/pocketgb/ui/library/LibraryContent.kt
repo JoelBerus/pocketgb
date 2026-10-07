@@ -122,7 +122,6 @@ import com.joelbermudez.pocketgb.library.visible
 import com.joelbermudez.pocketgb.ui.components.ContinueRail
 import com.joelbermudez.pocketgb.ui.components.EmptyState
 import com.joelbermudez.pocketgb.ui.components.bleedHorizontally
-import com.joelbermudez.pocketgb.ui.components.rememberArtworkFingerprints
 import kotlin.math.roundToInt
 
 /** N1-H2: aviso fijo sobre la biblioteca cuando sus preferencias son de otra versión de la app. */
@@ -145,8 +144,7 @@ private fun PreferencesReadOnlyBanner() {
  * Pantalla de Biblioteca sin ViewModel: recibe estado y callbacks, así que el catálogo
  * debug y las pruebas Compose la ejercitan con datos sintéticos.
  *
- * [artworkFingerprints] son las huellas con portada capturada (carril «Continuar jugando», K10); `null` = leerlas
- * del almacén real. [newGamesSummary] > 0 muestra un aviso breve de juegos nuevos (K19) y luego llama a
+ * [newGamesSummary] > 0 muestra un aviso breve de juegos nuevos (K19) y luego llama a
  * [onNewGamesSummaryShown].
  *
  * N3b: si el espacio es más ancho que alto ([isLandscapeLibrary]) la búsqueda y los chips dejan la parte de arriba.
@@ -172,7 +170,6 @@ fun LibraryContent(
     modifier: Modifier = Modifier,
     newGamesSummary: Int = 0,
     onNewGamesSummaryShown: () -> Unit = {},
-    artworkFingerprints: Set<String>? = null,
     /** N1-H2: `preferences.json` es de otra versión: aviso fijo de que los cambios no se guardarán. */
     preferencesReadOnly: Boolean = false,
     /** N4: abre la pantalla de una categoría (estanterías, panel Categorías y menú «⋮»). */
@@ -185,8 +182,6 @@ fun LibraryContent(
 ) {
     val showsGames = state is LibraryState.Ready && state.entries.isNotEmpty() ||
         state is LibraryState.Scanning && state.previous.isNotEmpty()
-    val realFingerprints = rememberArtworkFingerprints()
-    val withArtwork = artworkFingerprints ?: realFingerprints
     val snackbar = remember { SnackbarHostState() }
     val summaryText = pluralStringResource(R.plurals.library_new_games, newGamesSummary, newGamesSummary)
     LaunchedEffect(newGamesSummary) {
@@ -377,7 +372,6 @@ fun LibraryContent(
                             scanning = true,
                             done = state.done,
                             total = state.total,
-                            artworkFingerprints = withArtwork,
                             onRescan = onRescan,
                             mode = browser,
                         )
@@ -405,7 +399,6 @@ fun LibraryContent(
                             scanning = false,
                             done = 0,
                             total = 0,
-                            artworkFingerprints = withArtwork,
                             onRescan = onRescan,
                             mode = browser,
                         )
@@ -514,7 +507,6 @@ private fun GameBrowser(
     scanning: Boolean,
     done: Int,
     total: Int,
-    artworkFingerprints: Set<String>,
     onRescan: () -> Unit,
     mode: BrowserMode,
 ) {
@@ -524,10 +516,11 @@ private fun GameBrowser(
     val visible = remember(entries, prefs, filter, query, tag) {
         LibraryQuery.visible(entries, prefs, filter, query, LibraryCategory.All, tag)
     }
-    // ND15: solo juegos que se pueden continuar. `canResume` lee estado (huellas reanudables): derivedStateOf lo sigue.
-    val rail by remember(entries, prefs, artworkFingerprints, actions) {
+    // ND15: solo juegos que se pueden continuar, tengan o no portada (decisión de Joel 2026-10-07). `canResume` lee
+    // estado (huellas reanudables): derivedStateOf lo sigue.
+    val rail by remember(entries, prefs, actions) {
         derivedStateOf {
-            LibraryQuery.continueRail(entries, prefs, isResumable = actions.canResume, hasArtwork = { it in artworkFingerprints })
+            LibraryQuery.continueRail(entries, prefs, isResumable = actions.canResume)
         }
     }
     // N4: el inicio (carril, Favoritos y estanterías) solo sin búsqueda, filtro ni etiqueta.

@@ -243,7 +243,6 @@ class CoversTest {
         assertEquals(CoverChoice.IMAGE, repo.choiceFor(fp))
         assertEquals(CoverKind.IMPORTED, repo.resolve(entry(), fp))
         assertEquals(2L, File(tmp.root, "covers/imported/$fp.png").length())
-        assertTrue(fp in repo.fingerprintsWithCover())
 
         // Una imagen que no vale no cambia nada.
         val bad = repository(reduce = { null })

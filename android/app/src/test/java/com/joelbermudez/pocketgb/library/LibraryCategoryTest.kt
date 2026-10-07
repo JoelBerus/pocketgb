@@ -105,7 +105,6 @@ class LibraryCategoryTest {
         val rail = LibraryQuery.continueRail(
             all, prefs,
             isResumable = { prefs.fingerprints[it.id] in resumable },
-            hasArtwork = { true },
         )
         assertEquals(listOf(gold.id, tetris.id), rail.map { it.id })
     }
@@ -116,26 +115,31 @@ class LibraryCategoryTest {
         val prefs = played(*games.toTypedArray())
         // Los tres más recientes no se pueden continuar: el carril sigue llenándose con los siguientes hasta 5.
         val resumable = games.drop(3).map { fp(prefs, it) }.toSet()
-        val rail = LibraryQuery.continueRail(games, prefs, { prefs.fingerprints[it.id] in resumable }, { true })
+        val rail = LibraryQuery.continueRail(games, prefs, { prefs.fingerprints[it.id] in resumable })
         assertEquals(LibraryQuery.CONTINUE_LIMIT, rail.size)
         assertEquals(games.drop(3).take(5).map { it.id }, rail.map { it.id })
     }
 
     @Test
-    fun theRailStillNeedsACapturedArtworkAndAPlayableRom() {
+    fun theRailStillNeedsAPlayableRom() {
         val broken = rom("Roto.gb", problem = RomProblem.INVALID_HEADER)
         val prefs = played(broken, red, gold)
-        val rail = LibraryQuery.continueRail(
-            listOf(broken, red, gold), prefs,
-            isResumable = { true },
-            hasArtwork = { it == fp(prefs, gold) },
-        )
-        assertEquals(listOf(gold.id), rail.map { it.id })
+        val rail = LibraryQuery.continueRail(listOf(broken, red, gold), prefs, isResumable = { true })
+        assertEquals(listOf(red.id, gold.id), rail.map { it.id })
+    }
+
+    /** Decisión de Joel 2026-10-07 (sustituye a K10): el carril no depende de ninguna portada. */
+    @Test
+    fun theRailShowsResumableGamesWithoutArtwork() {
+        val prefs = played(red, gold)
+        // `continueRail` ya no recibe ninguna fuente de portada: ninguno de los dos tiene portada propia y ambos salen.
+        val rail = LibraryQuery.continueRail(listOf(red, gold), prefs, isResumable = { true })
+        assertEquals(listOf(red.id, gold.id), rail.map { it.id })
     }
 
     @Test
     fun theRailIsEmptyWithoutResumableGames() {
         val prefs = played(red, gold)
-        assertTrue(LibraryQuery.continueRail(all, prefs, { false }, { true }).isEmpty())
+        assertTrue(LibraryQuery.continueRail(all, prefs, { false }).isEmpty())
     }
 }
