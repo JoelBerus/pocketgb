@@ -7,9 +7,10 @@ import java.text.Normalizer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.intOrNull
 
 @Serializable
 enum class LibraryLayout(val title: String) {
@@ -80,6 +81,13 @@ data class LibraryPreferencesData(
      * da la terna → huella con la que se reconoce un ROM movido sin leerlo.
      */
     val documents: Map<String, DocumentStamp> = emptyMap(),
+    /** N1-H4: rutas desaparecidas que se pueden recuperar si el documento vuelve ([reconciled]). */
+    val tombstones: List<Tombstone> = emptyList(),
+    /**
+     * N1-H1: rutas cuya huella se heredó sin leer el ROM (movimiento o lápida) y aún no se ha confirmado. Se confirma al
+     * abrir el juego o ver su detalle ([recordFingerprint]); los ajustes del juego la confirman antes de escribir.
+     */
+    val inferredFingerprints: Set<String> = emptySet(),
     /** N1a: versión del formato ([LibraryPreferencesFormat]). */
     val formatVersion: Int = LibraryPreferencesFormat.CURRENT,
 ) {
@@ -130,7 +138,10 @@ data class LibraryPreferencesData(
         val pathPlayed = lastPlayed[id]
         val pathFavorite = id in favorites
         val pathHidden = id in hiddenPaths
-        if (fingerprints[id] == fingerprint && pathAlias == null && pathPlayed == null && !pathFavorite && !pathHidden) return this
+        val wasInferred = id in inferredFingerprints
+        if (fingerprints[id] == fingerprint && pathAlias == null && pathPlayed == null && !pathFavorite && !pathHidden && !wasInferred) {
+            return this
+        }
         val fingerprintPlayed = lastPlayedByFingerprint[fingerprint]
         return copy(
             fingerprints = fingerprints + (id to fingerprint),
@@ -146,8 +157,13 @@ data class LibraryPreferencesData(
             hiddenFingerprints = if (pathHidden) hiddenFingerprints + fingerprint else hiddenFingerprints,
             aliasesByFingerprint = if (pathAlias != null) aliasesByFingerprint + (fingerprint to pathAlias) else aliasesByFingerprint,
             aliasesByPath = if (pathAlias != null) aliasesByPath - id else aliasesByPath,
+            // Leída del ROM: ya no es una huella heredada sin confirmar (N1-H1).
+            inferredFingerprints = if (wasInferred) inferredFingerprints - id else inferredFingerprints,
         )
     }
+
+    /** N1-H1: la huella de [entry] es conocida y salió de leer su ROM (no heredada de un movimiento sin confirmar). */
+    fun hasConfirmedFingerprint(entry: RomEntry): Boolean = entry.id in fingerprints && entry.id !in inferredFingerprints
 
     /**
      * N1a: migración desde [LibraryPreferencesFormat.LEGACY] (A5–A9). Cada ruta con huella conocida lleva sus
@@ -360,7 +376,18 @@ interface PreferencesStore {
     fun load(): LibraryPreferencesData
 
     fun save(data: LibraryPreferencesData)
+
+    /**
+     * N1-H2: el último [load] encontró un archivo de una versión futura o con una versión que no se entiende. Esta
+     * versión de la app no lo reescribe ([save] falla con [PreferencesWriteProtectedException]): los cambios quedan en
+     * memoria y la UI lo avisa.
+     */
+    val writeProtected: Boolean get() = false
 }
+
+/** N1-H2: no se escribe `preferences.json` porque es de otra versión de la app ([version] tal como venía). */
+class PreferencesWriteProtectedException(val version: String) :
+    IOException("preferences.json es de otra versión ($version): no se sobrescribe")
 
 /** Operaciones de archivo de [LibraryPreferencesFile], separadas para poder probar fallos a mitad de la escritura. */
 interface PreferencesFileOps {
@@ -399,7 +426,13 @@ class LibraryPreferencesFile(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; coerceInputValues = true }
     private val temp get() = File(file.parentFile, file.name + ".tmp")
 
+    /** Versión del archivo tal como venía, si no es una que esta app sepa escribir (futura o ilegible). */
+    @Volatile private var foreignVersion: String? = null
+
+    override val writeProtected: Boolean get() = foreignVersion != null
+
     override fun load(): LibraryPreferencesData {
+        foreignVersion = null
         if (!file.exists()) return recoverTemp() ?: LibraryPreferencesData()
         val text = file.readText()
         return decode(text) ?: run {
@@ -409,6 +442,7 @@ class LibraryPreferencesFile(
     }
 
     override fun save(data: LibraryPreferencesData) {
+        foreignVersion?.let { throw PreferencesWriteProtectedException(it) }
         file.parentFile?.mkdirs()
         val temp = temp
         try {
@@ -424,18 +458,53 @@ class LibraryPreferencesFile(
     }
 
     /**
-     * Decodifica y, si el archivo es de una versión anterior (sin `formatVersion`: A5–A9), lo migra (N1a). Un archivo de
-     * una versión futura conserva lo que esta versión conoce y se escribirá como la actual.
+     * Decodifica (N1-H2/H3). La versión se lee aparte y con tolerancia, y el resto se decodifica sin ella, así que una
+     * versión rara nunca hace que el archivo entero se aparte como corrupto:
+     * - sin `formatVersion` (o `null`) o `1`: A5–A9, se migra ([LibraryPreferencesData.migrated]);
+     * - la actual (también `2.0` o `"2"`): se usa tal cual;
+     * - futura, no entera, no numérica o menor que 1: se usa lo que esta versión entiende, sin migrar, y el archivo
+     *   queda protegido contra escritura ([writeProtected]) para no perder lo que esa otra versión guardó.
      */
     private fun decode(text: String): LibraryPreferencesData? = try {
-        val data = json.decodeFromString(LibraryPreferencesData.serializer(), text)
-        val version = (json.parseToJsonElement(text) as? JsonObject)?.get("formatVersion")
-            ?.let { it as? JsonPrimitive }?.intOrNull ?: LibraryPreferencesFormat.LEGACY
-        if (version < LibraryPreferencesFormat.CURRENT) data.migrated() else data.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
+        val root = json.parseToJsonElement(text) as? JsonObject
+        if (root == null) {
+            null
+        } else {
+            val data = json.decodeFromString(LibraryPreferencesData.serializer(), JsonObject(root - VERSION_KEY).toString())
+            when (val version = versionOf(root[VERSION_KEY])) {
+                LibraryPreferencesFormat.LEGACY -> data.migrated()
+                LibraryPreferencesFormat.CURRENT -> data.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
+                else -> {
+                    foreignVersion = root[VERSION_KEY].toString()
+                    data.copy(formatVersion = version ?: LibraryPreferencesFormat.CURRENT)
+                }
+            }
+        }
     } catch (_: SerializationException) {
         null
     } catch (_: IllegalArgumentException) {
         null
+    }
+
+    /**
+     * [LibraryPreferencesFormat.LEGACY] si falta; la versión si es un entero conocido; `CURRENT + 1` o más si es futura;
+     * `null` si no se entiende (no numérica, con decimales, menor que 1 o fuera de rango).
+     */
+    private fun versionOf(element: JsonElement?): Int? {
+        if (element == null || element is JsonNull) return LibraryPreferencesFormat.LEGACY
+        val primitive = element as? JsonPrimitive ?: return null
+        val number = primitive.content.trim().toBigDecimalOrNull() ?: return null
+        val integral = try {
+            number.toBigIntegerExact()
+        } catch (_: ArithmeticException) {
+            return null
+        }
+        if (integral < java.math.BigInteger.ONE) return null
+        return if (integral > java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())) Int.MAX_VALUE else integral.toInt()
+    }
+
+    private companion object {
+        const val VERSION_KEY = "formatVersion"
     }
 
     private fun recoverTemp(): LibraryPreferencesData? {

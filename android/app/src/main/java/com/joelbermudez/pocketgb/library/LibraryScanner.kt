@@ -22,6 +22,44 @@ data class TreeNode(
 /** Fallo de lectura de un documento; distingue "no disponible aún" de "ilegible". */
 class DocumentReadException(val remote: Boolean, cause: Throwable? = null) : IOException(cause)
 
+/**
+ * N1-H4: el proveedor devolvió la carpeta a medias (`EXTRA_LOADING`: aún cargando; `EXTRA_ERROR`: con error). [nodes]
+ * es lo que sí listó; el escaneo lo usa pero queda incompleto (no poda ni traslada nada).
+ */
+class PartialListingException(val nodes: List<TreeNode>, reason: String) : IOException(reason)
+
+/**
+ * N1-H6: cabeceras ya leídas, por documento sin cambios (id de documento, tamaño y fecha del proveedor). Un ROM que
+ * sigue igual no se vuelve a abrir en cada escaneo (en Drive, abrirlo puede descargarlo).
+ */
+class HeaderCache private constructor(private val byKey: Map<Key, String>) {
+    private data class Key(val documentId: String, val size: Long, val lastModified: Long)
+
+    /** Cabecera (0x150 bytes, solo 0x134–0x14F con datos) si [node] no cambió desde que se leyó; si no, `null`. */
+    fun lookup(node: TreeNode): ByteArray? {
+        val modified = node.lastModified ?: return null
+        if (node.sizeBytes <= 0) return null
+        return byKey[Key(node.id, node.sizeBytes, modified)]?.let(RomHeader::fromIdentity)
+    }
+
+    companion object {
+        val EMPTY = HeaderCache(emptyMap())
+
+        /** Desde los sellos guardados: solo los que tienen id de documento, tamaño, fecha y cabecera. */
+        fun from(stamps: Collection<DocumentStamp>): HeaderCache {
+            val map = HashMap<Key, String>()
+            for (stamp in stamps) {
+                val id = stamp.documentId ?: continue
+                val size = stamp.size?.takeIf { it > 0 } ?: continue
+                val modified = stamp.lastModified?.takeIf { it > 0 } ?: continue
+                val header = stamp.header ?: continue
+                if (RomHeader.fromIdentity(header) != null) map[Key(id, size, modified)] = header
+            }
+            return HeaderCache(map)
+        }
+    }
+}
+
 interface DocumentTree {
     /**
      * Id del documento de la carpeta raíz, o `null` si el árbol no lo sabe. Los ROMs de la raíz lo
@@ -57,10 +95,15 @@ data class ScanStats(
     val setAsideSkipped: Int = 0,
     /** Carpetas más allá de [LibraryScanner.MAX_FOLDER_DEPTH] niveles (no se listan). */
     val tooDeepSkipped: Int = 0,
-    /** Subcarpetas que no se pudieron listar (el resto sigue). */
+    /**
+     * Carpetas que no se pudieron listar o que el proveedor dio a medias (`EXTRA_LOADING`/`EXTRA_ERROR`), y subcarpetas
+     * sin acceso con el permiso del árbol aún vigente (el resto sigue).
+     */
     val folderErrors: Int = 0,
     /** Se alcanzó [LibraryScanner.MAX_SCAN_ENTRIES]: hay documentos sin ver. */
     val truncated: Boolean = false,
+    /** N1-H6: cabeceras tomadas de la caché ([HeaderCache]) sin abrir el ROM. */
+    val headerCacheHits: Int = 0,
 ) {
     /** Todas las carpetas a su alcance se listaron: lo que no aparece es que no está (N1a poda y traslada solo así). */
     val complete: Boolean get() = folderErrors == 0 && !truncated
@@ -98,18 +141,20 @@ object LibraryScanner {
 
     /**
      * Como [scan], con lo que costó ([ScanStats]). [checkCancelled] se llama antes de listar cada carpeta y de leer
-     * cada cabecera: si lanza (cancelación), el escaneo se corta ahí sin más consultas.
+     * cada cabecera: si lanza (cancelación), el escaneo se corta ahí sin más consultas. [headerCache] evita reabrir los
+     * ROMs que no cambiaron (N1-H6).
      */
     fun scanDetailed(
         tree: DocumentTree,
         progress: (done: Int, total: Int) -> Unit = { _, _ -> },
         checkCancelled: () -> Unit = {},
+        headerCache: HeaderCache = HeaderCache.EMPTY,
     ): ScanResult {
         val stats = StatsBuilder()
         val candidates = uniqueIds(candidates(tree, stats, checkCancelled))
         val entries = candidates.mapIndexed { index, candidate ->
             checkCancelled()
-            entry(tree, candidate, stats).also { progress(index + 1, candidates.size) }
+            entry(tree, candidate, stats, headerCache).also { progress(index + 1, candidates.size) }
         }
         return ScanResult(entries.sortedWith(titleOrder), stats.build())
     }
@@ -124,10 +169,11 @@ object LibraryScanner {
         var tooDeepSkipped = 0
         var folderErrors = 0
         var truncated = false
+        var headerCacheHits = 0
 
         fun build() = ScanStats(
             folderQueries, headReads, documentsSeen, hiddenSkipped, reservedSkipped, setAsideSkipped,
-            tooDeepSkipped, folderErrors, truncated,
+            tooDeepSkipped, folderErrors, truncated, headerCacheHits,
         )
     }
 
@@ -153,19 +199,20 @@ object LibraryScanner {
             val folder = queue.removeFirst()
             checkCancelled()
             stats.folderQueries++
-            val children = if (folder.id == null) {
-                tree.children(null) // la raíz que falla tumba el escaneo: no hay biblioteca que mostrar
-            } else {
-                // Una subcarpeta que falla de forma recuperable no tira el escaneo entero, pero perder el
-                // permiso sí lo es: la biblioteca parcial sería engañosa.
-                try {
-                    tree.children(folder.id)
-                } catch (error: TreePermissionException) {
-                    throw error
-                } catch (_: IOException) {
-                    stats.folderErrors++
-                    continue
-                }
+            val children = try {
+                tree.children(folder.id)
+            } catch (partial: PartialListingException) {
+                // N1-H4: lo listado vale, pero el escaneo queda incompleto (Drive aún cargando o con error).
+                stats.folderErrors++
+                partial.nodes
+            } catch (error: TreePermissionException) {
+                // Perder el permiso tumba el escaneo: la biblioteca parcial sería engañosa.
+                throw error
+            } catch (error: IOException) {
+                // La raíz que falla tumba el escaneo (no hay biblioteca que mostrar); una subcarpeta, no.
+                if (folder.id == null) throw error
+                stats.folderErrors++
+                continue
             }
             val depth = folder.path.size
             val folderDocumentId = folder.id ?: tree.rootId
@@ -236,7 +283,7 @@ object LibraryScanner {
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions
 
-    private fun entry(tree: DocumentTree, candidate: Candidate, stats: StatsBuilder): RomEntry {
+    private fun entry(tree: DocumentTree, candidate: Candidate, stats: StatsBuilder, cache: HeaderCache): RomEntry {
         val node = candidate.node
         val fallbackTitle = node.name.substringBeforeLast('.')
         val colorByName = node.name.substringAfterLast('.').equals("gbc", ignoreCase = true)
@@ -246,6 +293,7 @@ object LibraryScanner {
             title: String = fallbackTitle,
             isColor: Boolean = colorByName,
             checksumOk: Boolean = true,
+            headerKey: String? = null,
         ) = RomEntry(
             id = candidate.relative,
             uri = tree.uriOf(node),
@@ -260,11 +308,14 @@ object LibraryScanner {
             folderPath = candidate.folderPath,
             lastModified = node.lastModified,
             documentId = node.id,
+            headerKey = headerKey,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)
         if (node.sizeBytes > MAX_ROM_BYTES) return make(RomProblem.TOO_LARGE)
-        val head = try {
+        val cached = cache.lookup(node)
+        if (cached != null) stats.headerCacheHits++
+        val head = cached ?: try {
             stats.headReads++
             tree.readHead(node, RomHeader.MINIMUM_BYTES)
         } catch (error: DocumentReadException) {
@@ -272,8 +323,9 @@ object LibraryScanner {
         } catch (_: IOException) {
             return make(RomProblem.UNREADABLE)
         }
-        val info = RomHeader.parse(head) ?: return make(RomProblem.INVALID_HEADER)
-        return make(null, info.title, info.isColor, info.checksumOk)
+        val key = RomHeader.identity(head)
+        val info = RomHeader.parse(head) ?: return make(RomProblem.INVALID_HEADER, headerKey = key)
+        return make(null, info.title, info.isColor, info.checksumOk, key)
     }
 
     /** Orden por el nombre visible (el alias si lo hay, A9; el título de la cabecera si no). */

@@ -72,8 +72,10 @@ fun GameSettingsHost(
     var unavailable by remember(entry.id) { mutableStateOf(false) }
     var renaming by remember(entry.id) { mutableStateOf(false) }
     val fingerprint = prefs.fingerprints[entry.id]
-    LaunchedEffect(entry.id, fingerprint) {
-        if (fingerprint == null && library.loadDetails(entry.id) is DetailsLoad.Failed) unavailable = true
+    // N1-H1: una huella heredada de un movimiento (sin leer el ROM) se confirma antes de leer o escribir ajustes.
+    val confirmed = fingerprint != null && prefs.hasConfirmedFingerprint(entry)
+    LaunchedEffect(entry.id, confirmed) {
+        if (!confirmed && library.loadDetails(entry.id) is DetailsLoad.Failed) unavailable = true
     }
     val shown = prefs.withAlias(entry)
     GameSettingsSheet(
@@ -82,13 +84,13 @@ fun GameSettingsHost(
         onRename = { renaming = true },
         isColor = entry.isColor,
         global = settings,
-        overrides = fingerprint?.let { settings.perGame[it] } ?: GameOverrides(),
+        overrides = fingerprint?.takeIf { confirmed }?.let { settings.perGame[it] } ?: GameOverrides(),
         onOverridesChange = { next ->
-            if (fingerprint != null) repository.update { it.setOverrides(fingerprint, next) }
+            if (confirmed && fingerprint != null) repository.update { it.setOverrides(fingerprint, next) }
         },
         onDismiss = onDismiss,
-        loading = fingerprint == null && !unavailable,
-        unavailable = fingerprint == null && unavailable,
+        loading = !confirmed && !unavailable,
+        unavailable = !confirmed && unavailable,
     )
     RenameGameHost(
         entry = shown.takeIf { renaming },

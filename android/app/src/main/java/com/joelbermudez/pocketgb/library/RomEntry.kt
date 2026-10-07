@@ -52,6 +52,8 @@ data class RomEntry(
     val alsoAt: List<RomLocation> = emptyList(),
     /** N1a: id de documento del proveedor (`COLUMN_DOCUMENT_ID`), parte del sello; `null` en datos de prueba. */
     val documentId: String? = null,
+    /** N1-H1: identidad de la cabecera ([RomHeader.identity]), parte del sello; `null` si no se pudo leer. */
+    val headerKey: String? = null,
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String
@@ -82,6 +84,32 @@ data class RomEntry(
 /** Lectura de la cabecera del cartucho (docs/03 §Cabecera), solo para mostrar. */
 object RomHeader {
     const val MINIMUM_BYTES = 0x150
+
+    /** Primer y último byte (exclusivo) de la identidad de la cabecera: título … checksum global (0x134–0x14F). */
+    private const val IDENTITY_START = 0x134
+    private const val IDENTITY_END = 0x150
+
+    /**
+     * N1-H1: identidad de la cabecera en hexadecimal: título, código de fabricante, CGB, licencia, SGB, tipo de cartucho
+     * (0x147), tamaños de ROM y RAM (0x148–0x149), destino, versión, checksum de cabecera (0x14D) y global
+     * (0x14E–0x14F). Dos ROMs distintos casi nunca la comparten. `null` si [bytes] no llega a 0x150.
+     */
+    fun identity(bytes: ByteArray): String? {
+        if (bytes.size < MINIMUM_BYTES) return null
+        return (IDENTITY_START until IDENTITY_END).joinToString("") { "%02x".format(bytes[it].toInt() and 0xFF) }
+    }
+
+    /** Lo contrario de [identity]: 0x150 bytes con la identidad en su sitio (lo que [parse] necesita), o `null`. */
+    fun fromIdentity(hex: String): ByteArray? {
+        val length = IDENTITY_END - IDENTITY_START
+        if (hex.length != length * 2) return null
+        val bytes = ByteArray(MINIMUM_BYTES)
+        for (i in 0 until length) {
+            val value = hex.substring(i * 2, i * 2 + 2).toIntOrNull(16) ?: return null
+            bytes[IDENTITY_START + i] = value.toByte()
+        }
+        return bytes
+    }
 
     data class Info(val title: String, val isColor: Boolean, val checksumOk: Boolean)
 

@@ -48,6 +48,7 @@ fun saveLoadWarningText(warning: SaveLoadWarning): String = when (warning) {
     SaveLoadWarning.MirrorUnavailable -> stringResource(R.string.warning_mirror_unavailable)
     SaveLoadWarning.MirrorShared -> stringResource(R.string.warning_mirror_shared)
     SaveLoadWarning.MirrorReadOnly -> stringResource(R.string.warning_mirror_read_only)
+    SaveLoadWarning.LocalSetAside -> stringResource(R.string.n1_warning_local_set_aside)
     is SaveLoadWarning.Unreadable -> stringResource(R.string.warning_unreadable, warning.detail)
 }
 

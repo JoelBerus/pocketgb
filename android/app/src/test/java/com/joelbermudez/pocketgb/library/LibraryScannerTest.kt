@@ -16,6 +16,8 @@ class LibraryScannerTest {
         val failingDirs: Set<String> = emptySet(),
         val revokedDirs: Set<String> = emptySet(),
         override val rootId: String? = null,
+        /** N1-H4: carpetas que el proveedor da a medias (`EXTRA_LOADING`/`EXTRA_ERROR`). */
+        val partialDirs: Set<String?> = emptySet(),
     ) : DocumentTree {
         /** Carpetas listadas, en orden (N1b: cada una es una consulta SAF; en Drive, una llamada de red). */
         val queried = mutableListOf<String?>()
@@ -25,6 +27,7 @@ class LibraryScannerTest {
             queried += directoryId
             if (directoryId in revokedDirs) throw TreePermissionException()
             if (directoryId in failingDirs) throw IOException("sin permiso")
+            if (directoryId in partialDirs) throw PartialListingException(dirs[directoryId].orEmpty(), "cargando")
             return dirs[directoryId].orEmpty()
         }
 
@@ -476,5 +479,77 @@ class LibraryScannerTest {
         }
         assertEquals("cancelado", error.message)
         assertEquals("se detiene sin listar el resto", 2, tree.queried.size)
+    }
+
+    // ---- N1-H1/H6: identidad de cabecera y caché ----
+
+    @Test
+    fun eachRomCarriesItsHeaderIdentityAndACachedHeaderIsNotReadAgain() {
+        val dirs = mapOf(
+            null to listOf(file("a", "Rojo.gb", modified = 10L), dir("d", "Sub")),
+            "d" to listOf(file("b", "Oro.gbc", modified = 20L), file("c", "SinFecha.gb")),
+        )
+        val heads = mapOf("a" to rom("RED"), "b" to rom("GOLD", cgb = 0x80), "c" to rom("NODATE"))
+        val first = LibraryScanner.scanDetailed(FakeTree(dirs, heads))
+        assertEquals(3, first.stats.headReads)
+        val red = first.entries.single { it.id == "Rojo.gb" }
+        assertEquals(RomHeader.identity(rom("RED")), red.headerKey)
+        assertEquals(56, red.headerKey!!.length)
+
+        // Segundo escaneo con la caché de los sellos: solo se abre el que no tiene fecha (no se puede validar).
+        val cache = HeaderCache.from(first.entries.map(DocumentStamp::of))
+        val tree = FakeTree(dirs, heads)
+        val second = LibraryScanner.scanDetailed(tree, headerCache = cache)
+        assertEquals(1, second.stats.headReads)
+        assertEquals(2, second.stats.headerCacheHits)
+        assertEquals(first.entries.map { it.id to it.title }, second.entries.map { it.id to it.title })
+        assertTrue(second.entries.single { it.id == "Sub/Oro.gbc" }.isColor)
+        assertEquals(red.headerKey, second.entries.single { it.id == "Rojo.gb" }.headerKey)
+
+        // Si cambia el tamaño o la fecha, se vuelve a leer.
+        val changed = mapOf(
+            null to listOf(file("a", "Rojo.gb", size = 65536, modified = 10L), dir("d", "Sub")),
+            "d" to listOf(file("b", "Oro.gbc", modified = 99L), file("c", "SinFecha.gb")),
+        )
+        assertEquals(3, LibraryScanner.scanDetailed(FakeTree(changed, heads), headerCache = cache).stats.headReads)
+    }
+
+    @Test
+    fun aMalformedCachedHeaderIsIgnored() {
+        val stamp = DocumentStamp("Rojo.gb", 32768, 10L, documentId = "a", header = "zz")
+        val tree = FakeTree(mapOf(null to listOf(file("a", "Rojo.gb", modified = 10L))), mapOf("a" to rom("RED")))
+        val result = LibraryScanner.scanDetailed(tree, headerCache = HeaderCache.from(listOf(stamp)))
+        assertEquals(1, result.stats.headReads)
+        assertEquals("RED", result.entries.single().title)
+    }
+
+    // ---- N1-H4: listados a medias ----
+
+    @Test
+    fun aFolderTheProviderIsStillLoadingIsUsedButTheScanIsIncomplete() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(file("a", "Rojo.gb"), dir("d", "Sub")),
+                "d" to listOf(file("b", "Azul.gb")),
+            ),
+            heads = mapOf("a" to rom("RED"), "b" to rom("BLUE")),
+            partialDirs = setOf("d"),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(setOf("Rojo.gb", "Sub/Azul.gb"), result.entries.map { it.id }.toSet())
+        assertEquals(1, result.stats.folderErrors)
+        assertFalse(result.stats.complete)
+    }
+
+    @Test
+    fun aPartialRootIsAlsoIncompleteInsteadOfFailing() {
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Rojo.gb"))),
+            heads = mapOf("a" to rom("RED")),
+            partialDirs = setOf(null),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(listOf("Rojo.gb"), result.entries.map { it.id })
+        assertFalse(result.stats.complete)
     }
 }

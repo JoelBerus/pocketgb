@@ -6,9 +6,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joelbermudez.pocketgb.library.LibraryScanner
 import com.joelbermudez.pocketgb.library.SafDocumentTree
+import com.joelbermudez.pocketgb.library.TreePermissionException
 import com.joelbermudez.pocketgb.testing.SyntheticRom
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -80,5 +83,49 @@ class SafFoldersTest {
         assertEquals(stats.folderQueries, fixtures.childQueries() - before)
         assertEquals(5, stats.headReads)
         assertEquals(15, stats.providerCalls)
+    }
+
+    @Test
+    fun aSecondScanReopensNoUnchangedRom() {
+        // N1-H6: medida de aperturas antes y después de la caché de cabeceras.
+        val tree = SafDocumentTree(resolver, treeUri)
+        val opensBefore = fixtures.readOpens()
+        val first = LibraryScanner.scanDetailed(tree)
+        val firstOpens = fixtures.readOpens() - opensBefore
+        assertEquals(5, first.stats.headReads)
+        assertEquals("una apertura por ROM", 5, firstOpens)
+        val cache = com.joelbermudez.pocketgb.library.HeaderCache.from(first.entries.map(com.joelbermudez.pocketgb.library.DocumentStamp::of))
+        val between = fixtures.readOpens()
+        val second = LibraryScanner.scanDetailed(tree, headerCache = cache)
+        assertEquals("ninguna apertura", 0, fixtures.readOpens() - between)
+        assertEquals(0, second.stats.headReads)
+        assertEquals(5, second.stats.headerCacheHits)
+        assertEquals(10, second.stats.folderQueries)
+        assertEquals(first.entries.map { it.id to it.title }, second.entries.map { it.id to it.title })
+    }
+
+    @Test
+    fun aFolderStillLoadingInTheProviderMakesTheScanIncomplete() {
+        // N1-H4: `EXTRA_LOADING` (Drive aún bajando el listado) no es el contenido completo de la carpeta.
+        fixtures.loadingDir("root/Pokémon/1ª generación")
+        val result = LibraryScanner.scanDetailed(SafDocumentTree(resolver, treeUri))
+        assertTrue("lo listado se usa", result.entries.any { it.id == "Pokémon/1ª generación/Pokemon Red.gb" })
+        assertEquals(1, result.stats.folderErrors)
+        assertFalse(result.stats.complete)
+    }
+
+    @Test
+    fun aDeniedSubfolderWithTheTreeStillGrantedIsAFolderErrorNotARevocation() {
+        // N1-H7: con el permiso del árbol vigente, una subcarpeta sin acceso no tumba el escaneo.
+        fixtures.denyDir("root/Pokémon")
+        val granted = LibraryScanner.scanDetailed(SafDocumentTree(resolver, treeUri, treeStillGranted = { true }))
+        assertTrue(granted.entries.any { it.id == "Tetris.gb" })
+        assertTrue(granted.entries.none { it.id.startsWith("Pokémon/") })
+        assertEquals(1, granted.stats.folderErrors)
+        assertFalse(granted.stats.complete)
+        // Sin el permiso del árbol sí es una revocación.
+        assertThrows(TreePermissionException::class.java) {
+            LibraryScanner.scanDetailed(SafDocumentTree(resolver, treeUri, treeStillGranted = { false }))
+        }
     }
 }

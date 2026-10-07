@@ -37,11 +37,12 @@ Si en una misma carpeta tienes dos juegos con el mismo nombre y distinta extensi
 
 ## Mover o renombrar juegos
 
-Puedes reorganizar la carpeta cuando quieras. Al volver a la app, PocketGB reconoce el juego en su sitio nuevo **sin descargarlo**, por su nombre, su tamaño y su fecha. Se conservan el favorito, el nombre que le pusiste, si estaba oculto, sus ajustes, su partida, sus estados y su portada.
+Puedes reorganizar la carpeta cuando quieras. Al volver a la app, PocketGB reconoce el juego en su sitio nuevo **sin leerlo entero**, por su nombre, su tamaño, su fecha y la cabecera del cartucho (el título y los códigos de control que trae todo juego de Game Boy). Se conservan el favorito, el nombre que le pusiste, si estaba oculto, sus ajustes, su partida, sus estados y su portada. Un juego distinto que llegue con el mismo tamaño y la misma fecha no hereda nada: su cabecera es otra.
 
 - **Mueve el `.sav` con el juego** (en Drive, selecciona los dos y muévelos juntos). Si mueves solo el ROM, no pasa nada malo: PocketGB usa la partida del teléfono y crea un `.sav` nuevo junto al juego; el viejo se queda donde estaba, sin tocarlo.
 - Si cambias el nombre del archivo a la vez que lo mueves, también lo reconoce, salvo que haya otro archivo con el mismo tamaño y la misma fecha.
 - Si no puede estar seguro (por ejemplo, mueves a la vez dos copias idénticas, o el proveedor no informa del tamaño o de la fecha), el juego aparece como nuevo hasta que lo abres o entras en su detalle: en ese momento recupera todo. No se pierde nada.
+- Si un juego desaparece un rato (lo apartas en `_Revisar/` y lo devuelves, o Drive da una carpeta vacía mientras carga), PocketGB lo recuerda durante 30 días: al volver recupera su favorito, su nombre y lo demás, y no sale como nuevo.
 
 ## Juegos repetidos
 
@@ -54,4 +55,6 @@ Si el mismo juego está dos veces (aunque se llame distinto), en cuanto PocketGB
 
 ## Google Drive
 
-En Drive, mirar cada carpeta es una consulta por internet y leer la cabecera de cada juego puede descargarlo. El **primer escaneo** de una carpeta con muchas subcarpetas **puede tardar**: déjalo terminar con conexión. Cada vez que vuelves a la app se mira de nuevo la carpeta.
+En Drive, mirar cada carpeta es una consulta por internet. El **primer escaneo** abre además cada juego para leer su cabecera, lo que puede descargarlo: con muchas subcarpetas y juegos **puede tardar**, déjalo terminar con conexión. Después, PocketGB recuerda la cabecera de cada archivo y solo abre los juegos nuevos o cambiados; cada vez que vuelves a la app se vuelve a mirar la lista de carpetas.
+
+Si Drive aún está cargando una carpeta cuando PocketGB la mira, lo que no haya llegado todavía no se da por borrado: se recoge en el siguiente escaneo.

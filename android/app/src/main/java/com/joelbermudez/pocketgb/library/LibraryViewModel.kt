@@ -73,6 +73,13 @@ class LibraryViewModel(
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
 
+    /**
+     * N1-H2: `preferences.json` es de otra versión de la app (futura o con una versión que no se entiende): no se
+     * sobrescribe y los cambios de esta sesión se quedan en memoria. La biblioteca lo avisa.
+     */
+    private val _preferencesReadOnly = MutableStateFlow(false)
+    val preferencesReadOnly: StateFlow<Boolean> = _preferencesReadOnly.asStateFlow()
+
     /** N1b: lo que costó el último escaneo terminado (consultas SAF, apartados, si fue completo). */
     private val _lastScan = MutableStateFlow<ScanStats?>(null)
     val lastScan: StateFlow<ScanStats?> = _lastScan.asStateFlow()
@@ -128,6 +135,7 @@ class LibraryViewModel(
     /** Carga el archivo y aplica encima los cambios hechos mientras tanto. Un fallo de I/O deja todo pendiente. */
     private fun loadNow() {
         val data = preferencesFile.load()
+        _preferencesReadOnly.value = preferencesFile.writeProtected
         synchronized(lock) {
             _prefs.value = pendingChanges.fold(data) { current, change -> change(current) }
             pendingChanges.clear()
@@ -214,6 +222,9 @@ class LibraryViewModel(
                 else -> emptyList()
             }
             publish(LibraryState.Scanning(previous, name))
+            // N1-H6: con las preferencias cargadas, los ROMs que no cambiaron no se vuelven a abrir.
+            ensureLoaded()
+            val headerCache = HeaderCache.from(_prefs.value.documents.values)
             val result = LibraryScanner.scanDetailed(
                 openTree(uri),
                 progress = { done, total ->
@@ -223,6 +234,7 @@ class LibraryViewModel(
                     }
                 },
                 checkCancelled = { context.ensureActive() },
+                headerCache = headerCache,
             )
             context.ensureActive()
             _lastScan.value = result.stats
@@ -248,13 +260,6 @@ class LibraryViewModel(
         publish(outcome)
     }
 
-    /**
-     * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
-     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
-     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo», salvo que se
-     * reconozca como movido ([reconciled], N1a). Un listado vacío o un escaneo incompleto no podan (un proveedor en la
-     * nube con un fallo pasajero no debe olvidar toda la biblioteca).
-     */
     /** Intenta cargar las preferencias si aún no lo están; si el disco falla, se sigue sin ellas. */
     private fun ensureLoaded() {
         synchronized(persistLock) {
@@ -268,6 +273,13 @@ class LibraryViewModel(
         }
     }
 
+    /**
+     * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
+     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
+     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo», salvo que se
+     * reconozca como movido o vuelva con su lápida ([reconciled], N1a/N1-H4). Un listado vacío o un escaneo incompleto
+     * no podan (un proveedor en la nube con un fallo pasajero no debe olvidar toda la biblioteca).
+     */
     private fun markNew(entries: List<RomEntry>, complete: Boolean): List<RomEntry> {
         ensureLoaded()
         if (!loaded) return entries // sin preferencias no se sabe qué era conocido: no se marca nada
@@ -397,7 +409,9 @@ class LibraryViewModel(
                 return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             }
             val fingerprint = info.fingerprintHex
-            if (_prefs.value.fingerprints[entry.id] != fingerprint) {
+            // También confirma una huella heredada de un movimiento (N1-H1), aunque sea la misma.
+            val current = _prefs.value
+            if (current.fingerprints[entry.id] != fingerprint || entry.id in current.inferredFingerprints) {
                 mutate { it.recordFingerprint(entry.id, fingerprint) }
             }
             DetailsLoad.Loaded(GameDetails.from(entry, info))

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -176,14 +177,59 @@ class LibraryIdentityTest {
         assertTrue(data.favoriteFingerprints.isEmpty())
     }
 
+    // ---- N1-H2/H3: versiones futuras o raras ----
+
     @Test
-    fun aFileFromAFutureVersionKeepsWhatThisVersionKnowsAndIsWrittenAsTheCurrentVersion() {
-        val file = File(tmp.root, "p.json").apply {
-            writeText("""{"formatVersion":9,"favoriteFingerprints":["fp"],"categoriasVirtuales":{"x":"y"}}""")
+    fun aFileFromAFutureVersionIsReadButNeverOverwritten() {
+        val original = """{"formatVersion":9,"favoriteFingerprints":["fp"],"categoriasVirtuales":{"x":"y"}}"""
+        val file = File(tmp.root, "p.json").apply { writeText(original) }
+        val store = LibraryPreferencesFile(file)
+        val data = store.load()
+        assertEquals("lo que esta versión entiende se usa", setOf("fp"), data.favoriteFingerprints)
+        assertTrue(store.writeProtected)
+        assertThrows(PreferencesWriteProtectedException::class.java) { store.save(data.copy(favoriteFingerprints = emptySet())) }
+        assertEquals("el archivo queda intacto, con sus claves", original, file.readText())
+        assertTrue(file.parentFile!!.listFiles()!!.none { it.name.contains(".corrupt") || it.name.endsWith(".tmp") })
+    }
+
+    @Test
+    fun oddVersionValuesNeverSendTheFileToQuarantine() {
+        // `2.0` y `"2"` son la versión actual; lo demás no se entiende: se lee sin migrar y no se sobrescribe.
+        val current = listOf("2.0", "\"2\"")
+        val foreign = listOf("true", "-1", "0", "1.5", "99999999999", "\"dos\"", "{}", "[2]")
+        for (raw in current + foreign) {
+            val file = File(tmp.newFolder(), "p.json").apply {
+                writeText("""{"formatVersion":$raw,"favorites":["Rojo.gb"],"fingerprints":{"Rojo.gb":"fp"},"layout":"LIST"}""")
+            }
+            val store = LibraryPreferencesFile(file)
+            val data = store.load()
+            assertTrue("$raw: no se aparta", file.exists() && file.parentFile!!.listFiles()!!.none { it.name.contains(".corrupt") })
+            assertEquals("$raw: se leen los datos", LibraryLayout.LIST, data.layout)
+            assertEquals("$raw: sin migrar", setOf("Rojo.gb"), data.favorites)
+            assertEquals("$raw: protegido", raw in foreign, store.writeProtected)
         }
-        val data = LibraryPreferencesFile(file).load()
+    }
+
+    @Test
+    fun aLegacyFileWithAnExplicitVersionOneIsMigrated() {
+        val file = File(tmp.root, "p.json").apply {
+            writeText("""{"formatVersion":1,"favorites":["Rojo.gb"],"fingerprints":{"Rojo.gb":"fp"}}""")
+        }
+        val store = LibraryPreferencesFile(file)
+        val data = store.load()
         assertEquals(setOf("fp"), data.favoriteFingerprints)
-        assertEquals(LibraryPreferencesFormat.CURRENT, data.formatVersion)
+        assertFalse(store.writeProtected)
+    }
+
+    @Test
+    fun aReadableFileAfterAProtectedOneIsWritableAgain() {
+        val file = File(tmp.root, "p.json").apply { writeText("""{"formatVersion":7}""") }
+        val store = LibraryPreferencesFile(file)
+        store.load()
+        assertTrue(store.writeProtected)
+        file.writeText("""{"formatVersion":2}""")
+        store.load()
+        assertFalse(store.writeProtected)
     }
 
     @Test

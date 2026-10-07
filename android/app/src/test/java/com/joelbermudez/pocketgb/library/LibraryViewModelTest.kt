@@ -584,22 +584,33 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun aRemovedGameIsForgottenSoItIsNewAgainIfItReappears() {
+    fun aRemovedGameIsForgottenSoAnotherGameAtItsPathIsNewButTheSameOneComingBackIsNot() {
         val vm = viewModel()
         vm.rescan()
         vm.awaitSettled()
-        // B desaparece de la carpeta (borrado o renombrado): el escaneo completo lo olvida.
+        // B desaparece de la carpeta (borrado o apartado): el escaneo completo lo olvida y deja una lápida (N1-H4).
         tree = FakeTree(listOf(node("a.gb")), mapOf("a.gb" to rom("ALPHA")))
         vm.rescan()
         await { vm.state.first { it is LibraryState.Ready && it.entries.size == 1 } }
-        // Reaparece: ya no estaba en el escaneo anterior, así que es «Nuevo».
+        // Vuelve el mismo B (mismo tamaño y cabecera): se reconoce por su lápida y no es «Nuevo».
         tree = FakeTree(
             listOf(node("b.gb"), node("a.gb")),
             mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("BETA")),
         )
         vm.rescan()
         val back = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 2 } } as LibraryState.Ready
-        assertEquals(listOf("BETA"), back.entries.filter { it.isNew }.map { it.title })
+        assertEquals(emptyList<String>(), back.entries.filter { it.isNew }.map { it.title })
+        // Desaparece otra vez y en su lugar aparece otro juego con el mismo nombre: ese sí es «Nuevo» (A6-H8).
+        tree = FakeTree(listOf(node("a.gb")), mapOf("a.gb" to rom("ALPHA")))
+        vm.rescan()
+        await { vm.state.first { it is LibraryState.Ready && it.entries.size == 1 } }
+        tree = FakeTree(
+            listOf(node("b.gb"), node("a.gb")),
+            mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("GAMMA")),
+        )
+        vm.rescan()
+        val other = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 2 } } as LibraryState.Ready
+        assertEquals(listOf("GAMMA"), other.entries.filter { it.isNew }.map { it.title })
     }
 
     @Test

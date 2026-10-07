@@ -330,6 +330,7 @@ class SaveOpeningTest {
         val copyB = FakeSaveMirror(read(version(2), new))
         val outcome = SaveOpening.prepare(s, copyB, copyB.snapshot(), sizes)
         assertArrayEquals("gana el más nuevo, como siempre", version(2), outcome.data)
+        assertEquals("N1-H5: se avisa de que la local quedó apartada", SaveLoadWarning.LocalSetAside, outcome.warning)
         val aside = setAsideFiles(s).single()
         assertTrue(aside.name.matches(Regex("dup1\\.mirror-\\d+-[0-9a-f]{8}\\.sav")))
         assertArrayEquals(version(1), aside.readBytes())
@@ -345,6 +346,7 @@ class SaveOpeningTest {
         val foreign = FakeSaveMirror(read(version(9), old))
         val outcome = SaveOpening.prepare(s, foreign, foreign.snapshot(), sizes)
         assertArrayEquals(version(1), outcome.data)
+        assertNull("pierde el espejo: la partida no cambia, no hay aviso", outcome.warning)
         assertArrayEquals(version(9), setAsideFiles(s).single().readBytes())
         assertArrayEquals(version(9), s.backupFile(1).readBytes())
         fiveMoreSaves(s)
@@ -433,5 +435,15 @@ class SaveOpeningTest {
         } catch (_: IllegalArgumentException) {
         }
         assertArrayEquals(version(1), s.load())
+    }
+
+    @Test fun aReadOnlyFolderWhoseNewerSaveReplacesTheLocalStillWarnsAboutTheSetAside() {
+        val s = store("solo-lectura")
+        s.save(version(1))
+        assertTrue(s.saveFile.setLastModified(old))
+        val mirror = FakeSaveMirror(read(version(2), new))
+        val outcome = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes, mirrorMode = SaveOpening.MirrorMode.ReadOnly)
+        assertArrayEquals(version(2), outcome.data)
+        assertEquals(SaveLoadWarning.LocalSetAside, outcome.warning)
     }
 }

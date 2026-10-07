@@ -103,6 +103,8 @@ object SaveOpening {
                     else -> null
                 }
                 loser?.let { store.setAsideMirrorLoser(it) }
+                // N1-H5: si la que pierde es la partida local, se avisa de dónde quedó.
+                val localSetAside = loser != null && r.backupOther == null
                 // Orden de efectos: apartado → addBackup → cuarentena → instalación. Si uno falla, los siguientes no se hacen.
                 r.backupOther?.let(store::addBackup)
                 if (r.quarantineLocal) store.quarantineCurrent()
@@ -112,6 +114,7 @@ object SaveOpening {
                     r.mirrorIgnored -> SaveLoadWarning.MirrorIgnored
                     r.quarantineLocal -> SaveLoadWarning.LocalQuarantined
                     unavailable -> SaveLoadWarning.MirrorUnavailable
+                    localSetAside -> SaveLoadWarning.LocalSetAside
                     else -> extraWarning
                 }
                 Outcome(r.data, target, warning)

@@ -47,11 +47,15 @@ class LibraryMoveViewModelTest {
         @Volatile var dirs: Map<String?, List<TreeNode>> = emptyMap()
         @Volatile var failing: Set<String> = emptySet()
         val heads = HashMap<String, ByteArray>()
+        val headReads = AtomicInteger()
         override fun children(directoryId: String?): List<TreeNode> {
             if (directoryId in failing) throw IOException("Drive sin red")
             return dirs[directoryId].orEmpty()
         }
-        override fun readHead(node: TreeNode, limit: Int) = heads.getValue(node.name).copyOf(limit)
+        override fun readHead(node: TreeNode, limit: Int): ByteArray {
+            headReads.incrementAndGet()
+            return heads.getValue(node.name).copyOf(limit)
+        }
         override fun uriOf(node: TreeNode) = "content://tree/${node.id}"
     }
 
@@ -199,5 +203,41 @@ class LibraryMoveViewModelTest {
         await { vm.loadDetails(moved.id) }
         assertTrue(vm.prefs.value.isFavorite(moved))
         assertEquals(2, romReads.get())
+    }
+
+    @Test
+    fun anUnchangedRomIsNotReopenedOnTheNextScan() {
+        // N1-H6: la cabecera se toma de la caché por (id de documento, tamaño, fecha).
+        layoutBefore()
+        val scans = mutableListOf<ScanStats>()
+        val vm = viewModel(scans)
+        vm.scanNow()
+        assertEquals(2, tree.headReads.get())
+        vm.scanNow()
+        assertEquals("ningún ROM se vuelve a abrir", 2, tree.headReads.get())
+        assertEquals(2, scans.last().headerCacheHits)
+        assertEquals(0, scans.last().headReads)
+        // Movido: su id de documento (la ruta) cambia, así que se lee una vez (y se reconoce por el sello).
+        layoutAfter()
+        val moved = vm.scanNow().entries.single { it.title == "POKEMON RED" }
+        assertEquals(3, tree.headReads.get())
+        assertTrue(moved.id.startsWith("Clásicos/"))
+    }
+
+    @Test
+    fun preferencesFromAFutureVersionAreUsedButNeverWritten() {
+        // N1-H2: un preferences.json de una versión más nueva no se sobrescribe; la UI lo avisa.
+        val original = """{"formatVersion":3,"favoriteFingerprints":["$fingerprint"],"categorias":{"Pokémon":["x"]}}"""
+        File(temp.root, "preferences.json").writeText(original)
+        layoutBefore()
+        val vm = viewModel()
+        val red = vm.scanNow().entries.single { it.title == "POKEMON RED" }
+        assertTrue(vm.preferencesReadOnly.value)
+        await { vm.loadDetails(red.id) }
+        assertTrue("se ve lo que esta versión entiende", vm.prefs.value.isFavorite(red))
+        vm.setAlias(red, "Rojo de Joel")
+        assertTrue(await { vm.flushPreferences() } is PersistResult.Failed)
+        assertEquals("Rojo de Joel", vm.prefs.value.displayTitle(red))
+        assertEquals("el archivo no se toca", original, File(temp.root, "preferences.json").readText())
     }
 }

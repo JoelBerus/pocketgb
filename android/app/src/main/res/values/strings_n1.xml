@@ -17,4 +17,8 @@
     <string name="n1_saves_set_aside_item">Apartada · %1$s</string>
     <string name="n1_saves_set_aside_footer">Partidas que perdieron frente a otro .sav junto al juego: una copia repetida del juego o un .sav de otro juego con el mismo nombre. No cuentan entre las 5 copias.</string>
     <string name="n1_saves_restore_set_aside_title">¿Restaurar la partida apartada?</string>
+    <!-- N1-H5: aviso al abrir cuando el .sav junto al juego sustituyó a la partida local. -->
+    <string name="n1_warning_local_set_aside">Se usó el .sav que está junto a este juego, que es más nuevo. Tu partida anterior quedó en Ajustes › Partidas › Apartadas.</string>
+    <!-- N1-H2: preferences.json de otra versión de la app. -->
+    <string name="n1_prefs_read_only">Tus datos de la biblioteca son de otra versión de PocketGB. Esta versión no los modificará: los cambios de favoritos, nombres u ocultos de ahora no se guardarán.</string>
 </resources>
