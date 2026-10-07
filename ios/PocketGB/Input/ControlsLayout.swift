@@ -261,7 +261,8 @@ enum DpadDiagonals: String, Codable, CaseIterable, Sendable {
 enum DpadDirection {
     static let right = UInt8(GB_BTN_RIGHT), up = UInt8(GB_BTN_UP)
     static let left = UInt8(GB_BTN_LEFT), down = UInt8(GB_BTN_DOWN)
-    static let all = right | up | left | down
+    /// Orden de brazos y flechas en el dibujo (arriba, derecha, abajo, izquierda).
+    static let arms: [UInt8] = [up, right, down, left]
     /// Las ocho direcciones en orden antihorario desde la derecha (cada 45°).
     static let ordered: [UInt8] = [right, right | up, up, up | left, left, left | down, down, down | right]
 
@@ -352,11 +353,6 @@ enum DpadCross {
     static func armCenters(in rect: CGRect) -> [CGPoint] {
         arms(in: rect).map { CGPoint(x: $0.midX, y: $0.midY) }
     }
-}
-
-/// Orden de brazos y flechas (arriba, derecha, abajo, izquierda) como máscaras del núcleo.
-extension DpadDirection {
-    static let arms: [UInt8] = [up, right, down, left]
 }
 
 /// Motor de input táctil: tabla dedo → control y máscara resultante (SPEC §10.4).

@@ -157,7 +157,10 @@ struct ControlsEditorBar: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, PocketSpacing.sm)
                 .padding(.vertical, PocketSpacing.xxs)
-                .background(PocketColor.controlScrim.opacity(0.55), in: Capsule())
+                .background(PocketColor.controlScrim.opacity(0.55),
+                            in: RoundedRectangle(cornerRadius: PocketSpacing.sm, style: .continuous))
+                // En horizontal, dentro del ancho de la imagen: no tapa la cruceta ni A/B.
+                .frame(maxWidth: orientation == .landscape ? 420 : nil)
         }
         // Barra de herramientas sobre el lienzo del juego: con tipos accesibles se desbordaba
         // (el texto se partía letra a letra), así que su texto se limita al mayor tamaño no accesible.

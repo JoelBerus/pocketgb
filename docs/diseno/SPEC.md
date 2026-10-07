@@ -415,9 +415,9 @@ Se respeta el toggle global `Haptic Feedback`. No se dispara háptica por cada f
 | `GameplayHUD` | SwiftUI | L2 | collapsed/expanded | visible, auto-hide, saving | `GlassEffectContainer`, `glassEffectID` |
 | `ControlsOverlay` | SwiftUI wrapper | L2 | portrait/landscape/editor | active, hidden, controller, RT | `UIViewRepresentable` |
 | `ControlsOverlayView` | UIKit | L2 | GB/GBC | idle, pressed, editing, hidden | `UIGlassEffect`, `UIGlassContainerEffect` |
-| `DPadControl` | UIKit layer/view | L2 | cruz | zona muerta, 8 direcciones, editing | vidrio nativo; cálculo propio |
-| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + scrim |
-| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + scrim |
+| `DPadControl` | UIKit layer/view | L2 | cruz o flechas separadas | zona muerta 30 % con histéresis, diagonales normales/reducidas/desactivadas, brazo o flecha pulsada, editing (tamaño y separación) | vidrio nativo; cálculo propio |
+| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2); el anillo de color es el borde |
+| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2) |
 | `GameViewport` | SwiftUI/UIKit | L1 | fit/integer/fill | loading, running, paused, error | `MTKView` |
 | `PauseView` | SwiftUI | L3 | medium/large | paused, saving, error | `sheet`, `presentationDetents` |
 | `SaveStateCard` | SwiftUI | L1 | manual/auto/empty | default, selected, corrupt | sin vidrio |
@@ -457,7 +457,7 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 21 | `gameplay-portrait` | Juego vertical | portrait | dark | Viewport 10:9 arriba y controles sólidos/claros debajo | Controles sobre Dynamic Island o viewport estirado |
 | 22 | ~~`gameplay-portrait-hud`~~ | Sustituida (decisión de Joel, 2026-09-30) | portrait | dark | El botón de pausa abre directamente la sheet de opciones: ver `gameplay-pause`. El avance rápido está junto a él (`gameplay-fast-forward`) | — |
 | 23 | `gameplay-landscape` | Juego horizontal | landscape | dark | Viewport a máxima altura, controles dentro del safe area | Controles bajo Island o Home Indicator |
-| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias a scrim | Controles blancos desaparecidos |
+| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias al velo y la sombra (N2) | Controles blancos desaparecidos |
 | 25 | `gameplay-landscape-hidden` | Show On Touch oculto | landscape | dark | Solo juego y pista temporal | Áreas invisibles bloqueando HUD o gestos |
 | 26 | `gameplay-pause` | Pause sheet | portrait | dark | Frame atenuado, Resume dominante y Exit separado | Pausa como botón aislado sin contexto |
 | 27 | `save-states` | 4 manuales + auto | portrait | dark | Capturas, timestamps, selección y slot vacío | Estados mezclados con SRAM |
