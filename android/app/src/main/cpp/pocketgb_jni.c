@@ -5,6 +5,7 @@
 #include <android/native_window_jni.h>
 
 #include "pocketgb.h"
+#include "pocketgb_progress.h"
 #include "pocketgba.h"
 #include "native_session.h"
 
@@ -1075,4 +1076,52 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeGbaCopyFrame(
     }
     (*env)->SetIntArrayRegion(env, destination, 0, pixels, (const jint *)frame);
     return NS_OK;
+}
+
+/*
+ * N6 · lector de progreso Pokémon (pgb_progress_read, función pura de core/). Devuelve null si no hay datos; si no,
+ * [juego, máscara de medallas, medallas, capturados, vistos, horas, minutos, segundos, dinero, bytes del nombre…]
+ * con el nombre en UTF-8 (un byte por entero, sin el NUL). Los bytes de Java se copian a buffers acotados: la
+ * cabecera basta con sus primeros 0x150 bytes y la partida se rechaza si supera 32 KiB + 48.
+ */
+JNIEXPORT jintArray JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeProgressRead(
+    JNIEnv *env,
+    jclass clazz,
+    jbyteArray header,
+    jbyteArray sram
+) {
+    (void)clazz;
+    if (header == NULL || sram == NULL) return NULL;
+    const jsize header_len = (*env)->GetArrayLength(env, header);
+    const jsize sram_len = (*env)->GetArrayLength(env, sram);
+    if (header_len < (jsize)PGB_PROG_HEADER_MIN || sram_len <= 0 || sram_len > (jsize)(PGB_PROG_SAVE_BYTES + 48u)) {
+        return NULL;
+    }
+    uint8_t head[PGB_PROG_HEADER_MIN];
+    (*env)->GetByteArrayRegion(env, header, 0, (jsize)PGB_PROG_HEADER_MIN, (jbyte *)head);
+    uint8_t *save = malloc((size_t)sram_len);
+    if (save == NULL) return NULL;
+    (*env)->GetByteArrayRegion(env, sram, 0, sram_len, (jbyte *)save);
+    pgb_progress progress;
+    const bool ok = pgb_progress_read(head, sizeof head, save, (size_t)sram_len, &progress);
+    free(save);
+    if (!ok) return NULL;
+    size_t name_len = 0;
+    while (name_len < PGB_PROG_NAME_MAX - 1 && progress.player_name[name_len] != '\0') name_len++;
+    jint values[9 + PGB_PROG_NAME_MAX];
+    values[0] = (jint)progress.game;
+    values[1] = (jint)progress.badges_mask;
+    values[2] = (jint)progress.badges_count;
+    values[3] = (jint)progress.pokedex_owned;
+    values[4] = (jint)progress.pokedex_seen;
+    values[5] = (jint)progress.play_hours;
+    values[6] = (jint)progress.play_minutes;
+    values[7] = (jint)progress.play_seconds;
+    values[8] = (jint)progress.money;
+    for (size_t i = 0; i < name_len; i++) values[9 + i] = (jint)(uint8_t)progress.player_name[i];
+    const jsize count = (jsize)(9 + name_len);
+    jintArray result = (*env)->NewIntArray(env, count);
+    if (result != NULL) (*env)->SetIntArrayRegion(env, result, 0, count, values);
+    return result;
 }
