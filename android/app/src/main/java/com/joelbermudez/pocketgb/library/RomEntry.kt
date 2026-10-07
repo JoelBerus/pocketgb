@@ -73,9 +73,12 @@ data class RomEntry(
     val categoryPath: List<String>
         get() = virtualFolderPath ?: folderPath
 
-    /** N4: se muestra en otra categoría que la de su carpeta (insignia «Movido en la app»). */
+    /**
+     * N4: se muestra en otra categoría que la de su carpeta (insignia «Movido en la app»). Una copia que ya está en la
+     * carpeta elegida para su huella no lo está (H10).
+     */
     val isMovedInApp: Boolean
-        get() = virtualFolderPath != null
+        get() = virtualFolderPath != null && virtualFolderPath != folderPath
 
     /** Carpetas separadas por `/` ("" en la raíz). */
     val subfolder: String

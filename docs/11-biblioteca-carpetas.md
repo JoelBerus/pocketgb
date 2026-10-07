@@ -38,7 +38,7 @@ Roms/                                   ← la carpeta que eliges en la app
 | `gba_bios.bin` en la raíz | BIOS opcional de tu Game Boy Advance (se valida por su huella). |
 
 ## 3. Qué archivos lee
-- **Juegos:** `.gb` y `.gbc` de hasta **8 MiB**; `.gba` de hasta **32 MiB** (en Android, cuando llegue N8 Kotlin).
+- **Juegos:** `.gb` y `.gbc` de hasta **8 MiB**; `.gba` de hasta **32 MiB** (en el iPhone ya; en Android cuando llegue N8 Kotlin).
 - **No lee `.zip`** ni otros comprimidos: descomprímelos antes.
 - Como mucho **5 000 archivos y carpetas** por escaneo; si tu carpeta tiene más, algunos no aparecerán (siempre los mismos: los más hondos).
 - El escaneo es por niveles y en orden de nombre. En Drive, mirar cada carpeta es una consulta por internet: muchas subcarpetas hacen el primer escaneo más lento (los siguientes solo abren los juegos nuevos o cambiados).
@@ -49,15 +49,15 @@ Roms/                                   ← la carpeta que eliges en la app
 - **Portadas por nombre (N5, anunciado):** `<nombre del ROM>.png|jpg|jpeg|webp` junto al juego, o `portada.*`/`cover.*` si la carpeta tiene un solo juego. Ya puedes dejarlas en su sitio; la app las leerá cuando llegue N5.
 
 ## 5. Categorías virtuales: «Mostrar en categoría…» (ND3)
-A veces quieres ver un juego en otra categoría sin tocar tu carpeta (por ejemplo, juntar tus favoritos de varias sagas en «Favoritas», o tener un juego en «Pokémon» aunque el archivo esté en la raíz). Para eso, en los **ajustes del juego › Categoría › Cambiar**:
+A veces quieres ver un juego en otra categoría sin tocar tu carpeta (por ejemplo, juntar en «Para jugar» los que tienes pendientes de varias sagas, o tener un juego en «Pokémon» aunque el archivo esté en la raíz). Para eso, en los **ajustes del juego › Categoría › Cambiar**:
 
-- Elige **una categoría que ya existe** (cualquier carpeta con juegos, sus carpetas padre o otra categoría virtual) **o escribe una nueva**. Usa `/` para meterla dentro de otra: `Pokémon/Favoritas`.
-- El juego **se ve ahí en vez de en su carpeta**: en su estantería, en su pantalla de categoría, en los conteos y en la búsqueda. Lleva la insignia discreta **«Movido en la app»** y su detalle dice «Se ve en «Favoritas»» además de dónde está el archivo.
+- Elige **una categoría que ya existe** (cualquier carpeta con juegos, sus carpetas padre o otra categoría virtual) **o escribe una nueva**. Usa `/` para meterla dentro de otra: `Pokémon/Para jugar`.
+- El juego **se ve ahí en vez de en su carpeta**: en su estantería, en su pantalla de categoría, en los conteos y en la búsqueda. Lleva la insignia discreta **«Movido en la app»** y su detalle dice «Se ve en «Para jugar»» además de dónde está el archivo.
 - **Nunca toca archivos.** El ROM y su `.sav` se quedan en su carpeta; otro emulador u otro equipo lo seguirán viendo donde está.
 - **«Volver a su carpeta»** lo deshace. Elegir su propia carpeta es lo mismo.
 - Una categoría que solo existe en la app aparece mientras tenga algún juego; si «vuelves» todos sus juegos, desaparece.
-- Los nombres siguen las reglas de las carpetas: ningún nivel puede empezar por `.` ni por `_`, y como mucho 5 niveles.
-- Va **por huella** (el contenido del juego, N1): si mueves o renombras el archivo, el juego sigue en su categoría virtual. Las copias del mismo juego (insignia «Duplicado») comparten categoría virtual.
+- Los nombres siguen las reglas de las carpetas: ningún nivel puede empezar por `.` ni por `_`, y como mucho 5 niveles. Si escribes una que ya existe con otras mayúsculas o acentos («pokemon/para jugar»), se usa la existente («Pokémon/…»).
+- Va **por huella** (el contenido del juego, N1): si mueves o renombras el archivo, el juego vuelve a su categoría virtual **en cuanto PocketGB reconoce el archivo** (normalmente al volver a escanear; si no, al abrir el juego o su detalle). Las copias del mismo juego (insignia «Duplicado») comparten categoría virtual; una copia que ya está en esa carpeta de verdad no lleva la insignia.
 - Es **de este dispositivo** (ND12): no se sincroniza solo con el otro equipo; viajará dentro del paquete de N7.
 
 ¿Cuándo usar cada cosa? Si quieres que el cambio se vea también en otros emuladores, **mueve la carpeta de verdad** (en Drive o en el ordenador). Si solo quieres ordenar tu vista en PocketGB, usa la categoría virtual.

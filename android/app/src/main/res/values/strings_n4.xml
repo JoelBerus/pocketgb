@@ -51,10 +51,9 @@
     <!-- Centro de ajustes del juego -->
     <string name="n4_center_category">Categoría</string>
     <string name="n4_center_category_folder">%1$s · su carpeta</string>
-    <string name="n4_center_category_moved">%1$s · movido en la app</string>
     <string name="n4_center_category_root">Sin categoría (carpeta principal)</string>
     <string name="n4_center_category_change">Cambiar</string>
-    <string name="n4_center_category_change_description">Mostrar en otra categoría</string>
+    <string name="n4_center_category_change_description">Cambiar categoría</string>
     <string name="n4_center_category_return">Volver a su carpeta</string>
     <string name="n4_center_category_own">Su carpeta: %1$s</string>
     <string name="n4_center_tags">Etiquetas</string>
@@ -81,7 +80,9 @@
     <string name="n4_picker_own_folder">su carpeta</string>
     <string name="n4_picker_current">ahora</string>
     <string name="n4_picker_new">Nueva categoría</string>
-    <string name="n4_picker_new_hint">Usa / para ponerla dentro de otra, por ejemplo Pokémon/Favoritas.</string>
+    <string name="n4_picker_new_hint">Usa / para ponerla dentro de otra, por ejemplo Pokémon/Para jugar.</string>
+    <string name="n4_picker_reuses">Se usará la que ya existe: %1$s</string>
+    <string name="n4_center_save_failed">No se pudo guardar: PocketGB no pudo leer el juego. Inténtalo de nuevo con el juego disponible.</string>
     <string name="n4_picker_error_reserved">Ningún nombre puede empezar por . ni por _ (PocketGB no lee esas carpetas).</string>
     <string name="n4_picker_error_deep">Como mucho 5 niveles.</string>
     <string name="n4_picker_apply">Mostrar aquí</string>

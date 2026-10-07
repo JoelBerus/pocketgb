@@ -32,6 +32,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +88,15 @@ fun GameSettingsHost(
     var picking by remember(entry.id) { mutableStateOf(false) }
     var editingTags by remember(entry.id) { mutableStateOf(false) }
     var confirmHide by remember(entry.id) { mutableStateOf(false) }
+    var saveFailed by remember(entry.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // H15: si la huella dejó de estar confirmada entre abrir y aplicar, se vuelve a confirmar leyendo el ROM y se
+    // reintenta; si aun así no se puede, se avisa en el centro (nunca se cierra en silencio sin guardar).
+    val persist: (() -> Boolean) -> Unit = { change ->
+        scope.launch {
+            saveFailed = !(change() || library.confirmFingerprint(entry) && change())
+        }
+    }
     val fingerprint = prefs.fingerprints[entry.id]
     // N1-H1: una huella heredada de un movimiento (sin leer el ROM) se confirma antes de leer o escribir ajustes.
     val confirmed = fingerprint != null && prefs.hasConfirmedFingerprint(entry)
@@ -105,7 +116,7 @@ fun GameSettingsHost(
         tags = shown.tags,
         enabled = confirmed,
         onChangeCategory = { picking = true },
-        onReturnToFolder = { library.returnToFolder(entry) },
+        onReturnToFolder = { persist { library.returnToFolder(entry) } },
         onEditTags = { editingTags = true },
         onOpenSaves = if (onOpenSaves != null && confirmed && fingerprint != null) {
             {
@@ -116,6 +127,7 @@ fun GameSettingsHost(
             null
         },
         onHide = { confirmHide = true },
+        saveFailed = saveFailed,
     )
     GameSettingsSheet(
         title = shown.displayTitle,
@@ -146,11 +158,11 @@ fun GameSettingsHost(
             moved = shown.isMovedInApp,
             known = known,
             onPick = { path ->
-                library.moveToCategory(entry, path)
+                persist { library.moveToCategory(entry, path) }
                 picking = false
             },
             onReturnToFolder = {
-                library.returnToFolder(entry)
+                persist { library.returnToFolder(entry) }
                 picking = false
             },
             onDismiss = { picking = false },
@@ -162,8 +174,8 @@ fun GameSettingsHost(
             title = shown.displayTitle,
             tags = shown.tags,
             suggestions = suggestions,
-            onAdd = { library.addTag(entry, it) },
-            onRemove = { library.removeTag(entry, it) },
+            onAdd = { tag -> persist { library.addTag(entry, tag) } },
+            onRemove = { tag -> persist { library.removeTag(entry, tag) } },
             onDismiss = { editingTags = false },
         )
     }
@@ -197,6 +209,8 @@ class GameCenterState(
     val onEditTags: () -> Unit,
     val onOpenSaves: (() -> Unit)?,
     val onHide: () -> Unit,
+    /** H15: el último cambio no se pudo guardar (no se pudo confirmar la huella). */
+    val saveFailed: Boolean = false,
 )
 
 /**
@@ -251,7 +265,7 @@ fun GameSettingsSheet(
             }
             if (onRename != null) NameRow(title, headerTitle, onRename)
             if (center != null) {
-                CenterStatus(loading, unavailable)
+                CenterStatus(loading, unavailable, center.saveFailed)
                 GameCenterRows(center)
                 if (!loading && !unavailable) {
                     CenterSectionHeader(stringResource(R.string.n4_center_color_header))

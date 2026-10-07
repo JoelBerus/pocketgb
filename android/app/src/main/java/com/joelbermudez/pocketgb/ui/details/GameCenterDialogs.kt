@@ -125,7 +125,8 @@ fun CategoryPickerDialog(
     val parsed = remember(typed) { if (typed.isBlank()) null else CategoryPaths.parse(typed) }
     val choice: List<String>? = when (parsed) {
         null -> selected
-        is CategoryPaths.Parsed.Valid -> parsed.path
+        // H13: si coincide sin mayúsculas ni acentos con una que ya existe, se usa esa.
+        is CategoryPaths.Parsed.Valid -> CategoryPaths.matchExisting(parsed.path, known)
         is CategoryPaths.Parsed.Invalid -> null
     }
     val root = stringResource(R.string.n4_center_category_root)
@@ -215,7 +216,11 @@ fun CategoryPickerDialog(
         val supporting = when ((parsed as? CategoryPaths.Parsed.Invalid)?.problem) {
             CategoryPaths.Problem.RESERVED -> stringResource(R.string.n4_picker_error_reserved)
             CategoryPaths.Problem.TOO_DEEP -> stringResource(R.string.n4_picker_error_deep)
-            else -> stringResource(R.string.n4_picker_new_hint)
+            else -> if (parsed is CategoryPaths.Parsed.Valid && choice != null && choice != parsed.path) {
+                stringResource(R.string.n4_picker_reuses, CategoryPaths.display(choice))
+            } else {
+                stringResource(R.string.n4_picker_new_hint)
+            }
         }
         OutlinedTextField(
             value = typed,

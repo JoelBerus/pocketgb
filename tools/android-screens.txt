@@ -228,12 +228,12 @@ n3-details-landscape-long landscape light
 n3-details-landscape-ax5 landscape light fontScale=2.0
 n3-details-landscape-scrolled landscape light
 n3-details-wide landscape light window=wide
-# N4 · categorías, etiquetas, inicio y centro de ajustes del juego: árbol demo de varias carpetas y niveles (Pokémon › 1ª/2ª generación › Johto, Aventuras, Puzles, Pruebas, un juego en la raíz y «Favoritas» virtual)
+# N4 · categorías, etiquetas, inicio y centro de ajustes del juego: árbol demo de varias carpetas y niveles (Pokémon › 1ª/2ª generación › Johto, Aventuras, Puzles, Pruebas, un juego en la raíz y «Para jugar» virtual)
 n4-home portrait light
 n4-home portrait dark
 n4-home-scrolled portrait light swipe=up
 n4-home-ax5 portrait light fontScale=2.0
-n4-home-ax5-scrolled portrait light fontScale=2.0 swipe=up
+n4-home-ax5-scrolled portrait light fontScale=2.0
 n4-home-landscape landscape light
 n4-home-landscape landscape dark
 n4-home-landscape-scrolled landscape light

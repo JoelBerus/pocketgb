@@ -57,17 +57,11 @@ sealed interface LibraryCategory {
 
     companion object {
         const val UNCATEGORIZED_KEY = "."
-        private const val ALL_KEY = "*"
+        /** «Todas» no se guarda; «» no puede ser el nombre de ninguna carpeta (H12). */
+        private const val ALL_KEY = ""
 
         /** La categoría de una ruta: «Sin categoría» si es la raíz. */
         fun fromPath(path: List<String>): LibraryCategory = if (path.isEmpty()) Uncategorized else Folder(path)
-
-        /** Lo contrario de [key]; `null` si no es una clave de categoría. */
-        fun fromKey(key: String): LibraryCategory? = when {
-            key == UNCATEGORIZED_KEY -> Uncategorized
-            key == ALL_KEY || key.isEmpty() -> null
-            else -> key.split('/').takeIf { parts -> parts.none { it.isEmpty() } }?.let(::Folder)
-        }
 
         /**
          * Categorías de primer nivel con juegos visibles (sin ocultos) y cuántos tiene cada una: las carpetas por nombre

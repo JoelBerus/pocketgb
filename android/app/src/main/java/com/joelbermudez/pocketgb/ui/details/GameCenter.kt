@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -50,7 +51,15 @@ import com.joelbermudez.pocketgb.ui.components.MovedBadge
 
 /** «Leyendo el juego…» o «No se pudo leer el juego» sobre las filas que dependen de la huella. */
 @Composable
-internal fun CenterStatus(loading: Boolean, unavailable: Boolean) {
+internal fun CenterStatus(loading: Boolean, unavailable: Boolean, saveFailed: Boolean = false) {
+    if (saveFailed) {
+        Text(
+            stringResource(R.string.n4_center_save_failed),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("game-center-save-failed"),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     when {
         loading -> Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("game-center-reading"),
@@ -102,7 +111,11 @@ internal fun GameCenterRows(center: GameCenterState) {
     }
 }
 
-/** «Categoría»: dónde se ve el juego (su carpeta o la virtual con su insignia), «Cambiar» y «Volver a su carpeta». */
+/**
+ * «Categoría»: dónde se ve el juego y, si se movió en la app, la insignia y su carpeta real (H2: sin repetirlo). Las
+ * acciones van juntas debajo: «Cambiar» y, si está movido, «Volver a su carpeta» como acción secundaria.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CategoryRow(center: GameCenterState) {
     val root = stringResource(R.string.n4_center_category_root)
@@ -112,13 +125,18 @@ private fun CategoryRow(center: GameCenterState) {
     ListItem(
         headlineContent = { Text(stringResource(R.string.n4_center_category)) },
         supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    if (center.moved) stringResource(R.string.n4_center_category_moved, where) else stringResource(R.string.n4_center_category_folder, where),
-                    modifier = Modifier.testTag("game-center-category-value"),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (center.moved) where else stringResource(R.string.n4_center_category_folder, where),
+                        modifier = Modifier.testTag("game-center-category-value"),
+                    )
+                    if (center.moved) MovedBadge()
+                }
                 if (center.moved) {
-                    MovedBadge()
                     Text(
                         stringResource(R.string.n4_center_category_own, folder),
                         style = MaterialTheme.typography.bodySmall,
@@ -128,29 +146,18 @@ private fun CategoryRow(center: GameCenterState) {
             }
         },
         leadingContent = { Icon(Icons.Outlined.Folder, contentDescription = null) },
-        trailingContent = if (LocalLargeFont.current) {
-            null
-        } else {
-            {
-                TextButton(
-                    onClick = center.onChangeCategory,
-                    enabled = center.enabled,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("game-center-category-change").semantics { contentDescription = changeDescription },
-                ) { Text(stringResource(R.string.n4_center_category_change)) }
-            }
-        },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.testTag("game-center-category"),
     )
-    Row(Modifier.padding(start = 56.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (LocalLargeFont.current) {
-            // Fuente grande: los botones bajo el texto, sin estrecharlo.
-            TextButton(
-                onClick = center.onChangeCategory,
-                enabled = center.enabled,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("game-center-category-change").semantics { contentDescription = changeDescription },
-            ) { Text(stringResource(R.string.n4_center_category_change)) }
-        }
+    FlowRow(
+        Modifier.padding(start = 48.dp, end = 8.dp).offset(y = (-8).dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        TextButton(
+            onClick = center.onChangeCategory,
+            enabled = center.enabled,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("game-center-category-change").semantics { contentDescription = changeDescription },
+        ) { Text(stringResource(R.string.n4_center_category_change)) }
         if (center.moved) {
             TextButton(
                 onClick = center.onReturnToFolder,
@@ -164,8 +171,7 @@ private fun CategoryRow(center: GameCenterState) {
     }
 }
 
-/** «Etiquetas»: las del juego (o «Sin etiquetas») y «Editar». */
-@OptIn(ExperimentalLayoutApi::class)
+/** «Etiquetas»: las del juego como texto (no son botones, H2) o «Sin etiquetas», y «Editar» a la derecha. */
 @Composable
 private fun TagsRow(center: GameCenterState) {
     val editDescription = stringResource(R.string.n4_center_tags_edit_description)
@@ -179,36 +185,21 @@ private fun TagsRow(center: GameCenterState) {
     ListItem(
         headlineContent = { Text(stringResource(R.string.n4_center_tags)) },
         supportingContent = {
-            if (center.tags.isEmpty()) {
-                Text(stringResource(R.string.n4_center_tags_none))
-            } else {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(top = 4.dp).testTag("game-center-tags-value"),
-                ) { center.tags.forEach { TagLabel(it) } }
-            }
+            Text(
+                if (center.tags.isEmpty()) stringResource(R.string.n4_center_tags_none) else tagsText(center.tags),
+                modifier = Modifier.testTag("game-center-tags-value"),
+            )
         },
         leadingContent = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null) },
         trailingContent = if (LocalLargeFont.current) null else edit,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.testTag("game-center-tags"),
     )
-    if (LocalLargeFont.current) Row(Modifier.padding(start = 56.dp)) { edit() }
+    if (LocalLargeFont.current) Row(Modifier.padding(start = 48.dp)) { edit() }
 }
 
-/** Una etiqueta en pastilla con contorno fino (detalle, centro de ajustes). */
-@Composable
-internal fun TagLabel(tag: String, modifier: Modifier = Modifier) {
-    Text(
-        tag,
-        modifier = modifier
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
+/** Las etiquetas como texto: «pendiente · rpg» (detalle y centro de ajustes). */
+internal fun tagsText(tags: List<String>): String = tags.joinToString(" · ")
 
 /** Fila deshabilitada de algo que llega en otro hito (portada N5, progreso N6). */
 @Composable

@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -271,7 +272,8 @@ private fun Separator() {
         "›",
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 2.dp),
+        // TalkBack no lee los «›» (la ruta entera ya va en la descripción de las migas, H5).
+        modifier = Modifier.padding(horizontal = 2.dp).clearAndSetSemantics {},
     )
 }
 

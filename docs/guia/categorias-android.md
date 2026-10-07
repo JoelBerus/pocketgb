@@ -44,10 +44,10 @@ La primera vez que abres los ajustes de un juego que nunca abriste, PocketGB lo 
 ## «Mostrar en categoría…»
 Para ver un juego en otra categoría **sin mover el archivo**:
 1. Ajustes del juego › Categoría › **Cambiar**.
-2. Elige una de **Categorías que ya existen** (con «su carpeta» y «ahora» marcadas) o escribe una **Nueva categoría**. Usa `/` para ponerla dentro de otra: `Pokémon/Favoritas`. No puede empezar por `.` ni por `_`, y como mucho 5 niveles.
+2. Elige una de **Categorías que ya existen** (con «su carpeta» y «ahora» marcadas) o escribe una **Nueva categoría**. Usa `/` para ponerla dentro de otra: `Pokémon/Para jugar`. No puede empezar por `.` ni por `_`, y como mucho 5 niveles.
 3. **Mostrar aquí**.
 
-El juego aparece en esa categoría (y en su estantería) con la insignia **«Movido en la app»**; su detalle dice «Se ve en «Favoritas»» y, arriba, dónde está el archivo de verdad. **Volver a su carpeta** lo deshace. Si mueves o renombras el archivo en Drive, sigue en su categoría de la app. Si quieres que el cambio se vea también en otros emuladores, mueve la carpeta de verdad en Drive.
+El juego aparece en esa categoría (y en su estantería) con la insignia **«Movido en la app»**; su detalle dice «Se ve en «Para jugar»» y, arriba, dónde está el archivo de verdad. **Volver a su carpeta** lo deshace. Si mueves o renombras el archivo en Drive, vuelve a su categoría de la app en cuanto PocketGB lo reconoce (normalmente al volver a escanear; si no, al abrir el juego o su detalle). Si escribes una categoría que ya existe con otras mayúsculas o acentos, se usa la existente. Si quieres que el cambio se vea también en otros emuladores, mueve la carpeta de verdad en Drive.
 
 ## Etiquetas
 - En **Ajustes del juego › Etiquetas › Editar**: escribe una y toca **+** (o Intro). Toca una etiqueta para quitarla. Debajo salen **las que ya usas** en otros juegos: un toque la añade.

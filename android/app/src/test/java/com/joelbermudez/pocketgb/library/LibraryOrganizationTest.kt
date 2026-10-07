@@ -133,8 +133,9 @@ class LibraryOrganizationTest {
         assertEquals("Pokémon/2ª generación", nested.key)
         assertEquals(nested, LibraryCategory.fromPath(pokemon("2ª generación")))
         assertEquals(LibraryCategory.Uncategorized, LibraryCategory.fromPath(emptyList()))
-        assertEquals(LibraryCategory.Uncategorized, LibraryCategory.fromKey(LibraryCategory.Uncategorized.key))
-        assertEquals(nested, LibraryCategory.fromKey(nested.key))
+        assertEquals(".", LibraryCategory.Uncategorized.key)
+        // H12: «Todas» no tiene una clave que pueda chocar con una carpeta (ninguna se llama «»).
+        assertEquals("", LibraryCategory.All.key)
         assertEquals("2ª generación", nested.name)
     }
 
@@ -330,8 +331,9 @@ class LibraryOrganizationTest {
     @Test
     fun aNewFolderAppearsAfterTheArrangedOnesAndAMissingOneKeepsItsPlace() {
         val settings = HomeSettings().move("Puzles", -2, keys)
+        // H11: una carpeta nueva va detrás de las ordenadas pero antes de «Sin categoría», que sigue al final.
         val withNew = listOf("Arcade") + keys
-        assertEquals(listOf("Puzles", "Kirby", "Pokémon", ".", "Arcade"), settings.arrange(withNew))
+        assertEquals(listOf("Puzles", "Kirby", "Pokémon", "Arcade", "."), settings.arrange(withNew))
         val withoutKirby = keys - "Kirby"
         assertEquals(listOf("Puzles", "Pokémon", "."), settings.arrange(withoutKirby))
         assertEquals("al volver recupera su sitio", listOf("Puzles", "Kirby", "Pokémon", "."), settings.arrange(keys))
@@ -348,5 +350,47 @@ class LibraryOrganizationTest {
         assertEquals(LibraryLayout.GRID, prefs.layoutFor(pokemonCategory))
         assertEquals(LibraryLayout.LIST, prefs.copy(layout = LibraryLayout.LIST).layoutFor(pokemonCategory))
         assertEquals(LibraryLayout.GRID, prefs.withCategoryLayout(LibraryCategory.Uncategorized, LibraryLayout.GRID).layoutFor(LibraryCategory.Uncategorized))
+    }
+
+    // ---- respuesta a la auditoría ----
+
+    @Test
+    fun theFavoritesRowCountsEveryFavoriteEvenBeyondTheLimit() {
+        // H1: con 11 favoritos la fila muestra 10 pero dice 11.
+        val many = (1..11).map { rom("Juegos/Juego $it.gb", "JUEGO $it") }
+        val prefs = many.fold(LibraryPreferencesData()) { p, e -> p.recordFingerprint(e.id, fp(e)).toggleFavorite(e) }
+        val home = LibraryHome.sections(many, prefs)
+        assertEquals(LibraryHome.SHELF_LIMIT, home.favorites.size)
+        assertEquals(11, home.favoritesTotal)
+    }
+
+    @Test
+    fun aCopyShownInItsOwnFolderIsNotMarkedAsMoved() {
+        // H10: dos copias del mismo juego; se muestran en la carpeta de una de ellas: esa no lleva la insignia.
+        val copy = rom("Kirby/Pokemon Red.gb", "POKEMON RED")
+        val prefs = known.recordFingerprint(copy.id, fp(red)).moveToCategory(copy, red.folderPath)
+        val shown = LibraryQuery.visible(all + copy, prefs, LibraryFilter.ALL, "")
+        assertFalse("la copia que ya está en esa carpeta", shown.single { it.id == red.id }.isMovedInApp)
+        assertTrue("la otra copia sí se ve movida", shown.single { it.id == copy.id }.isMovedInApp)
+        assertEquals(red.folderPath, shown.single { it.id == copy.id }.categoryPath)
+    }
+
+    @Test
+    fun movingAPinnedCategoryKeepsTheRelativeOrderSoUnpinningReturnsItToItsPlace() {
+        // H11: mover dentro de las fijadas no guarda las fijadas delante de todo.
+        val pinned = HomeSettings().withPinned("Puzles", true).withPinned(".", true).move(".", -1, keys)
+        assertEquals(listOf(".", "Puzles", "Kirby", "Pokémon"), pinned.arrange(keys))
+        assertEquals("al soltar «Puzles» vuelve detrás de Pokémon", listOf(".", "Kirby", "Pokémon", "Puzles"), pinned.withPinned("Puzles", false).arrange(keys))
+        assertEquals("al soltar las dos se respeta el orden relativo elegido", listOf("Kirby", "Pokémon", ".", "Puzles"), pinned.withPinned("Puzles", false).withPinned(".", false).arrange(keys))
+    }
+
+    @Test
+    fun aTypedCategoryReusesAnExistingOneThatDiffersOnlyInCaseOrAccents() {
+        // H13: «pokemon/para jugar» con «Pokémon» existente se guarda como «Pokémon/para jugar».
+        val known = listOf(listOf("Pokémon"), listOf("Pokémon", "1ª generación"), listOf("Aventuras"))
+        assertEquals(listOf("Pokémon", "1ª generación"), CategoryPaths.matchExisting(listOf("pokemon", "1ª GENERACIÓN"), known))
+        assertEquals(listOf("Pokémon", "para jugar"), CategoryPaths.matchExisting(listOf("POKEMON", "para jugar"), known))
+        assertEquals(listOf("Para jugar"), CategoryPaths.matchExisting(listOf("Para jugar"), known))
+        assertEquals("un nivel igual en otra rama no cuenta", listOf("Kirby", "1ª generación"), CategoryPaths.matchExisting(listOf("Kirby", "1ª generación"), known))
     }
 }

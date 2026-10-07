@@ -112,7 +112,7 @@ internal fun ShelfRow(
                     .testTag("home-see-all-$place")
                     .semantics { contentDescription = seeAllDescription },
             ) {
-                Text(stringResource(R.string.n4_see_all), maxLines = 1)
+                Text(stringResource(R.string.n4_see_all), maxLines = if (largeFont) Int.MAX_VALUE else 1)
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }

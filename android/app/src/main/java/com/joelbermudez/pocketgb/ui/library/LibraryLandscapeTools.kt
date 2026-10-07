@@ -107,6 +107,8 @@ data class LibraryToolsPreset(
     val focusSearch: Boolean = true,
     val scrolled: Boolean = false,
     val collapse: Float = 1f,
+    /** N4: arrancar con la lista desplazada hasta esta fila (también en vertical; solo el catálogo). */
+    val scrollToItem: Int? = null,
 )
 
 val LocalLibraryToolsPreset = staticCompositionLocalOf { LibraryToolsPreset() }

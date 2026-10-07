@@ -541,6 +541,12 @@ private fun GameBrowser(
     val listState = mode.listState
     val leadingCount = (if (showRail) 1 else 0) + (if (sections.favorites.isNotEmpty()) 1 else 0) + sections.shelves.size
     SideEffect { mode.tools.leadingItems = if (landscape) leadingCount else 0 }
+    LocalLibraryToolsPreset.current.scrollToItem?.let { item ->
+        LaunchedEffect(item) {
+            withFrameNanos {}
+            if (prefs.layout == LibraryLayout.GRID) gridState.scrollToItem(item) else listState.scrollToItem(item)
+        }
+    }
     val presetScroll = mode.presetScroll
     if (presetScroll != null && landscape) {
         // Se repite al girar o si cambian las filas del inicio (el catálogo puede arrancar en vertical).
@@ -658,7 +664,8 @@ private fun homeItems(
 ): List<CollectionItem> {
     val favoritesTitle = stringResource(R.string.n4_favorites_row)
     val root = stringResource(R.string.n3_category_root)
-    val favoritesCount = sections.favorites.size
+    // H1: el total de favoritos, aunque la fila muestre como mucho 10.
+    val favoritesCount = sections.favoritesTotal
     val favoritesDescription = stringResource(
         R.string.n4_see_all_favorites_description,
         pluralStringResource(R.plurals.n4_games, favoritesCount, favoritesCount),

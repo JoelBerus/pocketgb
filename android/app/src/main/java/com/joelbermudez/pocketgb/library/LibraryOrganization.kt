@@ -88,6 +88,21 @@ object CategoryPaths {
         return Alias.truncate(flat, MAX_SEGMENT_LENGTH).trimEnd()
     }
 
+    /**
+     * H13: [typed] con la ortografía de una categoría que ya existe si coincide nivel a nivel sin mayúsculas ni acentos
+     * («pokemon/para jugar» → «Pokémon/para jugar»), para no crear otra casi igual.
+     */
+    fun matchExisting(typed: List<String>, known: List<List<String>>): List<String> {
+        val result = ArrayList<String>(typed.size)
+        for (segment in typed) {
+            val existing = known.firstOrNull { path ->
+                path.size == result.size + 1 && path.subList(0, result.size) == result && Tags.same(path.last(), segment)
+            }
+            result += existing?.last() ?: segment
+        }
+        return result
+    }
+
     /** «Pokémon › 2ª generación». */
     fun display(path: List<String>): String = path.joinToString(SEPARATOR)
 
@@ -159,23 +174,25 @@ data class HomeSettings(
      * demás; dentro de cada grupo, las ordenadas por el usuario y luego las nuevas en orden natural.
      */
     fun arrange(keys: List<String>): List<String> {
-        val present = keys.toSet()
-        val ordered = order.filter { it in present } + keys.filter { it !in order }
+        val ordered = ordered(keys)
         return ordered.filter { it in pinned } + ordered.filterNot { it in pinned }
     }
 
     /** Sube ([offset] < 0) o baja la categoría [key] dentro de su grupo (fijadas o no) entre las presentes [keys]. */
     fun move(key: String, offset: Int, keys: List<String>): HomeSettings {
-        val arranged = arrange(keys).toMutableList()
-        val from = arranged.indexOf(key)
-        if (from < 0) return this
-        val group = arranged.filter { (it in pinned) == (key in pinned) }
+        // H11: se trabaja sobre el orden relativo (sin poner las fijadas delante): al soltar una vuelve a su sitio.
+        val ordered = ordered(keys).toMutableList()
+        if (key !in ordered || offset == 0) return this
+        val group = arrange(keys).filter { (it in pinned) == (key in pinned) }
         val target = group.indexOf(key) + offset
-        if (target !in group.indices || offset == 0) return this
-        arranged.removeAt(from)
-        arranged.add(arranged.indexOf(group[target]).let { if (offset > 0) it + 1 else it }, key)
-        return copy(order = remember(arranged))
+        if (target !in group.indices) return this
+        ordered.remove(key)
+        ordered.add(ordered.indexOf(group[target]).let { if (offset > 0) it + 1 else it }, key)
+        return copy(order = remember(ordered))
     }
+
+    /** Las presentes en el orden elegido y, detrás, las nuevas en su orden natural (sin separar las fijadas). */
+    private fun ordered(keys: List<String>): List<String> = order.filter { it in keys } + keys.filter { it !in order }
 
     /** Fija o suelta [key]. El orden no cambia: al soltarla vuelve a su sitio entre las demás. */
     fun withPinned(key: String, value: Boolean): HomeSettings =
@@ -183,9 +200,14 @@ data class HomeSettings(
 
     fun withHidden(key: String, value: Boolean): HomeSettings = copy(hidden = if (value) hidden + key else hidden - key)
 
-    /** El orden visible y, detrás, las claves que ahora no están (conservan su sitio relativo); acotado. */
-    private fun remember(arranged: List<String>): List<String> =
-        (arranged + order.filter { it !in arranged }).take(MAX_KEYS)
+    /**
+     * El orden relativo y, detrás, las claves que ahora no están (conservan su sitio relativo); acotado. Si «Sin
+     * categoría» queda la última no se guarda: así sigue al final cuando aparece una carpeta nueva (H11).
+     */
+    private fun remember(ordered: List<String>): List<String> {
+        val saved = if (ordered.lastOrNull() == LibraryCategory.UNCATEGORIZED_KEY) ordered.dropLast(1) else ordered
+        return (saved + order.filter { it !in ordered }).take(MAX_KEYS)
+    }
 
     companion object {
         /** Máximo de claves recordadas en el orden. */
@@ -202,8 +224,11 @@ data class HomeShelf(
     val pinned: Boolean,
 )
 
-/** Lo que muestra el inicio entre «Continuar jugando» y «Todos los juegos». */
-data class HomeSections(val favorites: List<RomEntry>, val shelves: List<HomeShelf>)
+/**
+ * Lo que muestra el inicio entre «Continuar jugando» y «Todos los juegos». [favoritesTotal] cuenta todos los favoritos
+ * (H1), aunque la fila muestre como mucho [LibraryHome.SHELF_LIMIT].
+ */
+data class HomeSections(val favorites: List<RomEntry>, val shelves: List<HomeShelf>, val favoritesTotal: Int = favorites.size)
 
 /** Una fila de Ajustes › Biblioteca › Inicio. */
 data class HomeCategoryRow(
@@ -227,13 +252,14 @@ object LibraryHome {
      */
     fun sections(entries: List<RomEntry>, prefs: LibraryPreferencesData, limit: Int = SHELF_LIMIT): HomeSections {
         val shown = LibraryQuery.visible(entries, prefs, LibraryFilter.ALL, "")
-        val favorites = if (prefs.home.showFavorites) {
-            shown.filter { prefs.isFavorite(it) }.distinctBy { prefs.fingerprints[it.id] ?: "ruta:${it.id}" }.take(limit)
+        val allFavorites = if (prefs.home.showFavorites) {
+            shown.filter { prefs.isFavorite(it) }.distinctBy { prefs.fingerprints[it.id] ?: "ruta:${it.id}" }
         } else {
             emptyList()
         }
+        val favorites = allFavorites.take(limit)
         val options = LibraryCategory.options(entries, prefs)
-        if (!LibraryCategory.hasFolders(options)) return HomeSections(favorites, emptyList())
+        if (!LibraryCategory.hasFolders(options)) return HomeSections(favorites, emptyList(), allFavorites.size)
         val byKey = options.associateBy { it.category.key }
         val shelves = prefs.home.arrange(options.map { it.category.key })
             .filterNot { it in prefs.home.hidden }
@@ -242,7 +268,7 @@ object LibraryHome {
                 val games = shown.filter(option.category::contains)
                 HomeShelf(option.category, games.take(limit), games.size, key in prefs.home.pinned)
             }
-        return HomeSections(favorites, shelves)
+        return HomeSections(favorites, shelves, allFavorites.size)
     }
 
     /** Todas las categorías de primer nivel en el orden del inicio, también las ocultas (Ajustes › Biblioteca › Inicio). */

@@ -497,15 +497,16 @@ private fun ShownIn(path: List<String>) {
 }
 
 /** N4: las etiquetas del juego (se cambian en sus ajustes). */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun DetailTags(tags: List<String>) {
     val description = stringResource(R.string.n4_details_tags, tags.joinToString(", "))
-    androidx.compose.foundation.layout.FlowRow(
-        Modifier.clearAndSetSemantics { contentDescription = description }.testTag("game-details-tags"),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) { tags.forEach { TagLabel(it) } }
+    // Como texto (no son botones, H2): se cambian en los ajustes del juego.
+    Text(
+        tagsText(tags),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.clearAndSetSemantics { contentDescription = description }.testTag("game-details-tags"),
+    )
 }
 
 /** N1a: las otras copias del juego (misma huella) y qué comparten. */

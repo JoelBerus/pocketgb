@@ -101,7 +101,7 @@ fun GameMetaLine(
             )
         }
         if (entry.isDuplicate) DuplicateBadge()
-        if (entry.isMovedInApp) MovedBadge(compact = compactBadges)
+        if (entry.isMovedInApp) MovedBadge(compact = compactBadges, announce = announce)
         Text(
             gameDetailText(entry, lastPlayedAt),
             modifier = Modifier.weight(1f, fill = false),
@@ -133,7 +133,12 @@ fun DuplicateBadge(modifier: Modifier = Modifier) {
  * mover y, si cabe, el texto «Movido en la app»; [compact] = solo el icono (el texto va en la etiqueta de la tarjeta).
  */
 @Composable
-fun MovedBadge(modifier: Modifier = Modifier, compact: Boolean = false) {
+fun MovedBadge(
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    /** `false` dentro de una tarjeta con etiqueta combinada: el texto ya va en ella (H4, no se lee dos veces). */
+    announce: Boolean = true,
+) {
     val text = stringResource(R.string.n4_moved_badge)
     Row(
         modifier
@@ -145,7 +150,7 @@ fun MovedBadge(modifier: Modifier = Modifier, compact: Boolean = false) {
     ) {
         Icon(
             Icons.AutoMirrored.Outlined.DriveFileMove,
-            contentDescription = if (compact) text else null,
+            contentDescription = if (compact && announce) text else null,
             modifier = Modifier.size(14.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )

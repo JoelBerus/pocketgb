@@ -50,7 +50,7 @@ import java.io.File
  *   Pokémon/2ª generación/Pokemon Gold.gbc
  *   Pokémon/2ª generación/Johto/Pokemon Crystal.gbc
  *   Aventuras/{Demo Adventure.gb, Texto Quest.gbc}
- *   Puzles/{Tetra Blocks.gb, Puzzle Lab.gb}      ← Tetra Blocks se muestra en «Favoritas» (categoría virtual)
+ *   Puzles/{Tetra Blocks.gb, Puzzle Lab.gb}      ← Tetra Blocks se muestra en «Para jugar» (categoría virtual)
  *   Pruebas/Space Test.gb
  *   Color Demo.gbc                               ← sin categoría
  * ```
@@ -101,7 +101,7 @@ internal object N4Data {
         return base
             .addTag(red, "rpg").addTag(gold, "rpg").addTag(crystal, "rpg").addTag(crystal, "pendiente")
             .addTag(tetra, "dos jugadores").addTag(lab, "pendiente")
-            .moveToCategory(tetra, listOf("Favoritas"))
+            .moveToCategory(tetra, listOf("Para jugar"))
     }
 
     fun details(entry: RomEntry) = GameDetails(
@@ -324,12 +324,12 @@ private fun N4HomeSettings() {
 
 /** Pantallas nuevas de N4 (Android). La orientación, la fuente y el tema los fija el manifiesto. */
 internal val n4CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = buildMap {
-    // Inicio: carril, Favoritos y una estantería por categoría (Favoritas es virtual) antes de «Todos los juegos».
+    // Inicio: carril, Favoritos y una estantería por categoría (Para jugar es virtual) antes de «Todos los juegos».
     put("n4-home") { N4Home() }
     put("n4-home-scrolled") { N4Home() }
     put("n4-home-ax5") { N4Home() }
     // Fuente 200 %, desplazada: estanterías con la portada a la izquierda y «Ver todo» bajo el título.
-    put("n4-home-ax5-scrolled") { N4Home() }
+    put("n4-home-ax5-scrolled") { N4Home(LibraryToolsPreset(scrollToItem = 2)) }
     put("n4-home-landscape") { N4Home() }
     put("n4-home-landscape-scrolled") { N4Home(LibraryToolsPreset(scrolled = true)) }
     put("n4-home-landscape-categories") { N4Home(LibraryToolsPreset(panel = LibraryPanel.CATEGORIES)) }
@@ -343,7 +343,7 @@ internal val n4CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("n4-category-nested-list") { N4Category(listOf("Pokémon", "2ª generación"), LibraryLayout.LIST) }
     put("n4-category-landscape") { N4Category(listOf("Pokémon")) }
     put("n4-category-ax5") { N4Category(listOf("Pokémon", "2ª generación")) }
-    put("n4-category-virtual") { N4Category(listOf("Favoritas")) }
+    put("n4-category-virtual") { N4Category(listOf("Para jugar")) }
     put("n4-category-root") { N4Category(emptyList()) }
     // Detalle de un juego movido en la app (insignia, «Se ve en…» y etiquetas).
     put("n4-details-moved") { N4Details(N4Data.tetra) }

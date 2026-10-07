@@ -183,7 +183,8 @@ class GameCenterUiTest {
         compose.onNodeWithTag("game-center-category-change").performClick()
         compose.onNodeWithTag("category-picker-field").performScrollTo().performTextInput("Favoritas")
         compose.onNodeWithTag("category-picker-apply").assertIsEnabled().performClick()
-        compose.onNodeWithTag("game-center-category-value", useUnmergedTree = true).assertTextEquals("Favoritas · movido en la app")
+        compose.onNodeWithTag("game-center-category-value", useUnmergedTree = true).assertTextEquals("Favoritas")
+        assertTrue(compose.onAllNodesWithTag("game-moved-badge", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         val saved = onDisk()
         val fingerprint = saved.fingerprints.getValue(kirby.id)
         assertTrue("confirmada", saved.hasConfirmedFingerprint(kirby))
@@ -215,7 +216,9 @@ class GameCenterUiTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("game-center-category-change").performClick()
-        compose.onNodeWithTag("category-option-Pokémon").performScrollTo().performClick()
+        // H13: «pokemon» escrita a mano reutiliza la categoría «Pokémon» que ya existe.
+        compose.onNodeWithTag("category-picker-field").performScrollTo().performTextInput("pokemon")
+        compose.onNodeWithText("Se usará la que ya existe: Pokémon", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("category-picker-apply").performClick()
         compose.onNodeWithTag("game-settings-done").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("game-settings").fetchSemanticsNodes().isEmpty() }

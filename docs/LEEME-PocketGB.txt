@@ -24,7 +24,8 @@ Reglas
 - Lo que empieza por «.» se ignora. Las carpetas que empiezan por «_» quedan
   apartadas (PocketGB no mira dentro): úsalas para copias o juegos por revisar.
 - «PocketGB/» en la raíz es de la app: no pongas juegos dentro.
-- Solo .gb, .gbc (hasta 8 MiB) y .gba (hasta 32 MiB). Los .zip no se leen:
+- Solo .gb, .gbc (hasta 8 MiB) y .gba (hasta 32 MiB; .gba: iPhone, Android
+  cuando llegue). Los .zip no se leen:
   descomprímelos antes.
 - La partida es el .sav con el mismo nombre que el juego, en su misma carpeta.
   Si mueves un juego, mueve también su .sav.
