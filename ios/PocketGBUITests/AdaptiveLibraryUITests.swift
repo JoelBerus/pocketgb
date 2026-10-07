@@ -82,6 +82,7 @@ final class AdaptiveLibraryUITests: XCTestCase {
         let button = app.buttons["library-search-button"]
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["GBA"].exists)            // segmentado de siempre
+        XCTAssertTrue(app.searchFields.firstMatch.exists)   // y el buscador bajo el título
         XCTAssertFalse(app.buttons["library-tool-filters"].exists)
         button.tap()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))

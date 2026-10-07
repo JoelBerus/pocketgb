@@ -37,7 +37,7 @@ struct FavoritesView: View {
             .scrollEdgeEffectStyle(verticalSizeClass == .compact ? .hard : .soft, for: .top)
             .background(PocketColor.backgroundBase.ignoresSafeArea())
             .navigationTitle("Favoritos")
-            .navigationBarTitleDisplayMode(verticalSizeClass == .compact ? .inline : .automatic)
+            .modifier(InlineTitleInCompactHeight(compact: verticalSizeClass == .compact))
             .navigationDestination(for: LibraryRoute.self) { route in
                 switch route {
                 case .details(let id, let source):

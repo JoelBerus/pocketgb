@@ -32,7 +32,7 @@ struct LibraryView: View {
                 .background(PocketColor.backgroundBase.ignoresSafeArea())
                 .navigationTitle("Biblioteca")
                 // N3a: en horizontal, título en línea (el grande no cabe y se perdía sobre la captura).
-                .navigationBarTitleDisplayMode(compactHeight ? .inline : .automatic)
+                .modifier(InlineTitleInCompactHeight(compact: compactHeight))
                 .toolbar {
                     if case .ready = library.phase {
                         // N3b: la búsqueda también como botón de la barra, «como una opción más».
@@ -150,21 +150,16 @@ struct LibraryView: View {
                                   category: state.libraryCategory)
         let compact = compactHeight
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: PocketSpacing.lg,
-                       pinnedViews: compact && !searching ? [.sectionHeaders] : []) {
-                if !compact { minimized(filterPicker) }
-                if searching {
-                    searchResults(shown, query: query)
-                } else {
-                    if state.libraryFilter == .all, state.libraryCategory == .all,
-                       let continueEntries = continueCandidates, !continueEntries.isEmpty {
-                        minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom,
-                                                     itemWidth: compact ? gridColumnWidth : nil))
+            // Horizontal: perezosa, con el título de sección fijado. Vertical: la de siempre.
+            Group {
+                if compact {
+                    LazyVStack(alignment: .leading, spacing: PocketSpacing.lg,
+                               pinnedViews: searching ? [] : [.sectionHeaders]) {
+                        gamesContent(shown, query: query, searching: searching, folderName: folderName, compact: true)
                     }
-                    Section {
-                        allGames(shown)
-                    } header: {
-                        sectionHeader(folderName: folderName, count: shown.count, pinned: compact)
+                } else {
+                    VStack(alignment: .leading, spacing: PocketSpacing.lg) {
+                        gamesContent(shown, query: query, searching: searching, folderName: folderName, compact: false)
                     }
                 }
             }
@@ -203,6 +198,25 @@ struct LibraryView: View {
         .onDisappear { state.libraryTools.showsGames = false }
     }
 
+
+    @ViewBuilder private func gamesContent(_ shown: [RomEntry], query: String, searching: Bool,
+                                           folderName: String, compact: Bool) -> some View {
+        if !compact { minimized(filterPicker) }
+        if searching {
+            searchResults(shown, query: query)
+        } else {
+            if state.libraryFilter == .all, state.libraryCategory == .all,
+               let continueEntries = continueCandidates, !continueEntries.isEmpty {
+                minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom,
+                                             itemWidth: compact ? gridColumnWidth : nil))
+            }
+            Section {
+                allGames(shown)
+            } header: {
+                sectionHeader(folderName: folderName, count: shown.count, pinned: compact)
+            }
+        }
+    }
 
     /// Ancho de una columna de la cuadrícula: en horizontal, el carril «Continuar» usa el mismo
     /// (como Android en N3a), así las tarjetas no ocupan toda la altura.
@@ -627,5 +641,19 @@ enum LibraryToolsPosition {
     /// Distancia del borde inferior de la ventana al borde inferior del grupo.
     static func bottomGap(minimized: Bool) -> CGFloat {
         minimized ? minimizedBottomGap : expandedBottomGap
+    }
+}
+
+/// Título en línea solo en altura compacta (N3a). En vertical no se toca el modo del título: con
+/// `.automatic` explícito, el buscador bajo el título grande no aparecía al abrir.
+struct InlineTitleInCompactHeight: ViewModifier {
+    let compact: Bool
+
+    func body(content: Content) -> some View {
+        if compact {
+            content.navigationBarTitleDisplayMode(.inline)
+        } else {
+            content
+        }
     }
 }
