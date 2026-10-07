@@ -1,7 +1,7 @@
 package com.joelbermudez.pocketgb.ui.details
 
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.library.RomEntry
-import com.joelbermudez.pocketgb.ui.components.ARTWORK_RATIO
 
 /** Margen lateral del detalle. */
 const val DETAIL_MARGIN_DP = 16f
@@ -50,8 +50,9 @@ fun detailLayoutFor(widthDp: Float, heightDp: Float, aspectRatio: Float): Detail
 }
 
 /**
- * Proporción (ancho / alto) de la pantalla de la consola del juego: 10:9 en Game Boy y Game Boy Color. N8 (Kotlin)
- * añadirá la consola GBA con 3:2; el detalle y su disposición ya la reciben como parámetro.
+ * Proporción (ancho / alto) de la pantalla de la consola del juego ([Console] por la extensión, como el núcleo): 10:9 en
+ * Game Boy y Game Boy Color, 3:2 en Game Boy Advance (la biblioteca aún no lista `.gba`: llegará con N8 Kotlin, y el
+ * detalle ya la recibe como parámetro).
  */
 val RomEntry.screenAspectRatio: Float
-    get() = ARTWORK_RATIO
+    get() = Console.fromFileName(fileName).screen.aspectRatio

@@ -18,7 +18,7 @@ Roms/                                   ← la carpeta que eliges en la app
   _Revisar/                             ← apartada: PocketGB no mira dentro
 ```
 
-Por ahora la biblioteca muestra todos los juegos juntos. En el detalle de cada juego ves dónde está, por ejemplo «Pokémon › 2ª generación · Pokemon Gold.gbc». Más adelante, las carpetas de primer nivel serán categorías.
+Las carpetas de primer nivel (aquí «Pokémon») son **categorías**: en horizontal las eliges con el botón Categorías y en vertical con «⋮» › Categoría (ver [biblioteca-android.md](biblioteca-android.md)). En el detalle de cada juego ves dónde está, por ejemplo «Pokémon › 2ª generación · Pokemon Gold.gbc». Más adelante podrás ver también las subcategorías.
 
 ## Las reglas
 

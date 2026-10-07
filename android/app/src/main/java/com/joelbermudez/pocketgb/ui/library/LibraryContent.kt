@@ -178,6 +178,17 @@ fun LibraryContent(
             scrollBehavior.state.heightOffset = 0f
         }
         BackHandler(enabled = searchVisible) { closeSearch() }
+        // Al pasar de horizontal a vertical se cierra un panel abierto, y la búsqueda horizontal si ya no hay texto (en
+        // vertical se busca con el campo de siempre). Solo en ese paso: si la pantalla empieza en vertical y gira después,
+        // no se toca nada.
+        var wasLandscape by remember { mutableStateOf(landscape) }
+        LaunchedEffect(landscape) {
+            if (wasLandscape && !landscape) {
+                tools.panel = null
+                if (query.isEmpty()) tools.searchOpen = false
+            }
+            wasLandscape = landscape
+        }
         Scaffold(
             modifier = if (landscape) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier,
             topBar = {

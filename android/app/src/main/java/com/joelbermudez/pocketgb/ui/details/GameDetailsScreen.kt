@@ -281,8 +281,9 @@ fun GameDetailsContent(
                     canResume = canResume,
                     onPlayFromStart = onPlayFromStart,
                     onHide = { confirmHide = true },
-                    // Con fuente grande en la columna estrecha, «Jugar» va justo bajo el título para verse sin desplazar.
-                    playFirst = layout.twoColumns && LocalLargeFont.current,
+                    // Con fuente grande «Jugar» va justo bajo el título: la ruta y el chip crecen y lo empujarían fuera de
+                    // la pantalla (en la columna estrecha de dos columnas y bajo la imagen en vertical).
+                    playFirst = LocalLargeFont.current,
                 )
             }
             val scroll = rememberScrollState(initialInfoScroll)
@@ -563,6 +564,8 @@ private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, on
                 onClick = onClick,
                 enabled = enabled,
                 modifier = modifier.heightIn(min = 48.dp).testTag(tag).semantics(properties = semantics),
+                // Con el icono encima, esquinas redondeadas en vez de pastilla (el botón es más alto).
+                shape = if (style == SecondaryStyle.COMPACT) MaterialTheme.shapes.large else ButtonDefaults.outlinedShape,
                 contentPadding = if (style == SecondaryStyle.COMPACT) {
                     PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 } else {

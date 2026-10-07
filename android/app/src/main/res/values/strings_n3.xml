@@ -2,7 +2,6 @@
 <!-- N3 Android: biblioteca y detalle adaptables. Textos nuevos de este lote, solo aquí. -->
 <resources>
     <!-- Biblioteca en horizontal: barra flotante de herramientas (N3b) -->
-    <string name="n3_tools_label">Herramientas de la biblioteca</string>
     <string name="n3_tools_search">Buscar</string>
     <string name="n3_tools_filters">Filtros</string>
     <string name="n3_tools_categories">Categorías</string>

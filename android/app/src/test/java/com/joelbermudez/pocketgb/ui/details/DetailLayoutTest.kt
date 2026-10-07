@@ -1,5 +1,6 @@
 package com.joelbermudez.pocketgb.ui.details
 
+import com.joelbermudez.pocketgb.library.RomEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,5 +67,13 @@ class DetailLayoutTest {
         val layout = detailLayoutFor(widthDp = 0f, heightDp = 0f, aspectRatio = gb)
         assertFalse(layout.twoColumns)
         assertEquals(0f, layout.artworkWidthDp, tolerance)
+    }
+
+    @Test
+    fun theConsoleOfTheRomGivesTheProportion() {
+        fun rom(name: String) = RomEntry(name, "content://$name", name, name, false, 32768, true, null)
+        assertEquals(gb, rom("Pokemon Red.gb").screenAspectRatio, tolerance)
+        assertEquals(gb, rom("Pokemon Gold.gbc").screenAspectRatio, tolerance)
+        assertEquals(gba, rom("Kirby.gba").screenAspectRatio, tolerance)
     }
 }

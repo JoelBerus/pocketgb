@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -41,6 +42,7 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.library.GRID_MARGIN_DP
 import com.joelbermudez.pocketgb.ui.library.GRID_SPACING_DP
 import com.joelbermudez.pocketgb.ui.library.RailMetrics
+import kotlin.math.floor
 
 /** Cuántas filas muestra el carril cuando pasa a columna por fuente grande (R9). */
 const val RAIL_LARGE_FONT_ROWS = 3
@@ -76,6 +78,9 @@ fun ContinueRail(
             }
         } else {
             val state = rememberLazyListState()
+            // Ancho en px enteros hacia abajo: con densidades fraccionarias la suma de tarjetas y separaciones redondeadas
+            // nunca pasa del ancho de la fila (la última columna no pierde ni un píxel).
+            val cardWidth = with(LocalDensity.current) { floor(metrics.cardWidthDp * density).toDp() }
             // Solo sangra a la izquierda: a la derecha la fila acaba en el margen, como la cuadrícula, así en reposo no
             // asoma un trozo de la siguiente tarjeta; al deslizar, las tarjetas salen por el borde izquierdo.
             LazyRow(
@@ -86,7 +91,7 @@ fun ContinueRail(
                 flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Start),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    ContinueCard(entry, prefs, onOpenDetails, onContinue, metrics, Modifier.width(metrics.cardWidthDp.dp))
+                    ContinueCard(entry, prefs, onOpenDetails, onContinue, metrics, Modifier.width(cardWidth))
                 }
             }
         }

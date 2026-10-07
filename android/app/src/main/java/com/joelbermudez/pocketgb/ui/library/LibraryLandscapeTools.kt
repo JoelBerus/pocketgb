@@ -65,7 +65,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -189,7 +188,6 @@ internal fun LibraryToolbar(
     val density = LocalDensity.current
     var toolbarTop by remember { mutableIntStateOf(0) }
     var toolbarRight by remember { mutableIntStateOf(0) }
-    val toolsLabel = stringResource(R.string.n3_tools_label)
     Box(
         modifier.onGloballyPositioned {
             val bounds = it.boundsInWindow()
@@ -202,10 +200,7 @@ internal fun LibraryToolbar(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 3.dp,
             shadowElevation = 6.dp,
-            modifier = Modifier.testTag("library-tools").semantics {
-                isTraversalGroup = true
-                paneTitle = toolsLabel
-            },
+            modifier = Modifier.testTag("library-tools").semantics { isTraversalGroup = true },
         ) {
             Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 ToolButton(
@@ -245,9 +240,9 @@ internal fun LibraryToolbar(
         if (panel != null) {
             val gap = with(density) { PanelGap.roundToPx() }
             val panelLeft = toolbarRight - with(density) { PanelMaxWidth.roundToPx() }
-            // Del borde superior de la barra hasta debajo del título de sección (o de la barra superior si no se ve).
-            val available = toolbarTop - gap - (tools.panelLimitTop(toolbarTop, panelLeft) + gap)
-            val maxHeight = with(density) { available.toDp() }.coerceAtLeast(PanelMinHeight)
+            // Del borde superior de la barra hasta debajo del título de sección (o de la barra superior si no se ve), en px:
+            // el panel lo convierte con su propia densidad (la ventana emergente puede tener otra).
+            val availablePx = toolbarTop - gap - (tools.panelLimitTop(toolbarTop, panelLeft) + gap)
             val provider = remember(gap) { AbovePositionProvider(gap) }
             Popup(
                 popupPositionProvider = provider,
@@ -256,7 +251,7 @@ internal fun LibraryToolbar(
             ) {
                 LibraryPanelContent(
                     panel = panel,
-                    maxHeight = maxHeight,
+                    maxHeightPx = availablePx,
                     filter = filter,
                     category = category,
                     categories = categories,
@@ -333,7 +328,7 @@ internal fun categoryTag(category: LibraryCategory): String = when (category) {
 @Composable
 private fun LibraryPanelContent(
     panel: LibraryPanel,
-    maxHeight: Dp,
+    maxHeightPx: Int,
     filter: LibraryFilter,
     category: LibraryCategory,
     categories: List<CategoryOption>,
@@ -349,6 +344,7 @@ private fun LibraryPanelContent(
         LibraryPanel.CATEGORIES -> stringResource(R.string.n3_tools_categories)
         LibraryPanel.VIEW -> stringResource(R.string.n3_tools_view)
     }
+    val maxHeight = with(LocalDensity.current) { maxHeightPx.toDp() }.coerceAtLeast(PanelMinHeight)
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,

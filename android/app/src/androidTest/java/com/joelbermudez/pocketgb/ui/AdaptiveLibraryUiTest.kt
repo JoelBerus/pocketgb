@@ -1,14 +1,22 @@
 package com.joelbermudez.pocketgb.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.then
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -17,6 +25,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -73,7 +82,14 @@ class AdaptiveLibraryUiTest {
         prefs.recordPlayed(entry.id, fingerprintOf(entry), at = 100L - i)
     }
 
+    /** Teléfono girado (escalado para caber en el emulador vertical). */
     private val landscape = DpSize(640.dp, 360.dp)
+
+    /**
+     * Más ancho que alto sin escalar (cabe en los 360 dp del emulador vertical): los paneles viven en su propia ventana,
+     * con la densidad real, y así sus medidas coinciden con las de la biblioteca.
+     */
+    private val landscapeUnscaled = DpSize(360.dp, 340.dp)
 
     @Composable
     private fun Library(
@@ -85,7 +101,7 @@ class AdaptiveLibraryUiTest {
         var query by remember { mutableStateOf("") }
         var filter by remember { mutableStateOf(LibraryFilter.ALL) }
         var category by remember { mutableStateOf<LibraryCategory>(LibraryCategory.All) }
-        PocketGBTheme {
+        run {
             LibraryContent(
                 state = LibraryState.Ready(games, "Roms"),
                 prefs = prefs,
@@ -111,11 +127,24 @@ class AdaptiveLibraryUiTest {
         }
     }
 
+    /**
+     * El tema va fuera de `ForcedSize`: `PocketGBTheme` pide la ventana de la actividad y dentro del override el contexto
+     * es un envoltorio.
+     */
     private fun show(size: DpSize? = null, content: @Composable () -> Unit) = compose.setContent {
-        if (size == null) {
-            content()
-        } else {
-            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size)) { content() }
+        PocketGBTheme {
+            // Como `AppScaffold`: las barras del sistema ya se descontaron fuera de la pantalla.
+            val framed: @Composable () -> Unit = {
+                Box(Modifier.fillMaxSize().consumeWindowInsets(WindowInsets.safeDrawing)) { content() }
+            }
+            // Fuente al 100 % fija: el emulador compartido puede tener otra escala del sistema (se vio 1,3) y cambiaría
+            // las columnas que se esperan.
+            val override = if (size == null) {
+                DeviceConfigurationOverride.FontScale(1f)
+            } else {
+                DeviceConfigurationOverride.ForcedSize(size) then DeviceConfigurationOverride.FontScale(1f)
+            }
+            DeviceConfigurationOverride(override) { framed() }
         }
     }
 
@@ -161,8 +190,8 @@ class AdaptiveLibraryUiTest {
         val cards = compose.onAllNodesWithTag("continue-card").fetchSemanticsNodes().map { it.screenRect() }
         val inside = cards.count { it.left >= root.left - 1f && it.right <= root.right + 1f }
         val cut = cards.count { it.left < root.right - 1f && it.right > root.right + 1f }
-        assertEquals("tarjetas enteras = columnas", 4, inside)
-        assertEquals("ninguna tarjeta cortada al borde", 0, cut)
+        assertEquals("tarjetas enteras = columnas (fila $root, tarjetas $cards)", 4, inside)
+        assertEquals("ninguna tarjeta cortada al borde (fila $root, tarjetas $cards)", 0, cut)
     }
 
     // ---- N3b · barra flotante en horizontal ----
@@ -186,7 +215,7 @@ class AdaptiveLibraryUiTest {
 
     @Test
     fun eachToolbarButtonOpensItsPanelUpwardsWithoutCoveringTheSectionTitle() {
-        show(landscape) { Library() }
+        show(landscapeUnscaled) { Library() }
         val toolbar = compose.onNodeWithTag("library-tools").screenRect()
         val header = compose.onNodeWithTag("library-pinned-header").screenRect()
         for (panel in listOf("filters", "categories", "view")) {
@@ -201,27 +230,27 @@ class AdaptiveLibraryUiTest {
 
     @Test
     fun filtersCategoriesAndViewApplyFromTheirPanels() {
-        show(landscape) { Library() }
+        show(landscapeUnscaled) { Library() }
         compose.onNodeWithTag("tools-filters").performClick()
-        compose.onNodeWithTag("panel-filter-GBC").performClick()
+        compose.onNodeWithTag("panel-filter-GBC").performScrollTo().performClick()
         compose.onAllNodesWithTag("library-panel-filters").assertCountEquals(0)
         compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("GBC")
         compose.onAllNodesWithTag("game-card").assertCountEquals(1)
 
         compose.onNodeWithTag("tools-filters").performClick()
-        compose.onNodeWithTag("panel-filter-ALL").performClick()
+        compose.onNodeWithTag("panel-filter-ALL").performScrollTo().performClick()
         compose.onNodeWithTag("tools-categories").performClick()
-        compose.onNodeWithTag("panel-category-folder-Pokémon").performClick()
+        compose.onNodeWithTag("panel-category-folder-Pokémon").performScrollTo().performClick()
         compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Pokémon")
         compose.onAllNodesWithTag("game-card").assertCountEquals(2)
 
         compose.onNodeWithTag("tools-categories").performClick()
-        compose.onNodeWithTag("panel-category-root").performClick()
+        compose.onNodeWithTag("panel-category-root").performScrollTo().performClick()
         compose.onNodeWithTag("library-section-title", useUnmergedTree = true).assertTextEquals("Sin categoría")
         compose.onAllNodesWithTag("game-card").assertCountEquals(2)
 
         compose.onNodeWithTag("tools-view").performClick()
-        compose.onNodeWithTag("panel-layout-LIST").performClick()
+        compose.onNodeWithTag("panel-layout-LIST").performScrollTo().performClick()
         compose.onAllNodesWithTag("game-list-item").assertCountEquals(2)
     }
 
@@ -232,6 +261,8 @@ class AdaptiveLibraryUiTest {
         compose.onNodeWithTag("library-landscape-search").assertIsDisplayed()
         compose.onAllNodesWithTag("library-tools").assertCountEquals(0)
         compose.onNodeWithTag("library-landscape-search").performTextInput("yel")
+        // Con el teclado abierto apenas queda alto para la lista: se cierra para ver el resultado.
+        Espresso.closeSoftKeyboard()
         compose.onAllNodesWithTag("game-list-item").assertCountEquals(1)
         compose.onNodeWithTag("library-search-close").performClick()
         compose.onAllNodesWithTag("library-landscape-search").assertCountEquals(0)
@@ -264,7 +295,7 @@ class AdaptiveLibraryUiTest {
 
     @Composable
     private fun Details(canResume: Boolean = false) {
-        PocketGBTheme {
+        run {
             GameDetailsContent(
                 entry = red,
                 load = DetailsLoad.Loaded(
@@ -309,10 +340,10 @@ class AdaptiveLibraryUiTest {
     @Test
     fun theTechnicalInformationCanBeFolded() {
         show { Details() }
-        compose.onNodeWithTag("game-details-technical-toggle").performClick()
+        compose.onNodeWithTag("game-details-technical-toggle").performScrollTo().performClick()
         compose.onAllNodesWithTag("game-details-technical").assertCountEquals(0)
         compose.onAllNodesWithTag("game-details-fingerprint").assertCountEquals(0)
-        compose.onNodeWithTag("game-details-technical-toggle").performClick()
+        compose.onNodeWithTag("game-details-technical-toggle").performScrollTo().performClick()
         compose.onAllNodesWithTag("game-details-technical").assertCountEquals(1)
     }
 }
