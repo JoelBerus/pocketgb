@@ -7,7 +7,6 @@
     <string name="n3_tools_categories">Categorías</string>
     <string name="n3_tools_view">Vista y orden</string>
     <string name="n3_tools_filter_state">Filtro: %1$s</string>
-    <string name="n3_tools_category_state">Categoría: %1$s</string>
     <string name="n3_tools_view_state">%1$s, por %2$s</string>
     <string name="n3_panel_view">Vista</string>
     <string name="n3_panel_sort">Orden</string>
@@ -17,12 +16,7 @@
     <string name="n3_category_all">Todas</string>
     <string name="n3_category_root">Sin categoría</string>
     <string name="n3_category_option">%1$s (%2$d)</string>
-    <string name="n3_menu_category">Categoría</string>
     <string name="n3_section_with_filter">%1$s · %2$s</string>
-    <string name="n3_no_games_category_title">No hay juegos en «%1$s»</string>
-    <string name="n3_no_games_category_message">Prueba con otra categoría o con otro filtro.</string>
-    <string name="n3_show_all_categories">Ver todos los juegos</string>
-    <string name="n3_no_results_category">No hay coincidencias en «%1$s». Puede que el juego esté en otra categoría.</string>
 
     <!-- Búsqueda en horizontal -->
     <string name="n3_search_placeholder">Buscar juegos</string>

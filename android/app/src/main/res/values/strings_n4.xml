@@ -11,9 +11,8 @@
     <string name="n4_see_all">Ver todo</string>
     <string name="n4_see_all_description">Ver todo %1$s, %2$s</string>
     <string name="n4_see_all_favorites_description">Ver todos los favoritos, %1$s</string>
-    <string name="n4_shelf_heading">%1$s, %2$s</string>
     <string name="n4_shelf_pinned">Fijada arriba</string>
-    <string name="n4_open_category_description">Abrir %1$s, %2$d juegos</string>
+    <string name="n4_open_category_description">Abrir %1$s, %2$s</string>
 
     <!-- Pantalla de categoría -->
     <string name="n4_breadcrumb_root">Biblioteca</string>

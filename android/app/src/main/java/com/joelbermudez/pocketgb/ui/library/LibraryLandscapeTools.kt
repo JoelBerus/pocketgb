@@ -59,6 +59,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -490,7 +491,11 @@ private fun LibraryPanelContent(
                         categories.forEach { option ->
                             CategoryChip(
                                 stringResource(R.string.n3_category_option, categoryTitle(option.category), option.count),
-                                stringResource(R.string.n4_open_category_description, categoryTitle(option.category), option.count),
+                                stringResource(
+                                    R.string.n4_open_category_description,
+                                    categoryTitle(option.category),
+                                    pluralStringResource(R.plurals.n4_games, option.count, option.count),
+                                ),
                                 "panel-category-${categoryTag(option.category)}",
                             ) { onOpenCategory(option.category) }
                         }
