@@ -47,3 +47,18 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.
+
+**Siguiente nivel (A9 y N1–N9, 2026-10-07)**: plan en [N-README](N-README.md) (auditado: [Opus](../auditorias/N0-plan-opus.md), [DeepSeek](../auditorias/N0-plan-deepseek.md), [respuesta](../auditorias/N0-plan-respuesta.md)). Rama de integración `siguiente-nivel`.
+
+| Hito | Estado |
+|---|---|
+| A9 · Paridad Android (renombrar, continuación exacta) | ⏳ ola 1 |
+| N1 · Identidad y carpetas | pendiente |
+| N2 · Controles | ⏳ ola 1 |
+| N3 · Biblioteca y detalle adaptables | pendiente |
+| N4 · Categorías, etiquetas e inicio | pendiente |
+| N5 · Portadas | pendiente |
+| N6 · Momentos y progreso | ⏳ ola 1 (lector Pokémon en C) |
+| N7 · Partidas que viajan | pendiente |
+| N8 · GBA en Android | pendiente |
+| N9 · Carpetas de Joel, guía y cierre | pendiente |

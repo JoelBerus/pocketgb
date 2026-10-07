@@ -2,7 +2,7 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-10-06 · PR abierta: https://github.com/JoelBerus/pocketgb/pull/18 · rama `cierre-integracion` lista para la PR a `main`: D8.1, GBA G0–G9, M9 UI del cable y Android A1–A8, cada bloque con auditoría Opus (y DeepSeek en A6/A7) respondida; auditoría conjunta de cierre APROBAR CON CAMBIOS (documental) respondida ([CIERRE-opus](auditorias/CIERRE-opus.md), [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)). Fusiones en la rama: `4d085c9` D8.1, `94b53fa` GBA, `ad446d9` M9, `70592b2` Android. Lo único que falta son las pruebas en dispositivo de Joel y sus decisiones ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)).
+**Actualizado:** 2026-10-07 · PR #18 fusionada en `main` (`51416b4`). Nueva fase **«siguiente nivel»** (A9 y N1–N9) en la rama `siguiente-nivel`: plan [N-README](hitos/N-README.md) auditado por Opus y DeepSeek (APROBAR CON CAMBIOS, respondido en [N0-plan-respuesta](auditorias/N0-plan-respuesta.md)) con las decisiones ND1–ND13 de Joel.
 
 
 ## Hecho
@@ -31,10 +31,9 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-1. **Joel:** hacer las pruebas de [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md) (iPhone I1–I10 y Android A1–A18).
-2. **Joel:** resolver las decisiones pendientes (tabla «Decisiones provisionales pendientes de ratificar por Joel», abajo, y [PRUEBAS-JOEL](PRUEBAS-JOEL.md) §Decisiones pendientes).
-3. **Joel:** aprobar la PR de `cierre-integracion` a `main`.
-4. Después: nada abierto salvo lo documentado en «Deuda y pendientes conocidos».
+1. **Ola 1 de [N-README](hitos/N-README.md) §5:** N2 iOS (controles), A9 Android (renombrar y continuación exacta), N2 Android (controles) y lector de progreso Pokémon en C. Cada lote en su worktree desde `siguiente-nivel`, con auditoría Opus antes de fusionar.
+2. **Joel:** las pruebas de partidas de [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md) (Android A6, A8, A9; iPhone I1) antes de N7.
+3. Ratificar al cerrar cada hito las decisiones provisionales que el plan toca (J8, K9, K10, R14, G7-3; ver N-README §2).
 
 ## Deuda y pendientes conocidos
 - `make -C gba test` completo solo corre en Linux/CI (el Mac carece de `ld.lld` y de los ROMs de SingleStepTests); en el Mac se ejecuta `--unit`, ASan manual y los homebrew.
