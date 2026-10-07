@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PocketGB</string>
+
+    <!-- Pausa -->
+    <string name="pause_saving">Guardando…</string>
+    <string name="opening_game">Abriendo el juego…</string>
+
+    <!-- Estados -->
+    <string name="states_title">Estados guardados</string>
+    <string name="states_back">Volver al menú de pausa</string>
+    <string name="state_auto">Automático</string>
+    <string name="state_rescue">Rescate</string>
+    <string name="state_load_body_rescue">Es el estado que se guardó al salir sin poder guardar la partida. Antes se guardará el estado actual en Automático.</string>
+    <string name="state_slot">Ranura %1$d</string>
+    <string name="state_slot_empty">Vacía</string>
+    <string name="state_corrupt">Dañado</string>
+    <string name="state_save">Guardar</string>
+    <string name="state_load">Cargar</string>
+    <string name="state_delete">Eliminar</string>
+    <string name="state_preview">Captura de %1$s</string>
+    <string name="state_delete_title">¿Eliminar %1$s?</string>
+    <string name="state_delete_body">No se puede deshacer.</string>
+    <string name="state_delete_confirm">Eliminar</string>
+    <string name="dialog_cancel">Cancelar</string>
+
+    <!-- Avisos breves -->
+    <string name="notice_state_saved">%1$s guardada</string>
+    <string name="notice_state_loaded">%1$s cargada</string>
+    <string name="notice_state_deleted">%1$s eliminada</string>
+    <string name="notice_state_failed">No se pudo completar la operación: %1$s</string>
+    <string name="notice_mirror_trouble">No se pudo actualizar el .sav junto al juego. La partida está a salvo en el teléfono y se reintentará.</string>
+    <string name="notice_mirror_external">El .sav junto al juego cambió por fuera: se conservó una copia y ya no se actualizará en esta partida.</string>
+    <string name="notice_mirror_name">La carpeta cambió el nombre del .sav: ya no se copia junto al juego.</string>
+    <string name="notice_rescue_state">Hay un estado de rescate de una salida en la que no se pudo guardar la partida (Estados › Rescate).</string>
+    <string name="save_problem_indicator">Guardado pendiente: tu progreso aún no está a salvo en el teléfono</string>
+    <string name="notice_save_pending">El guardado en el teléfono quedó pendiente; se reintentará.</string>
+
+    <!-- Fallo de guardado local al salir -->
+    <string name="exit_failed_title">No se pudo guardar la partida en este teléfono</string>
+    <string name="exit_failed_cause">Causa: %1$s</string>
+    <string name="exit_failed_hint">Tu progreso sigue en el juego. Reintenta, sigue jugando o sal sabiendo que se perderá lo no guardado.</string>
+    <string name="exit_failed_retry">Reintentar</string>
+    <string name="exit_failed_keep">Seguir jugando</string>
+    <string name="exit_failed_leave">Salir sin guardar…</string>
+    <string name="exit_risk_title">¿Salir sin guardar?</string>
+    <string name="exit_risk_body">Se perderá el progreso desde el último guardado. Antes se intentará dejar un estado de rescate (Estados › Rescate); nunca pisa a los demás.</string>
+    <string name="exit_risk_confirm">Salir sin guardar</string>
+
+    <!-- Avisos al abrir (SaveLoadWarning) -->
+    <string name="warning_title">Aviso sobre tu partida</string>
+    <string name="warning_ok">Entendido</string>
+    <string name="warning_local_wrong_size">La partida guardada en este teléfono tiene un tamaño que este juego no acepta. No se ha modificado y en esta sesión no se guardará nada.</string>
+    <string name="warning_mirror_wrong_size_only">El .sav junto al juego tiene un tamaño que este juego no acepta. No se ha modificado y en esta sesión no se guardará nada.</string>
+    <string name="warning_mirror_ignored">El .sav junto al juego tiene un tamaño incorrecto y se ha ignorado. Se usa la partida del teléfono y esa copia no se tocará.</string>
+    <string name="warning_local_quarantined">La partida del teléfono tenía un tamaño incorrecto: se apartó en un lugar seguro y se usa el .sav junto al juego.</string>
+    <string name="warning_mirror_unavailable">El .sav junto al juego existe pero no se pudo leer (¿proveedor en la nube sin conexión?). Se usa la partida del teléfono y esa copia no se tocará.</string>
+    <string name="warning_mirror_shared">Otro juego de la carpeta comparte el nombre del .sav, así que no se copiará junto al juego para no mezclar partidas. Tu partida se guarda en el teléfono.</string>
+    <string name="warning_mirror_read_only">La carpeta solo permite lectura: se importó el .sav si existía, pero no se escribirá. Tu partida se guarda en el teléfono.</string>
+    <string name="warning_unreadable">No se pudo leer la partida local: %1$s</string>
+
+    <!-- Errores al abrir -->
+    <string name="open_failed_title">No se puede abrir el juego</string>
+    <string name="open_failed_ok">Entendido</string>
+    <string name="open_error_folder_missing">La carpeta o el archivo ya no existe. Revisa la carpeta de juegos en Ajustes › Biblioteca.</string>
+    <string name="open_error_permission">PocketGB ya no tiene acceso a la carpeta. Vuelve a elegirla en Ajustes › Biblioteca.</string>
+    <string name="open_error_remote">El proveedor aún no tiene el archivo disponible. Reintenta con conexión.</string>
+    <string name="open_error_too_large">El archivo supera los 8 MiB, así que no es un ROM de Game Boy.</string>
+    <string name="open_error_rom">El núcleo rechazó el ROM: %1$s</string>
+    <string name="open_error_mirror_not_downloaded">Hay un .sav junto al juego pero no se pudo leer y no hay partida en el teléfono. Para no empezar de cero ni pisarla, el juego no se abre. Reintenta con conexión.</string>
+    <string name="open_error_save_pending">Guardado pendiente de esa partida: la sesión anterior aún está terminando de guardarla. Espera unos segundos e inténtalo de nuevo.</string>
+    <string name="open_error_save_incompatible">La partida guardada no es compatible con este juego.</string>
+    <string name="open_error_local_save">No se pudo leer o preparar la partida local, así que el juego no se abre para no pisarla. %1$s</string>
+    <string name="open_error_unreadable">No se pudo leer el archivo.</string>
+    <string name="open_error_core">Fallo inesperado: %1$s</string>
+
+    <!-- Ajustes › Partidas -->
+    <string name="saves_title">Partidas</string>
+    <string name="saves_empty_title">Todavía no hay partidas</string>
+    <string name="saves_empty_body">Cuando un juego guarde, aparecerá aquí con sus copias de seguridad.</string>
+    <string name="saves_backups">Copias de seguridad</string>
+    <string name="saves_no_backups">Sin copias de seguridad todavía.</string>
+    <string name="saves_backup_item">Copia %1$d · %2$s</string>
+    <string name="saves_backup_unknown_date">fecha desconocida</string>
+    <string name="saves_restore">Restaurar</string>
+    <string name="saves_restore_disabled_open">No se puede restaurar mientras el juego está abierto.</string>
+    <string name="saves_restore_title">¿Restaurar la copia %1$d?</string>
+    <string name="saves_restore_body">La partida actual se guardará antes como copia de seguridad, así que no se pierde nada.</string>
+    <string name="saves_restore_confirm">Restaurar</string>
+    <string name="saves_restored">Copia restaurada</string>
+    <string name="saves_restore_failed">No se pudo restaurar: %1$s</string>
+    <string name="saves_unknown_game">Juego sin título (%1$s)</string>
+    <string name="saves_back">Volver</string>
+</resources>

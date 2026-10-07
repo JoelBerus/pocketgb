@@ -85,7 +85,12 @@ struct RootView: View {
         .alert(state.alertTitle ?? "PocketGB",
                isPresented: Binding(get: { state.alertMessage != nil },
                                     set: { if !$0 { state.alertMessage = nil; state.alertTitle = nil } })) {
-            Button("OK", role: .cancel) {}
+            if state.resumeFallbackEntry != nil {
+                Button("Jugar desde el inicio") { state.playFromBeginningAfterResumeError() }
+                Button("Cancelar", role: .cancel) { state.resumeFallbackEntry = nil }
+            } else {
+                Button("OK", role: .cancel) {}
+            }
         } message: {
             Text(state.alertMessage ?? "")
         }
@@ -108,7 +113,7 @@ private struct UnknownScreenView: View {
 
 #if DEBUG
 /// `-contentSizeCategory accessibility5`: Dynamic Type fijo para la captura `library-ax5`.
-private struct DebugDynamicType: ViewModifier {
+struct DebugDynamicType: ViewModifier {
     func body(content: Content) -> some View {
         if DebugArguments.value("-contentSizeCategory") == "accessibility5" {
             content.dynamicTypeSize(.accessibility5)

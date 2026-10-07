@@ -42,7 +42,14 @@ Resources/  Assets.xcassets, Info.plist
   - Los controles van **superpuestos** en los laterales, encima de la imagen si se solapan.
 - **Vertical:** imagen arriba (ancho completo, 10:9), controles debajo sobre fondo sólido y con opacidad 1.0.
 - `prefersHomeIndicatorAutoHidden = true` y `preferredScreenEdgesDeferringSystemGestures = .all` mientras se juega, para que un toque en el borde no abra el Centro de Control.
-- El renderizado usa `MTLSamplerState` con `minFilter = magFilter = .nearest` y una textura `.rgba8Unorm` de 160×144, actualizada con `replace(region:)` desde el último buffer listo.
+- El renderizado usa `MTLSamplerState` con `minFilter = magFilter = .nearest` y una textura `.rgba8Unorm` **del tamaño del frame de la consola** (160×144 en GB/GBC, 240×160 en GBA; el shader no depende del tamaño), actualizada con `replace(region:)` desde el último buffer listo.
+
+### Game Boy Advance (G7–G8)
+- La imagen es 3:2 (240×160). Escalado entero, «Llenar» y la vista vertical siguen las mismas reglas con relación 3:2 en vez de 10:9.
+- **L y R**: píldoras táctiles (92×40 pt, área táctil ≥ 44 pt) con posiciones por defecto propias por orientación (arriba a los lados; en vertical sin pisar el menú ni A/B/cruceta); arrastrables y redimensionables en el editor. El mando físico los mapea a los hombros izquierdo/derecho. La máscara de botones es de 16 bits; el núcleo GB descarta los bits de L/R.
+- **Ajustes por juego (solo GBA):** tipo de partida (detectado / sin partida / SRAM 32 KiB / Flash 64 / Flash 128 / EEPROM 512 B / 8 KiB), reloj (detectado / con / sin) y BIOS (Global —la tuya si existe— / Emulada). Se validan contra la partida guardada: si el tipo forzado no coincide con el `.sav`, no se sobrescribe (regla dura 6) y se avisa. Un save state de otra configuración se rechaza como «estado de otra configuración», no como dañado.
+- **BIOS opcional:** `gba_bios.bin` (16 KiB, volcado propio de Joel) en la raíz de la carpeta de la biblioteca; se valida por SHA-256 y se informa en Ajustes › Emulación. Sin ella se usa la HLE del núcleo. Nunca se incluye una BIOS en el repo ni en la app ([08](08-roms-legal.md)).
+- Audio: `sample_rate` 48 kHz, mismo anillo SPSC y pacing guiado por audio que GB.
 
 ## Controles translúcidos (requisito explícito de Joel)
 Una sola `UIView` (`ControlsOverlayView`) con `isMultipleTouchEnabled = true` gestiona **todos** los toques. No se usan `UIButton` ni gestos de SwiftUI, porque no permiten deslizar entre botones ni pulsar A y B a la vez de forma fiable.
@@ -107,6 +114,15 @@ Android equivalente: [05](05-android-spec.md) §Biblioteca.
 4. Un tamaño incorrecto no se carga: se muestra un error y el archivo no se toca.
 
 **Restaurar:** Ajustes › Partidas lista los backups con fecha y permite restaurar uno. Antes de restaurar, se crea un backup de la partida actual.
+
+## Cable link virtual (M9)
+Dos juegos de Game Boy en el mismo iPhone, unidos por el cable de `core/src/link.c` (API `gb_link_*`, [03-core-spec](03-core-spec.md) §Cable link virtual). Plan y decisiones: [hitos/M9-ios-plan.md](hitos/M9-ios-plan.md); UI: [diseno/SPEC.md](diseno/SPEC.md) §10.6.
+- **Motor.** Se reutiliza `EmulatorSession` (hilo, pacing por audio, pausa): el cable le llega como un `ConsoleCore` compuesto, `LinkedPair`, que es el único dueño de los dos `CoreBridge` y de `gb_link*`. `LinkCable` retiene los dos núcleos mientras están conectados, así que ningún `gb_destroy` puede ejecutarse con la instancia conectada; `shutdown()` (el último paso del hilo de emulación) desconecta antes de destruir. `LinkSession` (`@MainActor @Observable`) es la fachada de la interfaz: títulos, lado activo, `peerFrames`, rechazos y avisos; no tiene hilo propio.
+- **Un solo juego activo.** El lado activo es el que se ve, se oye y recibe los botones (táctiles y del mando); `LinkedPair` suelta los botones del otro y drena su audio en cada frame (si no, el anillo del APU lleno descartaría lo nuevo y al cambiar sonaría audio viejo). La miniatura pinta el framebuffer del otro lado desde `peerFrames`.
+- **Partidas (regla dura 6).** Cada juego guarda su `.sav` con **su propia `SRAMPersistence`** (la misma ruta de siempre: debounce de 1 s, red de 60 s, flush síncrono en pausa, background, memoria baja y salida, escritura atómica con cinco backups y espejo junto al ROM). `flushAll` no cortocircuita: si falla un lado, el otro se guarda igual. `whenMirrorIdle` espera a los dos espejos.
+- **Rechazos antes de arrancar:** un `.gba`; el mismo ROM con batería dos veces (compartirían `.sav`, backups y espejo; sin batería se permite); un juego con batería que no puede guardar (`.localWrongSize`, `.mirrorWrongSizeOnly`, `.unreadable`) porque un intercambio guardado en un solo lado perdería un Pokémon; una partida de iCloud sin descargar y sin copia local. Si el primer juego ya instaló su espejo cuando el segundo se rechaza, no pasa nada: es lo que haría abrirlo solo, con backup. Los avisos no bloqueantes de los dos juegos se juntan en una alerta.
+- **Sin save states** (tampoco el automático al salir): cargar un estado reescribe la SRAM de un lado y rompe el protocolo con el otro. `AppState.stateStore` queda en `nil`; los estados que ya tenía cada juego no se tocan. Al salir, `didRestoreSave` de los dos juegos (D8.1); al abrir, si alguno tiene continuación válida se avisa.
+- **Riesgo conocido.** Si iOS mata la app entre el guardado de un lado y el del otro, puede quedar un lado con el intercambio y el otro sin él, igual que al tirar del cable de verdad. Lo mitigan los cinco backups por juego.
 
 ## Save states (M7)
 4 slots por juego más un slot "auto" al salir. Se guardan en `Application Support/States/` con `AtomicFile`. Un save state **nunca** sustituye a la SRAM: al cargar un estado, la SRAM del estado pasa a ser la actual y se guarda con la ruta normal, con su backup.

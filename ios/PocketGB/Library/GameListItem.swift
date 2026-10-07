@@ -11,7 +11,7 @@ struct GameListItem: View {
         HStack(spacing: PocketSpacing.sm) {
             thumbnail
             VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
-                Text(entry.title)
+                Text(state.libraryPrefs.displayTitle(entry))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(entry.problem == nil ? .primary : .secondary)
                     .lineLimit(2)
@@ -67,16 +67,16 @@ struct GameListItem: View {
     }
 }
 
-/// Chip GB/GBC (SPEC §8, `ConsoleChip`): texto, nunca solo color.
+/// Chip GB/GBC/GBA (SPEC §8, `ConsoleChip`): texto, nunca solo color.
 struct ConsoleChip: View {
-    let isColor: Bool
+    let badge: ConsoleBadge
 
     var body: some View {
-        Text(isColor ? "GBC" : "GB")
+        Text(badge.label)
             .font(.caption2.monospaced().weight(.semibold))
             .frame(minWidth: 34)
             .padding(.vertical, 2)
             .overlay(Capsule().strokeBorder(.secondary.opacity(0.6), lineWidth: 1))
-            .accessibilityLabel(isColor ? "Game Boy Color" : "Game Boy")
+            .accessibilityLabel(badge.name)
     }
 }

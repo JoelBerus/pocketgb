@@ -30,6 +30,10 @@ enum DebugArguments {
     static var demoFolderState: String? { value("-demoFolderState") }
     /// `-demoLibrary empty|standard|cloud|errors`.
     static var demoLibrary: String? { value("-demoLibrary") }
+    /// `-linkROM <ruta>`: con `-rom`, abre los dos ROMs unidos por el cable link (M9).
+    static var linkROM: String? { value("-linkROM") }
+    /// `-demoLinkError same-game`: alerta de rechazo del cable (captura `link-open-refused`).
+    static var demoLinkError: String? { value("-demoLinkError") }
     /// `-reduceMotion`: fuerza la política interna de motion (sin zoom).
     static var reduceMotion: Bool { arguments.contains("-reduceMotion") }
     /// `-reduceTransparency`: controles con superficie sólida (captura de accesibilidad).

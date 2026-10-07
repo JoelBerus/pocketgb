@@ -39,17 +39,20 @@ struct ControlsSettingsView: View {
                 Toggle("Háptica", isOn: binding(\.haptics))
             }
             Section {
-                ForEach(ControlsOrientation.allCases, id: \.self) { orientation in
-                    Button("Restablecer disposición \(orientation.title.lowercased())",
-                           systemImage: "arrow.counterclockwise") {
-                        gameplay.resetLayout(orientation)
+                ForEach([false, true], id: \.self) { advance in
+                    ForEach(ControlsOrientation.allCases, id: \.self) { orientation in
+                        Button("Restablecer \(advance ? "GBA" : "Game Boy") \(orientation.title.lowercased())",
+                               systemImage: "arrow.counterclockwise") {
+                            gameplay.resetLayout(orientation, shoulders: advance)
+                        }
+                        .disabled(gameplay.data.layout(orientation, shoulders: advance)
+                                  == .defaults(orientation, shoulders: advance))
                     }
-                    .disabled(gameplay.data.layout(orientation) == .defaults(orientation))
                 }
             } header: {
                 Text("Disposición")
             } footer: {
-                Text("Para mover los controles, abre el menú del juego (…) y elige “Personalizar controles”. Vertical y horizontal se guardan por separado.")
+                Text("Para mover los controles, abre el menú del juego (…) y elige “Personalizar controles”. Cada consola y cada orientación se guardan por separado.")
             }
         }
         .scrollContentBackground(.hidden)

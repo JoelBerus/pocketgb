@@ -14,7 +14,7 @@ struct GameCard: View {
                 .opacity(entry.problem == nil ? 1 : 0.45)
                 .overlay(alignment: .topTrailing) { statusBadge }
                 .matchedTransitionSource(id: entry.id, in: zoom)
-            Text(entry.title)
+            Text(state.libraryPrefs.displayTitle(entry))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(entry.problem == nil ? .primary : .secondary)
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
@@ -61,7 +61,7 @@ struct GameMetaLine: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: PocketSpacing.xxs))
             : AnyLayout(HStackLayout(spacing: PocketSpacing.xs))
         layout {
-            ConsoleChip(isColor: entry.isColor)
+            ConsoleChip(badge: entry.badge)
             if state.libraryPrefs.isFavorite(entry) {
                 Image(systemName: "star.fill")
                     .font(.caption)
@@ -133,7 +133,7 @@ enum GameStatus {
 enum GameAccessibility {
     @MainActor
     static func label(_ entry: RomEntry, prefs: LibraryPreferences) -> String {
-        var parts = [entry.title, entry.isColor ? "Game Boy Color" : "Game Boy"]
+        var parts = [prefs.displayTitle(entry), entry.badge.name]
         if prefs.isFavorite(entry) { parts.append("Favorito") }
         if entry.isNew { parts.append("Nuevo") }
         if let problem = entry.problem {

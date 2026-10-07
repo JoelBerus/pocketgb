@@ -23,6 +23,7 @@ enum DebugScreen: String, CaseIterable {
     case libraryGrid = "library-grid"
     case libraryList = "library-list"
     case libraryContinue = "library-continue"
+    case libraryContinueReduceMotion = "library-continue-reduce-motion"
     case favorites
     case searchActive = "search-active"
     case searchResults = "search-results"
@@ -54,10 +55,26 @@ enum DebugScreen: String, CaseIterable {
     case settingsStorage = "settings-storage"
     case settingsSaves = "settings-saves"
     case gameSettings = "game-settings"
+    case gameSettingsGBA = "game-settings-gba"
+    case customizeControlsGBAPortrait = "customize-controls-gba-portrait"
+    case customizeControlsGBALandscape = "customize-controls-gba-landscape"
+    // G8-H4: las mismas pantallas con Dynamic Type accessibility5.
+    case gameSettingsGBAAX5 = "game-settings-gba-ax5"
+    case customizeControlsGBAPortraitAX5 = "customize-controls-gba-portrait-ax5"
     case gameplayController = "gameplay-controller"
     case gameplayFastForward = "gameplay-fast-forward"
     case gameplayPortraitArrows = "gameplay-portrait-arrows"
     case gameplayLandscapeArrows = "gameplay-landscape-arrows"
+    // M9: cable link virtual (las de gameplay abren además `-rom` y `-linkROM`)
+    case gameplayLinkPortrait = "gameplay-link-portrait"
+    case gameplayLinkLandscape = "gameplay-link-landscape"
+    case gameplayLinkSwitched = "gameplay-link-switched"
+    case gameplayLinkPause = "gameplay-link-pause"
+    case gameplayLinkReduceTransparency = "gameplay-link-reduce-transparency"
+    case linkPartnerPicker = "link-partner-picker"
+    case linkPartnerPickerAX5 = "link-partner-picker-ax5"
+    case linkOpenRefused = "link-open-refused"
+    case linkContinueWarning = "link-continue-warning"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -135,6 +152,13 @@ enum DebugScreenRouter {
                 state.libraryPath = [.details(id: dmg.id, source: dmg.id)]
                 state.gameSettingsEntry = dmg
             }
+        case .gameSettingsGBA, .gameSettingsGBAAX5:
+            // Un juego de Game Boy Advance con el tipo de partida forzado.
+            if let gba = standard.first(where: { $0.badge == .gba }) {
+                state.gameplay.setOverrides(GameOverrides(gbaSaveType: 3), for: gba.id)
+                state.libraryPath = [.details(id: gba.id, source: gba.id)]
+                state.gameSettingsEntry = gba
+            }
         case .settingsControls:
             state.selectedTab = .settings
             state.settingsPath = [.controls]
@@ -143,9 +167,31 @@ enum DebugScreenRouter {
             state.settingsPath = [.display]
         case .gameplayPortraitArrows, .gameplayLandscapeArrows, .gameplayController, .gameplayFastForward:
             break
+        case .gameplayLinkPortrait, .gameplayLinkLandscape, .gameplayLinkSwitched, .gameplayLinkPause,
+             .gameplayLinkReduceTransparency:
+            break   // se aplican al abrir el cable (`afterGameOpened`)
+        case .linkPartnerPicker, .linkPartnerPickerAX5:
+            // Detalle de dmg-acid2 y, encima, el selector de pareja (patrón de `gameSettings`).
+            state.libraryPath = [.details(id: demoWithArtwork, source: demoWithArtwork)]
+            state.linkPartnerSource = standard.first { $0.id == demoWithArtwork }
+        case .linkOpenRefused:
+            state.selectedTab = .library
+            if DebugArguments.demoLinkError == "same-game" {
+                // El mismo texto que muestra la app al rechazar el cable (patrón de `saveDataError`).
+                let refusal = LinkSession.Refusal.sameGame(title: "DMG-ACID2")
+                state.alertTitle = refusal.title
+                state.alertMessage = refusal.message
+            }
+        case .linkContinueWarning:
+            state.libraryPath = [.details(id: demoWithArtwork, source: demoWithArtwork)]
+            if let first = standard.first(where: { $0.id == demoWithArtwork }),
+               let second = standard.first(where: { $0.id == demoFavorite }) {
+                state.linkContinueRequest = LinkRequest(first: first, second: second)
+            }
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
-        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize:
+        case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
+             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:
@@ -172,6 +218,12 @@ enum DebugScreenRouter {
                 try? await Task.sleep(for: .seconds(1))
                 state.cycleSpeed()
                 state.cycleSpeed()   // ×4
+            }
+        case .gameplayLinkSwitched:
+            Task { @MainActor in
+                // El toast dura 2,5 s y la captura llega ~3 s tras el arranque: se cambia a los 2 s.
+                try? await Task.sleep(for: .seconds(2))
+                state.switchLinkSide()
             }
         case .saveStates, .loadStateConfirm, .replaceStateConfirm:
             Task { @MainActor in
@@ -323,6 +375,7 @@ enum DebugScreenRouter {
         entry("rtc3test.gb", "RTC3TEST", color: false, sub: "Pruebas"),
         entry("homebrew-con-un-titulo-muy-largo.gbc", "Un homebrew con un título muy largo para probar el truncado",
               color: true, sub: "Pruebas"),
+        entry("arm.gba", "jsmolka ARM", color: false, sub: "Pruebas"),
     ]
 
     nonisolated private static let errors: [RomEntry] = [

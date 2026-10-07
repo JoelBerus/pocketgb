@@ -15,10 +15,10 @@ struct StateSRAMTests {
 
     /// ROM sintético MBC1 + RAM + batería que escribe `value` en $A000 y se queda en bucle;
     /// con `counting`, incrementa ($A000) sin parar (la SRAM cambia mientras corre).
-    static func rom(title: String, value: UInt8, counting: Bool = false) -> Data {
+    static func rom(title: String, value: UInt8, counting: Bool = false, rtc: Bool = false) -> Data {
         var rom = LibraryScannerTests.rom(title: title)
         rom[0x100] = 0xC3; rom[0x101] = 0x50; rom[0x102] = 0x01   // JP $0150
-        rom[0x147] = 0x03   // MBC1 + RAM + batería
+        rom[0x147] = rtc ? 0x10 : 0x03   // MBC1 + RAM + batería (o MBC3 + RTC + RAM + batería)
         rom[0x149] = 0x02   // 8 KiB
         let program: [UInt8] = [0x3E, 0x0A, 0xEA, 0x00, 0x00,   // habilitar RAM
                                 0x3E, value, 0xEA, 0x00, 0xA0,  // ($A000) = value
@@ -138,5 +138,204 @@ struct StateSRAMTests {
         session.start()
         #expect(throws: EmulatorSession.StateError.notPaused) { _ = try session.saveState() }
         session.stop()
+    }
+
+    @Test func automaticStateMustExistBeValidAndNotPredateTheSave() throws {
+        let states = StateStore(directory: dir.appendingPathComponent("states", isDirectory: true))
+        #expect(states.automaticEntry(newerThan: nil) == nil)
+
+        try states.save(Data("PGBS-valid".utf8), thumbnail: nil, to: .auto)
+        let entry = try #require(states.automaticEntry(newerThan: nil))
+        #expect(!entry.corrupt)
+        #expect(states.automaticEntry(newerThan: entry.date.addingTimeInterval(-1)) != nil)
+        #expect(states.automaticEntry(newerThan: entry.date.addingTimeInterval(1)) == nil)
+
+        try states.save(Data("ROTO".utf8), thumbnail: nil, to: .auto)
+        #expect(states.automaticEntry(newerThan: nil) == nil)
+    }
+
+    /// D81-H9: la consulta de “Continuar” no lee la miniatura PNG; `entries()` sí.
+    @Test func automaticEntryDoesNotReadTheThumbnail() throws {
+        let states = StateStore(directory: dir.appendingPathComponent("states", isDirectory: true))
+        try states.save(Data("PGBS-valid".utf8), thumbnail: Data("png".utf8), to: .auto)
+        #expect(try #require(states.automaticEntry(newerThan: nil)).thumbnail == nil)
+        #expect(try #require(states.entries()[.auto]).thumbnail == Data("png".utf8))
+    }
+
+    /// Caso legítimo: `closeGame` vacía la SRAM antes de guardar el estado automático, así
+    /// que su SRAM coincide con la partida en disco y la reanudación se acepta sin reescribirla.
+    @Test func startRestoringResumesWhenStateSRAMMatchesTheSave() throws {
+        let rom = Self.rom(title: "REANUDAR", value: 0x11)
+        let (state, x) = try automaticState(rom: rom, savesDirectory: dir)
+        let store = SaveStore(directory: dir, fingerprint: try CoreBridge().loadROM(rom, unixTime: 0).fingerprint)
+        let backupsBefore = store.backups().count
+
+        let writes = MirrorWrites()
+        let mirror = try mirrorFile(x, newer: false)
+        let resumed = try EmulatorSession(romData: rom, savesDirectory: dir, mirror: mirror,
+                                          mirrorSnapshot: mirror.snapshot(),
+                                          mirrorWriter: { try writes.record($0, to: mirror) },
+                                          onAudioInterrupted: {})
+        try resumed.start(restoring: state)
+        resumed.pause()
+        #expect(try store.load() == x)
+        #expect(store.backups().count == backupsBefore)
+        #expect(writes.count == 0)   // D81-H7: una reanudación idéntica no reescribe el espejo
+        resumed.stop()
+    }
+
+    private func mirrorFile(_ data: Data?, newer: Bool) throws -> SaveMirror {
+        let mirror = SaveMirror(url: dir.appendingPathComponent("Juegos/juego.sav"))
+        try FileManager.default.createDirectory(at: mirror.url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        if let data {
+            try data.write(to: mirror.url)
+            if newer {
+                try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(120)],
+                                                      ofItemAtPath: mirror.url.path)
+            }
+        }
+        return mirror
+    }
+
+    /// Crea un auto-estado con SRAM X en `savesDirectory` y devuelve el estado y X.
+    private func automaticState(rom: Data, savesDirectory: URL) throws -> (state: Data, x: Data) {
+        try FileManager.default.createDirectory(at: savesDirectory, withIntermediateDirectories: true)
+        let s = try EmulatorSession(romData: rom, savesDirectory: savesDirectory, onAudioInterrupted: {})
+        s.start(); s.pause()
+        let store = SaveStore(directory: savesDirectory, fingerprint: s.info.fingerprint)
+        let x = try #require(try store.load())
+        let state = try s.saveState().state
+        s.stop()
+        return (state, x)
+    }
+
+    private func externalSave(_ x: Data) -> Data {
+        var m = x
+        m[1] = 0x77
+        return m
+    }
+
+    /// D81-H1 (a): el espejo es más nuevo que la copia local; el auto-estado lleva la SRAM vieja.
+    @Test func newerMirrorRejectsAutomaticStateWithoutTouchingAnySave() throws {
+        let rom = Self.rom(title: "ESPEJO", value: 0x11)
+        let (state, x) = try automaticState(rom: rom, savesDirectory: dir)
+        let external = externalSave(x)
+        let mirror = try mirrorFile(external, newer: true)
+        let mirrorBefore = try Data(contentsOf: mirror.url)
+
+        let writes = MirrorWrites()
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, mirror: mirror,
+                                          mirrorSnapshot: mirror.snapshot(),
+                                          mirrorWriter: { try writes.record($0, to: mirror) },
+                                          onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
+        let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
+        #expect(try store.load() == external)
+        #expect(try Data(contentsOf: mirror.url) == mirrorBefore)
+        #expect(writes.count == 0)
+    }
+
+    /// D81-H1 (b): sin `.sav` local, solo el espejo junto al ROM.
+    @Test func mirrorWithoutLocalSaveRejectsAutomaticState() throws {
+        let rom = Self.rom(title: "ESPEJO", value: 0x11)
+        let other = dir.appendingPathComponent("otro", isDirectory: true)
+        let (state, x) = try automaticState(rom: rom, savesDirectory: other)
+        let external = externalSave(x)
+        let mirror = try mirrorFile(external, newer: false)
+
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, mirror: mirror,
+                                          mirrorSnapshot: mirror.snapshot(), onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
+        let store = SaveStore(directory: dir, fingerprint: session.info.fingerprint)
+        #expect(try store.load() == external)
+        #expect(try Data(contentsOf: mirror.url) == external)
+    }
+
+    /// D81-H1/H6: tras rechazar un estado no vigente el núcleo vuelve a como estaba: si la
+    /// sesión arranca después, la pausa guarda la partida buena, no la SRAM del estado.
+    @Test func staleStateRollsBackTheCore() throws {
+        let rom = Self.rom(title: "REVERTIR", value: 0x11)
+        let (state, x) = try automaticState(rom: rom, savesDirectory: dir)
+        let newer = externalSave(x)
+        let store = SaveStore(directory: dir, fingerprint: try CoreBridge().loadROM(rom, unixTime: 0).fingerprint)
+        try store.save(newer)
+
+        let session = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
+        session.start()
+        session.pause()
+        #expect(try store.load() == newer)
+        // D81V2-H1: la comprobación decisiva es el núcleo, no el disco (sin rollback, `run()`
+        // tomaría la SRAM del estado como «ya confirmada» y la pausa no escribiría nada).
+        let core = try CoreBridge()
+        _ = try core.loadROM(rom, unixTime: 0)
+        try core.stateLoad(try session.saveState().state)
+        #expect(try core.sramSave().prefix(newer.count) == newer.prefix(newer.count))
+        session.stop()
+    }
+
+    /// D81V2-H4: con RTC, una reanudación legítima solo difiere del `.sav` en el pie de 48
+    /// bytes; no debe reescribir la copia local, rotar backups ni tocar el espejo.
+    @Test func startRestoringWithRTCDoesNotRewriteWhenOnlyTheFooterChanges() throws {
+        let rom = Self.rom(title: "RELOJ", value: 0x11, rtc: true)
+        let s = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        s.start(); s.pause()
+        s.resume(); Thread.sleep(forTimeInterval: 1.2); s.pause()
+        let state = try s.saveState().state          // pie del RTC en F1
+        s.resume(); Thread.sleep(forTimeInterval: 2.2); s.pause()   // el .sav recibe un pie F2
+        s.stop()
+        let store = SaveStore(directory: dir, fingerprint: s.info.fingerprint)
+        let x = try #require(try store.load())
+        let probe = try CoreBridge()
+        _ = try probe.loadROM(rom, unixTime: 0)
+        try probe.stateLoad(state)
+        let stateSRAM = try probe.sramSave()
+        try #require(stateSRAM != x, "precondición: el pie del RTC debe diferir")
+        #expect(stateSRAM.prefix(x.count - 48) == x.prefix(x.count - 48))
+        let backupsBefore = store.backups().count
+
+        let writes = MirrorWrites()
+        let mirror = try mirrorFile(x, newer: false)
+        let resumed = try EmulatorSession(romData: rom, savesDirectory: dir, mirror: mirror,
+                                          mirrorSnapshot: mirror.snapshot(),
+                                          mirrorWriter: { try writes.record($0, to: mirror) },
+                                          onAudioInterrupted: {})
+        try resumed.start(restoring: state)
+        resumed.pause()
+        #expect(try store.load() == x)
+        #expect(store.backups().count == backupsBefore)
+        #expect(writes.count == 0)
+        resumed.stop()
+    }
+
+    @Test func startRestoringRejectsCorruptAndForeignStateWithoutChangingSave() throws {
+        let rom = Self.rom(title: "REANUDAR", value: 0x11)
+        let storeSession = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        storeSession.start(); storeSession.pause(); storeSession.stop()
+        let store = SaveStore(directory: dir, fingerprint: storeSession.info.fingerprint)
+        let before = try #require(try store.load())
+
+        let corrupt = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: CoreError.self) { try corrupt.start(restoring: Data("ROTO".utf8)) }
+        #expect(try store.load() == before)
+
+        let otherCore = try CoreBridge()
+        _ = try otherCore.loadROM(Self.rom(title: "OTRO", value: 0x22), unixTime: 0)
+        let foreign = try otherCore.stateSave()
+        let foreignSession = try EmulatorSession(romData: rom, savesDirectory: dir, onAudioInterrupted: {})
+        #expect(throws: CoreError.stateROMMismatch) { try foreignSession.start(restoring: foreign) }
+        #expect(try store.load() == before)
+    }
+}
+
+/// Cuenta las escrituras que llegan al espejo (el escritor de prueba también escribe el archivo).
+final class MirrorWrites: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return n }
+    func record(_ data: Data, to mirror: SaveMirror) throws {
+        lock.lock(); n += 1; lock.unlock()
+        try mirror.write(data)
     }
 }

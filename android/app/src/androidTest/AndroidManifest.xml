@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+            Proveedor SAF solo para pruebas: vive en el APK de test (nunca en Debug ni Release)
+            y se provisiona con `call()`. Es un ContentProvider que habla el protocolo de
+            DocumentsContract; DocumentsProvider exige MANAGE_DOCUMENTS y la instrumentación corre
+            con el UID de la app, que no es el del proveedor, así que no puede concederse el URI.
+        -->
+        <provider
+            android:name="com.joelbermudez.pocketgb.saf.TestDocumentsProvider"
+            android:authorities="com.joelbermudez.pocketgb.test.documents"
+            android:exported="true" />
+    </application>
+</manifest>

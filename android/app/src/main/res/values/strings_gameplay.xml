@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notice_header_damaged">Cabecera dañada: el juego puede no funcionar bien.</string>
+
+    <!-- HUD (K13) -->
+    <string name="hud_speed_value">×%1$d</string>
+
+    <!-- Controles (K12) -->
+    <string name="controls_hidden_hint">Controles ocultos · abre el menú para mostrarlos</string>
+
+    <!-- Menú de pausa (iOS PauseView) -->
+    <string name="gameplay_pause_fallback_title">Pausa</string>
+    <string name="gameplay_pause_continue">Continuar</string>
+    <string name="gameplay_pause_states">Estados guardados</string>
+    <string name="gameplay_pause_customize">Personalizar controles</string>
+    <string name="gameplay_pause_exit">Salir del juego</string>
+    <string name="gameplay_pause_states_footer">La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras.</string>
+    <string name="gameplay_pause_exit_footer">Al salir se guarda la partida y un estado automático.</string>
+
+    <!-- Hoja de estados y confirmaciones (K14) -->
+    <string name="gameplay_states_footer">Los estados guardan el momento exacto del juego. Son distintos de la partida del cartucho, que se guarda sola.</string>
+    <string name="gameplay_load_title">¿Cargar %1$s?</string>
+    <string name="gameplay_load_body">Perderás lo jugado desde el último estado. «Guardar actual y cargar» lo deja antes en la ranura automática.</string>
+    <string name="gameplay_load_body_auto">Perderás lo jugado desde el último estado. La partida del cartucho queda con copia de seguridad.</string>
+    <string name="gameplay_load_save_first">Guardar actual y cargar</string>
+    <string name="gameplay_load_without_saving">Cargar sin guardar</string>
+    <string name="gameplay_load_auto_confirm">Cargar</string>
+    <string name="gameplay_replace_title">¿Reemplazar %1$s?</string>
+    <string name="gameplay_replace_body">El estado guardado el %1$s se sustituirá por el momento actual.</string>
+    <string name="gameplay_replace_body_undated">El estado guardado se sustituirá por el momento actual.</string>
+    <string name="gameplay_replace_confirm">Reemplazar</string>
+
+    <!-- Editor de controles -->
+    <string name="editor_title_portrait">Controles · Vertical</string>
+    <string name="editor_title_landscape">Controles · Horizontal</string>
+    <string name="editor_hint_portrait">Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo en vertical.</string>
+    <string name="editor_hint_landscape">Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo en horizontal.</string>
+    <string name="editor_reset">Restablecer</string>
+    <string name="editor_done">Listo</string>
+    <string name="editor_smaller">Más pequeño</string>
+    <string name="editor_larger">Más grande</string>
+    <string name="editor_size">%1$s · %2$d %%</string>
+    <string name="editor_control_dpad">Cruceta</string>
+    <string name="editor_control_a">A</string>
+    <string name="editor_control_b">B</string>
+    <string name="editor_control_start">Start</string>
+    <string name="editor_control_select">Select</string>
+    <string name="editor_control_menu">Menú</string>
+    <!-- A8-S: literales extraídos -->
+    <string name="gameplay_paused_title">Juego en pausa</string>
+    <string name="gameplay_resume">Continuar</string>
+    <string name="gameplay_opening_game">Abriendo el juego</string>
+</resources>

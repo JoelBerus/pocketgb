@@ -1,10 +1,13 @@
 import CoreGraphics
 import Foundation
+import PocketGBACore
 import PocketGBCore
 
-/// Controles táctiles de gameplay (SPEC §10). No hay L/R.
+/// Controles táctiles de gameplay (SPEC §10). `l` y `r` solo existen en Game Boy Advance.
 enum ControlID: String, Codable, CaseIterable, Sendable {
-    case dpad, a, b, start, select, menu
+    case dpad, a, b, start, select, menu, l, r
+
+    var isShoulder: Bool { self == .l || self == .r }
 }
 
 /// Orientación del layout: cada una se guarda por separado (D-README §6).
@@ -38,23 +41,40 @@ struct ControlsLayout: Codable, Equatable, Sendable {
         min(max(scales[id] ?? 1, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
     }
 
-    static func defaults(_ orientation: ControlsOrientation) -> ControlsLayout {
-        switch orientation {
-        case .portrait:
+    /// Disposición por defecto. Game Boy: imagen 10:9. Game Boy Advance (`shoulders`): imagen 3:2,
+    /// mucho más ancha; en horizontal (iPhone 17 Pro, imagen a escala entera ≈560×373 pt) la cruceta,
+    /// A, B, Start y Select van en los márgenes laterales y L/R arriba, a los lados de la imagen.
+    static func defaults(_ orientation: ControlsOrientation, shoulders: Bool = false) -> ControlsLayout {
+        switch (orientation, shoulders) {
+        case (.portrait, false):
             ControlsLayout(centers: [
                 .dpad: CGPoint(x: 0.25, y: 0.44), .a: CGPoint(x: 0.84, y: 0.36), .b: CGPoint(x: 0.64, y: 0.52),
                 .start: CGPoint(x: 0.59, y: 0.86), .select: CGPoint(x: 0.41, y: 0.86), .menu: CGPoint(x: 0.5, y: 0.07),
             ])
-        case .landscape:
+        case (.landscape, false):
             ControlsLayout(centers: [
                 .dpad: CGPoint(x: 0.12, y: 0.62), .a: CGPoint(x: 0.91, y: 0.52), .b: CGPoint(x: 0.81, y: 0.72),
                 .start: CGPoint(x: 0.56, y: 0.93), .select: CGPoint(x: 0.44, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
             ])
+        case (.portrait, true):
+            ControlsLayout(centers: [
+                .dpad: CGPoint(x: 0.25, y: 0.44), .a: CGPoint(x: 0.84, y: 0.36), .b: CGPoint(x: 0.64, y: 0.52),
+                .start: CGPoint(x: 0.59, y: 0.86), .select: CGPoint(x: 0.41, y: 0.86), .menu: CGPoint(x: 0.5, y: 0.07),
+                .l: CGPoint(x: 0.17, y: 0.14), .r: CGPoint(x: 0.83, y: 0.14),
+            ])
+        case (.landscape, true):
+            // Márgenes de ≈97 pt a cada lado de la imagen: la cruceta se reduce al mínimo (0,6)
+            // y A y B se apilan en vertical; L/R arriba en los márgenes.
+            ControlsLayout(centers: [
+                .dpad: CGPoint(x: 0.065, y: 0.62), .a: CGPoint(x: 0.94, y: 0.45), .b: CGPoint(x: 0.94, y: 0.74),
+                .start: CGPoint(x: 0.94, y: 0.93), .select: CGPoint(x: 0.065, y: 0.93), .menu: CGPoint(x: 0.5, y: 0.06),
+                .l: CGPoint(x: 0.065, y: 0.1), .r: CGPoint(x: 0.94, y: 0.1),
+            ], scales: [.dpad: 0.6, .l: 0.9, .r: 0.9])
         }
     }
 
-    func center(_ id: ControlID, orientation: ControlsOrientation) -> CGPoint {
-        centers[id] ?? Self.defaults(orientation).centers[id] ?? CGPoint(x: 0.5, y: 0.5)
+    func center(_ id: ControlID, orientation: ControlsOrientation, shoulders: Bool = false) -> CGPoint {
+        centers[id] ?? Self.defaults(orientation, shoulders: shoulders).centers[id] ?? CGPoint(x: 0.5, y: 0.5)
     }
 }
 
@@ -67,6 +87,7 @@ struct ControlMetrics: Equatable, Sendable {
     var abDiameter: CGFloat { 36 * scale }
     var pillSize: CGSize { CGSize(width: 66 * scale, height: 28 * scale) }
     var menuDiameter: CGFloat { 40 }
+    var shoulderSize: CGSize { CGSize(width: 92 * scale, height: 40 * scale) }
     /// El área táctil nunca baja de 44 pt (SPEC §7.2), aunque el dibujo sea menor.
     static let minTouch: CGFloat = 44
 
@@ -76,6 +97,7 @@ struct ControlMetrics: Equatable, Sendable {
         case .a, .b: CGSize(width: faceDiameter, height: faceDiameter)
         case .start, .select: pillSize
         case .menu: CGSize(width: menuDiameter, height: menuDiameter)
+        case .l, .r: shoulderSize
         }
     }
 }
@@ -94,13 +116,15 @@ struct ControlsGeometry: Equatable, Sendable {
 
     /// Resuelve un layout dentro de `area` (bounds menos safe area). Cada control se clama
     /// para quedar entero dentro del área: nunca bajo la Dynamic Island ni el Home Indicator.
-    init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics) {
+    /// `shoulders`: dibuja y atiende L y R (solo Game Boy Advance).
+    init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics,
+         shoulders: Bool = false) {
         var frames: [ControlID: CGRect] = [:]
-        for id in ControlID.allCases {
+        for id in ControlID.allCases where shoulders || !id.isShoulder {
             let base = metrics.size(id)
             let k = layout.scale(id)
             let size = CGSize(width: base.width * k, height: base.height * k)
-            let rel = layout.center(id, orientation: orientation)
+            let rel = layout.center(id, orientation: orientation, shoulders: shoulders)
             let center = Self.clamp(CGPoint(x: area.minX + area.width * rel.x, y: area.minY + area.height * rel.y),
                                     size: size, in: area)
             frames[id] = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
@@ -132,11 +156,16 @@ struct ControlsGeometry: Equatable, Sendable {
         return r.insetBy(dx: -dx, dy: -dy)
     }
 
-    /// A+B primero (zona pequeña entre ambos); luego los círculos por distancia y las
-    /// píldoras por rectángulo.
+    /// Menú y hombros L/R primero (así nunca quedan inalcanzables aunque otro control se
+    /// mueva encima); luego A+B (zona pequeña entre ambos), los círculos por distancia y
+    /// Start/Select por rectángulo.
     func hit(at p: CGPoint) -> ControlHit? {
+        if Self.inCircle(p, touchFrame(.menu)) { return .control(.menu) }
+        for id in [ControlID.l, .r] where frames[id] != nil && touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
+            return .control(id)
+        }
         if Self.inCircle(p, abFrame) { return .ab }
-        for id in [ControlID.a, .b, .dpad, .menu] where Self.inCircle(p, touchFrame(id)) {
+        for id in [ControlID.a, .b, .dpad] where Self.inCircle(p, touchFrame(id)) {
             return .control(id)
         }
         for id in [ControlID.start, .select] where touchFrame(id).insetBy(dx: -6, dy: -6).contains(p) {
@@ -211,16 +240,18 @@ struct ControlsInputEngine: Sendable {
         points.removeAll()
     }
 
-    var mask: UInt8 {
-        var mask: UInt8 = 0
+    var mask: UInt16 {
+        var mask: UInt16 = 0
         for (id, hit) in touches {
             switch hit {
-            case .control(.dpad): mask |= points[id].flatMap { geometry?.dpadMask(at: $0) } ?? 0
-            case .control(.a): mask |= UInt8(GB_BTN_A)
-            case .control(.b): mask |= UInt8(GB_BTN_B)
-            case .ab: mask |= UInt8(GB_BTN_A | GB_BTN_B)
-            case .control(.start): mask |= UInt8(GB_BTN_START)
-            case .control(.select): mask |= UInt8(GB_BTN_SELECT)
+            case .control(.dpad): mask |= UInt16(points[id].flatMap { geometry?.dpadMask(at: $0) } ?? 0)
+            case .control(.a): mask |= UInt16(GB_BTN_A)
+            case .control(.b): mask |= UInt16(GB_BTN_B)
+            case .ab: mask |= UInt16(GB_BTN_A | GB_BTN_B)
+            case .control(.start): mask |= UInt16(GB_BTN_START)
+            case .control(.select): mask |= UInt16(GB_BTN_SELECT)
+            case .control(.l): mask |= UInt16(GBA_BTN_L)
+            case .control(.r): mask |= UInt16(GBA_BTN_R)
             case .control(.menu): break
             }
         }

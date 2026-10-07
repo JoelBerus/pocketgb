@@ -1,0 +1,58 @@
+# Casos del núcleo GBA (docs/06-testing.md §GBA). Rutas relativas a gba/tests/roms/.
+# Formato: hito|ruta|modo|max_frames|tipo[|referencia en gba/tests/ref/]
+# Rutas "hb:" = ROMs homebrew propias compiladas en gba/build/hb (make homebrew).
+# ---- G1: CPU ARM7TDMI ----
+G1|unit|unit|0|requerido
+G1|ARM7TDMI/v1/*.json.bin|sst|0|requerido
+G1|gba-tests/arm/arm.gba|jsmolka|120|requerido
+G1|gba-tests/thumb/thumb.gba|jsmolka|120|requerido
+# ---- G2: bus, E/S, DMA, timers, IRQ, HLE de la BIOS ----
+G2|gba-tests/memory/memory.gba|jsmolka|120|requerido
+G2|gba-tests/bios/bios.gba|jsmolka|120|requerido
+G2|gba-tests/nes/nes.gba|jsmolka|120|requerido
+# ---- G3: PPU (referencias del oráculo mGBA con color de 5 bits; ver docs/10-gba-spec.md §PPU) ----
+G3|gba-tests/ppu/hello.gba|ref|60|requerido|jsmolka-hello-mgba.png
+G3|gba-tests/ppu/shades.gba|ref|60|requerido|jsmolka-shades-mgba.png
+G3|gba-tests/ppu/stripes.gba|ref|60|requerido|jsmolka-stripes-mgba.png
+G3|hb:ppu_scene_0.gba|ref|120|requerido|ppu_scene_0-mgba.png
+G3|hb:ppu_scene_1.gba|ref|120|requerido|ppu_scene_1-mgba.png
+G3|hb:ppu_scene_2.gba|ref|120|requerido|ppu_scene_2-mgba.png
+G3|hb:ppu_scene_3.gba|ref|120|requerido|ppu_scene_3-mgba.png
+G3|hb:ppu_scene_4.gba|ref|120|requerido|ppu_scene_4-mgba.png
+G3|hb:ppu_scene_5.gba|ref|120|requerido|ppu_scene_5-mgba.png
+G3|hb:ppu_scene_6.gba|ref|120|requerido|ppu_scene_6-mgba.png
+G3|hb:ppu_scene_7.gba|ref|120|requerido|ppu_scene_7-mgba.png
+G3|hb:ppu_scene_9.gba|ref|120|requerido|ppu_scene_9-mgba.png
+G3|hb:ppu_scene_11.gba|ref|120|requerido|ppu_scene_11-mgba.png
+G3|hb:ppu_scene_12.gba|ref|120|requerido|ppu_scene_12-mgba.png
+G3|hb:ppu_scene_13.gba|ref|120|requerido|ppu_scene_13-mgba.png
+# Escenas 8 y 10: mGBA difiere por detalles de su implementación (docs/10-gba-spec.md
+# §PPU, "Diferencias con mGBA"); la referencia es nuestra salida, como regresión.
+G3|hb:ppu_scene_8.gba|ref|120|requerido|ppu_scene_8-pocketgb.png
+G3|hb:ppu_scene_10.gba|ref|120|requerido|ppu_scene_10-pocketgb.png
+# ---- G4: cartucho y saves ----
+G4|gba-tests/save/sram.gba|jsmolka|120|requerido
+G4|gba-tests/save/flash64.gba|jsmolka|300|requerido
+G4|gba-tests/save/flash128.gba|jsmolka|300|requerido
+G4|gba-tests/save/none.gba|jsmolka|120|requerido
+G4|hb:eeprom.gba|hb|60|requerido
+G4|hb:eeprom8k.gba|hb|60|requerido
+G4|hb:rtc.gba|hb-rtc|300|requerido
+# ---- G5: APU (frecuencia medida en la salida; niveles PSG/DirectSound calibrados con mGBA) ----
+G5|hb:audio_psg.gba|audio:439.8|120|requerido
+G5|hb:audio_ds.gba|audio:1024|120|requerido
+G5|hb:audio_ds.gba|audio:1024:R|120|requerido
+G5|hb:audio_wave.gba|audio:128:L!|120|requerido
+G5|hb:audio_noise.gba|audio:0:R!|120|requerido
+G5|hb:audio_dsb.gba|audio:512:R!|120|requerido
+# ---- G6: save states y determinismo (estado a mitad de juego; IRQ, DMA, audio y saves activos) ----
+G6|hb:ppu_scene_11.gba|state|60|requerido
+G6|hb:ppu_scene_7.gba|state|60|requerido
+G6|hb:audio_ds.gba|state|45|requerido
+G6|hb:audio_psg.gba|state|45|requerido
+G6|hb:eeprom.gba|state|2|requerido
+G6|gba-tests/save/flash128.gba|state|30|requerido
+G6|gba-tests/bios/bios.gba|state|1|requerido
+G6|hb:ppu_scene_11.gba|det|1000|requerido
+G6|hb:audio_ds.gba|det|300|requerido
+G6|gba-tests/save/flash128.gba|det|200|requerido

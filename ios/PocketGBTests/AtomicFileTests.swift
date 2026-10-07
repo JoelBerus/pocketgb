@@ -59,12 +59,17 @@ struct AtomicFileTests {
         #expect(!FileManager.default.fileExists(atPath: tmp.path))
     }
 
-    @Test func orphanTmpWithWrongSizeIsDeleted() throws {
+    /// G8-H6: sin `.sav` y con un tamaño que ahora no vale, el temporal se aparta; nunca se borra.
+    @Test func orphanTmpWithWrongSizeIsQuarantinedNotDeleted() throws {
         let tmp = store.saveURL.appendingPathExtension("tmp")
         try AtomicFile.writeSynced(Data([9]), to: tmp)
         try store.recoverOrphans(expectedSize: 2)
         #expect(!FileManager.default.fileExists(atPath: store.saveURL.path))
         #expect(!FileManager.default.fileExists(atPath: tmp.path))
+        let kept = try FileManager.default.contentsOfDirectory(at: store.backupsDirectory,
+                                                               includingPropertiesForKeys: nil)
+        #expect(kept.count == 1 && kept[0].lastPathComponent.contains("wrong-size"))
+        #expect(try Data(contentsOf: kept[0]) == Data([9]))
     }
 
     // MARK: docs/04 §Saves "Tests obligatorios": fallo tras cada paso 2–4 del reemplazo.

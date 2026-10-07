@@ -12,9 +12,12 @@
 
 **Para la app (🍎):** crear el cable una vez (`gb_link_create`), `gb_link_attach(l, rojo, amarillo)` tras cargar los dos ROMs, `gb_link_run_frame(l)` en lugar de `gb_run_frame` en cada tick, pintar `gb_link_framebuffer(l, 0|1)`, leer el audio solo del juego activo, y `gb_link_detach` antes de `gb_destroy`. Todo en el hilo de emulación. **Un único dueño:** el cable y las dos instancias los gestiona un solo objeto de la app, que desconecta antes de destruir; una instancia no puede estar en dos cables a la vez (`gb_link_attach` devuelve `false` y deja ese lado vacío).
 
-**UI:** pantalla dividida (dos juegos, uno arriba y otro abajo, controles con selector de a qué juego se envían), o bien alternar con un botón. El audio se toma solo del juego activo.
+**UI 🍎 (implementada 2026-10-06, rama `m9-link-ui`; falta la prueba en el iPhone y la auditoría de los lotes 3–5):** se **alterna** entre los dos juegos con un botón del HUD y una miniatura en vivo del otro (sin pantalla dividida). `LinkedPair`/`LinkCable` (núcleo compuesto en el hilo de emulación, retención y detach antes de destroy), `SRAMPersistence` (una por juego, misma ruta de guardado), `LinkSession` (rechazos y avisos) y la UI (selector de pareja, HUD, pausa sin estados). Plan: [M9-ios-plan](M9-ios-plan.md); spec: [diseno/SPEC](../diseno/SPEC.md) §10.6; evidencia: [M9-ios-evidencia](../auditorias/M9-ios-evidencia.md).
+
+**Alternativa descartada:** pantalla dividida (dos juegos, uno arriba y otro abajo, controles con selector de a qué juego se envían). El audio se toma solo del juego activo.
 
 **Criterios de aceptación**
 - [x] Test headless: dos instancias con un ROM de prueba serie (homebrew) intercambian bytes correctamente. *Cumplido con ROMs sintéticos generados en el test (`unit_link.c`, `exchange`): 16 bytes en cada sentido, 32/32, en 11 combinaciones (DMG↔DMG con el maestro en cada lado, CGB con reloj rápido, doble velocidad frente a velocidad normal, rápido + doble velocidad, compatibilidad↔DMG y CGB↔compatibilidad); más los tests (a) deriva ≤ 44 tras 10⁶ bloques (medido 20), (b) causalidad y (c) 0xFF sin esclavo. Entre las ROMs de prueba libres no hay ninguna de serie entre dos instancias. Salida en [M9-evidencia](../auditorias/M9-evidencia.md).*
 - [ ] iPhone: intercambio completo de un Pokémon entre una partida Roja y una Amarilla; Kadabra evoluciona.
-- [ ] Las dos SRAM se guardan con la ruta normal de M6 tras el intercambio.
+- [ ] Las dos SRAM se guardan con la ruta normal de M6 tras el intercambio. *Verificado en tests con ROMs sintéticos (`LinkSessionTests`: los dos `.sav` con los 16 bytes del intercambio); falta comprobarlo con Rojo y Amarillo en el iPhone.*
+- [ ] 🍎 Pendiente de Joel en el iPhone: rendimiento con dos núcleos, audio que sigue al juego visible, background y cierre forzado durante el cable, miniatura en las dos rotaciones (lista en [M9-ios-evidencia](../auditorias/M9-ios-evidencia.md) §7).

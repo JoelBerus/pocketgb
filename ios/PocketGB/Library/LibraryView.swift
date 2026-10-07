@@ -6,7 +6,9 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var zoom
+    @State private var scrollOffset: CGFloat = 0
 
     private var library: LibraryStore { state.library }
     private var prefs: LibraryPreferences { state.libraryPrefs }
@@ -48,7 +50,7 @@ struct LibraryView: View {
                 EmptyStateView(
                     title: "Elige tu carpeta de juegos",
                     systemImage: "folder.badge.plus",
-                    message: "PocketGB lee los juegos .gb y .gbc de una carpeta de iCloud Drive o de Archivos. No copia ni modifica tus ROMs.",
+                    message: "PocketGB lee los juegos .gb, .gbc y .gba de una carpeta de iCloud Drive o de Archivos. No copia ni modifica tus ROMs.",
                     primaryTitle: "Elegir carpeta",
                     primaryAction: { state.chooseFolder() })
             }
@@ -69,7 +71,7 @@ struct LibraryView: View {
                     EmptyStateView(
                         title: "No hay juegos en esta carpeta",
                         systemImage: "folder",
-                        message: "“\(folderName)” no tiene archivos .gb ni .gbc. Añádelos desde Archivos y vuelve a escanear, o elige otra carpeta.",
+                        message: "“\(folderName)” no tiene archivos .gb, .gbc ni .gba. Añádelos desde Archivos y vuelve a escanear, o elige otra carpeta.",
                         primaryTitle: "Volver a escanear",
                         primaryAction: { library.refresh() },
                         secondaryTitle: "Cambiar carpeta",
@@ -120,12 +122,12 @@ struct LibraryView: View {
         let shown = prefs.visible(library.entries, filter: state.libraryFilter, query: query)
         return ScrollView {
             VStack(alignment: .leading, spacing: PocketSpacing.lg) {
-                filterPicker
+                minimized(filterPicker)
                 if searching {
                     searchResults(shown, query: query)
                 } else {
                     if state.libraryFilter == .all, let continueEntries = continueCandidates, !continueEntries.isEmpty {
-                        ContinuePlayingRow(entries: continueEntries, zoom: zoom)
+                        minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom))
                     }
                     allGames(shown, folderName: folderName)
                 }
@@ -134,18 +136,33 @@ struct LibraryView: View {
             .padding(.bottom, PocketSpacing.xl)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+        } action: { _, value in
+            scrollOffset = value
+        }
         .refreshable { library.refresh() }
-        // Campo siempre visible bajo el título: la búsqueda es la acción principal de la
-        // biblioteca. (Con `.searchToolbarBehavior(.minimize)` quedaba en un botón que no se
-        // podía expandir desde las capturas del catálogo.)
+        // Búsqueda bajo el título (`.automatic`) que con `.searchToolbarBehavior(.minimize)`
+        // se pliega a una lupa en la barra y se expande al tocarla (iOS 26).
         .searchable(text: $state.librarySearch, isPresented: $state.librarySearchPresented,
-                    placement: .navigationBarDrawer(displayMode: .always), prompt: "Juegos")
+                    placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Juegos")
+        .searchToolbarBehavior(.minimize)
+    }
+
+    private func minimized<Content: View>(_ content: Content) -> some View {
+        let progress = min(max(scrollOffset / 120, 0), 1)
+        let reduced = PocketMotion.reducesMotion(system: reduceMotion)
+        return content
+            .scaleEffect(reduced ? 1 : 1 - 0.055 * progress, anchor: .top)
+            .opacity(1 - (reduced ? 0.28 : 0.14) * progress)
+            .animation(reduced ? nil : .easeOut(duration: 0.18), value: progress)
     }
 
     /// Juegos jugados con captura local: "Continuar" nunca muestra una portada inventada.
     private var continueCandidates: [RomEntry]? {
         let recent = prefs.recent(library.entries, limit: 5).filter {
-            $0.isPlayable && state.artwork.image(for: prefs.fingerprint(of: $0)) != nil
+            $0.isPlayable && state.canResume($0)
+                && state.artwork.image(for: prefs.fingerprint(of: $0)) != nil
         }
         return recent.isEmpty ? nil : recent
     }
@@ -333,12 +350,18 @@ struct ContinuePlayingRow: View {
                 }
             } else {
                 ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: PocketSpacing.sm) {
-                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                            item(entry, width: index == 0 ? 240 : 170)
+                    LazyHStack(alignment: .top, spacing: PocketSpacing.sm) {
+                        ForEach(entries) { entry in
+                            item(entry, width: nil)
+                                .containerRelativeFrame(.horizontal) { length, _ in
+                                    min(max(length * 0.68, 196), 240)
+                                }
                         }
                     }
+                    .scrollTargetLayout()
                 }
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned)
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
             }
@@ -354,8 +377,12 @@ struct ContinuePlayingRow: View {
             .buttonStyle(.plain)
             .matchedTransitionSource(id: "continue-\(entry.id)", in: zoom)
             .overlay(alignment: .bottomLeading) {
-                Button { state.open(entry: entry) } label: {
-                    Label("Continuar", systemImage: "play.fill")
+                Button { state.open(entry: entry, mode: .resumeAutomatic) } label: {
+                    HStack(spacing: PocketSpacing.xs) {
+                        Image(systemName: "play.fill")
+                        Text("Continuar")
+                    }
+                        .foregroundStyle(.white)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                         .fixedSize()
@@ -363,9 +390,9 @@ struct ContinuePlayingRow: View {
                 }
                 .pocketGlassButton(prominent: true)
                 .padding(PocketSpacing.xs)
-                .accessibilityLabel("Continuar \(entry.title)")
+                .accessibilityLabel("Continuar \(state.libraryPrefs.displayTitle(entry))")
             }
-            Text(entry.title)
+            Text(state.libraryPrefs.displayTitle(entry))
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             Text(state.libraryPrefs.lastPlayed(entry).map { "Jugado \(GameStatus.relative($0))" } ?? "")

@@ -1,24 +1,25 @@
 import CoreGraphics
 import Foundation
+import PocketGBACore
 import PocketGBCore
 import Testing
 @testable import PocketGB
 
 /// D4: geometría y motor de input de los controles táctiles (D-README §6, criterios CI).
 struct ControlsLayoutTests {
-    static let right = UInt8(GB_BTN_RIGHT), left = UInt8(GB_BTN_LEFT)
-    static let up = UInt8(GB_BTN_UP), down = UInt8(GB_BTN_DOWN)
-    static let a = UInt8(GB_BTN_A), b = UInt8(GB_BTN_B)
+    static let right = UInt16(GB_BTN_RIGHT), left = UInt16(GB_BTN_LEFT)
+    static let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN)
+    static let a = UInt16(GB_BTN_A), b = UInt16(GB_BTN_B)
 
     /// Máscara para un punto a `angle` grados (0 = derecha, antihorario) y distancia `r`.
-    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70) -> UInt8 {
+    static func mask(_ angle: Double, r: Double = 60, radius: Double = 70) -> UInt16 {
         let rad = angle * .pi / 180
-        return ControlsGeometry.dpadMask(dx: CGFloat(cos(rad) * r), dy: CGFloat(-sin(rad) * r),
-                                         radius: CGFloat(radius))
+        return UInt16(ControlsGeometry.dpadMask(dx: CGFloat(cos(rad) * r), dy: CGFloat(-sin(rad) * r),
+                                                radius: CGFloat(radius)))
     }
 
     @Test func eightSectorsOf45Degrees() {
-        let expected: [(Double, UInt8)] = [
+        let expected: [(Double, UInt16)] = [
             (0, Self.right), (45, Self.right | Self.up), (90, Self.up), (135, Self.up | Self.left),
             (180, Self.left), (225, Self.left | Self.down), (270, Self.down), (315, Self.down | Self.right),
         ]
@@ -201,7 +202,128 @@ struct ControlsLayoutTests {
         #expect(decoded.dpadStyle == .separated)
     }
 
-    @Test func noShoulderButtons() {
-        #expect(ControlID.allCases.map(\.rawValue).sorted() == ["a", "b", "dpad", "menu", "select", "start"])
+    // MARK: - Game Boy Advance (G8-H1)
+
+    /// iPhone 17 Pro en horizontal: pantalla, safe area (= `area`) e imagen 3:2 a escala
+    /// entera (7 px por píxel del juego a 3x ⇒ ≈560×373 pt), centrada en toda la pantalla.
+    static let screen = CGSize(width: 874, height: 402)
+    static let gbaImage = CGRect(x: (874 - 560) / 2, y: (402 - 373.0) / 2, width: 560, height: 373)
+
+    static func gbaGeometry(_ layout: ControlsLayout? = nil, orientation: ControlsOrientation = .landscape,
+                            area: CGRect = Self.area) -> ControlsGeometry {
+        ControlsGeometry(layout: layout ?? .defaults(orientation, shoulders: true), orientation: orientation,
+                         area: area, metrics: ControlMetrics(), shoulders: true)
+    }
+
+    @MainActor
+    @Test func editingGameBoyLayoutLeavesAdvanceUntouched() {
+        let settings = GameplaySettings(defaults: nil)
+        let gbaBefore = (settings.data.gbaPortraitLayout, settings.data.gbaLandscapeLayout)
+        settings.move(.a, to: CGPoint(x: 0.5, y: 0.5), orientation: .landscape)
+        settings.move(.dpad, to: CGPoint(x: 0.3, y: 0.3), orientation: .portrait)
+        settings.resize(.b, by: 0.2, orientation: .landscape)
+        #expect(settings.data.gbaPortraitLayout == gbaBefore.0 && settings.data.gbaLandscapeLayout == gbaBefore.1)
+        #expect(settings.data.landscapeLayout.centers[.a] == CGPoint(x: 0.5, y: 0.5))
+
+        // Y al revés: editar GBA no mueve la disposición de Game Boy.
+        let gbBefore = (settings.data.portraitLayout, settings.data.landscapeLayout)
+        settings.move(.l, to: CGPoint(x: 0.4, y: 0.4), orientation: .landscape, shoulders: true)
+        settings.resize(.a, by: 0.3, orientation: .portrait, shoulders: true)
+        #expect(settings.data.portraitLayout == gbBefore.0 && settings.data.landscapeLayout == gbBefore.1)
+        #expect(settings.data.gbaLandscapeLayout.centers[.l] == CGPoint(x: 0.4, y: 0.4))
+        settings.resetLayout(.landscape, shoulders: true)
+        #expect(settings.data.gbaLandscapeLayout == .defaults(.landscape, shoulders: true))
+        #expect(settings.data.landscapeLayout.centers[.a] == CGPoint(x: 0.5, y: 0.5))
+    }
+
+    @Test func advanceLandscapeDefaultsDoNotCoverThe3x2Image() throws {
+        let g = Self.gbaGeometry()
+        let ids: [ControlID] = [.dpad, .a, .b, .start, .select, .l, .r]
+        for id in ids {
+            let f = try #require(g.frames[id])
+            #expect(Self.area.contains(f), "\(id) fuera del área")
+            #expect(!f.intersects(Self.gbaImage), "\(id) pisa la imagen 3:2: \(f)")
+        }
+        for (i, x) in ids.enumerated() {
+            for y in ids[(i + 1)...] {
+                #expect(!g.touchFrame(x).intersects(g.touchFrame(y)), "\(x) y \(y) se solapan")
+            }
+        }
+    }
+
+    @Test func advancePortraitDefaultsKeepShouldersClearOfHUDAndControls() throws {
+        // Controles bajo la imagen 3:2 (402×268): ≈510 pt de alto.
+        let area = CGRect(x: 0, y: 0, width: 402, height: 510)
+        let g = Self.gbaGeometry(orientation: .portrait, area: area)
+        let l = try #require(g.frames[.l]), r = try #require(g.frames[.r])
+        #expect(area.contains(l) && area.contains(r) && !l.intersects(r))
+        // HUD real (pausa + avance ≈ 100×44 pt) centrado arriba, y el botón de menú.
+        let hud = CGRect(x: 201 - 50, y: 6, width: 100, height: 44)
+        for t in [g.touchFrame(.l), g.touchFrame(.r)] {
+            #expect(!t.intersects(hud) && !t.intersects(g.touchFrame(.menu)))
+            for id in [ControlID.a, .b, .dpad, .start, .select] {
+                #expect(!t.intersects(g.touchFrame(id)), "\(id) solapa un hombro")
+            }
+        }
+    }
+
+    @Test func shouldersStayTappableWhenDpadIsMovedOnTop() throws {
+        var layout = ControlsLayout.defaults(.landscape, shoulders: true)
+        let base = Self.gbaGeometry(layout)
+        let l = try #require(base.frames[.l]), r = try #require(base.frames[.r])
+        let area = Self.area
+        // La cruceta y A se arrastran justo encima de L y R.
+        layout.centers[.dpad] = ControlsGeometry.relative(CGPoint(x: l.midX, y: l.midY), in: area)
+        layout.centers[.a] = ControlsGeometry.relative(CGPoint(x: r.midX, y: r.midY), in: area)
+        let g = Self.gbaGeometry(layout)
+        #expect(try #require(g.frames[.dpad]).contains(CGPoint(x: l.midX, y: l.midY)))
+        #expect(g.hit(at: CGPoint(x: l.midX, y: l.midY)) == .control(.l))
+        #expect(g.hit(at: CGPoint(x: r.midX, y: r.midY)) == .control(.r))
+    }
+
+    @Test func oldStoredSettingsKeepGameBoyLayoutAndAdvanceStartsWithItsDefaults() throws {
+        let old = try #require(#"{"portraitLayout":{"centers":["a",[0.7,0.3]]},"landscapeLayout":{"centers":["b",[0.2,0.8]]}}"#
+            .data(using: .utf8))
+        let data = try JSONDecoder().decode(GameplaySettingsData.self, from: old)
+        #expect(data.portraitLayout.centers[.a] == CGPoint(x: 0.7, y: 0.3))
+        #expect(data.landscapeLayout.centers[.b] == CGPoint(x: 0.2, y: 0.8))
+        #expect(data.gbaPortraitLayout == .defaults(.portrait, shoulders: true))
+        #expect(data.gbaLandscapeLayout == .defaults(.landscape, shoulders: true))
+        #expect(data.layout(.landscape, shoulders: true) == data.gbaLandscapeLayout)
+        #expect(data.layout(.landscape) == data.landscapeLayout)
+    }
+
+    @Test func shoulderButtonsExistOnlyOnGameBoyAdvance() throws {
+        #expect(ControlID.allCases.map(\.rawValue).sorted() == ["a", "b", "dpad", "l", "menu", "r", "select", "start"])
+        // Game Boy: sin marcos ni zona táctil para L y R.
+        let gb = Self.geometry()
+        #expect(gb.frames[.l] == nil && gb.frames[.r] == nil)
+        // Game Boy Advance: L (bit 9) y R (bit 8) llegan al núcleo.
+        let gba = Self.gbaGeometry()
+        let l = try #require(gba.frames[.l]), r = try #require(gba.frames[.r])
+        #expect(Self.area.contains(l) && Self.area.contains(r))
+        var engine = ControlsInputEngine(geometry: gba)
+        _ = engine.began(1, at: CGPoint(x: l.midX, y: l.midY))
+        _ = engine.began(2, at: CGPoint(x: r.midX, y: r.midY))
+        #expect(engine.mask == UInt16(GBA_BTN_L) | UInt16(GBA_BTN_R))
+        #expect(engine.pressed == [.l, .r])
+    }
+
+    @Test func slidingASingleFingerBetweenShouldersSwitchesOrReleases() throws {
+        let g = Self.gbaGeometry()
+        let l = try #require(g.frames[.l]), r = try #require(g.frames[.r])
+        var engine = ControlsInputEngine(geometry: g)
+        _ = engine.began(1, at: CGPoint(x: l.midX, y: l.midY))
+        #expect(engine.mask == UInt16(GBA_BTN_L))
+        // De L a R con el mismo dedo: L se suelta y queda R.
+        engine.moved(1, to: CGPoint(x: r.midX, y: r.midY))
+        #expect(engine.mask == UInt16(GBA_BTN_R))
+        #expect(engine.pressed == [.r])
+        // De R a un punto sin control: se suelta todo.
+        engine.moved(1, to: CGPoint(x: Self.area.midX, y: Self.area.midY))
+        #expect(g.hit(at: CGPoint(x: Self.area.midX, y: Self.area.midY)) == nil)
+        #expect(engine.mask == 0 && engine.pressed.isEmpty)
+        engine.cancelAll()
+        #expect(engine.mask == 0)
     }
 }

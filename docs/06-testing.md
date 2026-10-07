@@ -54,6 +54,17 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - rechazo de estados corruptos
 - cable link virtual (`unit_link.c`, M9): deriva del lockstep tras 10⁶ bloques, causalidad en el primer flanco, cable suelto y reentrada, intercambio de bytes entre dos ROMs sintéticos (DMG, CGB con reloj rápido, doble velocidad, compatibilidad), framebuffer sin cortes y realineado tras recarga o save state
 
+## Núcleo GBA (`gba/`, G0–G9)
+- **Suites** (`make -C gba test`, `make -C gba asan`; runner `gba/tests/runner.c`, casos en `gba/tests/suite.txt` con la misma convención `hito|ruta|modo|…|tipo`): unit tests propios (`gbatest --unit`); **SingleStepTests/ARM7TDMI** (45 × 50 000 casos, 100 %); **jsmolka/gba-tests** (`arm`, `thumb`, `memory`, `bios`, `nes`, `save/*`, `ppu/*`); 14 escenas homebrew propias de PPU, ROMs de EEPROM, RTC y audio (`gba/tests/homebrew/`, compiladas con `clang --target=armv4t` y `ld.lld`); modos `state` y `det` de determinismo. Se descargan con `tools/fetch-gba-test-roms.sh` (nunca versionadas).
+- **Oráculo:** mGBA 0.10.5 compilado aparte (`make -C gba oracle`, `tools/gba-compare.py`, `tools/oracle-gba/`), solo para desarrollo y nunca enlazado en la app.
+- **Fuzzers** (`make -C gba fuzz`): `fuzz_load_rom`, `fuzz_cart`, `fuzz_state_load` y `fuzz_io`, 600 s cada uno en la nube (resultado en la evidencia de cada hito).
+- **Chequeos:** `check-header` (el header compila aislado), `check-globals` y `check-symbols` (sin colisiones con el núcleo GB; pensados para `nm` de Linux).
+- **Limitación en el Mac de Joel:** `make -C gba test`/`asan` completos necesitan `ld.lld` (homebrew de la suite) y los ROMs de SingleStepTests, que no están en este Mac; ahí se ejecutan `gbatest --unit`, la variante ASan compilada con el `EXTRA` del Makefile y los ROMs de jsmolka con el runner. `check-symbols`/`check-globals` dan falsos positivos con el `nm` de macOS (prefijo `_`, símbolos locales `s` de datos constantes de Mach-O); la suite completa corre en la nube (Linux) y en el CI.
+- `make -C core test` usa `HITO=M1` por defecto: la regresión completa del núcleo GB es `make -C core test HITO=M8` (157/157 requeridos).
+
+## Tests de la app (G7–G8)
+Suite unitaria de Swift (`GBATests`, ajustes por juego, L/R, saves GBA con RTC, estados por configuración) y de UI con capturas (`tools/ios-screenshots.sh`; en G8: 117 tests y 94 capturas). Las pruebas con temporizadores cortos (`SaveMirrorTests`, `StateSRAMTests`) esperan 2 s y pueden fallar si el Mac está muy cargado: repetirlas con la máquina libre.
+
 ## Sanitizers y fuzzing
 - `make asan`: todo lo anterior compilado con `-fsanitize=address,undefined -fno-omit-frame-pointer`.
 - `make fuzz`: tres fuzzers en `core/fuzz/`:
@@ -70,7 +81,17 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - Licencia: SameBoy es Expat/MIT **salvo sus directorios `iOS/` y `HexFiend/`**. El oráculo solo usa `Core/`, y la app **nunca** lo enlaza.
 - Uso principal: depurar diferencias en Pokémon (A9 audio de Pikachu, glitches gráficos) con **volcados propios que nunca salen de la máquina local**.
 
-## Prueba de aceptación manual en iPhone (checklist por release)
+## Pruebas de Android
+Comandos en [android/README.md](../android/README.md). Última cifra registrada (A7, `docs/auditorias/A7-android-evidencia.md`): JVM 372/372, instrumentados 333/333, kill-test 50/50, lint sin errores.
+- **JVM** (`./gradlew :app:testDebugUnitTest`, `app/src/test`): lógica pura sin dispositivo (mapeo de mando, geometría de controles, `SaveResolution`, `SramFlushPolicy`, `SaveStore`, `AtomicFile`, columnas por fuente, esquemas de contraste, preferencias).
+- **Instrumentadas** (`./gradlew :app:connectedDebugAndroidTest`, `app/src/androidTest`): emulador o teléfono; núcleo nativo real, `SaveCoordinator`, SAF, interfaz Compose, ciclo de vida, TalkBack (nodos virtuales), tamaños táctiles, rotación sin pausa y `CatalogCoverageTest` (el catálogo cubre `tools/android-screens.txt`).
+- **`ProcessKillTest`**: mata un proceso hijo en mitad de escrituras de partida y verifica la recuperación.
+- **Kill-test** (`tools/android-save-kill-test.sh [N]`): N iteraciones de `save-stress` + cierre forzado + `save-verify` en el emulador (50/50 en A6 y A7). No combina rotación y cierre.
+- **Catálogo** (`tools/android-screenshots.sh`): capturas Debug en claro/oscuro, color dinámico, fuente grande, contraste, ventana ancha y recorte; revisadas a ojo, no se versionan ([diseno-android/VERIFICACION.md](diseno-android/VERIFICACION.md)).
+- **Emulador:** `Small_Phone_API_35`, sin ventana, animaciones a 0 y `hide_error_dialogs` (ver el README). Las instrumentadas y el catálogo no pueden ejecutarse a la vez en el mismo emulador.
+- **Limitaciones:** el emulador no prueba mando físico real, TalkBack con gestos, audio real ni rendimiento a 60 fps; el recorte y la tablet se simulan; el backup en la nube de Android no se ejercita. Esa parte es manual: [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md). Con poca RAM conviene `--no-daemon --max-workers=1` y no encadenar el emulador y Gradle en paralelo.
+
+## Prueba de aceptación manual en iPhone (checklist por release; la lista ampliada de Android e iPhone está en [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md))
 - [ ] Rojo y Amarillo arrancan y muestran la intro con música.
 - [ ] 10 min de juego sin cortes de audio (el contador de underruns en el menú de depuración es 0).
 - [ ] Guardar en el juego → forzar cierre desde el multitarea → reabrir: la partida está.
@@ -78,3 +99,11 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - [ ] Horizontal: botones translúcidos, A+B simultáneos y deslizar sobre el D-pad funcionan.
 - [ ] Vertical: layout correcto.
 - [ ] Modo avión activado: todo funciona (confirma que la app no necesita red).
+
+## Núcleo GBA (`gba/`)
+- **Pruebas libres:** `tools/fetch-gba-test-roms.sh` descarga [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests) (MIT) y [SingleStepTests/ARM7TDMI](https://github.com/SingleStepTests/ARM7TDMI) (MIT, ~1 GB) en `gba/tests/roms/` (ignorado por git), cada repo fijado a un commit (git verifica cada objeto por su hash). No corre en el arranque de sesión por su tamaño.
+- **Runner `gbatest`** (`gba/tests/runner.c`): `--sst ARCHIVO` (una instrucción por caso: registros de todos los bancos, CPSR/SPSR, pipeline y escrituras al bus en orden), `ROM --mode jsmolka` (termina en un bucle `b .` con el resultado en r12; 0 = todo bien), `ROM --bench N`, `--unit`.
+- **Suite:** `gba/tests/suite.txt`, formato `hito|ruta|modo|max_frames|tipo`. `make -C gba test HITO=Gn` ejecuta los casos de los hitos ≤ Gn; `make -C gba asan` repite con ASan + UBSan (SingleStepTests limitado a 5 000 casos por archivo).
+- **Reglas:** `make -C gba check-header check-globals check-symbols`.
+- **PPU:** modo `ref` (frame idéntico a un PNG de `gba/tests/ref/`). ROMs homebrew propias en `gba/tests/homebrew/` (`make -C gba homebrew`, necesita `clang`, `ld.lld` y `llvm-objcopy`). Oráculo opcional: `make -C gba oracle` compila mGBA 0.10.5 en `tools/oracle/mgba` (ignorado por git) y `tools/gba-compare.py ROM FRAMES --out DIR` compara con PNG de diferencias.
+- **CI:** `.github/workflows/gba.yml` (Linux, runners de GitHub) con caché de las pruebas.

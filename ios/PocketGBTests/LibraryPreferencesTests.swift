@@ -85,7 +85,7 @@ struct LibraryPreferencesTests {
     }
 
     @Test func filtersAreAllGBGBCAndFavorites() {
-        #expect(LibraryFilter.allCases.map(\.title) == ["Todos", "GB", "GBC", "Favoritos"])
+        #expect(LibraryFilter.allCases.map(\.title) == ["Todos", "GB", "GBC", "GBA", "Favoritos"])
         let prefs = LibraryPreferences(fileURL: nil)
         prefs.toggleFavorite(entries[3])
         #expect(prefs.visible(entries, filter: .all, query: "").map(\.title) == ["Alfa", "Beta", "Canción", "Delta"])
@@ -119,6 +119,38 @@ struct LibraryPreferencesTests {
         let prefs = LibraryPreferences(fileURL: prefsURL)
         #expect(prefs.isFavorite(entries[0]))
         #expect(prefs.data.layout == .grid)
+        #expect(prefs.displayTitle(entries[0]) == "Beta")
+    }
+
+    @Test func aliasesPreferFingerprintMigrateFromPathAndAffectSearchAndSort() {
+        let prefs = LibraryPreferences(fileURL: nil)
+        let beta = entries[0]
+        let alfa = entries[1]
+
+        prefs.setAlias("  Zelda  ", for: beta)
+        #expect(prefs.displayTitle(beta) == "Zelda")
+        #expect(prefs.visible(entries, filter: .all, query: "zel").map(\.id) == [beta.id])
+
+        // Al conocer la huella, el alias deja de depender de la ruta.
+        prefs.recordPlayed(id: beta.id, fingerprint: "fp-beta", at: Date())
+        #expect(prefs.data.aliasesByPath[beta.id] == nil)
+        #expect(prefs.data.aliasesByFingerprint["fp-beta"] == "Zelda")
+        let moved = Self.entry("otra/b.gb", "Beta", color: false)
+        prefs.recordPlayed(id: moved.id, fingerprint: "fp-beta", at: Date())
+        #expect(prefs.displayTitle(moved) == "Zelda")
+
+        prefs.setAlias("Aardvark", for: alfa)
+        #expect(prefs.visible(entries, filter: .all, query: "").map { prefs.displayTitle($0) }
+            == ["Aardvark", "Canción", "Delta", "Zelda"])
+    }
+
+    @Test func aliasIsLimitedToEightyCharactersAndEmptyRestoresOriginalTitle() {
+        let prefs = LibraryPreferences(fileURL: nil)
+        let game = entries[0]
+        prefs.setAlias(String(repeating: "á", count: 100), for: game)
+        #expect(prefs.displayTitle(game).count == 80)
+        prefs.setAlias("   ", for: game)
+        #expect(prefs.displayTitle(game) == game.title)
     }
 
     // MARK: Portadas

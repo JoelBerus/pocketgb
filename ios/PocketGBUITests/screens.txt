@@ -46,6 +46,7 @@ library-list        portrait  light  -screen library-list -demoLibrary standard
 library-list        portrait  dark   -screen library-list -demoLibrary standard
 library-continue    portrait  light  -screen library-continue -demoLibrary standard
 library-continue    portrait  dark   -screen library-continue -demoLibrary standard
+library-continue-reduce-motion portrait dark -screen library-continue-reduce-motion -demoLibrary standard -reduceMotion -uiSwipeUp
 favorites           portrait  light  -screen favorites -demoLibrary standard
 favorites           portrait  dark   -screen favorites -demoLibrary standard
 search-active       portrait  light  -screen search-active -demoLibrary standard
@@ -108,3 +109,31 @@ game-settings          portrait  dark  -screen game-settings -demoLibrary standa
 # ---- D7 · Accesibilidad ----
 library-reduce-transparency portrait dark  -screen library-reduce-transparency -demoLibrary standard -reduceTransparency
 library-ax5                 portrait light -screen library-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+
+# ---- G7 · Game Boy Advance (arm.gba de jsmolka/gba-tests, MIT) ----
+game-gba            portrait  dark   -rom $FIXTURES/arm.gba
+game-gba            landscape dark   -rom $FIXTURES/arm.gba
+
+# ---- G8 · Game Boy Advance: pantalla 3:2, L/R y ajustes por juego ----
+gameplay-gba-landscape-clear landscape dark -rom $FIXTURES/arm.gba -controlOpacity 30
+gameplay-gba-reduce-transparency landscape dark -rom $FIXTURES/arm.gba -controlOpacity 30 -reduceTransparency
+gameplay-gba-hidden landscape dark -rom $FIXTURES/arm.gba -controlsVisibility hidden
+customize-controls-gba-portrait  portrait  dark -screen customize-controls-gba-portrait -rom $FIXTURES/arm.gba
+customize-controls-gba-landscape landscape dark -screen customize-controls-gba-landscape -rom $FIXTURES/arm.gba
+game-settings-gba   portrait  dark  -screen game-settings-gba -demoLibrary standard
+game-settings-gba   portrait  light -screen game-settings-gba -demoLibrary standard
+game-settings-gba-ax5 portrait light -screen game-settings-gba-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+customize-controls-gba-portrait-ax5 portrait dark -screen customize-controls-gba-portrait-ax5 -rom $FIXTURES/arm.gba -contentSizeCategory accessibility5
+
+# ---- M9 · Cable link virtual (dmg-acid2 y cgb-acid2, ROMs de prueba libres) ----
+gameplay-link-portrait  portrait  dark  -screen gameplay-link-portrait -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-landscape landscape dark  -screen gameplay-link-landscape -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-switched  portrait  dark  -screen gameplay-link-switched -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc
+gameplay-link-pause     portrait  dark  -screen gameplay-link-pause -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc -paused
+gameplay-link-reduce-transparency landscape dark -screen gameplay-link-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -linkROM $FIXTURES/cgb-acid2.gbc -reduceTransparency -controlOpacity 30
+link-partner-picker     portrait  light -screen link-partner-picker -demoLibrary standard
+link-partner-picker     portrait  dark  -screen link-partner-picker -demoLibrary standard
+link-partner-picker-ax5 portrait  light -screen link-partner-picker-ax5 -demoLibrary standard -contentSizeCategory accessibility5
+link-open-refused       portrait  light -screen link-open-refused -demoLibrary standard -demoLinkError same-game
+link-open-refused       portrait  dark  -screen link-open-refused -demoLibrary standard -demoLinkError same-game
+link-continue-warning   portrait  light -screen link-continue-warning -demoLibrary standard

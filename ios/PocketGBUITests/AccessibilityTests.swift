@@ -3,7 +3,7 @@ import XCTest
 /// D7: cobertura del catálogo, etiquetas accesibles, áreas táctiles y reflow con AX5.
 final class ShellAccessibilityTests: XCTestCase {
     /// IDs de docs/diseno/SPEC.md §9 (sin `gameplay-portrait-hud`, sustituida por decisión de Joel).
-    static let specIDs: Set<String> = ["customize-controls-landscape","customize-controls-portrait","favorites","game-context-menu","game-details","gameplay-landscape","gameplay-landscape-clear","gameplay-landscape-hidden","gameplay-pause","gameplay-portrait","gameplay-reduce-transparency","launch","library-ax5","library-cloud-downloading","library-cloud-pending","library-continue","library-empty","library-folder-unavailable","library-grid","library-list","library-no-folder","library-reduce-transparency","library-rom-error","library-scan-progress","library-scan-summary","load-state-confirm","remove-game-confirm","replace-state-confirm","save-data-error","save-states","search-active","search-no-results","search-results","settings-about","settings-appearance","settings-audio","settings-controls","settings-display","settings-library","settings-main","settings-saves","settings-storage"]
+    static let specIDs: Set<String> = ["customize-controls-landscape","customize-controls-portrait","favorites","game-context-menu","game-details","gameplay-landscape","gameplay-landscape-clear","gameplay-landscape-hidden","gameplay-pause","gameplay-portrait","gameplay-reduce-transparency","gameplay-link-landscape","gameplay-link-pause","gameplay-link-portrait","gameplay-link-reduce-transparency","gameplay-link-switched","launch","library-ax5","library-cloud-downloading","library-cloud-pending","library-continue","library-empty","library-folder-unavailable","library-grid","library-list","library-no-folder","library-reduce-transparency","library-rom-error","library-scan-progress","library-scan-summary","link-continue-warning","link-open-refused","link-partner-picker","link-partner-picker-ax5","load-state-confirm","remove-game-confirm","replace-state-confirm","save-data-error","save-states","search-active","search-no-results","search-results","settings-about","settings-appearance","settings-audio","settings-controls","settings-display","settings-library","settings-main","settings-saves","settings-storage"]
 
     @MainActor
     func testCatalogCoversEverySpecScreenWithoutContradictions() throws {
@@ -40,8 +40,7 @@ final class ShellAccessibilityTests: XCTestCase {
         XCTAssertTrue(favorite.label.contains("Favorito"), favorite.label)
         // Solo controles propios: los botones de barra del sistema se dibujan a 36 pt y
         // iOS gestiona su área táctil.
-        for element in [card, favorite, app.tabBars.buttons["Biblioteca"], app.tabBars.buttons["Ajustes"]]
-            where element.exists {
+        for element in [card, favorite] where element.exists {
             XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.debugDescription)
             XCTAssertGreaterThanOrEqual(element.frame.height, 44, element.debugDescription)
         }
@@ -49,19 +48,25 @@ final class ShellAccessibilityTests: XCTestCase {
 
     @MainActor
     func testGridReflowsToOneColumnAtAX5() throws {
+        // El simulador conserva la orientación del test anterior (el catálogo termina en
+        // horizontal): en horizontal caben varias columnas incluso con AX5.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard",
                                "-contentSizeCategory", "accessibility5"]
         app.launch()
         let first = app.buttons["game-card-cgb-acid2.gbc"]
-        let second = app.buttons["game-card-dmg-acid2.gb"]
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
-        // Con AX5 la cuadrícula es larga: se desplaza hasta ver los dos.
-        for _ in 0..<6 where !(first.exists && second.exists && second.isHittable) {
-            app.swipeUp()
+        // La lista es perezosa y con AX5 cada card casi llena la pantalla: se desplaza en
+        // pasos cortos (un tercio de pantalla) hasta que exista la primera card.
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        for _ in 0..<20 where !first.exists {
+            from.press(forDuration: 0.05, thenDragTo: to)
         }
-        XCTAssertTrue(first.exists && second.exists)
-        // Una columna: el segundo juego está debajo del primero, no a su lado.
-        XCTAssertGreaterThanOrEqual(second.frame.minY, first.frame.maxY - 1)
+        XCTAssertTrue(first.exists, app.debugDescription)
+        // Una columna: con AX5 la card ocupa casi todo el ancho de la pantalla (con dos
+        // columnas mediría la mitad). No depende de cuánto se haya desplazado la lista.
+        XCTAssertGreaterThan(first.frame.width, app.frame.width * 0.7, first.debugDescription)
     }
 }

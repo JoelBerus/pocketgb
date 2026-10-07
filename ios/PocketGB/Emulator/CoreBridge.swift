@@ -7,6 +7,14 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
     case badRomSizeCode, badRamSizeCode, unsupportedMBC, cgbOnly, noROM
     case sramSize, stateMagic, stateVersion, stateROMMismatch, stateCorrupt
     case bufferTooSmall
+    /// Solo Game Boy Advance (`GBACoreBridge`).
+    case gbaRomTooLarge, gbaBadHeader, biosSize
+    /// Game Boy Advance: estado guardado con otro tipo de partida, reloj o BIOS.
+    case stateConfig
+    /// Cable link virtual (M9): estados y SRAM del par no están disponibles.
+    case linkUnsupported
+    /// Cable link virtual: `gb_link_attach` rechazó el par (instancia repetida o ya conectada).
+    case linkAttachFailed
     case unknown(UInt32)
 
     /// `nil` si `r == GB_OK`.
@@ -38,6 +46,9 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .romTooSmall, .romTruncated, .badRomSizeCode, .badRamSizeCode:
             return "El archivo no parece un ROM de Game Boy válido."
         case .romTooLarge: return "El ROM supera los 8 MiB."
+        case .gbaRomTooLarge: return "El ROM supera los 32 MiB."
+        case .gbaBadHeader: return "El archivo no parece un ROM de Game Boy Advance válido."
+        case .biosSize: return "La BIOS de Game Boy Advance no mide 16 KiB."
         case .unsupportedMBC: return "Tipo de cartucho no soportado todavía."
         case .cgbOnly: return "Este juego es solo de Game Boy Color (llega en M8)."
         case .sramSize: return "La partida guardada tiene un tamaño distinto al esperado."
@@ -45,6 +56,10 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
         case .unknown(let code): return "Error desconocido del núcleo (\(code))."
         case .stateMagic, .stateCorrupt: return "El estado está dañado."
         case .stateVersion: return "El estado es de una versión anterior de PocketGB."
+        case .stateConfig:
+            return "El estado se guardó con otra configuración (tipo de partida, reloj o BIOS) y no se puede cargar con la actual."
+        case .linkUnsupported: return "No disponible con el cable link."
+        case .linkAttachFailed: return "No se pudo conectar el cable link."
         case .stateROMMismatch: return "El estado es de otro juego, o de otro modo (Game Boy o Game Boy Color)."
         case .nullArgument, .noROM, .bufferTooSmall:
             return "Error interno del núcleo."
@@ -54,6 +69,7 @@ enum CoreError: Error, Equatable, CustomStringConvertible {
 
 /// Datos de la cabecera que necesita la app.
 struct RomInfo: Sendable {
+    var console: Console = .gameBoy
     let title: String
     let cartType: UInt8
     let sramBytes: Int
@@ -62,12 +78,20 @@ struct RomInfo: Sendable {
     let headerChecksumOK: Bool
     /// Primeros 32 caracteres hex del SHA-256 del ROM (docs/02 §Datos persistentes).
     let fingerprint: String
+    /// Game Boy Advance: medio EEPROM (el `.sav` puede ser de 512 B o de 8 KiB).
+    var eeprom = false
+    /// Game Boy Advance: el ajuste por juego fija el tamaño de la EEPROM (solo vale ese `sramBytes`).
+    var eepromSizeFixed = false
+    /// Game Boy Advance: se usó la BIOS del usuario (si no, HLE).
+    var biosLoaded = false
 }
 
 /// Dueño del puntero `gb*`. La instancia del núcleo no es thread-safe:
 /// tras `EmulatorSession.start` solo se usa desde el hilo de emulación.
-final class CoreBridge {
+final class CoreBridge: ConsoleCore {
+    let console = Console.gameBoy
     private let g: OpaquePointer
+    private var ramBytesAtLoad = 0
 
     init() throws(CoreError) {
         guard let g = gb_create() else { throw .outOfMemory }
@@ -102,19 +126,24 @@ final class CoreBridge {
         let fingerprint = withUnsafeBytes(of: info.fingerprint) { raw in
             raw.prefix(16).map { String(format: "%02x", $0) }.joined()
         }
+        ramBytesAtLoad = Int(info.sram_bytes)
         return RomInfo(title: title, cartType: info.cart_type, sramBytes: Int(info.sram_bytes),
                        hasBattery: info.has_battery, hasRTC: info.has_rtc,
                        headerChecksumOK: info.header_checksum_ok, fingerprint: fingerprint)
     }
 
-    func setButtons(_ mask: UInt8) { gb_set_buttons(g, mask) }
+    /// Solo para `LinkCable`: el puntero `gb*` sigue siendo de este objeto, que debe seguir
+    /// vivo mientras esté conectado (el cable lo retiene).
+    var linkHandle: OpaquePointer { g }
+
+    func setButtons(_ mask: UInt16) { gb_set_buttons(g, UInt8(truncatingIfNeeded: mask)) }
     func runFrame() { gb_run_frame(g) }
     var cpuLocked: Bool { gb_cpu_locked(g) }
 
     /// Copia el framebuffer RGBA8888 (160×144) a `dst`.
     func copyFramebuffer(to dst: UnsafeMutablePointer<UInt32>) {
         guard let src = gb_framebuffer(g) else { return }
-        dst.update(from: src, count: FrameBuffers.pixelCount)
+        dst.update(from: src, count: ScreenSize.gameBoy.pixelCount)
     }
 
     /// Drena frames estéreo intercalados al buffer que posee la sesión.
@@ -125,6 +154,8 @@ final class CoreBridge {
     // MARK: SRAM
 
     var sramSaveSize: Int { gb_sram_save_size(g) }
+    /// Pie del RTC (48 B en MBC3 con reloj): lo que `sramSave()` añade a la RAM.
+    var sramFooterBytes: Int { sramSaveSize - ramBytesAtLoad }
     var sramDirty: Bool { gb_sram_dirty(g) }
     func clearSRAMDirty() { gb_sram_clear_dirty(g) }
 

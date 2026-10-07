@@ -1,12 +1,13 @@
 import Foundation
+import PocketGBACore
 import PocketGBCore
 import Testing
 @testable import PocketGB
 
 /// D6: mapeo del mando sin mando físico (D-README §8).
 struct GamepadMappingTests {
-    static let a = UInt8(GB_BTN_A), b = UInt8(GB_BTN_B), start = UInt8(GB_BTN_START), select = UInt8(GB_BTN_SELECT)
-    static let up = UInt8(GB_BTN_UP), down = UInt8(GB_BTN_DOWN), left = UInt8(GB_BTN_LEFT), right = UInt8(GB_BTN_RIGHT)
+    static let a = UInt16(GB_BTN_A), b = UInt16(GB_BTN_B), start = UInt16(GB_BTN_START), select = UInt16(GB_BTN_SELECT)
+    static let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN), left = UInt16(GB_BTN_LEFT), right = UInt16(GB_BTN_RIGHT)
 
     @Test func faceButtonsMapByPosition() {
         #expect(GamepadMapping.mask(GamepadSnapshot(faceRight: true)) == Self.a)
@@ -15,13 +16,36 @@ struct GamepadMappingTests {
         #expect(GamepadMapping.mask(GamepadSnapshot(faceLeft: true, faceTop: true)) == 0)
     }
 
+    @Test func shouldersMapToLAndR() {
+        #expect(GamepadMapping.mask(GamepadSnapshot(shoulderLeft: true)) == UInt16(GBA_BTN_L))
+        #expect(GamepadMapping.mask(GamepadSnapshot(shoulderRight: true)) == UInt16(GBA_BTN_R))
+        // Los bits de L y R son distintos del resto de botones.
+        #expect(UInt16(GBA_BTN_L) > 0xFF && UInt16(GBA_BTN_R) > 0xFF)
+    }
+
+    /// El núcleo Game Boy descarta L y R: `CoreBridge.setButtons(0x0300)` no cambia nada,
+    /// mientras que un botón de verdad (A) sí cambia el estado.
+    @MainActor
+    @Test func gameBoyCoreIgnoresShoulderBits() throws {
+        func state(buttons: UInt16) throws -> Data {
+            let core = try CoreBridge()
+            _ = try core.loadROM(StateSRAMTests.rom(title: "HOMBROS", value: 0x11), unixTime: 0)
+            core.setButtons(buttons)
+            for _ in 0..<3 { core.runFrame() }
+            return try core.stateSave()
+        }
+        let none = try state(buttons: 0)
+        #expect(try state(buttons: UInt16(GBA_BTN_L) | UInt16(GBA_BTN_R)) == none)
+        #expect(try state(buttons: UInt16(GB_BTN_A)) != none)
+    }
+
     @Test func menuIsStartAndOptionsIsSelect() {
         #expect(GamepadMapping.mask(GamepadSnapshot(menu: true)) == Self.start)
         #expect(GamepadMapping.mask(GamepadSnapshot(options: true)) == Self.select)
     }
 
     @Test func dpadAndLeftStickGiveTheSameMask() {
-        let cases: [(Float, Float, UInt8)] = [
+        let cases: [(Float, Float, UInt16)] = [
             (1, 0, Self.right), (0, 1, Self.up), (-1, 0, Self.left), (0, -1, Self.down),
             (0.7, 0.7, Self.up | Self.right), (-0.7, -0.7, Self.down | Self.left),
         ]

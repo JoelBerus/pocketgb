@@ -38,6 +38,10 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
     var sizeScale: Double = 1
     var portraitLayout = ControlsLayout.defaults(.portrait)
     var landscapeLayout = ControlsLayout.defaults(.landscape)
+    /// Disposición propia de Game Boy Advance (imagen 3:2, con L/R). Las claves antiguas
+    /// `portraitLayout`/`landscapeLayout` siguen siendo las de Game Boy.
+    var gbaPortraitLayout = ControlsLayout.defaults(.portrait, shoulders: true)
+    var gbaLandscapeLayout = ControlsLayout.defaults(.landscape, shoulders: true)
     /// Horizontal: solo múltiplos enteros de 160×144 (píxeles idénticos).
     var integerScaleLandscape = true
     var dpadStyle: DpadStyle = .cross
@@ -65,6 +69,10 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
         sizeScale = min(max(rawScale, 0.85), 1.15)
         portraitLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .portraitLayout)) ?? defaults.portraitLayout
         landscapeLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .landscapeLayout)) ?? defaults.landscapeLayout
+        gbaPortraitLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .gbaPortraitLayout))
+            ?? defaults.gbaPortraitLayout
+        gbaLandscapeLayout = (try? c.decodeIfPresent(ControlsLayout.self, forKey: .gbaLandscapeLayout))
+            ?? defaults.gbaLandscapeLayout
         integerScaleLandscape = (try? c.decodeIfPresent(Bool.self, forKey: .integerScaleLandscape))
             ?? defaults.integerScaleLandscape
         dpadStyle = (try? c.decodeIfPresent(DpadStyle.self, forKey: .dpadStyle)) ?? defaults.dpadStyle
@@ -76,8 +84,23 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
         perGame = (try? c.decodeIfPresent([String: GameOverrides].self, forKey: .perGame)) ?? [:]
     }
 
-    func layout(_ orientation: ControlsOrientation) -> ControlsLayout {
-        orientation == .portrait ? portraitLayout : landscapeLayout
+    /// Disposición de una consola y orientación (`shoulders`: Game Boy Advance).
+    func layout(_ orientation: ControlsOrientation, shoulders: Bool = false) -> ControlsLayout {
+        switch (orientation, shoulders) {
+        case (.portrait, false): portraitLayout
+        case (.landscape, false): landscapeLayout
+        case (.portrait, true): gbaPortraitLayout
+        case (.landscape, true): gbaLandscapeLayout
+        }
+    }
+
+    mutating func setLayout(_ layout: ControlsLayout, _ orientation: ControlsOrientation, shoulders: Bool) {
+        switch (orientation, shoulders) {
+        case (.portrait, false): portraitLayout = layout
+        case (.landscape, false): landscapeLayout = layout
+        case (.portrait, true): gbaPortraitLayout = layout
+        case (.landscape, true): gbaLandscapeLayout = layout
+        }
     }
 }
 
@@ -109,25 +132,23 @@ final class GameplaySettings {
         }
     }
 
-    /// Guarda un control movido en el editor, solo para esa orientación.
-    func move(_ id: ControlID, to relative: CGPoint, orientation: ControlsOrientation) {
+    /// Guarda un control movido en el editor, solo para esa orientación y esa consola.
+    func move(_ id: ControlID, to relative: CGPoint, orientation: ControlsOrientation, shoulders: Bool = false) {
         let clamped = CGPoint(x: min(max(relative.x, 0), 1), y: min(max(relative.y, 0), 1))
         update { data in
-            if orientation == .portrait {
-                data.portraitLayout.centers[id] = clamped
-            } else {
-                data.landscapeLayout.centers[id] = clamped
-            }
+            var layout = data.layout(orientation, shoulders: shoulders)
+            layout.centers[id] = clamped
+            data.setLayout(layout, orientation, shoulders: shoulders)
         }
     }
 
-    /// Cambia el tamaño de un control (en pasos del 10 %), solo para esa orientación.
-    func resize(_ id: ControlID, by delta: CGFloat, orientation: ControlsOrientation) {
+    /// Cambia el tamaño de un control (en pasos del 10 %), solo para esa orientación y consola.
+    func resize(_ id: ControlID, by delta: CGFloat, orientation: ControlsOrientation, shoulders: Bool = false) {
         update { data in
-            var layout = orientation == .portrait ? data.portraitLayout : data.landscapeLayout
+            var layout = data.layout(orientation, shoulders: shoulders)
             let value = ((layout.scale(id) + delta) * 10).rounded() / 10
             layout.scales[id] = min(max(value, ControlsLayout.scaleRange.lowerBound), ControlsLayout.scaleRange.upperBound)
-            if orientation == .portrait { data.portraitLayout = layout } else { data.landscapeLayout = layout }
+            data.setLayout(layout, orientation, shoulders: shoulders)
         }
     }
 
@@ -138,14 +159,8 @@ final class GameplaySettings {
         }
     }
 
-    func resetLayout(_ orientation: ControlsOrientation) {
-        update { data in
-            if orientation == .portrait {
-                data.portraitLayout = .defaults(.portrait)
-            } else {
-                data.landscapeLayout = .defaults(.landscape)
-            }
-        }
+    func resetLayout(_ orientation: ControlsOrientation, shoulders: Bool = false) {
+        update { $0.setLayout(.defaults(orientation, shoulders: shoulders), orientation, shoulders: shoulders) }
     }
 
     #if DEBUG

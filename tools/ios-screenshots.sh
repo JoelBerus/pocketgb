@@ -24,6 +24,11 @@ UDID="${UDID%% *}"
 # ROMs de prueba fuera de ~/Documents: macOS (TCC) bloquea ahí al simulador.
 FIX="$(mktemp -d)"; trap 'rm -rf "$FIX"' EXIT
 cp "$ROOT/core/tests/roms/dmg-acid2/dmg-acid2.gb" "$FIX/"
+# Cable link (M9): el segundo juego del par (cgb-acid2, libre).
+cp "$ROOT/core/tests/roms/cgb-acid2/cgb-acid2.gbc" "$FIX/"
+# Game Boy Advance: arm.gba de jsmolka/gba-tests (MIT), homebrew libre.
+"$ROOT/tools/fetch-gba-test-roms.sh" --solo-jsmolka
+cp "$ROOT/gba/tests/roms/gba-tests/arm/arm.gba" "$FIX/"
 rm -rf "$OUT"/*.png "$OUT/result.xcresult"
 cd "$ROOT"
 set +e
