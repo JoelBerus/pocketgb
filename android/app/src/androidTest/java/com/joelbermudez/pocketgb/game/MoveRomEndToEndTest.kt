@@ -159,7 +159,7 @@ class MoveRomEndToEndTest {
         vm.setAlias(entry, "Contador de Joel")
         val overrides = GameOverrides(colorForGameBoy = true, compatPalette = 3)
         settingsFile.save(GameplaySettingsData().setOverrides(fingerprint, overrides))
-        assertTrue(artwork.save(fingerprint, IntArray(160 * 144) { 0xFF336699.toInt() }))
+        assertTrue(artwork.save(fingerprint, IntArray(160 * 144) { if (it % 7 == 0) 0xFF99CCFF.toInt() else 0xFF336699.toInt() }))
         val first = playAndExit(entry)
         assertEquals(fingerprint, first.game.fingerprint)
         vm.recordPlayed(entry, fingerprint, System.currentTimeMillis())
