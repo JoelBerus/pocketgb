@@ -18,8 +18,16 @@ class LibraryMoveDetectionTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun rom(id: String, size: Long? = 32768, modified: Long? = 1_000L, name: String = id.substringAfterLast('/')) =
-        RomEntry(id, "content://$id", name, name.substringBeforeLast('.').uppercase(), false, size ?: 0L, true, null, lastModified = modified)
+    private fun rom(
+        id: String,
+        size: Long? = 32768,
+        modified: Long? = 1_000L,
+        name: String = id.substringAfterLast('/'),
+        documentId: String? = null,
+    ) = RomEntry(
+        id, "content://$id", name, name.substringBeforeLast('.').uppercase(), false, size ?: 0L, true, null,
+        lastModified = modified, documentId = documentId,
+    )
 
     private val fp = "ab".repeat(32)
 
@@ -222,5 +230,33 @@ class LibraryMoveDetectionTest {
             "same" to DocumentStamp("s.gb", 40, 4), // sigue en su sitio
         )
         assertEquals(mapOf("a" to "c", "b" to "d"), MoveDetection.detect(previous, current))
+    }
+
+    @Test
+    fun anotherDocumentAtTheSamePathWithTheSameNameSizeAndDateDoesNotInheritTheFingerprint() {
+        // Drive: se borra «Rojo.gb» y se sube otro ROM con el mismo nombre, tamaño y fecha: otro id de documento.
+        val old = rom("Rojo.gb", documentId = "drive:1AbC")
+        val prefs = scanned(old).recordFingerprint(old.id, fp).toggleFavorite(old)
+        val other = rom("Rojo.gb", documentId = "drive:9XyZ")
+        val after = prefs.reconciled(listOf(other), complete = true)
+        assertNull(after.fingerprints[other.id])
+        assertFalse(after.isFavorite(other))
+        assertTrue("lo guardado por huella sigue ahí", fp in after.favoriteFingerprints)
+    }
+
+    @Test
+    fun theSameDocumentIdAtTheSamePathKeepsTheFingerprint() {
+        val old = rom("Rojo.gb", documentId = "drive:1AbC")
+        val prefs = scanned(old).recordFingerprint(old.id, fp)
+        assertEquals(fp, prefs.reconciled(listOf(rom("Rojo.gb", documentId = "drive:1AbC")), complete = true).fingerprints["Rojo.gb"])
+    }
+
+    @Test
+    fun aMoveIsStillRecognisedWhenTheProviderChangesTheDocumentIdWithThePath() {
+        // ExternalStorage: el id es la ruta, así que cambia al mover; el sello (nombre, tamaño, fecha) sigue valiendo.
+        val old = rom("A/Rojo.gb", documentId = "primary:Roms/A/Rojo.gb")
+        val prefs = scanned(old).recordFingerprint(old.id, fp)
+        val moved = rom("B/Rojo.gb", documentId = "primary:Roms/B/Rojo.gb")
+        assertEquals(fp, prefs.reconciled(listOf(moved), complete = true).fingerprints[moved.id])
     }
 }

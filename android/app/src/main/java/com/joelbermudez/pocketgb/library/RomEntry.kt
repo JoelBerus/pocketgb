@@ -50,6 +50,8 @@ data class RomEntry(
      * nunca las pone. Solo informativo: las copias comparten partida, estados, ajustes y portada (van por huella).
      */
     val alsoAt: List<RomLocation> = emptyList(),
+    /** N1a: id de documento del proveedor (`COLUMN_DOCUMENT_ID`), parte del sello; `null` en datos de prueba. */
+    val documentId: String? = null,
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String

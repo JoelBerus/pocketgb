@@ -259,6 +259,7 @@ object LibraryScanner {
             mirrorSaveDate = candidate.saveDate,
             folderPath = candidate.folderPath,
             lastModified = node.lastModified,
+            documentId = node.id,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)

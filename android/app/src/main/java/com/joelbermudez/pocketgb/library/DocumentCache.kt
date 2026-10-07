@@ -14,14 +14,23 @@ data class DocumentStamp(
     val size: Long? = null,
     /** Epoch ms; `null` si el proveedor no la da. */
     val lastModified: Long? = null,
+    /**
+     * `COLUMN_DOCUMENT_ID`. No sirve para reconocer un movimiento (en ExternalStorage el id es la ruta y cambia al mover),
+     * pero en la misma ruta un id distinto es otro documento (en Drive, subir otro archivo con el mismo nombre).
+     */
+    val documentId: String? = null,
 ) {
+    /** Lo que se compara para reconocer el documento en otra ruta: nombre, tamaño y fecha (sin el id). */
+    internal val identity: DocumentStamp get() = if (documentId == null) this else copy(documentId = null)
+
     /** Con tamaño y fecha conocidos: puede reconocer el documento en otra ruta. */
     val isComplete: Boolean get() = (size ?: 0L) > 0L && (lastModified ?: 0L) > 0L
 
     /** En la misma ruta, el proveedor da otro tamaño u otra fecha: el contenido puede ser otro. */
     fun differsFrom(other: DocumentStamp): Boolean =
         (size != null && other.size != null && size != other.size) ||
-            (lastModified != null && other.lastModified != null && lastModified != other.lastModified)
+            (lastModified != null && other.lastModified != null && lastModified != other.lastModified) ||
+            (documentId != null && other.documentId != null && documentId != other.documentId)
 
     companion object {
         /** El escáner pone 0 cuando el tamaño es desconocido (`SafDocumentTree.knownSize`). */
@@ -29,6 +38,7 @@ data class DocumentStamp(
             name = entry.fileName,
             size = entry.sizeBytes.takeIf { it > 0 },
             lastModified = entry.lastModified?.takeIf { it > 0 },
+            documentId = entry.documentId,
         )
     }
 }
@@ -52,8 +62,8 @@ object MoveDetection {
         val moves = LinkedHashMap<String, String>()
 
         // 1) Mismo nombre, tamaño y fecha (movido de carpeta).
-        val appearedByStamp = appeared.keys.groupBy { appeared.getValue(it) }
-        gone.keys.groupBy { gone.getValue(it) }.forEach { (stamp, from) ->
+        val appearedByStamp = appeared.keys.groupBy { appeared.getValue(it).identity }
+        gone.keys.groupBy { gone.getValue(it).identity }.forEach { (stamp, from) ->
             val to = appearedByStamp[stamp]
             if (from.size == 1 && to?.size == 1) moves[from.single()] = to.single()
         }
@@ -76,7 +86,9 @@ object MoveDetection {
  * - Con el escaneo **completo** ([ScanStats.complete]), las rutas reconocidas como movidas ([MoveDetection]) se llevan su
  *   huella y sus registros por ruta (favorito, fecha, oculto y alias provisionales, y «ya visto»), y se olvida la huella
  *   de las rutas que ya no están (lo guardado por huella no se toca: vuelve en cuanto se conoce la huella otra vez).
- * - Una ruta que sigue en su sitio con otro tamaño u otra fecha olvida su huella: puede ser otro ROM con el mismo nombre.
+ * - Una ruta que sigue en su sitio con otro tamaño, otra fecha u otro id de documento olvida su huella: puede ser otro ROM
+ *   con el mismo nombre. Riesgo residual: en un proveedor cuyo id es la ruta (ExternalStorage), otro ROM copiado encima
+ *   con el mismo tamaño y la misma fecha conserva la huella anterior hasta que se abre (abrir siempre calcula la real).
  * - Con un escaneo incompleto (una carpeta falló o se llegó al tope) solo se anotan los sellos vistos: nada se traslada
  *   ni se olvida. Un listado vacío no cambia nada (un proveedor en la nube con un fallo pasajero).
  * Si no hay nada que cambiar devuelve un valor igual (no provoca escrituras).
