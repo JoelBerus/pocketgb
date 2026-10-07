@@ -1,6 +1,6 @@
 # N8 nativo · Game Boy Advance en Android (capa nativa y JNI): evidencia
 
-Rama `n8-android-gba-nativo` (desde `siguiente-nivel` @ `c3d8405`), worktree propio. Commits: `25756cc` (implementación, tests y 05-android-spec) y `9458375` (prueba de superficie GBA). Es el lote **N8 nativo** de [hitos/N-README.md](../hitos/N-README.md) §4 N8. Solo se tocó:
+Rama `n8-android-gba-nativo` (desde `siguiente-nivel` @ `c3d8405`), worktree propio. Commits: `25756cc` (implementación, tests y 05-android-spec), `9458375` (prueba de superficie GBA), `de8519a` (evidencia) y `71e5564` (integración de `siguiente-nivel` con A9 y N2; ver «Integración con A9 y N2»). Es el lote **N8 nativo** de [hitos/N-README.md](../hitos/N-README.md) §4 N8. Solo se tocó:
 - la capa nativa (`android/app/src/main/cpp/`);
 - el envoltorio Kotlin mínimo (`emulator/`);
 - los tests;
@@ -183,10 +183,59 @@ Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 
 OK: 50/50 iteraciones con el invariante intacto
 ```
 
-### Fusión con A9
-`git merge-tree --write-tree HEAD a9-android-paridad` (`a615fe9`) termina sin conflictos (rc=0). Los fuentes nativos fusionados compilan con el clang del NDK (`-std=c11 -Wall -Wextra -Werror -pedantic`, aarch64).
+### Fusión con A9 (prueba previa)
+Antes de integrar, `git merge-tree --write-tree HEAD a9-android-paridad` (`a615fe9`) terminó sin conflictos. La integración real se hizo después con `siguiente-nivel` (sección siguiente).
 
-**Hay que adaptarlo al fusionar.** `native_session_set_rtc_time` de A9 llama a `gb_rtc_set_time(session->core, …)`. En una sesión GBA `session->core` es NULL, así que es un no-op seguro pero incorrecto. Debe llamar a `core_rtc_set_time(session, unix_time)`, que en GBA usa la hora local. Lo hace quien fusione (lote N8 Kotlin o integración).
+## Integración con A9 y N2
+`git merge siguiente-nivel` (`f792f03`, que ya contiene A9 y N2 Android) → commit `71e5564`. Solo hubo conflicto en `native_session.c`: N2 cambió las mismas dos líneas que N8 (la combinación de botones del bucle y de `requested_buttons`). El resto (`native_session.h`, `pocketgb_jni.c`, `EmulatorSession.kt`, `NativeLibrary.kt` y `05-android-spec.md`) se fusionó solo. Catálogo y strings (`A9Catalog`, `N2Catalog`, `LibraryCatalog`, `strings_a9.xml`, `strings_n2.xml`, `tools/android-screens.txt`) solo vienen de `siguiente-nivel`: N8 no toca esos archivos, así que no se pisan.
+
+Cómo se resolvió:
+1. **`combine_buttons` (N2) con 16 bits.**
+   - Recibe `uint16_t`, ya recortados a la consola (`set_*_buttons`).
+   - Anula ↑↓ y ←→ en los bits 4–7. Un `_Static_assert` comprueba que `GB_BTN_*` y `GBA_BTN_*` de dirección coinciden.
+   - A, B, Select, Start, R y L pasan intactos.
+   - Lo usan el bucle nativo y `requested_buttons`, como en N2. `withoutOpposites` (Kotlin, `input/`) ya trabajaba sobre `Int` y no borra los bits 8–9 (test JVM nuevo).
+2. **`native_session_set_rtc_time` (A9)** llama a `core_rtc_set_time`, el mismo que usa `resume`:
+   - en GB, `gb_rtc_set_time` (MBC3, nunca retrocede), igual que antes;
+   - en GBA, `gba_rtc_set_time(native_local_time(t))`.
+
+   Documentado en `native_session.h`, `EmulatorSession.syncRtc` y 05-android-spec.
+3. **Tests nuevos:**
+   - `GbaNativeTest.oppositeDirectionsCancelWithTheGbaMaskAndShouldersStay`:
+     - táctil ↑+L con mando ↓+R da L|R;
+     - ←+A con →+↑ da ↑+A;
+     - también en `appliedButtons` del hilo nativo.
+   - `shoulderButtonsReachTheGbaCoreAndAreMaskedPerConsole`: ahora espera 0x30F con todo pulsado (antes 0x3FF), porque desde N2 se anulan los opuestos.
+   - `GbaNativeTest.gbaRtcGoesToLocalTimeOnSyncAndOnResume`. El RTC **sí es observable por JNI**, a través del estado: `gba_state` serializa `rtc_base` (int64 LE).
+     - Tras cargar con `unixTime = 1 700 000 000`, el valor `local(1 700 000 000)` aparece exactamente una vez en el estado.
+     - `syncRtc(t + 1 día)` lo deja en `local(t + 1 día)`.
+     - Con la sesión corriendo, `syncRtc` da `NotParked`.
+     - Pausar no lo toca.
+     - Al reanudar queda en `[local(antes), local(después)]` de la hora real.
+     - El `.sav` (formato de iOS) no cambia: desplazamiento 0.
+   - `GbaNativeTest.parkedStatesOfA9WorkForGbaBeforeStarting`: `saveStateParked`/`loadStateParked` de A9 con una sesión GBA sin arrancar; restaura la SRAM del estado y da ida y vuelta exacta.
+   - `ConsoleTest.withoutOppositesOfN2KeepsTheGbaShoulders` (JVM).
+
+**Verificación desde limpio de la integración.** `git archive` de `71e5564` en `scratchpad/n8-clean3` + `android/local.properties`, con las ROMs libres enlazadas (no copiadas):
+```
+$ ./gradlew --no-daemon --max-workers=1 clean :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+buildCMakeDebug y buildCMakeRelWithDebInfo × 4 ABI
+BUILD SUCCESSFUL in 5m 12s — 123 actionable tasks: 122 executed, 1 up-to-date
+JVM: 483 tests, 0 skipped, 0 failures, 0 errors (ConsoleTest 10; ProcessKillTest «guardados completados=186»)
+lint: 20 avisos, 0 errores
+aapt2 dump permissions (Debug y Release): solo DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION → sin INTERNET
+```
+Dentro de `with-lock.sh emu` (Small_Phone_API_35, `boot_completed=1`, arm64-v8a):
+```
+package=com.joelbermudez.pocketgb.emulator      tests=63 failures=0 errors=0 skipped=0
+  CoreBridgeTest 6 · EmulatorSessionHandleLockTest 3 · EmulatorSessionTest 15 · GbaNativeTest 19 · NativeLibraryTest 1 · NativeSaveBridgeTest 19
+class=com.joelbermudez.pocketgb.video.GameSurfaceTest   tests=4  failures=0
+package=com.joelbermudez.pocketgb.input         tests=29 failures=0 (ControlsTalkBackTest 15 · GameControlsViewTest 14)
+tools/android-save-kill-test.sh 50 (APK Debug del árbol limpio):
+iter  50  kill=kill9      tras  563 ms  -> OK bytes=8192 counter=2287 confirmed=2287 backups=5 stateTmpFound=0 stateTmpOrphans=0
+Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)
+```
+`EmulatorSessionTest` (15) incluye la prueba de opuestos de N2 en GB: los 8 bits de GB y la anulación de opuestos siguen igual tras pasar a 16 bits.
 
 ## Rendimiento (orientativo; el dato real es el del teléfono de Joel)
 | ROM | App Debug en el emulador (CMake Debug, sin `-O`) | Runner `-O2` (NDK) en el emulador | Runner en el Mac (host) |
@@ -199,7 +248,7 @@ En la corrida desde limpio, con el Mac a load ≈ 680, la app Debug dio 1,88, 16
 
 ## No verificado
 - **BIOS real.** La ruta positiva (BIOS oficial cargada, `biosLoaded = true`) no se probó: no hay BIOS en el repo (regla 1) y no usé la de Joel. Solo se verificó el rechazo y que el SHA-256 es el mismo en Kotlin, C e iOS.
-- **RTC del GBA al reanudar.** No se observa por JNI: el bloque del `.sav` solo guarda desplazamiento y estado, no la hora. Sí se ejecuta en cada `resume` y en cada carga.
+- **RTC del GBA leído por un juego.** La base del RTC se comprobó en el estado (ver Integración), pero no la fecha que lee un ROM por GPIO desde la app. El runner nativo sí lo cubre (`rtc.gba`, G4).
 - **Audio GBA.** Solo se comprobó que el hilo produce muestras, no que sean iguales a las del runner.
 - **ms/frame en el teléfono de Joel**, Kirby 30 min, capturas GBA y kill-test GBA 50/50. Son criterios de N8 que necesitan la ruta de partidas y la UI (lote N8 Kotlin) o el dispositivo (🤖 Joel).
 - **Interacción del crecimiento de la EEPROM (512 → 8192) con `SaveCoordinator`.** No se verificó cómo reacciona la línea base o la política de vaciado al cambio de tamaño a mitad de sesión.
@@ -220,7 +269,6 @@ En la corrida desde limpio, con el Mac a load ≈ 680, la app Debug dio 1,88, 16
   - en GBA, L1/R1 pasan a ser L/R y la pausa y la velocidad se reasignan, como en iOS;
   - `GameBoyButton` sigue con 8 bits.
 - Ajustes por juego GBA: `GbaSaveType`, `GbaRtc`, usar BIOS. Datos GBA en el detalle: código de juego, medio (`gbaSaveType`, `eeprom`) y BIOS; ocultar «checksum global» (en GBA siempre `true`).
-- Adaptar `native_session_set_rtc_time` de A9 (ver Fusión con A9).
 
 ## Hallazgos fuera del alcance
 - `gba/Makefile`: `check-symbols` y `check-globals` dan falsos positivos en macOS (`_sha256` y símbolos `s` de Mach-O). En el CI Linux pasan.
