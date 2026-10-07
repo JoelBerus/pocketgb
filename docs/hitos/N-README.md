@@ -53,6 +53,9 @@ Principios: **la carpeta es la verdad** (su estructura define las categorías), 
 | ND11 | Nombres reservados en la carpeta: lo que empieza por `.` se ignora; `PocketGB/` (visible) es de la app (intercambio y exportados); las carpetas que empiezan por `_` quedan **apartadas** (no se escanean; p. ej. `_Revisar/`). Joel puede cambiarlo antes de N1b. |
 | ND12 | Momentos, ajustes de inicio y metadatos son **por dispositivo**; viajan dentro del paquete de N7. |
 | ND13 | Política de estados del núcleo: una subida de versión de estado **debe seguir cargando la versión anterior** (migración), y cada momento guarda también la RAM del cartucho del instante, para que la partida sea recuperable aunque el estado ya no cargue. |
+| ND14 | (Joel, 2026-10-07) El botón principal dice «Jugar» si no hay estado automático vigente, aunque el juego se haya jugado (como iOS; decisión A9-4). |
+| ND15 | (Joel, 2026-10-07) El carril «Continuar jugando» de Android muestra solo juegos reanudables, como iOS (A9-5; se aplica en N3 Android). |
+| ND16 | (Joel, 2026-10-07) Se acepta que con opacidad de controles del 30–50 % sobre una escena blanca el contraste pulsado/neutro baje de 3:1 (N2-H4). |
 
 Decisiones provisionales anteriores que este plan toca (Joel las ratifica al cerrar cada hito): **J8** (Android «Continuar» = solo SRAM; cambia en A9), **K9** (portada = último fotograma; pasa a ser una fuente más en N5), **K10** (carril solo con portada; se revisa en N3a/N5), **R14** (lista-detalle desactivada; N3a añade detalle a dos columnas sin activarla), **G7-3** (RTC dentro del `.sav`; base de N8).
 
