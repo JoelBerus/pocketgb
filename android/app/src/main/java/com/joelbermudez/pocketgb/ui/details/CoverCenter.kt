@@ -120,6 +120,25 @@ private fun CoverDialog(cover: CoverCenterState, title: String) {
         title = { Text(stringResource(R.string.n5_cover_dialog_title, title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                // Lo que pasa al importar va arriba: se ve sin desplazar.
+                if (cover.importing) {
+                    Row(
+                        Modifier.padding(bottom = 12.dp).testTag("cover-importing"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.n5_cover_importing), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (cover.importFailed) {
+                    Text(
+                        stringResource(R.string.n5_cover_import_failed),
+                        modifier = Modifier.padding(bottom = 12.dp).testTag("cover-import-failed"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Column(Modifier.selectableGroup()) {
                     for (choice in CoverChoice.entries) ChoiceOption(cover, choice)
                 }
@@ -135,24 +154,6 @@ private fun CoverDialog(cover: CoverCenterState, title: String) {
                     if (cover.hasPinned) {
                         ActionButton(Icons.Outlined.PushPin, R.string.n5_cover_unpin, "cover-unpin", !cover.importing, cover.onUnpin)
                     }
-                }
-                if (cover.importing) {
-                    Row(
-                        Modifier.padding(top = 12.dp).testTag("cover-importing"),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(stringResource(R.string.n5_cover_importing), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                if (cover.importFailed) {
-                    Text(
-                        stringResource(R.string.n5_cover_import_failed),
-                        modifier = Modifier.padding(top = 12.dp).testTag("cover-import-failed"),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
                 }
                 Text(
                     stringResource(R.string.n5_cover_dialog_tip),
