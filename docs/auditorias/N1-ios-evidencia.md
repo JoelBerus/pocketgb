@@ -103,10 +103,36 @@ Compilación de la app sin avisos nuevos (`xcodebuild build … | grep warning:`
 ## 6. Comportamientos documentados y riesgos
 - **Mover un juego** conserva todo en cuanto se conoce su huella. Un juego movido que está **solo en iCloud** (sin descargar) no se puede hashear: hasta que se descargue no muestra sus metadatos (no se pierden: siguen en su huella). Lo provisional por ruta de un juego nunca abierto ni hasheado que se mueve antes de hashearse se queda en la ruta vieja (no hay forma de saber que es el mismo archivo).
 - **Pista de ruta provisional:** si un archivo se sustituye por otro ROM con el mismo nombre, durante el cálculo (≈ 1 s) se ven los metadatos del anterior; al terminar se corrige.
-- **Duplicados:** ocultar o marcar como favorita una copia afecta a las dos (es el mismo juego). Cada copia tiene su `.sav` junto a ella: se actualiza el de la copia que se abre; el de la otra se pone al día al abrirla, con la regla de siempre de `SaveResolution` (gana la más reciente, normalmente la local; el perdedor va antes a backup salvo que sea una escritura reconocida de la app, `recognizesOwnedMirror`). Test `staleMirrorOfADuplicateIsBackedUpAndRefreshed`.
+- **Duplicados:** ocultar o marcar como favorita una copia afecta a las dos (es el mismo juego) y comparten **una sola partida en el iPhone**. Cada copia tiene su `.sav` junto a ella: se actualiza el de la copia que se abre; el de la otra se resuelve al abrirla con la regla de `SaveResolution` (gana el más reciente; el perdedor va a backup salvo que sea una escritura reconocida de la app) y, desde la respuesta a la auditoría (H1), si ese `.sav` no lo escribió PocketGB, el perdedor queda además en una copia apartada que no rota. La guía recomienda dejar una copia y apartar las demás en `_Revisar/`.
 - **«Nuevo»** sigue yendo por ruta: un juego movido aparece como «Nuevo» una vez (solo presentación).
 - **Placeholder de la portada generada:** su semilla pasa a ser la huella también para juegos nunca abiertos, así que su color puede cambiar una vez al calcularse la huella.
 
 ## 7. No verificado
 - La biblioteca real de Joel en iCloud (`GMRoms/`): latencia de iCloud, archivos `.downloaded` frente a `.current`, carpetas grandes y la migración de sus preferencias y ajustes reales. Se verifica en el iPhone al instalar el lote.
 - Rendimiento del cálculo de huellas con cientos de ROMs GBA de 32 MiB en el dispositivo (en el simulador, las fixtures tardan milisegundos).
+
+## 8. Respuesta a la auditoría Opus (H1–H12)
+Informe: [N1-ios-opus.md](N1-ios-opus.md); respuesta hallazgo por hallazgo: [N1-ios-respuesta.md](N1-ios-respuesta.md). Correcciones en `963ba44`.
+
+```
+$ with-lock.sh sim tools/ios-screenshots.sh <scratchpad>/n1-full2        # sobre 963ba44
+✔ Test run with 212 tests in 20 suites passed after 11.595 seconds.
+** TEST SUCCEEDED **
+xcodebuild Release: exit 0
+xcodebuild test: exit 0
+$ with-lock.sh build xcodebuild -project ios/PocketGB.xcodeproj -scheme PocketGB -configuration Release \
+    -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData-release build
+** BUILD SUCCEEDED **
+$ rg -n 'URLSession|NWConnection' ios/PocketGB ; echo $?
+1
+```
+200 → 212 tests (12 nuevos): `newerMirrorOfADuplicateKeepsTheLocalOutsideTheRotation`, `foreignSaveWithTheSameNameIsAlwaysKept`, `undecodableNewerVersionIsBlockedNotQuarantined`, `invalidVersionValuesAreQuarantinedNotMigrated`, `legacyBackupNeverOverwritesAPreviousCopy`, `legacyMigrationIsBlockedWhenTheBackupFails`, `sameSizeAndModificationDateIsRecalculated`, `unsupportedRAMCodeOrMBCHaveNoFingerprint`, `hashingPausesWhileAGameIsOpenAndResumes`, `wiringAdoptsMetadataAndReportsIssues`, `visitedItemsCapStopsAHugeTreeWithoutROMs`, `excludesDuplicatesOfTheSource`; además se amplían `staleMirrorOfADuplicateIsBackedUpAndRefreshed` (copia apartada sin repetir) y `cacheLookupIsInvalidatedBySizeOrDates` (ctime y entradas de la caché v1). Sin avisos de compilación.
+
+Catálogo: **113 PNG** (112 + `settings-save-backups-portrait-light`), sin fallos. Revisadas:
+
+| Captura | Lo que se ve |
+|---|---|
+| `settings-save-backups-portrait-light` (nueva) | Ajustes › Partidas › DMG-ACID2: «Partida actual», «Copias anteriores» (2, con Restaurar) y la sección nueva «Copias apartadas» con «Apartada al abrir el juego · 22 sept 2026» y Restaurar; pie: no se borran ni se sustituyen con el tiempo. Fechas fijas en la demo |
+| `settings-library-portrait-light` | Sin cambios visibles en la demo (no calcula huellas ni llega al tope, así que no aparecen las filas nuevas de «Reconociendo…» ni del límite) |
+
+No verificado (además de §7): el desalojo real de un archivo de iCloud entre el escaneo y el cálculo (H8) y la pausa del cálculo con un juego abierto en el iPhone (H7, probado con `LibraryStore` en el simulador).
