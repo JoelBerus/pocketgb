@@ -70,6 +70,12 @@ class TestFixtures(private val resolver: ContentResolver) {
     fun writeModes(): List<String> = call("writeModes").getStringArrayList("modes").orEmpty()
     fun putSparse(path: String, size: Long) = call("sparse", path, Bundle().apply { putLong("size", size) })
     fun mkdir(path: String) = call("mkdir", path)
+
+    /** N1: mueve [from] a [to] (rutas relativas) conservando la fecha de modificación, como un gestor de archivos. */
+    fun move(from: String, to: String) = call("move", from, Bundle().apply { putString("to", to) })
+
+    /** N1b: cuántos listados de carpeta ha servido el proveedor desde el último [reset]. */
+    fun childQueries(): Int = call("childQueries").getInt("count")
     fun deleteAll() = call("deleteAll")
     fun deny(denied: Boolean) = call("deny", null, Bundle().apply { putBoolean("denied", denied) })
     fun denyDir(documentId: String?) = call("denyDir", documentId)

@@ -72,6 +72,8 @@ public class TestDocumentsProvider extends ContentProvider {
     private volatile boolean readOnlyFlags = false;
     private volatile boolean denyMidWrite = false;
     private volatile boolean omitMtime = false;
+    /** N1b: listados de carpeta servidos (consultas de hijos), para medir cuántas hace un escaneo. */
+    private final AtomicInteger childQueries = new AtomicInteger();
     private volatile CountDownLatch writeGate = null;
     private final AtomicInteger waitingWriters = new AtomicInteger();
     private final List<String> writeModes = Collections.synchronizedList(new ArrayList<>());
@@ -91,6 +93,7 @@ public class TestDocumentsProvider extends ContentProvider {
         try {
             switch (method) {
                 case "reset":
+                    childQueries.set(0);
                     denied = false;
                     deniedDir = null;
                     throwingDir = null;
@@ -167,6 +170,9 @@ public class TestDocumentsProvider extends ContentProvider {
                 case "releaseWrite":
                     releaseGate();
                     break;
+                case "childQueries":
+                    result.putInt("count", childQueries.get());
+                    break;
                 case "waitingWriters":
                     result.putInt("count", waitingWriters.get());
                     break;
@@ -190,6 +196,17 @@ public class TestDocumentsProvider extends ContentProvider {
                 case "mkdir":
                     new File(base(), arg).mkdirs();
                     break;
+                case "move": {
+                    // N1: mover un archivo a otra carpeta (como en Drive o en el gestor de archivos). File.renameTo
+                    // conserva la fecha de modificación; el id de documento (la ruta) cambia, como en ExternalStorage.
+                    File from = new File(base(), arg);
+                    File to = new File(base(), extras.getString("to"));
+                    to.getParentFile().mkdirs();
+                    long modified = from.lastModified();
+                    if (!from.renameTo(to)) throw new IOException("No se pudo mover " + arg);
+                    to.setLastModified(modified);
+                    break;
+                }
                 case "deleteAll":
                     deleteRecursively(base());
                     break;
@@ -254,6 +271,7 @@ public class TestDocumentsProvider extends ContentProvider {
         // Igual que DocumentsProvider: un documento inexistente devuelve null, no una excepción.
         try {
             if (parsed.children) {
+                childQueries.incrementAndGet();
                 File[] files = resolve(parsed.documentId).listFiles();
                 if (files == null) return null;
                 Arrays.sort(files, Comparator.comparing(File::getName));
