@@ -58,7 +58,7 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 | N3 · Biblioteca y detalle adaptables | ✅ iOS y Android fusionados (Opus, respondidas) |
 | N4 · Categorías, etiquetas e inicio | Android ✅ fusionado (Opus, respondida); iOS ✅ fusionado (Opus aprobada) |
 | N5 · Portadas | ✅ Android e iOS fusionados (auditorías Opus respondidas); pendiente ratificar HEIC al importar en iOS |
-| N6 · Momentos y progreso | lector C ✅; Android ✅ fusionado (Opus respondida); iOS ⏳ en implementación |
+| N6 · Momentos y progreso | lector C ✅; Android ✅ fusionado (Opus respondida); iOS ✅ fusionado (Opus respondida) |
 | N7 · Partidas que viajan | parcial: contenedor `.pgbm` en C con META v1 fusionado (Opus, respondida) |
 | N8 · GBA en Android | ✅ nativa y Kotlin fusionadas (auditoría Opus aprobada); pendiente prueba de Joel N8-1…8 |
 | N9 · Carpetas de Joel, guía y cierre | pendiente |
