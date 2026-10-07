@@ -25,3 +25,24 @@ tools/android-save-kill-test.sh 50
 Resultado (gb): OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)
 OK: 50/50 iteraciones con el invariante intacto
 ```
+
+## N6A-H2 · Recuperar una entrada del anillo lleno podía expulsarla (hallazgo trasladado desde iOS)
+
+Con el anillo «Antes de cargar» lleno (3), «Recuperar» su entrada más antigua llamaba a `pushBeforeLoad`, que la
+expulsaba y borraba sus archivos **antes** de que `SaveStore.save` (`MomentLibrary.installSram`) o el núcleo
+(`GameSession.loadMoment` → `applyLoadedState`) confirmaran; si fallaban, esa partida se perdía.
+
+Corrección: `MomentStore.pushBeforeLoadDeferred(..., protect)` mantiene la entrada recuperada en el anillo (plaza fija
+tras la nueva) y devuelve un `PendingPush` cuyo `commit()` borra las expulsadas solo tras confirmar la carga o la
+instalación; si no se confirma, quedan huérfanas y `recoverOrphans` las retira al abrir. `pushBeforeLoad` conserva su
+contrato (push + commit inmediato).
+
+Prueba: `MomentLibraryTest.recoveringTheOldestRingEntryWithAFullRingSurvivesAFailedSave` (fallo inyectado en la escritura
+de la partida). Mutación: sin la protección, la prueba falla (`6 tests completed, 1 failed`). Desde árbol limpio
+(`git archive`):
+```
+./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:lintDebug
+BUILD SUCCESSFUL in 4m 1s
+JVM 752 pruebas, 0 fallos
+0 errors, 22 warnings
+```

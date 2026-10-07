@@ -63,10 +63,16 @@ class MomentLibrary(
             if (sizes != null && sram.size !in sizes) throw SaveStore.InvalidBackupException(sram.size, sizes)
             val save = SaveStore(savesDirectory, fingerprint, ops)
             val current = save.load()
-            if (current != null && !current.contentEquals(sram)) {
-                moments.pushBeforeLoad(MomentStore.Capture(null, current, null), label)
+            // N6A-H2: la entrada recuperada no sale del anillo y las expulsadas solo se borran tras confirmar la partida.
+            val pending = if (current != null && !current.contentEquals(sram)) {
+                moments.pushBeforeLoadDeferred(
+                    MomentStore.Capture(null, current, null), label, protect = id.takeIf { kind == MomentStore.Kind.BEFORE_LOAD },
+                )
+            } else {
+                null
             }
             save.save(sram)
+            pending?.commit()
         }
     }
 

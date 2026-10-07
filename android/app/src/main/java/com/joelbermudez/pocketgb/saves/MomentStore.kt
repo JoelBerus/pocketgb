@@ -155,9 +155,26 @@ class MomentStore(
 
     /**
      * Añade al anillo «Antes de cargar» la posición actual y retira la más antigua por orden de inserción si pasa de
-     * [RING_SIZE] (su borrado es posterior a la confirmación del índice). La entrada nueva nunca se expulsa. [label] = qué se iba a cargar, para el nombre en la lista.
+     * [RING_SIZE] (su borrado es posterior a la confirmación del índice). La entrada nueva nunca se expulsa, ni tampoco
+     * [protect] (la entrada del anillo que se está recuperando). [label] = qué se iba a cargar, para el nombre en la lista.
      */
-    fun pushBeforeLoad(capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null): Moment =
+    fun pushBeforeLoad(
+        capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null, protect: String? = null,
+    ): Moment = pushBeforeLoadDeferred(capture, label, config, playTimeMs, protect).also { it.commit() }.entry
+
+    /** Push cuyo borrado de las expulsadas espera a [commit] (tras confirmar la carga). Sin commit quedan huérfanas y
+     *  [recoverOrphans] las retira al volver a abrir. */
+    inner class PendingPush internal constructor(val entry: Moment, val evicted: List<String>) {
+        fun commit() = lock.withLock { for (id in evicted) deleteFiles(Kind.BEFORE_LOAD, id) }
+    }
+
+    /**
+     * Como [pushBeforeLoad], pero sin borrar los archivos de las expulsadas hasta [PendingPush.commit] (N6A-H2: si la
+     * carga o la instalación fallan, nada recuperable se ha borrado). [protect] nunca sale expulsada.
+     */
+    fun pushBeforeLoadDeferred(
+        capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null, protect: String? = null,
+    ): PendingPush =
         lock.withLock {
             val index = indexForWriting()
             val id = freshId(index)
@@ -169,12 +186,14 @@ class MomentStore(
                 ),
             )
             // N6A-H1: orden de inserción, nunca por `createdMs` (con el reloj hacia atrás la nueva saldría expulsada).
-            val ring = listOf(entry) + index.beforeLoad
-            val kept = ring.take(RING_SIZE)
-            val evicted = ring.drop(RING_SIZE)
+            // N6A-H2: la protegida ocupa plaza fija detrás de la nueva; se expulsan las demás más antiguas.
+            val protected = index.beforeLoad.filter { it.id == protect }
+            val ring = listOf(entry) + protected + index.beforeLoad.filter { it.id != protect }
+            val keepIds = ring.take(RING_SIZE).mapTo(HashSet()) { it.id }
+            val kept = (listOf(entry) + index.beforeLoad).filter { it.id in keepIds }
+            val evicted = ring.filter { it.id !in keepIds }.map { it.id }
             writeIndex(index.copy(beforeLoad = kept))
-            for (old in evicted) deleteFiles(Kind.BEFORE_LOAD, old.id)
-            entry
+            PendingPush(entry, evicted)
         }
 
     /** Renombra o edita etiquetas, colección y nota de un momento. Lanza [NoSuchElementException] si no existe. */
