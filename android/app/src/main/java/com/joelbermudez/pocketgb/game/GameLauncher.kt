@@ -11,8 +11,12 @@ import com.joelbermudez.pocketgb.library.LibraryScanner
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.library.RomSource
+import com.joelbermudez.pocketgb.saves.ExactContinuation
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
+import com.joelbermudez.pocketgb.saves.LaunchMode
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
+import com.joelbermudez.pocketgb.saves.ResumableCore
+import com.joelbermudez.pocketgb.saves.ResumeFailure
 import com.joelbermudez.pocketgb.saves.PosixSaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveFileOps
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
@@ -71,11 +75,20 @@ sealed interface OpenError {
 
     /** Fallo inesperado del núcleo o del sistema. */
     data class Core(val error: Throwable) : OpenError
+
+    /**
+     * «Continuar» no pudo retomar el estado automático ([reason]). No se escribió nada: la partida está intacta y se
+     * puede «Jugar desde el inicio» (A9, como iOS D8.1).
+     */
+    data class ResumeFailed(val reason: ResumeFailure, val fingerprint: String) : OpenError
 }
 
 sealed interface OpenResult {
-    /** [notices]: avisos para mostrar al empezar (p. ej. [GameNotice.HeaderDamaged]); el juego se puede jugar igual. */
-    class Opened(val game: GameSession, val notices: List<GameNotice> = emptyList()) : OpenResult {
+    /**
+     * [notices]: avisos para mostrar al empezar (p. ej. [GameNotice.HeaderDamaged]); el juego se puede jugar igual.
+     * [resumed]: se retomó el estado automático («Continuar» exacto, A9).
+     */
+    class Opened(val game: GameSession, val notices: List<GameNotice> = emptyList(), val resumed: Boolean = false) : OpenResult {
         val warning: SaveLoadWarning? get() = game.warning
     }
 
@@ -145,10 +158,15 @@ class GameLauncher(
      * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
      * de la huella y del byte `0x143` del ROM leído; volumen, escala y paleta en caliente los aplica el ViewModel.
      */
-    suspend fun open(entry: RomEntry, options: EmulationOptions? = null): OpenResult =
-        withContext(io + NonCancellable) { openBlocking(entry, options) }
+    suspend fun open(entry: RomEntry, options: EmulationOptions? = null, mode: LaunchMode = LaunchMode.FRESH): OpenResult =
+        withContext(io + NonCancellable) { openBlocking(entry, options, mode) }
 
-    fun openBlocking(entry: RomEntry, options: EmulationOptions? = null): OpenResult {
+    /**
+     * Con [mode] = [LaunchMode.RESUME] («Continuar», A9) retoma además el estado automático si sigue siendo el de esta
+     * partida ([ExactContinuation]), con la partida ya abierta y la huella ya adquirida, antes de arrancar. Si no vale
+     * devuelve [OpenError.ResumeFailed] y cierra la sesión sin haber escrito nada.
+     */
+    fun openBlocking(entry: RomEntry, options: EmulationOptions? = null, mode: LaunchMode = LaunchMode.FRESH): OpenResult {
         entry.problem?.let { return OpenResult.Failed(OpenError.Unplayable(it)) }
         if (!hasFolderPermission()) return OpenResult.Failed(OpenError.PermissionRevoked)
         val rom = try {
@@ -200,6 +218,7 @@ class GameLauncher(
             index.recoverOrphans()
 
             var target: com.joelbermudez.pocketgb.saves.SaveTarget? = null
+            var saveStore: SaveStore? = null
             var warning: SaveLoadWarning? = null
             var baseline: ByteArray? = null
             var validSizesForIndex: Set<Int>? = null
@@ -207,6 +226,7 @@ class GameLauncher(
                 val validSizes = SaveSizes.validSizes(info.hasRtc, info.sramBytes)
                 validSizesForIndex = validSizes
                 val store = SaveStore(savesDirectory, fingerprint, fileOps)
+                saveStore = store
                 val outcome = try {
                     store.recoverOrphans(validSizes)
                     val setup = mirrors.locate(entry, store, validSizes) { events.post(GameEvent.MirrorDisabled(it)) }
@@ -248,6 +268,24 @@ class GameLauncher(
             }
             index.record(fingerprint, info.title, entry.fileName, validSizesForIndex)
 
+            // A9 · «Continuar» exacto: DESPUÉS de resolver la partida (la apertura pudo instalar un espejo más nuevo) y
+            // antes de crear el guardado y el hilo. Nunca escribe: si el estado vale, su RAM ya es la de disco.
+            var resumed = false
+            if (mode == LaunchMode.RESUME) {
+                val core = SessionResumableCore(session, info.sramBytes) { now() / 1000 }
+                val outcome = try {
+                    ExactContinuation.resume(core, states, saveStore?.modificationDateMs)
+                } catch (_: RuntimeException) {
+                    // Un fallo inesperado del núcleo al copiar o comparar: la sesión se cierra sin guardar y se ofrece
+                    // «Jugar desde el inicio» igual que con cualquier otro estado que no vale.
+                    ExactContinuation.Outcome.Rejected(ResumeFailure.UNREADABLE)
+                }
+                if (outcome is ExactContinuation.Outcome.Rejected) {
+                    return OpenResult.Failed(OpenError.ResumeFailed(outcome.reason, fingerprint))
+                }
+                resumed = true
+            }
+
             val game = GameSession(
                 session = session,
                 info = info,
@@ -259,11 +297,12 @@ class GameLauncher(
                 events = events,
                 policy = policy(),
                 lease = lease,
+                title = entry.alias ?: info.title,
             )
             handedOver = true
             // Cabecera con checksum incorrecto (K15): se abre igual y se avisa al empezar.
             val notices = if (info.headerChecksumOk) emptyList() else listOf(GameNotice.HeaderDamaged)
-            return OpenResult.Opened(game, notices)
+            return OpenResult.Opened(game, notices, resumed)
         } catch (error: CoreError) {
             return OpenResult.Failed(OpenError.Core(error))
         } catch (error: RuntimeException) {
@@ -271,6 +310,23 @@ class GameLauncher(
         } finally {
             if (!handedOver) {
                 try { session.close() } finally { lease?.close() }
+            }
+        }
+    }
+
+    /**
+     * «Continuar» de la biblioteca (A9): de [fingerprints], las que tienen un estado automático con firma y no anterior
+     * a su partida local, con la fecha del estado. Solo lee fechas y 4 bytes por juego (nunca miniaturas); el contenido
+     * se valida al abrir. Bloquea: llamar fuera del hilo principal.
+     */
+    fun continuations(fingerprints: Set<String>): Map<String, Long> = buildMap {
+        for (fingerprint in fingerprints) {
+            if (!FINGERPRINT.matches(fingerprint)) continue // nunca una ruta fuera de `states/`
+            try {
+                val saveDate = SaveStore(savesDirectory, fingerprint, fileOps).modificationDateMs
+                StateStore(statesRoot, fingerprint, fileOps).automaticEntry(saveDate)?.let { put(fingerprint, it.dateMs) }
+            } catch (_: IOException) {
+            } catch (_: RuntimeException) {
             }
         }
     }
@@ -285,5 +341,27 @@ class GameLauncher(
 
     private companion object {
         const val CGB_FLAG_OFFSET = 0x143
+        val FINGERPRINT = Regex("[0-9a-f]{64}")
     }
+}
+
+/**
+ * El núcleo de una sesión recién abierta (cargada y SIN arrancar) visto por [ExactContinuation]. La RAM del cartucho
+ * son los primeros [ramBytes] de la SRAM, sin el pie del RTC (iOS `ramBytes()`).
+ */
+internal class SessionResumableCore(
+    private val session: EmulatorSession,
+    private val ramBytes: Int,
+    private val nowSeconds: () -> Long,
+) : ResumableCore {
+    override fun cartridgeRam(): ByteArray {
+        val sram = session.copySram()
+        return sram.copyOf(minOf(ramBytes, sram.size))
+    }
+
+    override fun captureState(): ByteArray = session.saveStateParked()
+
+    override fun restoreState(state: ByteArray) = session.loadStateParked(state)
+
+    override fun syncClockToNow() = session.syncRtc(nowSeconds())
 }

@@ -10,6 +10,8 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.saves.FlushResult
+import com.joelbermudez.pocketgb.saves.LaunchMode
+import com.joelbermudez.pocketgb.saves.ResumeFailure
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.isSafe
 import com.joelbermudez.pocketgb.saves.StateSlot
@@ -47,6 +49,12 @@ sealed interface GameDialog {
 
     /** No se pudo guardar la partida local al salir; [confirmingRisk] = pidiendo la segunda confirmación. */
     data class ExitSaveFailed(val error: Throwable, val confirmingRisk: Boolean = false) : GameDialog
+
+    /**
+     * «Continuar» no pudo retomar el estado automático de [entry] ([reason]); la partida está intacta. Ofrece «Jugar
+     * desde el inicio» (A9, como el aviso de iOS D8.1).
+     */
+    data class ResumeFailed(val entry: RomEntry, val reason: ResumeFailure) : GameDialog
 }
 
 /** Avisos breves (snackbar), con texto en la UI. */
@@ -132,16 +140,88 @@ class GameplayViewModel(
 
     private val operations = Mutex()
 
+    // ------------------------------------------------------------------ continuar (A9)
+
+    /** Huella → fecha del estado automático que la biblioteca puede ofrecer en «Continuar» (fecha y firma). */
+    private val continuations = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /** Huella → fecha del estado que ya falló al continuar (otro modelo, dañado): no se vuelve a ofrecer ese mismo. */
+    private val rejected = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /**
+     * Huellas con «Continuar» exacto disponible (A9): hay estado automático con firma, no anterior a la partida y que
+     * no ha fallado ya. La UI muestra «Continuar» y «Jugar desde el inicio» solo para ellas; el resto, «Jugar».
+     */
+    val resumable: StateFlow<Set<String>> = kotlinx.coroutines.flow.combine(continuations, rejected) { found, failed ->
+        found.filter { (fingerprint, date) -> failed[fingerprint] != date }.keys
+    }.stateIn(scope, SharingStarted.Eagerly, emptySet())
+
+    @Volatile private var watched: Set<String> = emptySet()
+    private var refreshJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Vuelve a mirar qué huellas pueden continuar (fuera del hilo principal). Sin argumento repite las últimas pedidas;
+     * la biblioteca lo llama al cambiar sus huellas conocidas, y el ViewModel tras salir de una partida.
+     */
+    fun refreshContinuations(fingerprints: Set<String> = watched) {
+        watched = fingerprints
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            val found = try {
+                withContext(io) { launcher.continuations(fingerprints) }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return@launch
+            }
+            continuations.value = found
+        }
+    }
+
+    /** Ajustes › Partidas restauró un backup: el estado automático ya no corresponde (la fecha lo invalida). */
+    fun didRestoreSave(fingerprint: String) {
+        continuations.value = continuations.value - fingerprint
+        refreshContinuations()
+    }
+
+    private fun onResumeFailed(entry: RomEntry, error: OpenError.ResumeFailed) {
+        _dialog.value = GameDialog.ResumeFailed(entry, error.reason)
+        continuations.value = continuations.value - error.fingerprint
+        val fingerprints = watched + error.fingerprint
+        watched = fingerprints
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            val found = try { withContext(io) { launcher.continuations(fingerprints) } } catch (_: Exception) { emptyMap() }
+            // Un estado obsoleto ya se apartó y no aparece. Uno de otro modelo o dañado sigue en su sitio: se recuerda
+            // por su fecha para no volver a ofrecerlo hasta que se guarde otro.
+            found[error.fingerprint]?.let { date -> rejected.value = rejected.value + (error.fingerprint to date) }
+            continuations.value = found
+        }
+    }
+
+    /** «Jugar desde el inicio» del aviso de [GameDialog.ResumeFailed]: abre solo la partida (`.sav`), sin el estado. */
+    fun playFromStartAfterResumeFailure() {
+        val failed = _dialog.value as? GameDialog.ResumeFailed ?: return
+        _dialog.value = null
+        open(failed.entry, LaunchMode.FRESH)
+    }
+
     // ------------------------------------------------------------------ abrir
 
-    /** Abre [entry]. Ignora la petición si ya hay una apertura o una partida en curso (doble toque). */
-    fun open(entry: RomEntry) {
+    /**
+     * Abre [entry]. Ignora la petición si ya hay una apertura o una partida en curso (doble toque). [mode]
+     * [LaunchMode.RESUME] = «Continuar» exacto (A9); [LaunchMode.FRESH] = «Jugar» o «Jugar desde el inicio».
+     */
+    fun open(entry: RomEntry, mode: LaunchMode = LaunchMode.FRESH) {
         if (_opening.value || _game.value != null) return
         _opening.value = true
         scope.launch {
             try {
-                when (val result = launcher.open(entry)) {
-                    is OpenResult.Failed -> _dialog.value = GameDialog.OpenFailed(result.error)
+                when (val result = launcher.open(entry, mode = mode)) {
+                    is OpenResult.Failed -> when (val error = result.error) {
+                        is OpenError.ResumeFailed -> onResumeFailed(entry, error)
+                        else -> _dialog.value = GameDialog.OpenFailed(error)
+                    }
                     is OpenResult.Opened -> {
                         val game = result.game
                         if (!isActive) {
@@ -238,6 +318,22 @@ class GameplayViewModel(
      */
     fun onTrimMemory(level: Int) {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) onBackground()
+    }
+
+    /**
+     * `ON_STOP` (A9): el ciclo de vida ya pausó y vació en el hilo principal; aquí, fuera de él y en orden con las demás
+     * operaciones, se guarda también el estado AUTO para que «Continuar» retome la posición aunque el sistema mate la
+     * app ([GameSession.saveAutoStateIfParked]). Nunca toca la partida.
+     */
+    fun onStopped() {
+        val game = _game.value ?: return
+        scope.launch {
+            operations.withLock {
+                if (_game.value !== game) return@withLock
+                val saved = try { withContext(io) { game.saveAutoStateIfParked() } } catch (_: Exception) { false }
+                if (saved) refreshContinuations(watched + game.fingerprint)
+            }
+        }
     }
 
     /** Resultado de un vaciado hecho por el ciclo de vida: si no quedó a salvo, aviso (el indicador persiste solo). */
@@ -346,6 +442,8 @@ class GameplayViewModel(
                         _menu.value = GameMenu.None
                         _dialog.value = null
                         _game.value = null
+                        // Al salir se guardó el estado AUTO (o falló): «Continuar» se recalcula para esta huella.
+                        refreshContinuations(watched + game.fingerprint)
                     }
                     is ExitResult.LocalSaveFailed -> _dialog.value = GameDialog.ExitSaveFailed(result.error)
                 }

@@ -159,6 +159,8 @@ class GameSession(
     /** Fábrica del hilo de reparación; inyectable en pruebas para simular un fallo al arrancarlo (A5V6-H3). */
     private val repairThreadFactory: (Runnable, String) -> Thread =
         { body, name -> Thread(body, name).apply { isDaemon = true } },
+    /** Nombre del juego en la pausa: el alias si el usuario lo renombró (A9), o el título de la cabecera. */
+    val title: String = info.title,
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -550,6 +552,26 @@ class GameSession(
         }
         tryClose()
         return ExitResult.Clean
+    }
+
+    /**
+     * Segundo plano (`ON_STOP`, A9; iOS `enterBackground`, D81-H4/D81V2-H3): con la sesión YA aparcada, vacía la SRAM y,
+     * solo si quedó a salvo, guarda el estado AUTO, en ese orden (la fecha del estado queda posterior a la de la
+     * partida). Así «Continuar» retoma la posición aunque el sistema mate la app sin pasar por Salir. No pausa ni
+     * reanuda nada (eso lo hace el ciclo de vida en el hilo principal) y su fallo nunca toca la partida. Sin guardado
+     * de confianza (persistencia desactivada tras un rollback fallido) no se escribe: el núcleo no es de fiar.
+     * Bloquea: llamar fuera del hilo principal. @return `true` si se escribió el AUTO.
+     */
+    fun saveAutoStateIfParked(): Boolean {
+        if (isClosed || session.state.value != SessionState.Paused) return false
+        if (target != null && !coordinator.hasTarget) return false
+        if (coordinator.hasTarget && !flushNow().isSafe) return false
+        return try {
+            saveState(StateSlot.AUTO)
+            true
+        } catch (_: Exception) {
+            false // reanudada a la vez (no aparcada) o disco: la partida ya está a salvo igualmente
+        }
     }
 
     /** Estado de rescate (J6) en su ranura propia, directo (no depende del hilo de guardado, que pudo atascarse). */
