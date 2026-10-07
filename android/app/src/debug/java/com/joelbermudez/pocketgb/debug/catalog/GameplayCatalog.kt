@@ -66,6 +66,12 @@ internal fun GameplayCatalogScreen(
     val context = LocalContext.current
     var settings by remember { mutableStateOf(initial) }
     val game = remember(initialSpeed, rom) {
+        if (rom == "gba") {
+            // N8: ROM de GBA sintética (modo 3, degradado): imagen 3:2 y controles con L y R.
+            val session = EmulatorSession(com.joelbermudez.pocketgb.emulator.Console.GBA).apply { setSpeed(initialSpeed) }
+            val info = session.loadGba(com.joelbermudez.pocketgb.debug.DebugSyntheticGbaRom.gradient())
+            return@remember GameSession(session, info, StateStore(File(context.cacheDir, "debug-states-gba")))
+        }
         val session = EmulatorSession().apply { setSpeed(initialSpeed) }
         val bytes = when (rom) {
             "light" -> DebugSyntheticRom.create(light = true)

@@ -254,7 +254,16 @@ fun GameSettingsSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         modifier = modifier.testTag("game-settings"),
     ) {
-        Column(Modifier.verticalScroll(rememberScrollState(initialScroll)).padding(bottom = 24.dp)) {
+        val scroll = rememberScrollState(initialScroll)
+        if (initialScroll > 0) {
+            // Solo el catálogo: la hoja crece mientras se abre y el primer recorte del desplazamiento se queda corto; se
+            // vuelve a pedir cuando ya tiene su alto final.
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(600)
+                scroll.scrollTo(minOf(initialScroll, scroll.maxValue))
+            }
+        }
+        Column(Modifier.verticalScroll(scroll).padding(bottom = 24.dp)) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
