@@ -1,6 +1,6 @@
 # N1 Android: evidencia (identidad por huella y carpetas)
 
-Rama `n1-android-identidad` desde `a9-android-paridad` (`5036468`), con `a9-android-paridad` fusionada de nuevo en `620f447` (corrección del catálogo A9-H1 y respuesta a su auditoría) y en `809f419` (`b4c453b`, A9 cerrado). Plan: [N-README §3.1, §3.2 y §4 N1](../hitos/N-README.md), decisiones ND2 y ND11. Estado: **implementado, pendiente de auditoría Opus**. iOS (N1 iOS) es otro lote.
+Rama `n1-android-identidad` desde `a9-android-paridad` (`5036468`), con `a9-android-paridad` fusionada de nuevo en `620f447` (corrección del catálogo A9-H1 y respuesta a su auditoría) y en `809f419` (`b4c453b`, A9 cerrado). Plan: [N-README §3.1, §3.2 y §4 N1](../hitos/N-README.md), decisiones ND2 y ND11. Estado: **auditado (Opus: APROBAR CON CAMBIOS, regla 6 limpia) y respondido** ([informe](N1-android-opus.md), [respuesta](N1-android-respuesta.md)); `siguiente-nivel` fusionada en `a77a8d9`. La verificación vigente es la de [Respuesta a la auditoría](#respuesta-a-la-auditoría-h1h8); las secciones anteriores describen la primera entrega. iOS (N1 iOS) es otro lote.
 
 ## Qué se hizo
 
@@ -19,7 +19,7 @@ Rama `n1-android-identidad` desde `a9-android-paridad` (`5036468`), con `a9-andr
 - **Caché por documento** (`documents`: ruta → `DocumentStamp(nombre, tamaño, fecha)`), en el mismo `preferences.json` (una sola escritura atómica con las huellas). Tras cada escaneo, `reconciled()`:
   - con el escaneo **completo**, `MoveDetection` reconoce una ruta desaparecida y **una sola** ruta nueva con el mismo (nombre, tamaño, fecha), o, si cambió de nombre, con el mismo (tamaño, fecha) cuando nadie más los comparte. Se trasladan la huella y los registros por ruta (favorito, fecha, oculto y alias provisionales, y «ya visto», para que no salga como «Nuevo»);
   - ambigüedad (dos candidatos, o dos desaparecidas con el mismo sello) → no se traslada nada; tamaño o fecha nulos (`COLUMN_SIZE`/`COLUMN_LAST_MODIFIED` pueden faltar en SAF) → sello incompleto, no se traslada nada. Lo guardado por huella sigue ahí y vuelve en cuanto se calcula la huella (abrir o ver el detalle);
-  - una ruta que sigue en su sitio con otro tamaño, otra fecha u **otro id de documento** (`COLUMN_DOCUMENT_ID`, guardado en el sello) olvida su huella: puede ser otro ROM con el mismo nombre (en Drive, otro archivo subido con el mismo nombre, tamaño y fecha tiene otro id). El id no se usa para reconocer movimientos: en ExternalStorage es la ruta y cambia al mover. Riesgo residual: en un proveedor cuyo id es la ruta, otro ROM copiado encima con el mismo tamaño y la misma fecha conserva la huella anterior hasta que se abre o se ve su detalle (abrir siempre calcula la huella real del ROM, así que la partida que se abre es la suya; lo que se vería mal hasta entonces es favorito, nombre, oculto y ajustes mostrados);
+  - una ruta que sigue en su sitio con otro tamaño u otra **cabecera** olvida su huella (tras H4: la fecha y el id de documento ya no bastan, Drive puede cambiarlos sin tocar el archivo; ver la respuesta a la auditoría);
   - con el escaneo completo se olvida la huella de las rutas que ya no están (lo guardado por huella no se toca); con uno **incompleto** (carpeta con error o tope) no se traslada ni se olvida nada, y tampoco se podan los «ya vistos». Un listado vacío no cambia nada.
 - **La huella no se calcula en segundo plano** (Drive descargaría cada ROM): se sigue calculando al abrir o ver el detalle. Reconocer un movimiento no lee el ROM (probado contando lecturas en JVM y en el instrumentado).
 - **Duplicados** (misma huella **conocida** en varias rutas; nunca se adivina por título o tamaño): insignia «Duplicado» discreta (contorno fino, sin color de alerta) en tarjeta y fila, incluida en la etiqueta de TalkBack; en el detalle, «También en» con las otras ubicaciones («Carpeta principal · …» para la raíz) y qué comparten. El carril «Continuar jugando» muestra cada juego una vez.
@@ -129,7 +129,7 @@ OK: 50/50 iteraciones con el invariante intacto
 |---|---|---|
 | N1A-1 | La huella no se calcula en segundo plano en Android; los movimientos se reconocen por el sello (nombre, tamaño, fecha) sin leer el ROM. | Drive descargaría cada ROM. §3.1 lo prevé solo para archivos locales; en Android la carpeta real es Drive. |
 | N1A-2 | Con un escaneo incompleto (carpeta con error o tope) no se traslada ni se olvida nada, tampoco los «ya vistos». | Un fallo pasajero del proveedor no puede parecer un movimiento ni una desaparición. |
-| N1A-3 | En la misma ruta, otro tamaño, otra fecha u otro id de documento olvidan la huella (lo guardado por huella no se toca). | Puede ser otro ROM con el mismo nombre. |
+| N1A-3 | En la misma ruta, otro tamaño u otra cabecera olvidan la huella (lo guardado por huella no se toca); la fecha y el id de documento no (H4). | Otro ROM con el mismo nombre tiene otra cabecera; Drive cambia fecha e id sin tocar el archivo. |
 | N1A-4 | Un oculto por ruta pasa a la huella al conocerla (también en la migración). | Coherencia con favoritos, fecha y alias; con duplicados, ocultar oculta todas las copias (como ya pasaba al ocultar con huella conocida). |
 | N1A-5 | El carril «Continuar jugando» muestra cada juego una vez aunque tenga varias copias (la primera por ruta). | Las copias comparten partida y estado. |
 | N1A-6 | El perdedor frente a un espejo ajeno se aparta fuera de la rotación (`<huella>.mirror-<unix>-<rand8>.sav`), además de lo de siempre; restaurar no lo borra. | Regla 6 (aviso del orquestador, hallazgo de N1 iOS). |
@@ -150,3 +150,54 @@ OK: 50/50 iteraciones con el invariante intacto
 - TalkBack real sobre la insignia y la ruta (solo las semánticas de Compose en `FoldersUiTest`).
 - iOS no cambia en este lote.
 - `make -C core test`: no se ejecutó; `core/` no cambia.
+
+## Respuesta a la auditoría (H1–H8)
+
+Detalle por hallazgo en [N1-android-respuesta.md](N1-android-respuesta.md). Commits: `f2ddb5e` (informe), `a77a8d9` (fusión de `siguiente-nivel`: N2 Android, N1 iOS y `ProcessKillTest` robusto; conflictos solo en `DebugCatalog.kt` y `android-screens.txt`, con los bloques N1 y N2), `aba6771` (H1–H8), `939f648` (catálogo `library-prefs-read-only` y `save-warning-set-aside`).
+
+### Qué cambia
+- **Sello con cabecera (H1):** `DocumentStamp.header` = bytes 0x134–0x14F en hexadecimal. Las reglas 1 (movido) y 2 (renombrado) y la comparación en la misma ruta la exigen; sin cabecera (documento remoto sin descargar) no hay traslado. La huella heredada queda en `inferredFingerprints` hasta leer el ROM; los ajustes del juego la confirman antes de escribir.
+- **Preferencias de otra versión (H2/H3):** versión leída con tolerancia; futura o ilegible = sin migrar, sin sobrescribir y aviso fijo en la biblioteca. Formato nuevo del archivo: `tombstones` e `inferredFingerprints` (con valor por defecto; un archivo v2 anterior se lee igual).
+- **Listados a medias y lápidas (H4):** `EXTRA_LOADING`/`EXTRA_ERROR` = escaneo incompleto. Lo que desaparece en un escaneo completo deja una lápida (≤ 200, ≤ 30 días) que devuelve huella, «ya visto» y registros por ruta al volver (misma ruta con mismo tamaño y cabecera, u otra ruta con el sello entero y sin ambigüedad). Consecuencia: el mismo juego que vuelve ya no sale «Nuevo» (el test A6-H8 se adapta: otro juego en su ruta sí lo es).
+- **Aviso (H5):** `SaveLoadWarning.LocalSetAside` cuando el `.sav` junto al juego sustituye a la local apartada.
+- **Caché de cabeceras (H6):** por (id de documento, tamaño, fecha).
+- **Subcarpeta sin acceso (H7):** con el árbol aún concedido, `folderErrors`; **H8:** KDoc.
+
+### Comandos y salidas (desde limpio, `git archive 939f648`)
+`./gradlew --no-daemon --max-workers=1 --continue :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug :app:assembleDebugAndroidTest`
+```
+> Task :app:assembleDebug
+> Task :app:assembleRelease
+> Task :app:lintDebug
+> Task :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL in 4m 53s
+```
+- JVM: **551 tests, 0 fallos, 0 errores, 0 omitidos** (con N2 Android y el resto de `siguiente-nivel`). `ProcessKillTest`: `kills en bucle=199, con .tmp huérfano=131, guardados completados=314`.
+- Lint: `0 errors, 20 warnings`; ninguno nuevo de N1 (la única línea que nombra un archivo tocado es el `UseKtx` previo de `Uri.parse` en `LibraryEnvironment.kt`).
+- `aapt2 dump permissions` del Release: solo `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (sin `INTERNET`).
+- Instrumentados completos dentro de `with-lock.sh emu` (`:app:connectedDebugAndroidTest`): `BUILD SUCCESSFUL in 6m`; XML **386 tests, 0 fallos, 0 errores, 0 omitidos**. De N1: `SafFoldersTest` 4, `MoveRomEndToEndTest` 3, `GameSettingsConfirmTest` 1, `FoldersUiTest` 2, `SavesSettingsUiTest` 3, `SafLibraryTest` 15, `SafMirrorTest` 34, `CatalogCoverageTest` 9, `DebugCatalogTest` 11.
+- Kill-test con el APK Debug del build limpio: `OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)`; `OK: 50/50 iteraciones con el invariante intacto`.
+
+### Mutaciones (copia aparte, clases de biblioteca y `SaveOpeningTest`)
+Seis a la vez (cabecera fuera de las reglas, versión futura escribible, sin lápidas, listado a medias como completo, sin aviso H5, sin caché de cabeceras): **18 fallos de 196**, entre ellos `aDeletedRomAndADifferentNewRomWithTheSameSizeAndDateShareNothing`, `detectionIsPureOnStamps`, `aFileFromAFutureVersionIsReadButNeverOverwritten`, `oddVersionValuesNeverSendTheFileToQuarantine`, `preferencesFromAFutureVersionAreUsedButNeverWritten`, `aGameThatDisappearsInACompleteScanAndComesBackKeepsItsFavoriteAndIsNotNew`, `aFolderTheProviderIsStillLoadingIsUsedButTheScanIsIncomplete`, `aPartialRootIsAlsoIncompleteInsteadOfFailing`, `aDuplicateWithANewerMirrorSetsTheLocalAsideOutsideTheRotation`, `aReadOnlyFolderWhoseNewerSaveReplacesTheLocalStillWarnsAboutTheSetAside`, `eachRomCarriesItsHeaderIdentityAndACachedHeaderIsNotReadAgain`, `anUnchangedRomIsNotReopenedOnTheNextScan`.
+
+### Consultas y aperturas antes y después de la caché (H6)
+`SafFoldersTest.aSecondScanReopensNoUnchangedRom` (proveedor de pruebas, que cuenta las aperturas de lectura que sirve), mismo árbol de 5 ROMs y 10 carpetas a su alcance:
+
+| Escaneo | Carpetas listadas | Cabeceras leídas (aperturas) | De la caché |
+|---|---|---|---|
+| Primero (sin caché) | 10 | **5** | 0 |
+| Siguiente, sin cambios | 10 | **0** | 5 |
+
+En la app, la caché sale de los sellos guardados, así que desde el segundo escaneo solo se abren los ROMs nuevos o con otro tamaño, fecha o id; un ROM movido en un proveedor cuyo id es la ruta (ExternalStorage) se abre una vez. La línea de logcat dice ahora también cuántas cabeceras vinieron de la caché.
+
+### Capturas revisadas (11, del build limpio)
+- `library-prefs-read-only` (claro/oscuro): aviso fijo en un recuadro de error sobre el buscador, legible en ambos temas.
+- `save-warning-set-aside` (oscuro): «Aviso sobre tu partida» con el texto de H5 y «Entendido».
+- `details-duplicate` (claro/oscuro): el pie de «También en» con la mención de «Apartadas» (se corta al final de la pantalla; se ve al desplazar).
+- `details-deep-path`, `details-deep-path-ax5`, `library-duplicates-list` y `saves-set-aside`: sin cambios respecto a la revisión anterior.
+
+### Riesgos y no verificado (añadido)
+- Residual de H1: otro ROM con el mismo tamaño y la misma cabecera (un parche aplicado encima sin recalcular los checksums) conserva la huella anterior hasta abrirlo o ver su detalle; abrir calcula siempre la huella real y los ajustes solo se escriben con la huella confirmada.
+- Las lápidas devuelven también el «ya visto»: un juego que vuelve en 30 días no sale «Nuevo» (cambio de comportamiento respecto a A6-H8, que la auditoría pedía).
+- Sin verificar en Drive real: si su proveedor pone `EXTRA_LOADING` o `EXTRA_ERROR` en los listados, y si conserva id, tamaño y fecha (de eso dependen la caché de cabeceras y reconocer movimientos).
