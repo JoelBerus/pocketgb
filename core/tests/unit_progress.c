@@ -191,6 +191,14 @@ static bool is_zeroed(const pgb_progress *p)
     return memcmp(p, &z, sizeof z) == 0;
 }
 
+/* Amarillo europeo: «POKEMON YELAPS» + letra de idioma (0x13F–0x142 = código «APS?»), 0x143 = 0x80. */
+static void make_header_yellow_eu(uint8_t h[PGB_PROG_HEADER_MIN], char lang)
+{
+    make_header(h, G_YELLOW);
+    memcpy(h + 0x134, "POKEMON YELAPS", 14);
+    h[0x142] = (uint8_t)lang;
+}
+
 static bool read_ok(int game, const uint8_t *sav, size_t len, pgb_progress *out)
 {
     uint8_t h[PGB_PROG_HEADER_MIN];
@@ -230,6 +238,42 @@ static void test_identify(struct ut *t)
     make_header(h, G_RED);
     memcpy(h + 0x134, "pokemon red", 12);                                  /* distingue mayúsculas */
     CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+
+    /* H1: Amarillo de las ediciones europeas (ES/FR/DE/IT): «POKEMON YELAPS» + D, F, I o S en 0x142. */
+    static const char eu_langs[] = "DFIS";
+    for (size_t i = 0; i < sizeof eu_langs - 1; i++) {
+        make_header_yellow_eu(h, eu_langs[i]);
+        CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_GEN1);
+        CHECK(t, pgb_progress_identify(h, sizeof h - 1) == PGB_PROG_NONE);
+        h[0x14A] = 0x00;                                                  /* destino japonés */
+        CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+    }
+    /* Otras letras (inglés europeo no lleva sufijo; J = Japón; K = Corea), el título sin letra y variantes. */
+    static const uint8_t not_eu[] = { 'E', 'J', 'K', 'U', 'X', 'd', ' ', 0x00, 0xFF };
+    for (size_t i = 0; i < sizeof not_eu; i++) {
+        make_header_yellow_eu(h, (char)not_eu[i]);
+        CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+    }
+    make_header_yellow_eu(h, 'D');
+    h[0x134 + 13] = 'T';                                                  /* «POKEMON YELAPT» */
+    CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+    make_header(h, G_YELLOW);
+    h[0x142] = 'D';                                                       /* «POKEMON YELLOW» + D: sin terminador */
+    CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+
+    /* Oro/Plata/Cristal: el último carácter del código del juego es el idioma (0x142). Se aceptan
+     * los internacionales y se rechaza el coreano (K: «AAUK», «AAXK»). */
+    static const char gs_langs[] = "EDFISU";
+    for (int g = G_GOLD; g <= G_CRYSTAL; g++) {
+        for (size_t i = 0; i < sizeof gs_langs - 1; i++) {
+            make_header(h, g);
+            h[0x142] = (uint8_t)gs_langs[i];
+            CHECK(t, pgb_progress_identify(h, sizeof h) == (g == G_CRYSTAL ? PGB_PROG_GEN2_C : PGB_PROG_GEN2_GS));
+        }
+        make_header(h, g);
+        h[0x142] = 'K';
+        CHECK(t, pgb_progress_identify(h, sizeof h) == PGB_PROG_NONE);
+    }
 }
 
 static void check_fields(struct ut *t, const pgb_progress *p, pgb_prog_game game, const char *name,
@@ -256,6 +300,16 @@ static void test_gen1(struct ut *t)
         build_g1(sav, &w);
         memset(&p, 0xAA, sizeof p);
         CHECK(t, read_ok(g, sav, SAV, &p));
+        check_fields(t, &p, PGB_PROG_GEN1, "ASH", &w, 0xA5, 4);
+    }
+
+    /* H1: Amarillo europeo (cabecera «POKEMON YELAPS?»): misma disposición, se lee igual. */
+    build_g1(sav, &w);
+    for (const char *l = "DFIS"; *l; l++) {
+        uint8_t eh[PGB_PROG_HEADER_MIN];
+        make_header_yellow_eu(eh, *l);
+        memset(&p, 0xAA, sizeof p);
+        CHECK(t, pgb_progress_read(eh, sizeof eh, sav, SAV, &p));
         check_fields(t, &p, PGB_PROG_GEN1, "ASH", &w, 0xA5, 4);
     }
 
@@ -353,6 +407,24 @@ static void test_gen2(struct ut *t)
         build_g2(sav, cases[i].crystal, &x);
         CHECK(t, read_ok(cases[i].game, sav, SAV, &p) && p.play_hours == 999 && p.play_minutes == 59 &&
                  p.play_seconds == 59);
+        /* H5: horas > 999 y dinero > 999999 no los escribe el juego (tope de 999:59:59 y MAX_MONEY). */
+        static const unsigned bad_hours[] = { 1000, 1023, 0x0400, 0x7FFF, 0xFFFF };
+        for (size_t k = 0; k < sizeof bad_hours / sizeof bad_hours[0]; k++) {
+            x = w;
+            x.hours = bad_hours[k];
+            build_g2(sav, cases[i].crystal, &x);
+            CHECK(t, !read_ok(cases[i].game, sav, SAV, &p) && is_zeroed(&p));
+        }
+        static const unsigned bad_money[] = { 1000000, 1000001, 0x0F4240, 0x800000, 0xFFFFFF };
+        for (size_t k = 0; k < sizeof bad_money / sizeof bad_money[0]; k++) {
+            x = w;
+            x.money = bad_money[k];
+            build_g2(sav, cases[i].crystal, &x);
+            CHECK(t, !read_ok(cases[i].game, sav, SAV, &p) && is_zeroed(&p));
+        }
+        x = w; x.hours = 0; x.money = 999999;                              /* los máximos sí valen */
+        build_g2(sav, cases[i].crystal, &x);
+        CHECK(t, read_ok(cases[i].game, sav, SAV, &p) && p.money == 999999);
         { struct want n = { "", 0, 0, 0, 0, 0, 0, 0 };
           build_g2(sav, cases[i].crystal, &n);
           CHECK(t, read_ok(cases[i].game, sav, SAV, &p) && p.money == 0 && p.pokedex_owned == 0); }
@@ -426,13 +498,14 @@ static void test_names(struct ut *t)
     uint8_t sav[SAV_BUF];
     pgb_progress p;
 
-    /* 1.ª generación: é (0xBA), ♂ (0xEF), ♀ (0xF5), signos, dígitos y un glifo desconocido (0x01). */
+    /* 1.ª generación: 0xBA (é en inglés, à en DE/FR/ES/IT: ambiguo → «?»), ♂ (0xEF), ♀ (0xF5), signos,
+     * dígitos y un glifo desconocido (0x01). */
     build_g1(sav, &w);
     static const uint8_t raw1[] = { 0x80, 0xBA, 0xEF, 0xF5, 0x01, 0xF6, 0xFF, 0x7F, 0xE3, 0xE6, 0x50 };
     memcpy(sav + T1_START, raw1, sizeof raw1);
     fix_g1(sav);
     CHECK(t, read_ok(G_RED, sav, SAV, &p) &&
-             strcmp(p.player_name, "A\xC3\xA9\xE2\x99\x82\xE2\x99\x80?09 -?") == 0);
+             strcmp(p.player_name, "A?\xE2\x99\x82\xE2\x99\x80?09 -?") == 0);
     /* 0xE9 es katakana en la 1.ª generación (desconocido) y 0xBA no es é en la 2.ª. */
     build_g1(sav, &w);
     sav[T1_START] = 0xE9;
@@ -444,6 +517,37 @@ static void test_names(struct ut *t)
     sav[T2_NAME + 1] = 0x50;
     fix_g2(sav, true);
     CHECK(t, read_ok(G_CRYSTAL, sav, SAV, &p) && strcmp(p.player_name, "?") == 0);
+
+    /* H4: ÄÖÜäöü (0xC0–0xC5) se teclean en las ediciones alemana e italiana y valen igual en DE/FR/ES/IT;
+     * en inglés no tienen glifo. Se leen en la 1.ª y en la 2.ª generación. */
+    static const uint8_t umlauts[] = { 0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0x50 };
+    build_g1(sav, &w);
+    memcpy(sav + T1_START, umlauts, sizeof umlauts);
+    fix_g1(sav);
+    CHECK(t, read_ok(G_RED, sav, SAV, &p) &&
+             strcmp(p.player_name, "\xC3\x84\xC3\x96\xC3\x9C\xC3\xA4\xC3\xB6\xC3\xBC") == 0);
+    build_g2(sav, true, &w);
+    memcpy(sav + T2_NAME, umlauts, sizeof umlauts);
+    fix_g2(sav, true);
+    CHECK(t, read_ok(G_CRYSTAL, sav, SAV, &p) &&
+             strcmp(p.player_name, "\xC3\x84\xC3\x96\xC3\x9C\xC3\xA4\xC3\xB6\xC3\xBC") == 0);
+
+    /* H3: <PK> (0xE1) y <MN> (0xE2) están en el teclado del nombre de las dos generaciones. */
+    static const uint8_t pkmn[] = { 0xE1, 0xE2, 0x8F, 0xE1, 0xE2, 0x50 };      /* PK MN P PK MN */
+    build_g1(sav, &w);
+    memcpy(sav + T1_START, pkmn, sizeof pkmn);
+    fix_g1(sav);
+    CHECK(t, read_ok(G_BLUE, sav, SAV, &p) && strcmp(p.player_name, "PKMNPPKMN") == 0);
+    build_g2(sav, false, &w);
+    memcpy(sav + T2_NAME, pkmn, sizeof pkmn);
+    fix_g2(sav, false);
+    CHECK(t, read_ok(G_SILVER, sav, SAV, &p) && strcmp(p.player_name, "PKMNPPKMN") == 0);
+    /* Diez <PK>: 20 bytes, caben. */
+    build_g1(sav, &w);
+    memset(sav + T1_START, 0xE1, 10);
+    sav[T1_START + 10] = 0x50;
+    fix_g1(sav);
+    CHECK(t, read_ok(G_RED, sav, SAV, &p) && strlen(p.player_name) == 20);
 
     /* Nombre de 10 glifos de 3 bytes: cabe con su NUL en PGB_PROG_NAME_MAX. */
     build_g1(sav, &w);
@@ -556,6 +660,16 @@ static void test_unsupported(struct ut *t)
         CHECK(t, !pgb_progress_read(h, sizeof h, sav, SAV, &p));
     }
 
+    /* Corea: «AAUK»/«AAXK» (Oro/Plata coreano, destino 1 y título internacional) con una partida
+     * que cuadra con la disposición internacional: se rechaza por el idioma, no solo por el checksum. */
+    for (int g = G_GOLD; g <= G_CRYSTAL; g++) {
+        build(sav, g, &w);
+        make_header(h, g);
+        CHECK(t, pgb_progress_read(h, sizeof h, sav, SAV, &p));
+        h[0x142] = 'K';
+        CHECK(t, !pgb_progress_read(h, sizeof h, sav, SAV, &p) && is_zeroed(&p));
+    }
+
     /* Otros títulos (Pokémon Verde, Pinball, un hack con el título de Cristal y otra disposición). */
     build_g1(sav, &w);
     make_header(h, G_RED);
@@ -614,8 +728,8 @@ void unit_progress(struct ut *t)
 }
 
 /* Semillas de fuzz_progress (gbtest --fuzz-seeds): [juego][indicadores][partida de 32 KiB].
- * `which` 0..UT_PROGRESS_SEEDS-1 = Rojo, Azul, Amarillo, Oro, Plata, Cristal con valores no
- * triviales. Indicadores 0xC7 = checksum + validación + rangos + nombre + longitud 0x8000 (ver
+ * `which` 0..UT_PROGRESS_SEEDS-1 = Rojo, Azul, Amarillo, Oro, Plata, Cristal y Amarillo alemán con
+ * valores no triviales. Indicadores 0xC7 = checksum + validación + rangos + nombre + longitud 0x8000 (ver
  * fuzz/fuzz_progress.c). Devuelve la longitud escrita, o 0 si no cabe. */
 size_t ut_progress_seed(unsigned which, uint8_t *out, size_t cap)
 {
@@ -623,7 +737,7 @@ size_t ut_progress_seed(unsigned which, uint8_t *out, size_t cap)
     uint8_t sav[SAV_BUF];
     if (which >= UT_PROGRESS_SEEDS || cap < 2 + SAV)
         return 0;
-    build(sav, (int)which, &w);
+    build(sav, which == 6 ? G_YELLOW : (int)which, &w);          /* 6 = Amarillo europeo (alemán) */
     out[0] = (uint8_t)which;
     out[1] = 0xC7;
     memcpy(out + 2, sav, SAV);

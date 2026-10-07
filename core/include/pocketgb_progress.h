@@ -10,8 +10,11 @@
  *
  * Soporta las versiones internacionales (EN/ES/FR/DE/IT) de Rojo, Azul y
  * Amarillo (1.ª generación) y de Oro, Plata y Cristal (2.ª generación). El
- * japonés y el coreano quedan fuera; los hacks solo dan datos si conservan la
- * disposición oficial y su checksum cuadra.
+ * japonés y el coreano quedan fuera. Criterio de identificación: título de la
+ * cabecera + destino no japonés (+ idioma no coreano) + las validaciones internas
+ * de la partida (checksum, bytes 99/127, rangos). No se consulta el checksum global
+ * del ROM, así que un hack que conserve título, disposición y checksum sí muestra
+ * datos; es solo informativo y de solo lectura.
  *
  * Spec y fuentes de cada offset: docs/03-core-spec.md §Lector de progreso Pokémon.
  */
@@ -50,12 +53,14 @@ typedef struct pgb_progress {
     uint16_t play_hours;        /* 1.ª gen: 0–255. 2.ª gen: 0–999 */
     uint8_t play_minutes;       /* 0–59 */
     uint8_t play_seconds;       /* 0–59 */
-    uint32_t money;             /* en Pokédólares (1.ª gen: BCD decodificado, máx. 999999) */
+    uint32_t money;             /* en Pokédólares, 0–999999 (1.ª gen: BCD decodificado) */
 } pgb_progress;
 
-/* Identifica el juego por la cabecera (título en 0x134 y código de destino 0x14A = 1,
- * no japonés). No mira la partida. Devuelve PGB_PROG_NONE si la cabecera no es de un
- * juego soportado, es NULL o tiene menos de PGB_PROG_HEADER_MIN bytes. */
+/* Identifica el juego por la cabecera: título en 0x134 y código de destino 0x14A = 1 (no japonés).
+ * Amarillo europeo lleva «POKEMON YELAPS» + D, F, I o S en 0x142; en Oro/Plata/Cristal una «K» en
+ * 0x142 (código del juego AAUK/AAXK) es la edición coreana y se rechaza. No mira la partida.
+ * Devuelve PGB_PROG_NONE si la cabecera no es de un juego soportado, es NULL o tiene menos de
+ * PGB_PROG_HEADER_MIN bytes. */
 pgb_prog_game pgb_progress_identify(const uint8_t *rom_header, size_t header_len);
 
 /* Lee el progreso de la partida.
@@ -63,9 +68,10 @@ pgb_prog_game pgb_progress_identify(const uint8_t *rom_header, size_t header_len
  *   sram: la partida. Se admiten exactamente PGB_PROG_SAVE_BYTES (32 KiB) o 32 KiB más un
  *         bloque RTC de 16, 44 o 48 bytes (el bloque se ignora); otro tamaño → false.
  * Devuelve true y rellena *out solo si el juego está soportado y la partida es coherente:
- * checksum correcto, nombre terminado, dinero BCD válido (1.ª gen), minutos y segundos < 60 y
- * bytes de validación de la 2.ª gen. En cualquier otro caso devuelve false y deja *out a cero
- * (game = PGB_PROG_NONE). Solo se lee la copia principal de la partida, no la de respaldo. */
+ * checksum correcto, nombre terminado, minutos y segundos < 60 y, según la generación, dinero BCD
+ * válido (1.ª) o bytes de validación 99/127, horas ≤ 999 y dinero ≤ 999999 (2.ª). En cualquier
+ * otro caso devuelve false y deja *out a cero (game = PGB_PROG_NONE). Solo se lee la copia
+ * principal de la partida, no la de respaldo. */
 bool pgb_progress_read(const uint8_t *rom_header, size_t header_len,
                        const uint8_t *sram, size_t sram_len, pgb_progress *out);
 

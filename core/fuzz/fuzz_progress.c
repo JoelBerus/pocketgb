@@ -2,12 +2,14 @@
  * fuzz_progress.c — libFuzzer: pgb_progress_read / pgb_progress_identify (N6-C).
  *
  * Entrada: [juego][indicadores][bytes...]
- *   juego: 0..5 = cabecera sintética de Rojo, Azul, Amarillo, Oro, Plata o Cristal; ≥ 6 = los
- *          primeros 0x200 bytes siguientes son la cabecera tal cual (casi siempre se rechaza).
+ *   juego: 0..5 = cabecera sintética de Rojo, Azul, Amarillo, Oro, Plata o Cristal; 6..9 = Amarillo
+ *          europeo («POKEMON YELAPS» + D, F, I, S); ≥ 10 = los primeros 0x200 bytes siguientes son la
+ *          cabecera tal cual (casi siempre se rechaza).
  *   indicadores: bit 0 = recalcular el checksum; bit 1 = forzar, en la 2.ª generación, los bytes
- *                de validación (99 y 127); bit 6 = forzar BCD y minutos y segundos < 60; bit 7 =
- *                forzar el nombre terminado (según el juego que identifique la cabecera:
- *                combinando los bits se llega a cada rechazo y a la rama de éxito);
+ *                de validación (99 y 127); bit 6 = forzar BCD, horas ≤ 999, dinero ≤ 999999 y
+ *                minutos y segundos < 60; bit 7 = forzar el nombre terminado (según el juego que
+ *                identifique la cabecera: combinando los bits se llega a cada rechazo y a la
+ *                rama de éxito);
  *                bits 2-3 = longitud de la partida: 0 = la que traigan los bytes, 1 = 0x8000,
  *                2 = 0x8000 + 48, 3 = 0x8000 + 44;
  *                bits 4-5 = longitud de la cabecera: 0 = 0x150, 1 = 0x14F, 2 = 0x200, 3 = 0.
@@ -31,8 +33,8 @@ enum {
     SAVE = PGB_PROG_SAVE_BYTES,
     G1_START = 0x2598, G1_CKSUM = 0x3523, G1_MONEY = 0x25F3, G1_TIME = 0x2CED,
     G2_CV1 = 0x2008, G2_START = 0x2009, G2_NAME = 0x200B,
-    GS_END = 0x2D69, GS_CV2 = 0x2D6B, GS_TIME = 0x2053,
-    C_END = 0x2B83, C_CKSUM = 0x2D0D, C_CV2 = 0x2D0F, C_TIME = 0x2052
+    GS_END = 0x2D69, GS_CV2 = 0x2D6B, GS_TIME = 0x2053, GS_MONEY = 0x23DB,
+    C_END = 0x2B83, C_CKSUM = 0x2D0D, C_CV2 = 0x2D0F, C_TIME = 0x2052, C_MONEY = 0x23DC
 };
 
 static void make_header(uint8_t *h, unsigned game)
@@ -40,9 +42,14 @@ static void make_header(uint8_t *h, unsigned game)
     static const char *const title[6] = { "POKEMON RED", "POKEMON BLUE", "POKEMON YELLOW",
                                           "POKEMON_GLD", "POKEMON_SLV", "PM_CRYSTAL" };
     memset(h, 0, HDR_BUF);
-    memcpy(h + 0x134, title[game], strlen(title[game]));
-    if (game >= 3)
-        memcpy(h + 0x13F, "AAUE", 4);
+    if (game >= 6) {                       /* Amarillo europeo: «POKEMON YELAPS» + idioma en 0x142 */
+        memcpy(h + 0x134, "POKEMON YELAPS", 14);
+        h[0x142] = (uint8_t)"DFIS"[game - 6];
+    } else {
+        memcpy(h + 0x134, title[game], strlen(title[game]));
+        if (game >= 3)
+            memcpy(h + 0x13F, "AAUE", 4);
+    }
     h[0x14A] = 0x01;
 }
 
@@ -76,8 +83,16 @@ static void fixup(uint8_t *s, pgb_prog_game game, unsigned flags)
         if (flags & FIX_NAME)
             s[G2_NAME + 10] = 0x50;
         if (flags & FIX_RANGES) {
+            size_t money = c ? C_MONEY : GS_MONEY;
+            unsigned hours = (((unsigned)s[time] << 8) | s[time + 1]) % 1000u;
+            unsigned cash = (((unsigned)s[money] << 16) | ((unsigned)s[money + 1] << 8) | s[money + 2]) % 1000000u;
+            s[time] = (uint8_t)(hours >> 8);
+            s[time + 1] = (uint8_t)hours;
             s[time + 2] = (uint8_t)(s[time + 2] % 60);
             s[time + 3] = (uint8_t)(s[time + 3] % 60);
+            s[money] = (uint8_t)(cash >> 16);
+            s[money + 1] = (uint8_t)(cash >> 8);
+            s[money + 2] = (uint8_t)cash;
         }
         if (flags & FIX_CHECKSUM) {
             unsigned sum = 0;
@@ -131,9 +146,11 @@ static void check_output(bool ok, const pgb_progress *p, pgb_prog_game id)
     unsigned max_dex = id == PGB_PROG_GEN1 ? 151u : 251u;
     if (p->pokedex_owned > max_dex || p->pokedex_seen > max_dex)
         abort();
-    if (id == PGB_PROG_GEN1 && (p->badges_mask > 0xFF || p->play_hours > 255 || p->money > 999999u))
+    if (p->money > 999999u)                /* BCD de 6 dígitos (1.ª gen) y MAX_MONEY (2.ª gen) */
         abort();
-    if (id != PGB_PROG_GEN1 && p->money > 0xFFFFFFu)
+    if (id == PGB_PROG_GEN1 && (p->badges_mask > 0xFF || p->play_hours > 255))
+        abort();
+    if (id != PGB_PROG_GEN1 && p->play_hours > 999)    /* GameTimer se detiene en 999:59:59 */
         abort();
     if (p->play_minutes > 59 || p->play_seconds > 59)
         abort();
@@ -150,7 +167,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     size_t blen = size - 2;
 
     uint8_t hbuf[HDR_BUF];
-    if (game < 6) {
+    if (game < 10) {
         make_header(hbuf, game);
     } else {
         size_t n = blen < HDR_BUF ? blen : HDR_BUF;
@@ -281,7 +298,7 @@ int main(int argc, char **argv)
                     work[at] = (uint8_t)(rnd() & 1 ? rnd() : work[at] ^ (1u << (rnd() % 8)));
                 }
                 break;
-            case 4: work[0] = (uint8_t)(rnd() % 8); break;                  /* juego (0..5 preajustes, 6..7 cabecera libre) */
+            case 4: work[0] = (uint8_t)(rnd() % 12); break;                 /* juego (0..9 preajustes, 10..11 cabecera libre) */
             case 5: work[1] = (uint8_t)rnd(); break;                         /* indicadores */
             case 6: n = 2 + rnd() % (n - 1); break;                          /* recorta */
             default:

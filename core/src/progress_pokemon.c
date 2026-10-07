@@ -13,6 +13,10 @@
  *     internacionales de nombre, dinero, medallas, Pokédex y tiempo) y PKHeX
  *     (Saves/Substructures/Gen12/SAV1Offsets.cs y SAV2Offsets.cs: posiciones de la copia
  *     principal de la partida, solo como contraste de los números).
+ *   - Ediciones europeas y coreana (títulos de cabecera y tablas de caracteres, solo hechos):
+ *     einstein95/pokered-de, -fr, -es, -it, Brianum/pokeyellow-de («POKEMON YELAPSD»),
+ *     Narishma-gb/pokeyellow-fr (-i APSF -t "POKEMON YEL"), metuk/pokegold-de y pokecrystal-de,
+ *     Narishma-gb/pokegold-kr (AAUK/AAXK).
  * Detalle y tabla completa: docs/03-core-spec.md y docs/auditorias/N6-C-evidencia.md.
  *
  * Reglas del núcleo (AGENTS.md): C11, sin I/O, sin malloc, sin variables globales ni
@@ -97,11 +101,22 @@ pgb_prog_game pgb_progress_identify(const uint8_t *h, size_t n)
      * título con las internacionales pero guardan la partida en otra disposición. */
     if (h[0x14A] != 0x01)
         return PGB_PROG_NONE;
-    /* Rojo, Azul y Amarillo: el título va terminado en 0 (en el resto del campo hay padding). */
+    /* Rojo, Azul y Amarillo (EN/ES/FR/DE/IT; los pret los compilan con -t "POKEMON RED" etc.): el
+     * título va terminado en 0 (en el resto del campo hay padding). */
     if (title_is(h, "POKEMON RED", 11, true) || title_is(h, "POKEMON BLUE", 12, true) ||
         title_is(h, "POKEMON YELLOW", 14, true))
         return PGB_PROG_GEN1;
-    /* Oro y Plata: 11 caracteres; 0x13F–0x142 llevan el código del juego (AAUE…), no padding. */
+    /* Amarillo europeo (ES/FR/DE/IT): el título es «POKEMON YEL» y 0x13F–0x142 el código «APS»
+     * + letra de idioma, así que 0x134–0x142 queda «POKEMON YELAPS?» (D alemán, F francés, I italiano,
+     * S español; el inglés europeo es el «POKEMON YELLOW» de arriba). */
+    if (title_is(h, "POKEMON YELAPS", 14, false) &&
+        (h[0x142] == 'D' || h[0x142] == 'F' || h[0x142] == 'I' || h[0x142] == 'S'))
+        return PGB_PROG_GEN1;
+    /* Oro, Plata y Cristal: 0x13F–0x142 es el código del juego (AAUE…, BYTE…) y su último carácter el
+     * idioma. Oro/Plata coreanos (AAUK, AAXK) llevan destino 1 y el título internacional, pero guardan
+     * en otra disposición: se rechazan por la «K» sin esperar al checksum. */
+    if (h[0x142] == 'K')
+        return PGB_PROG_NONE;
     if (title_is(h, "POKEMON_GLD", 11, false) || title_is(h, "POKEMON_SLV", 11, false))
         return PGB_PROG_GEN2_GS;
     if (title_is(h, "PM_CRYSTAL", 10, true))
@@ -112,8 +127,16 @@ pgb_prog_game pgb_progress_identify(const uint8_t *h, size_t n)
 /* ---- Texto (tabla de caracteres internacional de las generaciones 1 y 2) ---- */
 
 /* Punto de código Unicode del glifo `c`, o -1 si no está en la tabla (se escribirá '?').
- * Solo se incluyen los caracteres que admite el teclado del nombre más los acentos que
- * documenta pret; el resto de la tabla (Katakana, control, marcos) se trata como desconocido. */
+ * Solo se incluyen los caracteres que admite el teclado del nombre más los acentos que documentan
+ * los desensamblados de pret (inglés) y de las ediciones europeas; el resto de la tabla (katakana,
+ * control, marcos) se trata como desconocido. <PK> y <MN> (0xE1, 0xE2) no son un solo carácter: los
+ * trata decode_name.
+ *
+ * Ambigüedad por idioma, que la cabecera no permite resolver (Rojo/Azul comparten título en todas las
+ * ediciones): en la 1.ª generación 0xBA es «é» en inglés pero «à» en DE/FR/ES/IT (0xBB–0xBF también
+ * cambian) y ningún teclado de nombre los ofrece, así que quedan como desconocidos. En cambio
+ * 0xC0–0xC5 (ÄÖÜäöü) valen igual en DE/FR/ES/IT, el teclado alemán e italiano los ofrece y en inglés
+ * no tienen glifo, de modo que se leen en las dos generaciones. */
 static int glyph_codepoint(uint8_t c, bool gen2)
 {
     if (c >= 0x80 && c <= 0x99)
@@ -130,6 +153,12 @@ static int glyph_codepoint(uint8_t c, bool gen2)
     case 0x9D: return ';';
     case 0x9E: return '[';
     case 0x9F: return ']';
+    case 0xC0: return 0x00C4;           /* Ä */
+    case 0xC1: return 0x00D6;           /* Ö */
+    case 0xC2: return 0x00DC;           /* Ü */
+    case 0xC3: return 0x00E4;           /* ä */
+    case 0xC4: return 0x00F6;           /* ö */
+    case 0xC5: return 0x00FC;           /* ü */
     case 0xE0: return '\'';
     case 0xE3: return '-';
     case 0xE6: return '?';
@@ -145,14 +174,8 @@ static int glyph_codepoint(uint8_t c, bool gen2)
     default: break;
     }
     if (!gen2)
-        return c == 0xBA ? 0x00E9 : -1;     /* é */
+        return -1;
     switch (c) {
-    case 0xC0: return 0x00C4;           /* Ä */
-    case 0xC1: return 0x00D6;           /* Ö */
-    case 0xC2: return 0x00DC;           /* Ü */
-    case 0xC3: return 0x00E4;           /* ä */
-    case 0xC4: return 0x00F6;           /* ö */
-    case 0xC5: return 0x00FC;           /* ü */
     case 0xE9: return '&';
     case 0xEA: return 0x00E9;           /* é */
     default: return -1;
@@ -193,8 +216,17 @@ static bool decode_name(const uint8_t *raw, bool gen2, char *out)
             out[n] = '\0';
             return true;
         }
-        int cp = glyph_codepoint(raw[i], gen2);
-        size_t w = put_utf8(out + n, PGB_PROG_NAME_MAX - 1 - n, cp < 0 ? '?' : cp);
+        size_t w;
+        if (raw[i] == 0xE1 || raw[i] == 0xE2) {         /* <PK> y <MN>: dos letras cada uno */
+            w = PGB_PROG_NAME_MAX - 1 - n >= 2 ? 2 : 0;
+            if (w) {
+                out[n] = raw[i] == 0xE1 ? 'P' : 'M';
+                out[n + 1] = raw[i] == 0xE1 ? 'K' : 'N';
+            }
+        } else {
+            int cp = glyph_codepoint(raw[i], gen2);
+            w = put_utf8(out + n, PGB_PROG_NAME_MAX - 1 - n, cp < 0 ? '?' : cp);
+        }
         if (w == 0)
             return false;           /* no ocurre: 10 glifos × 3 bytes + NUL < PGB_PROG_NAME_MAX */
         n += w;
@@ -316,15 +348,19 @@ static bool read_gen2(const uint8_t *sav, size_t len, bool crystal, pgb_progress
     const uint8_t *time = at(sav, len, t_off, 5);
     if (!name || !money || !badges || !owned || !seen || !time)
         return false;
-    if (time[2] >= 60 || time[3] >= 60)      /* GameTimer: minutos y segundos < 60 (tope 999:59:59) */
+    if (time[2] >= 60 || time[3] >= 60)      /* GameTimer: minutos y segundos < 60 */
+        return false;
+    out->play_hours = (uint16_t)((time[0] << 8) | time[1]);
+    if (out->play_hours > 999)               /* GameTimer: el contador se detiene en 999:59:59 */
+        return false;
+    out->money = ((uint32_t)money[0] << 16) | ((uint32_t)money[1] << 8) | money[2];
+    if (out->money > 999999)                 /* MAX_MONEY de pret */
         return false;
     if (!decode_name(name, true, out->player_name))
         return false;
-    out->money = ((uint32_t)money[0] << 16) | ((uint32_t)money[1] << 8) | money[2];
     out->badges_mask = (uint16_t)(badges[0] | (badges[1] << 8));   /* Johto, Kanto */
     out->pokedex_owned = count_bits(owned, G2_DEX_BITS);
     out->pokedex_seen = count_bits(seen, G2_DEX_BITS);
-    out->play_hours = (uint16_t)((time[0] << 8) | time[1]);
     out->play_minutes = time[2];
     out->play_seconds = time[3];
     return true;
