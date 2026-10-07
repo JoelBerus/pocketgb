@@ -120,6 +120,12 @@ sealed interface SaveLoadWarning {
     /** La carpeta solo permite lectura: se importó el `.sav` si había, pero nunca se escribirá. */
     data object MirrorReadOnly : SaveLoadWarning
 
+    /**
+     * N1-H5: el `.sav` junto al juego (más nuevo y no escrito por PocketGB) sustituyó a la partida local, que quedó
+     * apartada en Ajustes › Partidas › Apartadas.
+     */
+    data object LocalSetAside : SaveLoadWarning
+
     /** Error al leer la partida local; [detail] viene del sistema. */
     data class Unreadable(val detail: String) : SaveLoadWarning
 }

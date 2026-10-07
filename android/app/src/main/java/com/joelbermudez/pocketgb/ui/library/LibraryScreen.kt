@@ -33,6 +33,7 @@ fun LibraryScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val summary by viewModel.newGamesSummary.collectAsStateWithLifecycle()
+    val preferencesReadOnly by viewModel.preferencesReadOnly.collectAsStateWithLifecycle()
     val chooseFolder = rememberFolderPicker(viewModel::chooseFolder)
     var settingsFor by remember { mutableStateOf<RomEntry?>(null) }
     var renameFor by remember { mutableStateOf<RomEntry?>(null) }
@@ -72,6 +73,7 @@ fun LibraryScreen(
         actions = actions,
         newGamesSummary = summary,
         onNewGamesSummaryShown = viewModel::dismissNewGamesSummary,
+        preferencesReadOnly = preferencesReadOnly,
     )
     GameSettingsHost(
         entry = settingsFor,

@@ -97,6 +97,19 @@ fun SavesScreen(browser: SavesBrowser, gameplay: GameplayViewModel, onBack: () -
         },
         onBack = onBack,
         currentDates = currentDates,
+        onRestoreSetAside = { fingerprint, name ->
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { browser.restoreSetAside(fingerprint, name, gameplay.openFingerprint.value) }
+                }
+                if (result.isSuccess) gameplay.didRestoreSave(fingerprint)
+                refresh++
+                snackbar.showSnackbar(
+                    result.exceptionOrNull()?.let { resources.getString(R.string.saves_restore_failed, causeText(it)) }
+                        ?: resources.getString(R.string.saves_restored),
+                )
+            }
+        },
     )
 }
 
@@ -112,8 +125,11 @@ fun SavesSettingsContent(
     modifier: Modifier = Modifier,
     /** Fecha (ms) de la partida actual por huella; ausente = no se conoce. */
     currentDates: Map<String, Long> = emptyMap(),
+    /** N1: restaurar una partida apartada (huella, nombre del archivo). */
+    onRestoreSetAside: (fingerprint: String, name: String) -> Unit = { _, _ -> },
 ) {
     var pending by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var pendingSetAside by remember { mutableStateOf<Pair<String, String>?>(null) }
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -195,7 +211,36 @@ fun SavesSettingsContent(
                                     ) { Text(stringResource(R.string.saves_restore)) }
                                 }
                             }
-                            if (game.backups.isNotEmpty()) {
+                            if (game.setAside.isNotEmpty()) {
+                                Text(stringResource(R.string.n1_saves_set_aside), style = MaterialTheme.typography.labelLarge)
+                                game.setAside.forEach { item ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                    ) {
+                                        val dateText = item.dateMs?.let(::formatDate)
+                                            ?: stringResource(R.string.saves_backup_unknown_date)
+                                        Text(
+                                            stringResource(R.string.n1_saves_set_aside_item, dateText),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        FilledTonalButton(
+                                            onClick = { pendingSetAside = game.fingerprint to item.name },
+                                            enabled = !open,
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                                .testTag("restore-set-aside-${game.fingerprint.take(8)}-${item.name.takeLast(12)}"),
+                                        ) { Text(stringResource(R.string.saves_restore)) }
+                                    }
+                                }
+                                Text(
+                                    stringResource(R.string.n1_saves_set_aside_footer),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (game.backups.isNotEmpty() || game.setAside.isNotEmpty()) {
                                 Text(
                                     stringResource(R.string.saves_restore_footer),
                                     style = MaterialTheme.typography.bodySmall,
@@ -222,6 +267,15 @@ fun SavesSettingsContent(
             }
         }
     }
+    pendingSetAside?.let { (fingerprint, name) ->
+        SetAsideConfirm(
+            onConfirm = {
+                pendingSetAside = null
+                onRestoreSetAside(fingerprint, name)
+            },
+            onDismiss = { pendingSetAside = null },
+        )
+    }
     pending?.let { (fingerprint, backup) ->
         AlertDialog(
             onDismissRequest = { pending = null },
@@ -243,6 +297,25 @@ fun SavesSettingsContent(
             },
         )
     }
+}
+
+@Composable
+private fun SetAsideConfirm(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.n1_saves_restore_set_aside_title)) },
+        text = { Text(stringResource(R.string.saves_restore_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp).testTag("restore-confirm")) {
+                Text(stringResource(R.string.saves_restore_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        },
+    )
 }
 
 private fun formatDate(ms: Long): String =

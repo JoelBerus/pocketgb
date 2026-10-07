@@ -150,6 +150,17 @@ game-settings-rename portrait light
 game-settings-rename portrait dark
 resume-failed portrait light
 resume-failed portrait dark
+# N1 · identidad y carpetas: ruta profunda en el detalle e insignia «Duplicado» / «También en»
+details-deep-path portrait light
+details-deep-path portrait dark
+details-deep-path-ax5 portrait light fontScale=2.0
+details-duplicate portrait light
+details-duplicate portrait dark
+library-duplicates portrait light
+library-duplicates portrait dark
+library-duplicates-list portrait light
+saves-set-aside portrait light
+saves-set-aside portrait dark
 # N2 · controles: cruceta con la estructura de iOS, diagonales y separación de las flechas (pressed= solo dibuja la pulsación)
 n2-cross-up portrait dark pressed=up
 n2-cross-up-landscape landscape dark pressed=up
@@ -176,3 +187,7 @@ n2-settings-controls-scrolled portrait dark swipe=up
 n2-settings-controls-ax5 portrait light fontScale=2.0 swipe=up
 n2-settings-diagonals-ax5 portrait light fontScale=2.0
 n2-settings-diagonals-ax5 portrait dark fontScale=2.0
+# N1 · respuesta a la auditoría: preferencias de otra versión (H2) y aviso de partida apartada (H5)
+library-prefs-read-only portrait light
+library-prefs-read-only portrait dark
+save-warning-set-aside portrait dark

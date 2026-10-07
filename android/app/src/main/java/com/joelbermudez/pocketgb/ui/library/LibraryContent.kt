@@ -74,6 +74,22 @@ import com.joelbermudez.pocketgb.ui.components.ContinueRail
 import com.joelbermudez.pocketgb.ui.components.EmptyState
 import com.joelbermudez.pocketgb.ui.components.rememberArtworkFingerprints
 
+/** N1-H2: aviso fijo sobre la biblioteca cuando sus preferencias son de otra versión de la app. */
+@Composable
+private fun PreferencesReadOnlyBanner() {
+    androidx.compose.material3.Card(
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("library-prefs-read-only"),
+    ) {
+        Text(
+            stringResource(R.string.n1_prefs_read_only),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
 /**
  * Pantalla de Biblioteca sin ViewModel: recibe estado y callbacks, así que el catálogo
  * debug y las pruebas Compose la ejercitan con datos sintéticos.
@@ -100,6 +116,8 @@ fun LibraryContent(
     newGamesSummary: Int = 0,
     onNewGamesSummaryShown: () -> Unit = {},
     artworkFingerprints: Set<String>? = null,
+    /** N1-H2: `preferences.json` es de otra versión: aviso fijo de que los cambios no se guardarán. */
+    preferencesReadOnly: Boolean = false,
 ) {
     val showsGames = state is LibraryState.Ready && state.entries.isNotEmpty() ||
         state is LibraryState.Scanning && state.previous.isNotEmpty()
@@ -125,7 +143,9 @@ fun LibraryContent(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+        if (preferencesReadOnly) PreferencesReadOnlyBanner()
+        Box(Modifier.fillMaxSize()) {
             when (state) {
                 LibraryState.Loading -> ScanningPane(message = stringResource(R.string.library_loading))
                 LibraryState.NoFolder -> EmptyState(
@@ -182,6 +202,7 @@ fun LibraryContent(
                 }
                 is LibraryState.Failed -> LibraryErrorPane(state.error, onChooseFolder, onRescan)
             }
+        }
         }
     }
 }

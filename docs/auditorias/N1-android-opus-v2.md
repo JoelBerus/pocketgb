@@ -1,0 +1,24 @@
+# Auditoría N1 Android, segunda vuelta (Opus, solo lectura)
+
+Fecha: 2026-10-07. Rama `n1-android-identidad` en `4ef80c1` (diff de la respuesta `a77a8d9..HEAD`, sin lo que trae la fusión de `siguiente-nivel`). Ejecución en `/private/tmp/claude-501/audit-n1a-v2` (build limpio) y `audit-n1a-v2-probe` (sondas PROBE1–PROBE6 y mutaciones). Informe transcrito (formato condensado).
+
+## Veredicto: APROBAR CON CAMBIOS
+Sin bloqueantes; la regla 6 no se toca (solo un aviso en `SaveOpening`; abrir un juego sigue calculando la huella real). H3, H5, H6, H7 y H8 resueltos. H1, H2 y H4 bien encaminados (sus tests detectan las mutaciones), pero quedan cuatro caminos abiertos.
+
+## Hallazgos nuevos
+| ID | Severidad | Archivo:línea | Problema | Evidencia | Corrección sugerida |
+|---|---|---|---|---|---|
+| V2-H1 | media | `library/DocumentCache.kt:39-41` (`differsFrom`), `:189`; `library/LibraryScanner.kt:314,321-324`; `ui/details/GameSettingsSheet.kt:76-77` | Un escaneo completo en que la cabecera no se lee (`UNREADABLE`/`REMOTE_UNAVAILABLE`) guarda un sello sin cabecera; después `differsFrom` ya no compara cabeceras y otro ROM del mismo tamaño en esa ruta conserva la huella anterior **como confirmada**; ocultar, renombrar, favorito y `GameSettingsHost` escriben en ella. Igual con el residual del parche con la misma cabecera. Las partidas no se mezclan. | PROBE1: `Rojo.gb` → escaneo sin cabecera (`stampHeader=null`) → otro ROM, mismo tamaño: `fp=fpA confirmada=true titulo=Rojo de Joel hideEscribeEn=[fpA]`. | En `reconciled`: si el sello actual no trae cabecera y el anterior sí, conservar la cabecera anterior (sin alimentar la caché); en la misma ruta, si cambian fecha o id o falta la cabecera, mantener la huella pero pasarla a `inferredFingerprints` para que detalle y ajustes relean el ROM. Test. |
+| V2-H2 | media | `library/DocumentCache.kt:189` (incompleto: `data.documents + current`), `:152,161` | Un escaneo incompleto añade a `documents` las rutas nuevas; en el siguiente completo la ruta vieja desaparece pero la nueva ya no es «nueva»: ni `MoveDetection` ni las lápidas la emparejan nunca. El juego movido sale «Nuevo» y pierde favorito, alias y oculto hasta abrirlo; registros por ruta huérfanos. Es el flujo de Drive que H4 quería proteger. | PROBE2: `A/Rojo.gb` → incompleto con `B/Rojo.gb` → completo: `fpNueva=null`, `conocida=false`, persiste. | En un escaneo incompleto no añadir rutas que no estaban (solo refrescar conocidas) o guardarlas aparte como nuevas. Test A → incompleto con la ruta nueva → completo = huella trasladada. |
+| V2-H3 | baja | `library/LibraryPreferences.kt:468-479, 439` | La versión se lee aparte, pero el resto se decodifica antes de decidir: una versión futura que cambie el tipo de una clave conocida lanza `SerializationException`, va a `.corrupt`, `writeProtected=false` y se escribe un v2 vacío sin aviso. | PROBE3: `{"formatVersion":3,"favorites":{"Rojo.gb":true},…}` → `writeProtected=false favFp=[]`, `.corrupt`. | Decidir la versión primero; si es ajena, decodificar con tolerancia, proteger contra escritura y nunca poner en cuarentena un archivo de versión ajena. |
+| V2-H4 | baja (desde A6/A9) | `library/DocumentCache.kt:152-189`; `LibraryPreferences.kt` (`toggleFavorite`/`hide`/`setAlias` sin huella) | Lo marcado sin huella se guarda por ruta y nunca se poda: otro ROM en esa ruta (en su sitio con otra cabecera, o tras borrar el anterior) lo hereda y al abrirlo `recordFingerprint` lo migra para siempre. Un juego nuevo puede aparecer oculto. | PROBE4a: `fav=true alias=Rojo de Joel oculto=true` → al abrir B: `hiddenFp/aliasFp/favFp=[fpB]`; PROBE4b: `oculto=true new=true`. | Cuando una ruta desaparece o cambia de tamaño o cabecera, mover sus registros por ruta a la lápida y devolverlos solo si la lápida coincide. |
+
+## Estado de H1–H8
+H1 parcial (V2-H1, V2-H4). H2 parcial (V2-H3). H3 resuelto (diez valores raros tolerados). H4 parcial (V2-H2; lápidas acotadas a 200 y 30 días, no resucitan otra cabecera; cambio de «Nuevo» correcto y documentado). H5 resuelto (en solo lectura este aviso sustituye a `MirrorReadOnly` en esa apertura). H6 resuelto (residual teórico: mismo id, tamaño y fecha en ms con otro contenido; documentar). H7 resuelto. H8 resuelto.
+
+## Criterios
+JVM desde limpio 551/0 (`ProcessKillTest` 246 guardados); instrumentados completos 386/0; kill-test 50/50; mutaciones (4 a la vez): 15 fallos en `library.*`; reglas duras: sí. No reejecutados: `lintDebug`, `assembleRelease`, capturas, TalkBack.
+
+## Notas
+- Drive real sin verificar: si Drive marca `EXTRA_LOADING` a menudo, muchos escaneos serán incompletos y la app no reescanea sola al terminar la carga (no observa la URI de notificación del cursor). Conviene reconsultar tras unos segundos u observar la notificación.
+- `tombstones` e `inferredFingerprints` se añadieron sin subir `formatVersion`: un APK v2 de otra rama los descarta al escribir (solo instalaciones de desarrollo cruzadas).

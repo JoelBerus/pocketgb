@@ -2,6 +2,7 @@ package com.joelbermudez.pocketgb.library
 
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -15,14 +16,23 @@ class LibraryScannerTest {
         val failingDirs: Set<String> = emptySet(),
         val revokedDirs: Set<String> = emptySet(),
         override val rootId: String? = null,
+        /** N1-H4: carpetas que el proveedor da a medias (`EXTRA_LOADING`/`EXTRA_ERROR`). */
+        val partialDirs: Set<String?> = emptySet(),
     ) : DocumentTree {
+        /** Carpetas listadas, en orden (N1b: cada una es una consulta SAF; en Drive, una llamada de red). */
+        val queried = mutableListOf<String?>()
+        var headReads = 0
+
         override fun children(directoryId: String?): List<TreeNode> {
+            queried += directoryId
             if (directoryId in revokedDirs) throw TreePermissionException()
             if (directoryId in failingDirs) throw IOException("sin permiso")
+            if (directoryId in partialDirs) throw PartialListingException(dirs[directoryId].orEmpty(), "cargando")
             return dirs[directoryId].orEmpty()
         }
 
         override fun readHead(node: TreeNode, limit: Int): ByteArray {
+            headReads++
             failures[node.id]?.let { throw it }
             return (heads[node.id] ?: ByteArray(0)).copyOf(minOf(limit, heads[node.id]?.size ?: 0))
         }
@@ -30,8 +40,8 @@ class LibraryScannerTest {
         override fun uriOf(node: TreeNode) = "content://tree/${node.id}"
     }
 
-    private fun file(id: String, name: String, size: Long = 32768, virtual: Boolean = false) =
-        TreeNode(id, name, isDirectory = false, sizeBytes = size, isVirtual = virtual)
+    private fun file(id: String, name: String, size: Long = 32768, virtual: Boolean = false, modified: Long? = null) =
+        TreeNode(id, name, isDirectory = false, sizeBytes = size, isVirtual = virtual, lastModified = modified)
 
     private fun dir(id: String, name: String) = TreeNode(id, name, isDirectory = true, sizeBytes = 0)
 
@@ -46,20 +56,22 @@ class LibraryScannerTest {
     }
 
     @Test
-    fun findsRomsInRootAndOneSubfolderOnly() {
+    fun findsRomsInRootAndSubfoldersWithTheirFolderPath() {
         val tree = FakeTree(
             dirs = mapOf(
                 null to listOf(file("a", "Rojo.gb"), dir("d1", "Amarillo"), file("n", "notas.txt")),
                 "d1" to listOf(file("b", "Yellow.GBC"), dir("deep", "Mas"), file("x", "x.png")),
-                "deep" to listOf(file("c", "Oculto.gb")),
+                "deep" to listOf(file("c", "Hondo.gb")),
             ),
-            heads = mapOf("a" to rom("POKEMON RED"), "b" to rom("POKEMON YELLOW", cgb = 0x80)),
+            heads = mapOf("a" to rom("POKEMON RED"), "b" to rom("POKEMON YELLOW", cgb = 0x80), "c" to rom("HONDO")),
         )
         val entries = LibraryScanner.scan(tree)
-        assertEquals(listOf("Rojo.gb", "Amarillo/Yellow.GBC"), entries.sortedBy { it.id.length }.map { it.id })
-        assertEquals(setOf("POKEMON RED", "POKEMON YELLOW"), entries.map { it.title }.toSet())
+        assertEquals(listOf("Rojo.gb", "Amarillo/Yellow.GBC", "Amarillo/Mas/Hondo.gb"), entries.sortedBy { it.id.length }.map { it.id })
+        assertEquals(setOf("POKEMON RED", "POKEMON YELLOW", "HONDO"), entries.map { it.title }.toSet())
         assertTrue(entries.single { it.id == "Amarillo/Yellow.GBC" }.isColor)
         assertEquals("Amarillo", entries.single { it.title == "POKEMON YELLOW" }.subfolder)
+        assertEquals(listOf("Amarillo", "Mas"), entries.single { it.title == "HONDO" }.folderPath)
+        assertEquals(emptyList<String>(), entries.single { it.id == "Rojo.gb" }.folderPath)
         assertEquals("content://tree/a", entries.single { it.id == "Rojo.gb" }.uri)
     }
 
@@ -278,5 +290,266 @@ class LibraryScannerTest {
             heads = mapOf("a" to rom("RED")),
         )
         assertNull(LibraryScanner.scan(tree).single().mirrorSaveDate)
+    }
+
+    // ---- N1b: escaneo recursivo, nombres reservados (ND11), tope y consultas ----
+
+    /** Cadena de carpetas `N1/N2/…/N<levels>` con un ROM en cada nivel (y otro en la raíz). */
+    private fun chain(levels: Int): FakeTree {
+        val dirs = HashMap<String?, List<TreeNode>>()
+        val heads = HashMap<String, ByteArray>()
+        dirs[null] = listOf(file("r0", "Raiz.gb"), dir("n1", "N1"))
+        heads["r0"] = rom("RAIZ")
+        for (level in 1..levels) {
+            val inner = mutableListOf(file("r$level", "Nivel $level.gb"))
+            if (level < levels) inner += dir("n${level + 1}", "N${level + 1}")
+            dirs["n$level"] = inner
+            heads["r$level"] = rom("NIVEL $level")
+        }
+        return FakeTree(dirs, heads, rootId = "raiz")
+    }
+
+    @Test
+    fun scansFiveFolderLevelsAndNeverListsTheSixth() {
+        val tree = chain(levels = 6)
+        val result = LibraryScanner.scanDetailed(tree)
+        val byTitle = result.entries.associateBy { it.title }
+        assertEquals(LibraryScanner.MAX_FOLDER_DEPTH, 5)
+        assertEquals((0..5).map { if (it == 0) "RAIZ" else "NIVEL $it" }.toSet(), byTitle.keys)
+        assertEquals(listOf("N1", "N2", "N3", "N4", "N5"), byTitle.getValue("NIVEL 5").folderPath)
+        assertEquals("N1/N2/N3/N4/N5/Nivel 5.gb", byTitle.getValue("NIVEL 5").id)
+        assertEquals("n5", byTitle.getValue("NIVEL 5").folderDocumentId)
+        assertEquals("raiz", byTitle.getValue("RAIZ").folderDocumentId)
+        // La carpeta del sexto nivel ni siquiera se lista: en Drive sería una llamada de red inútil.
+        assertFalse("n6" in tree.queried)
+        assertEquals(listOf(null, "n1", "n2", "n3", "n4", "n5"), tree.queried)
+        assertEquals(1, result.stats.tooDeepSkipped)
+        assertEquals(6, result.stats.folderQueries)
+        assertEquals(6, result.stats.headReads)
+        assertTrue("demasiado profundo no hace incompleto el escaneo", result.stats.complete)
+    }
+
+    @Test
+    fun reservedNamesFollowNd11() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(
+                    file("a", "Rojo.gb"),
+                    file("u", "_Borrador.gb"),
+                    file("z", "Juegos.zip"),
+                    file("h", ".Escondido.gb"),
+                    dir("hidden", ".oculta"),
+                    dir("aside", "_apartada"),
+                    dir("app", "PocketGB"),
+                    dir("poke", "Pokémon"),
+                ),
+                "hidden" to listOf(file("h1", "Nada.gb")),
+                "aside" to listOf(file("s1", "Revisar.gb")),
+                "app" to listOf(dir("inter", "Intercambio"), file("p1", "Exportado.gb")),
+                "inter" to listOf(file("p2", "Paquete.gb")),
+                "poke" to listOf(dir("gen2", "2ª generación"), dir("rev", "_Revisar"), dir("nested", "PocketGB"), dir("dot", ".cache")),
+                "gen2" to listOf(file("g", "Oro.gbc")),
+                "rev" to listOf(file("r", "Dudoso.gb")),
+                "nested" to listOf(file("np", "Anidado.gb")),
+                "dot" to listOf(file("d", "Cache.gb")),
+            ),
+            heads = mapOf(
+                "a" to rom("RED"),
+                "u" to rom("BORRADOR"),
+                "g" to rom("GOLD", cgb = 0x80),
+                "np" to rom("ANIDADO"),
+            ),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(
+            setOf("Rojo.gb", "_Borrador.gb", "Pokémon/2ª generación/Oro.gbc", "Pokémon/PocketGB/Anidado.gb"),
+            result.entries.map { it.id }.toSet(),
+        )
+        // Ni las carpetas ocultas, ni las apartadas, ni la de la app en la raíz se consultan.
+        assertTrue(tree.queried.none { it in setOf("hidden", "aside", "app", "inter", "rev", "dot") })
+        assertEquals(listOf("Pokémon", "2ª generación"), result.entries.single { it.title == "GOLD" }.folderPath)
+        assertEquals(1, result.stats.reservedSkipped)
+        assertEquals(2, result.stats.setAsideSkipped)
+        assertEquals(3, result.stats.hiddenSkipped)
+        assertTrue(result.stats.complete)
+    }
+
+    @Test
+    fun theEntryCapStopsTheScanAndMarksItIncomplete() {
+        val many = (0 until LibraryScanner.MAX_SCAN_ENTRIES + 50).map { file("f$it", "Juego $it.gb") }
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(dir("late", "Zeta")) + many, "late" to listOf(file("zz", "Tarde.gb"))),
+            heads = many.associate { it.id to rom(it.name.uppercase().take(16)) } + ("zz" to rom("TARDE")),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertTrue(result.stats.truncated)
+        assertFalse(result.stats.complete)
+        assertTrue(result.entries.size <= LibraryScanner.MAX_SCAN_ENTRIES)
+        assertTrue("la carpeta que no cupo no se lista", "late" !in tree.queried)
+    }
+
+    @Test
+    fun aFailingFolderDoesNotAbortTheRestButMakesTheScanIncomplete() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(dir("a", "A"), dir("b", "B")),
+                "a" to listOf(dir("a1", "Hondo")),
+                "a1" to listOf(file("x", "X.gb")),
+                "b" to listOf(file("y", "Y.gb")),
+            ),
+            heads = mapOf("x" to rom("X"), "y" to rom("Y")),
+            failingDirs = setOf("a1"),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(listOf("B/Y.gb"), result.entries.map { it.id })
+        assertEquals(1, result.stats.folderErrors)
+        assertFalse(result.stats.complete)
+    }
+
+    @Test
+    fun aRevokedDeepFolderStillPropagates() {
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(dir("a", "A")), "a" to listOf(dir("b", "B")), "b" to emptyList()),
+            revokedDirs = setOf("b"),
+        )
+        assertThrows(TreePermissionException::class.java) { LibraryScanner.scan(tree) }
+    }
+
+    @Test
+    fun deepRepeatedPathsStillGetUniqueIdsAndKeepTheirFolderPath() {
+        // Dos carpetas «Rojo» dentro de «Pokémon/Gen 1» (Drive lo permite), cada una con un «Juego.gb».
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(dir("p", "Pokémon")),
+                "p" to listOf(dir("g", "Gen 1")),
+                "g" to listOf(dir("r1", "Rojo"), dir("r2", "Rojo")),
+                "r1" to listOf(file("j1", "Juego.gb")),
+                "r2" to listOf(file("j2", "Juego.gb")),
+            ),
+            heads = mapOf("j1" to rom("UNO"), "j2" to rom("DOS")),
+        )
+        val entries = LibraryScanner.scan(tree)
+        assertEquals(2, entries.map { it.id }.toSet().size)
+        assertTrue(entries.all { it.id.startsWith("Pokémon/Gen 1/Rojo/Juego.gb#") })
+        assertTrue(entries.all { it.folderPath == listOf("Pokémon", "Gen 1", "Rojo") })
+        assertEquals(setOf("r1", "r2"), entries.map { it.folderDocumentId }.toSet())
+    }
+
+    @Test
+    fun theSiblingSaveDateAndTheRomStampWorkInDeepFolders() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(dir("a", "A")),
+                "a" to listOf(dir("b", "B")),
+                "b" to listOf(dir("c", "C")),
+                "c" to listOf(file("r", "Rojo.gb", modified = 5_000L), sav("s", "Rojo.sav", 7_000L)),
+            ),
+            heads = mapOf("r" to rom("RED")),
+        )
+        val entry = LibraryScanner.scan(tree).single()
+        assertEquals("A/B/C/Rojo.gb", entry.id)
+        assertEquals(7_000L, entry.mirrorSaveDate)
+        assertEquals(5_000L, entry.lastModified)
+        assertEquals("c", entry.folderDocumentId)
+    }
+
+    @Test
+    fun aFolderThatAppearsUnderTwoParentsIsListedOnce() {
+        // Drive deja que una carpeta tenga dos padres: no se lista dos veces (ni se duplican sus juegos).
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(dir("a", "A"), dir("b", "B")),
+                "a" to listOf(dir("shared", "Compartida")),
+                "b" to listOf(dir("shared", "Compartida")),
+                "shared" to listOf(file("x", "X.gb")),
+            ),
+            heads = mapOf("x" to rom("X")),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(1, result.entries.size)
+        assertEquals(1, tree.queried.count { it == "shared" })
+    }
+
+    @Test
+    fun cancellationIsCheckedBeforeEachFolderAndEachHeader() {
+        val tree = chain(levels = 4)
+        var checks = 0
+        val error = assertThrows(IllegalStateException::class.java) {
+            LibraryScanner.scan(tree, checkCancelled = { if (++checks > 2) throw IllegalStateException("cancelado") })
+        }
+        assertEquals("cancelado", error.message)
+        assertEquals("se detiene sin listar el resto", 2, tree.queried.size)
+    }
+
+    // ---- N1-H1/H6: identidad de cabecera y caché ----
+
+    @Test
+    fun eachRomCarriesItsHeaderIdentityAndACachedHeaderIsNotReadAgain() {
+        val dirs = mapOf(
+            null to listOf(file("a", "Rojo.gb", modified = 10L), dir("d", "Sub")),
+            "d" to listOf(file("b", "Oro.gbc", modified = 20L), file("c", "SinFecha.gb")),
+        )
+        val heads = mapOf("a" to rom("RED"), "b" to rom("GOLD", cgb = 0x80), "c" to rom("NODATE"))
+        val first = LibraryScanner.scanDetailed(FakeTree(dirs, heads))
+        assertEquals(3, first.stats.headReads)
+        val red = first.entries.single { it.id == "Rojo.gb" }
+        assertEquals(RomHeader.identity(rom("RED")), red.headerKey)
+        assertEquals(56, red.headerKey!!.length)
+
+        // Segundo escaneo con la caché de los sellos: solo se abre el que no tiene fecha (no se puede validar).
+        val cache = HeaderCache.from(first.entries.map(DocumentStamp::of))
+        val tree = FakeTree(dirs, heads)
+        val second = LibraryScanner.scanDetailed(tree, headerCache = cache)
+        assertEquals(1, second.stats.headReads)
+        assertEquals(2, second.stats.headerCacheHits)
+        assertEquals(first.entries.map { it.id to it.title }, second.entries.map { it.id to it.title })
+        assertTrue(second.entries.single { it.id == "Sub/Oro.gbc" }.isColor)
+        assertEquals(red.headerKey, second.entries.single { it.id == "Rojo.gb" }.headerKey)
+
+        // Si cambia el tamaño o la fecha, se vuelve a leer.
+        val changed = mapOf(
+            null to listOf(file("a", "Rojo.gb", size = 65536, modified = 10L), dir("d", "Sub")),
+            "d" to listOf(file("b", "Oro.gbc", modified = 99L), file("c", "SinFecha.gb")),
+        )
+        assertEquals(3, LibraryScanner.scanDetailed(FakeTree(changed, heads), headerCache = cache).stats.headReads)
+    }
+
+    @Test
+    fun aMalformedCachedHeaderIsIgnored() {
+        val stamp = DocumentStamp("Rojo.gb", 32768, 10L, documentId = "a", header = "zz")
+        val tree = FakeTree(mapOf(null to listOf(file("a", "Rojo.gb", modified = 10L))), mapOf("a" to rom("RED")))
+        val result = LibraryScanner.scanDetailed(tree, headerCache = HeaderCache.from(listOf(stamp)))
+        assertEquals(1, result.stats.headReads)
+        assertEquals("RED", result.entries.single().title)
+    }
+
+    // ---- N1-H4: listados a medias ----
+
+    @Test
+    fun aFolderTheProviderIsStillLoadingIsUsedButTheScanIsIncomplete() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(file("a", "Rojo.gb"), dir("d", "Sub")),
+                "d" to listOf(file("b", "Azul.gb")),
+            ),
+            heads = mapOf("a" to rom("RED"), "b" to rom("BLUE")),
+            partialDirs = setOf("d"),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(setOf("Rojo.gb", "Sub/Azul.gb"), result.entries.map { it.id }.toSet())
+        assertEquals(1, result.stats.folderErrors)
+        assertFalse(result.stats.complete)
+    }
+
+    @Test
+    fun aPartialRootIsAlsoIncompleteInsteadOfFailing() {
+        val tree = FakeTree(
+            dirs = mapOf(null to listOf(file("a", "Rojo.gb"))),
+            heads = mapOf("a" to rom("RED")),
+            partialDirs = setOf(null),
+        )
+        val result = LibraryScanner.scanDetailed(tree)
+        assertEquals(listOf("Rojo.gb"), result.entries.map { it.id })
+        assertFalse(result.stats.complete)
     }
 }

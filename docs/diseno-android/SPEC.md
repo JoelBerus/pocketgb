@@ -116,7 +116,7 @@ Mandos físicos usan `onKeyDown`, `onKeyUp` y `onGenericMotionEvent`; cruceta/st
 
 ### 5.1 Biblioteca SAF
 
-La selección usa `ACTION_OPEN_DOCUMENT_TREE` y conserva permisos `READ|WRITE` con `takePersistableUriPermission`. Se recorren la carpeta y un nivel de subcarpetas, solo para `.gb` y `.gbc`. Permiso revocado, documento remoto no disponible, ROM demasiado grande y cabecera inválida son estados distintos y accionables.
+La selección usa `ACTION_OPEN_DOCUMENT_TREE` y conserva permisos `READ|WRITE` con `takePersistableUriPermission`. Se recorren la carpeta y hasta cinco niveles de subcarpetas (N1b; antes, uno), solo para `.gb` y `.gbc`; lo que empieza por `.`, `PocketGB/` en la raíz y las carpetas que empiezan por `_` no se escanean (ND11). Permiso revocado, documento remoto no disponible, ROM demasiado grande y cabecera inválida son estados distintos y accionables.
 
 Las ROM se leen para cada apertura y nunca se copian ni modifican. Favoritos, recientes, ocultos, vista, orden, opciones globales y opciones por juego viven en almacenamiento privado y se escriben atómicamente.
 

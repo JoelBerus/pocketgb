@@ -9,6 +9,8 @@ class SavedGameUi(
     val title: String?,
     val fileName: String?,
     val backups: List<SaveStore.BackupInfo>,
+    /** N1: partidas apartadas fuera de la rotación (perdedoras frente a un espejo ajeno); nunca se borran solas. */
+    val setAside: List<SaveStore.SetAsideInfo> = emptyList(),
 )
 
 /**
@@ -29,6 +31,7 @@ class SavesBrowser(
                 title = game.record?.title,
                 fileName = game.record?.fileName,
                 backups = SaveStore(directory, game.fingerprint, ops).backups(),
+                setAside = SaveStore(directory, game.fingerprint, ops).setAside(),
             )
         }
     }
@@ -46,6 +49,15 @@ class SavesBrowser(
             // núcleo rechazaría; si el índice no los tiene (entradas antiguas) no se puede juzgar y se permite.
             val sizes = SavesIndex(directory, ops).load()[fingerprint]?.validSizes?.toSet()
             SaveStore(directory, fingerprint, ops).restore(backup, sizes)
+        }
+    }
+
+    /** N1: restaura una partida apartada ([SaveStore.restoreSetAside]) con las mismas garantías que [restore]. */
+    fun restoreSetAside(fingerprint: String, name: String, openFingerprint: String?) {
+        check(fingerprint != openFingerprint) { "No se puede restaurar mientras el juego está abierto" }
+        ownership.withExclusive(fingerprint, "restauración") {
+            val sizes = SavesIndex(directory, ops).load()[fingerprint]?.validSizes?.toSet()
+            SaveStore(directory, fingerprint, ops).restoreSetAside(name, sizes)
         }
     }
 }

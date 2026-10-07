@@ -314,4 +314,136 @@ class SaveOpeningTest {
         outcome.target!!.persistLocal(version(2))
         assertArrayEquals(version(2), s.load())
     }
+
+    // MARK: N1 · perdedor frente a un espejo ajeno, apartado fuera de la rotación
+
+    private fun setAsideFiles(s: SaveStore) = s.setAside().map { File(s.backupsDirectory, it.name) }
+
+    /** Cinco guardados más: la rotación `.1`–`.5` ya no tiene nada de antes. */
+    private fun fiveMoreSaves(s: SaveStore) = (10..14).forEach { s.save(version(it)) }
+
+    @Test fun aDuplicateWithANewerMirrorSetsTheLocalAsideOutsideTheRotation() {
+        // Dos copias del mismo juego (misma huella, una partida local): la copia B trae su propio `.sav`, más nuevo.
+        val s = store("dup1")
+        s.save(version(1)) // lo jugado con la copia A
+        assertTrue(s.saveFile.setLastModified(old))
+        val copyB = FakeSaveMirror(read(version(2), new))
+        val outcome = SaveOpening.prepare(s, copyB, copyB.snapshot(), sizes)
+        assertArrayEquals("gana el más nuevo, como siempre", version(2), outcome.data)
+        assertEquals("N1-H5: se avisa de que la local quedó apartada", SaveLoadWarning.LocalSetAside, outcome.warning)
+        val aside = setAsideFiles(s).single()
+        assertTrue(aside.name.matches(Regex("dup1\\.mirror-\\d+-[0-9a-f]{8}\\.sav")))
+        assertArrayEquals(version(1), aside.readBytes())
+        fiveMoreSaves(s)
+        assertTrue("la rotación ya la perdió", s.backups().none { s.backupFile(it.index).readBytes().contentEquals(version(1)) })
+        assertArrayEquals("la apartada sigue ahí", version(1), aside.readBytes())
+    }
+
+    @Test fun aForeignSaveWithTheSameNameIsSetAsideOutsideTheRotation() {
+        // Un `.sav` de otro juego con el mismo nombre que el ROM (tamaño válido), más viejo que la local.
+        val s = store("ajeno")
+        s.save(version(1))
+        val foreign = FakeSaveMirror(read(version(9), old))
+        val outcome = SaveOpening.prepare(s, foreign, foreign.snapshot(), sizes)
+        assertArrayEquals(version(1), outcome.data)
+        assertNull("pierde el espejo: la partida no cambia, no hay aviso", outcome.warning)
+        assertArrayEquals(version(9), setAsideFiles(s).single().readBytes())
+        assertArrayEquals(version(9), s.backupFile(1).readBytes())
+        fiveMoreSaves(s)
+        assertArrayEquals("cinco guardados no lo borran", version(9), setAsideFiles(s).single().readBytes())
+        // Y se puede restaurar (la actual pasa antes a `.1`).
+        s.restoreSetAside(setAsideFiles(s).single().name, sizes)
+        assertArrayEquals(version(9), s.load())
+        assertArrayEquals(version(14), s.backupFile(1).readBytes())
+        assertEquals("restaurar no la borra", 1, s.setAside().size)
+    }
+
+    @Test fun theSameLoserIsSetAsideOnceAndTwoLosersNeverOverwriteEachOther() {
+        val s = store("dos")
+        s.save(version(1))
+        val mirror = FakeSaveMirror(read(version(7), old))
+        repeat(3) { SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes) }
+        assertEquals(1, s.setAside().size)
+        mirror.snapshotValue = read(version(8), old)
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        assertEquals(setOf(version(7).toList(), version(8).toList()), setAsideFiles(s).map { it.readBytes().toList() }.toSet())
+        // Mismo segundo y mismo sufijo: nunca se pisa (se elige otro nombre).
+        val fixed = listOf("aaaaaaaa", "aaaaaaaa", "bbbbbbbb").iterator()
+        s.setAsideMirrorLoser(version(5), unixSeconds = 42, rand8 = { fixed.next() })
+        s.setAsideMirrorLoser(version(6), unixSeconds = 42, rand8 = { fixed.next() })
+        assertArrayEquals(version(5), File(s.backupsDirectory, "dos.mirror-42-aaaaaaaa.sav").readBytes())
+        assertArrayEquals(version(6), File(s.backupsDirectory, "dos.mirror-42-bbbbbbbb.sav").readBytes())
+    }
+
+    @Test fun anOwnedMirrorOrAnEqualOneIsNeverSetAside() {
+        val s = store()
+        val mirror = FakeSaveMirror()
+        val target = SaveTarget(s, mirror)
+        target.persistLocal(version(1))
+        awaitIdle(target)
+        s.save(version(2)) // la local avanza; el espejo es nuestra escritura anterior
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        mirror.snapshotValue = read(version(2), new)
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        assertTrue(s.setAside().isEmpty())
+    }
+
+    @Test fun aMirrorOnlyOrAWrongSizedLocalIsNotSetAsideAsAMirrorLoser() {
+        val s = store()
+        val mirror = FakeSaveMirror(read(version(5), old))
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes) // sin local: nada pierde
+        assertTrue(s.setAside().isEmpty())
+        val t = store("ws")
+        dir.mkdirs()
+        t.saveFile.writeBytes(bytes(7, 7, 7)) // local de tamaño incorrecto: ya va a su cuarentena wrong-size
+        SaveOpening.prepare(t, mirror, mirror.snapshot(), sizes)
+        assertTrue(t.setAside().isEmpty())
+    }
+
+    @Test fun theSetAsideCopyIsWrittenBeforeAnythingIsReplaced() {
+        val rec = FaultInjectingFileOps()
+        val s = store("orden", rec)
+        s.save(version(1))
+        assertTrue(s.saveFile.setLastModified(old))
+        val mirror = FakeSaveMirror(read(version(2), new))
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        val aside = rec.log.indexOfFirst { it.startsWith("atomicReplace:orden.mirror-") }
+        val install = rec.log.lastIndexOf("atomicReplace:orden.sav.tmp->orden.sav")
+        assertTrue("${rec.log}", aside in 0 until install)
+    }
+
+    @Test fun aSetAsideTemporaryLeftByAKillIsCleanedAndARealOneIsKept() {
+        val s = store("huerf")
+        s.setAsideMirrorLoser(version(3))
+        File(s.backupsDirectory, "huerf.mirror-1-deadbeef.sav.tmp").writeBytes(version(4).copyOf(2))
+        s.recoverOrphans(sizes)
+        assertFalse(File(s.backupsDirectory, "huerf.mirror-1-deadbeef.sav.tmp").exists())
+        assertArrayEquals(version(3), setAsideFiles(s).single().readBytes())
+    }
+
+    @Test fun restoringSomethingThatIsNotASetAsideOfThisGameIsRefused() {
+        val s = store("propia")
+        s.save(version(1))
+        try {
+            s.restoreSetAside("otra.mirror-1-aaaaaaaa.sav")
+            fail("debía rechazarse")
+        } catch (_: IllegalArgumentException) {
+        }
+        try {
+            s.restoreSetAside("propia.1.sav")
+            fail("debía rechazarse")
+        } catch (_: IllegalArgumentException) {
+        }
+        assertArrayEquals(version(1), s.load())
+    }
+
+    @Test fun aReadOnlyFolderWhoseNewerSaveReplacesTheLocalStillWarnsAboutTheSetAside() {
+        val s = store("solo-lectura")
+        s.save(version(1))
+        assertTrue(s.saveFile.setLastModified(old))
+        val mirror = FakeSaveMirror(read(version(2), new))
+        val outcome = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes, mirrorMode = SaveOpening.MirrorMode.ReadOnly)
+        assertArrayEquals(version(2), outcome.data)
+        assertEquals(SaveLoadWarning.LocalSetAside, outcome.warning)
+    }
 }

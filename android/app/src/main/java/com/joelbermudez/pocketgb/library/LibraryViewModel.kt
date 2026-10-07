@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -48,6 +49,13 @@ class LibraryViewModel(
     private val preferencesFile: PreferencesStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    /** N1b: cuánto costó cada escaneo (la app lo anota en el registro del sistema). */
+    private val scanLog: (ScanStats) -> Unit = {},
+    /**
+     * N1-V2: si el proveedor aún estaba cargando alguna carpeta (`EXTRA_LOADING`), se vuelve a escanear tras esta espera,
+     * como mucho [MAX_LOADING_RETRIES] veces seguidas.
+     */
+    private val loadingRetryDelayMs: Long = 3_000L,
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state.asStateFlow()
@@ -70,6 +78,17 @@ class LibraryViewModel(
 
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
+
+    /**
+     * N1-H2: `preferences.json` es de otra versión de la app (futura o con una versión que no se entiende): no se
+     * sobrescribe y los cambios de esta sesión se quedan en memoria. La biblioteca lo avisa.
+     */
+    private val _preferencesReadOnly = MutableStateFlow(false)
+    val preferencesReadOnly: StateFlow<Boolean> = _preferencesReadOnly.asStateFlow()
+
+    /** N1b: lo que costó el último escaneo terminado (consultas SAF, apartados, si fue completo). */
+    private val _lastScan = MutableStateFlow<ScanStats?>(null)
+    val lastScan: StateFlow<ScanStats?> = _lastScan.asStateFlow()
 
     // ---- Operaciones de carpeta: una a la vez, y solo la más reciente publica estado ----
 
@@ -122,6 +141,7 @@ class LibraryViewModel(
     /** Carga el archivo y aplica encima los cambios hechos mientras tanto. Un fallo de I/O deja todo pendiente. */
     private fun loadNow() {
         val data = preferencesFile.load()
+        _preferencesReadOnly.value = preferencesFile.writeProtected
         synchronized(lock) {
             _prefs.value = pendingChanges.fold(data) { current, change -> change(current) }
             pendingChanges.clear()
@@ -143,6 +163,7 @@ class LibraryViewModel(
     }
 
     fun chooseFolder(uri: String) = launchFolderOperation { isCurrent ->
+        loadingRetries.set(0)
         try {
             folders.select(uri)
             // Otra carpeta: el primer escaneo no marca nada como nuevo (K19).
@@ -164,7 +185,23 @@ class LibraryViewModel(
     }
 
     /** Vuelve a listar la carpeta; cancela el escaneo anterior. */
-    fun rescan() = launchFolderOperation { isCurrent -> scan(isCurrent) }
+    fun rescan() {
+        loadingRetries.set(0)
+        launchFolderOperation { isCurrent -> scan(isCurrent) }
+    }
+
+    /** Reintentos seguidos por carpetas que el proveedor aún cargaba (N1-V2); vuelve a 0 con un escaneo completo. */
+    private val loadingRetries = AtomicInteger()
+
+    /** Programa otro escaneo dentro de [loadingRetryDelayMs] si no se agotaron los reintentos ni hubo otra operación. */
+    private fun scheduleLoadingRetry() {
+        if (loadingRetries.incrementAndGet() > MAX_LOADING_RETRIES) return
+        val mine = generation.get()
+        scope.launch(io) {
+            delay(loadingRetryDelayMs)
+            if (generation.get() == mine) launchFolderOperation { isCurrent -> scan(isCurrent) }
+        }
+    }
 
     fun forgetFolder() = launchFolderOperation { isCurrent ->
         try {
@@ -189,6 +226,7 @@ class LibraryViewModel(
             context.ensureActive()
             if (isCurrent()) _state.value = state
         }
+        var stillLoading = false
         val outcome: LibraryState = try {
             val uri = folders.currentUri()
             if (uri == null) {
@@ -208,14 +246,29 @@ class LibraryViewModel(
                 else -> emptyList()
             }
             publish(LibraryState.Scanning(previous, name))
-            val entries = LibraryScanner.scan(openTree(uri)) { done, total ->
-                context.ensureActive()
-                // Sin inundar a la UI: el primero, cada cinco y el último.
-                if (isCurrent() && (done == 1 || done == total || done % PROGRESS_STEP == 0)) {
-                    _state.value = LibraryState.Scanning(previous, name, done, total)
-                }
-            }
-            LibraryState.Ready(markNew(entries), name)
+            // N1-H6: con las preferencias cargadas, los ROMs que no cambiaron no se vuelven a abrir.
+            ensureLoaded()
+            val headerCache = HeaderCache.from(_prefs.value.documents.values)
+            val result = LibraryScanner.scanDetailed(
+                openTree(uri),
+                progress = { done, total ->
+                    // Sin inundar a la UI: el primero, cada cinco y el último.
+                    if (isCurrent() && (done == 1 || done == total || done % PROGRESS_STEP == 0)) {
+                        _state.value = LibraryState.Scanning(previous, name, done, total)
+                    }
+                },
+                checkCancelled = { context.ensureActive() },
+                headerCache = headerCache,
+            )
+            context.ensureActive()
+            _lastScan.value = result.stats
+            scanLog(result.stats)
+            stillLoading = result.stats.loadingFolders > 0
+            if (result.stats.complete) loadingRetries.set(0)
+            ensureLoaded()
+            // N1a: movimientos reconocidos por su sello (sin leer los ROMs) antes de decidir qué es «Nuevo».
+            mutate { it.reconciled(result.entries, result.stats.complete) }
+            LibraryState.Ready(markNew(result.entries, result.stats.complete), name)
         } catch (error: CancellationException) {
             throw error
         } catch (_: TreePermissionException) {
@@ -231,15 +284,11 @@ class LibraryViewModel(
             LibraryState.Failed(LibraryError.Unreadable)
         }
         publish(outcome)
+        if (stillLoading && isCurrent()) scheduleLoadingRetry()
     }
 
-    /**
-     * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
-     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
-     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo». Un
-     * listado vacío no poda (un proveedor en la nube con un fallo pasajero no debe olvidar toda la biblioteca).
-     */
-    private fun markNew(entries: List<RomEntry>): List<RomEntry> {
+    /** Intenta cargar las preferencias si aún no lo están; si el disco falla, se sigue sin ellas. */
+    private fun ensureLoaded() {
         synchronized(persistLock) {
             if (!loaded) {
                 try {
@@ -249,6 +298,17 @@ class LibraryViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
+     * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
+     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo», salvo que se
+     * reconozca como movido o vuelva con su lápida ([reconciled], N1a/N1-H4). Un listado vacío o un escaneo incompleto
+     * no podan (un proveedor en la nube con un fallo pasajero no debe olvidar toda la biblioteca).
+     */
+    private fun markNew(entries: List<RomEntry>, complete: Boolean): List<RomEntry> {
+        ensureLoaded()
         if (!loaded) return entries // sin preferencias no se sabe qué era conocido: no se marca nada
         val ids = entries.map { it.id }.toSet()
         val known = _prefs.value.knownIds
@@ -257,7 +317,8 @@ class LibraryViewModel(
             return entries
         }
         val gone = known - ids
-        if (gone.isNotEmpty() && ids.isNotEmpty()) mutate { it.copy(knownIds = it.knownIds - gone) }
+        // N1a: con un escaneo incompleto (una carpeta falló) lo que no aparece puede seguir ahí: no se poda.
+        if (gone.isNotEmpty() && ids.isNotEmpty() && complete) mutate { it.copy(knownIds = it.knownIds - gone) }
         val fresh = ids - known
         val toAnnounce = fresh - announcedNew
         if (toAnnounce.isNotEmpty()) {
@@ -375,15 +436,20 @@ class LibraryViewModel(
                 return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             }
             val fingerprint = info.fingerprintHex
-            if (_prefs.value.fingerprints[entry.id] != fingerprint) {
+            // También confirma una huella heredada de un movimiento (N1-H1), aunque sea la misma.
+            val current = _prefs.value
+            if (current.fingerprints[entry.id] != fingerprint || entry.id in current.inferredFingerprints) {
                 mutate { it.recordFingerprint(entry.id, fingerprint) }
             }
             DetailsLoad.Loaded(GameDetails.from(entry, info))
         }
     }
 
-    private companion object {
-        const val PROGRESS_STEP = 5
+    companion object {
+        private const val PROGRESS_STEP = 5
+
+        /** N1-V2: reintentos seguidos como mucho cuando el proveedor aún cargaba alguna carpeta. */
+        const val MAX_LOADING_RETRIES = 3
     }
 
     private fun entryFor(id: String): RomEntry? = when (val current = _state.value) {

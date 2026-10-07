@@ -66,7 +66,7 @@ class SafLibraryTest {
         fixtures.put("Beta.GBC", SyntheticRom.romOnly("BETA", color = true))
         fixtures.put("notas.txt", "no es un ROM".toByteArray())
         fixtures.put("Sub/Gamma.gb", SyntheticRom.romOnly("GAMMA"))
-        fixtures.put("Sub/Deeper/Oculto.gb", SyntheticRom.romOnly("OCULTO"))
+        fixtures.put("Sub/Deeper/Hondo.gb", SyntheticRom.romOnly("HONDO"))
         fixtures.putSparse("Grande.gb", 9L * 1024 * 1024)
         fixtures.put("Roto.gb", ByteArray(16))
         fixtures.put("virtual-Remoto.gb", ByteArray(0))
@@ -82,14 +82,16 @@ class SafLibraryTest {
     private fun tree() = SafDocumentTree(resolver, treeUri)
 
     @Test
-    fun scanListsRomsInRootAndOneSubfolderWithTypedProblems() {
+    fun scanListsRomsInRootAndSubfoldersWithTypedProblems() {
         val entries = LibraryScanner.scan(tree()).associateBy { it.id }
 
         assertEquals(
-            setOf("Alfa.gb", "Beta.GBC", "Sub/Gamma.gb", "Grande.gb", "Roto.gb", "virtual-Remoto.gb"),
+            setOf("Alfa.gb", "Beta.GBC", "Sub/Gamma.gb", "Sub/Deeper/Hondo.gb", "Grande.gb", "Roto.gb", "virtual-Remoto.gb"),
             entries.keys,
         )
-        assertFalse("Un nivel más profundo no se escanea", entries.keys.any { it.contains("Oculto") })
+        // N1b: el segundo nivel también se escanea (hasta MAX_FOLDER_DEPTH), con su ruta de carpetas.
+        assertEquals(listOf("Sub", "Deeper"), entries.getValue("Sub/Deeper/Hondo.gb").folderPath)
+        assertEquals("root/Sub/Deeper", entries.getValue("Sub/Deeper/Hondo.gb").folderDocumentId)
         assertEquals("ALFA", entries.getValue("Alfa.gb").title)
         assertNull(entries.getValue("Alfa.gb").problem)
         assertTrue(entries.getValue("Beta.GBC").isColor)

@@ -93,7 +93,19 @@ object SaveOpening {
         return when (val r = SaveResolution.resolve(local, mirrorCandidate, owned) { it in validSizes }) {
             SaveResolution.None -> Outcome(null, makeTarget(usableMirror), extraWarning)
             is SaveResolution.Load -> {
-                // Orden de efectos: addBackup → cuarentena → instalación. Si uno falla, los siguientes no se hacen.
+                // N1: con dos partidas válidas y distintas y un espejo que no es nuestro (un duplicado con su propio `.sav`,
+                // un `.sav` ajeno con el mismo nombre…), el perdedor se aparta además fuera de la rotación: cinco
+                // guardados no pueden borrarlo. Va primero: nada se toca hasta que está a salvo.
+                val loser = when {
+                    r.backupOther != null -> r.backupOther
+                    r.installLocal && !r.quarantineLocal && !owned && localState is SaveStore.LocalSave.Present &&
+                        localState.data.size in validSizes && !localState.data.contentEquals(r.data) -> localState.data
+                    else -> null
+                }
+                loser?.let { store.setAsideMirrorLoser(it) }
+                // N1-H5: si la que pierde es la partida local, se avisa de dónde quedó.
+                val localSetAside = loser != null && r.backupOther == null
+                // Orden de efectos: apartado → addBackup → cuarentena → instalación. Si uno falla, los siguientes no se hacen.
                 r.backupOther?.let(store::addBackup)
                 if (r.quarantineLocal) store.quarantineCurrent()
                 if (r.installLocal) store.save(r.data)
@@ -102,6 +114,7 @@ object SaveOpening {
                     r.mirrorIgnored -> SaveLoadWarning.MirrorIgnored
                     r.quarantineLocal -> SaveLoadWarning.LocalQuarantined
                     unavailable -> SaveLoadWarning.MirrorUnavailable
+                    localSetAside -> SaveLoadWarning.LocalSetAside
                     else -> extraWarning
                 }
                 Outcome(r.data, target, warning)
