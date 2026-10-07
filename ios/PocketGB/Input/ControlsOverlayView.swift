@@ -292,11 +292,11 @@ final class ControlsOverlayView: UIView {
         let mask = editing ? 0 : engine.mask
         buttons?.set(mask)
         let pressed: Set<ControlID> = editing ? [] : engine.pressed
-        // Háptica solo al entrar en pulsado o, en la cruceta, al cambiar de dirección (N2).
+        // Háptica al entrar en pulsado o, en la cruceta, al activarse una dirección nueva (N2).
         let newlyPressed = pressed.subtracting(lastPressed).subtracting([.dpad])
         if !newlyPressed.isEmpty { haptics.buttonDown() }
         let dpad: UInt8 = editing ? 0 : engine.dpadMask
-        if dpadHaptics.shouldFire(mask: dpad, fingerDown: !editing && engine.dpadFingerDown) { haptics.dpadChanged() }
+        if dpadHaptics.shouldFire(mask: dpad) { haptics.dpadChanged() }
         if pressed != lastPressed || dpad != lastDpadMask {
             lastPressed = pressed
             lastDpadMask = dpad

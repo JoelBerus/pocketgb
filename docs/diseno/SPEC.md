@@ -390,7 +390,7 @@ Ninguna animación bloquea input, flush o cambio de orientación.
 | Evento | Feedback |
 |---|---|
 | A/B/Start/Select | `UIImpactFeedbackGenerator(style: .light)`, una vez al entrar en pressed |
-| Cambio de dirección de la cruceta | `UISelectionFeedbackGenerator`, solo cuando cambia la dirección tras la histéresis; volver a la misma dirección con el mismo dedo no vibra (N2, `DpadHapticGate`) |
+| Dirección nueva en la cruceta | `UISelectionFeedbackGenerator` cuando se activa una dirección que no estaba activa, tras la histéresis (regla común con Android, N2, `DpadHapticGate`): ↑ → ↑→ vibra; ↑→ → ↑ no; ↑ → nada → ↑ sí |
 | Guardar estado | `UINotificationFeedbackGenerator(.success)` |
 | Error de carga/guardado | `.error` |
 | Confirmación destructiva | `.warning` |
@@ -493,7 +493,7 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 57 | `gameplay-arrows-up` | Flechas con ↑ pulsado | ambas | ambos | Solo el disco ↑ casi blanco con el triángulo oscuro (≥ 3:1); flechas `arrowtriangle` proporcionales | Las cuatro flechas iluminadas |
 | 58 | `gameplay-arrows-upright` | Flechas en diagonal | portrait | dark | Círculos ↑ y → iluminados | — |
 | 59 | `gameplay-arrows-up-reduce-transparency` | Flechas sin transparencia | ambas | dark | Cuatro círculos sólidos, ↑ casi blanco | Vidrio persistente |
-| 60 | `gameplay-arrows-spacing-70` / `-150` | Separación 0,7 y 1,5 | portrait (y landscape en 1,5) | dark | Flechas más juntas (encogen para no tocarse) o más separadas, dentro del área segura | Flechas que se solapan o se salen |
+| 60 | `gameplay-arrows-spacing-70` / `-150` | Separación 0,7 y 1,5 | portrait (y landscape en 1,5) | dark | Flechas más juntas (sin tocarse ni cambiar de tamaño) o más separadas, dentro del área segura | Flechas que se solapan o se salen |
 | 61 | `gameplay-gba-dpad-up` / `gameplay-gba-arrows-up` | GBA horizontal, cruceta al 60 % | landscape | dark | Flechas visibles a tamaño pequeño, solo ↑ marcado | Flechas de tamaño fijo desbordadas |
 | 62 | `customize-controls-dpad` / `customize-controls-arrows` | Editor con la cruceta elegida | ambas | dark | Tamaño − / +; con flechas, además «Separación» − / + | Separación con la cruz o sin restablecer |
 | 63 | `settings-controls-ax5` | Ajustes › Controles con AX5 | portrait | light | «Diagonales» con reflow | Texto recortado |
@@ -567,7 +567,7 @@ Reglas:
 - Diagonales según Ajustes › Controles (N2): «Normales» (ocho sectores de 45°), «Reducidas» (por defecto: diagonal solo a ±15° de 45°, rectas de 60°) o «Desactivadas» (cuatro rectas).
 - Histéresis angular: la dirección de un dedo se mantiene hasta 8° más allá del borde de su sector.
 - Prohibición de direcciones opuestas: también con dos dedos en la cruceta (se quitan en la máscara táctil) y con dedo y mando a la vez (se quitan tras el OR, `EmulatorSession.combinedButtons`).
-- Flechas separadas: separación 0,7–1,5 por disposición; el marco y la zona táctil crecen o encogen con ella. Todo el disco de cada flecha pulsa su dirección (sin diagonal; el dedo la mantiene hasta 4 pt fuera del disco) y la zona muerta acaba 2 pt antes del borde interior de las flechas; entre flechas decide el ángulo.
+- Flechas separadas: separación k de 0,7 a 1,5 por disposición (fórmula común con Android): diámetro fijo 0,36 W; centro de cada flecha a 0,32 W × k del centro con k ≥ 1 y, por debajo, en línea recta hasta 0,265 W con k = 0,7 (nunca se solapan). El marco y la zona táctil crecen o encogen con ella. Todo el disco de cada flecha pulsa su dirección (sin diagonal; el dedo la mantiene hasta 4 pt fuera del disco) y la zona muerta acaba 2 pt antes del borde interior de las flechas; entre flechas decide el ángulo.
 - Máscara táctil combinada por OR con la del mando físico.
 
 El efecto visual nunca decide qué control está pulsado; solo representa el estado calculado por el motor de input.

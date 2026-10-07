@@ -209,16 +209,21 @@ struct DpadInputTests {
         }
     }
 
-    @Test func hapticFiresOnlyWhenTheDirectionChanges() {
+    /// Regla común con Android: vibra cuando se activa una dirección que no estaba activa.
+    @Test func hapticFiresWhenADirectionTurnsOn() {
         var gate = DpadHapticGate()
-        var fired: [Bool] = []
+        let ur = Self.up | Self.right
         let trace: [(UInt8, Bool)] = [
-            (0, true), (Self.up, true), (Self.up, true), (0, true), (Self.up, true),   // zona muerta y vuelta: no
-            (Self.up | Self.right, true), (Self.up, true),                               // cambios reales: sí
-            (0, false), (Self.up, true),                                                  // dedo nuevo: sí
+            (0, false), (Self.up, true), (Self.up, false),        // ↑ sostenido: una vez
+            (ur, true),                                           // ↑ → ↑→: se activa →
+            (Self.up, false),                                     // ↑→ → ↑: no se activa nada
+            (0, false), (Self.up, true),                          // ↑ → nada → ↑: sí
+            (Self.right, true), (Self.down | Self.right, true),   // cada dirección nueva
+            (Self.down, false), (0, false),
         ]
-        for (mask, down) in trace { fired.append(gate.shouldFire(mask: mask, fingerDown: down)) }
-        #expect(fired == [false, true, false, false, false, true, true, false, true])
+        for (i, (mask, expected)) in trace.enumerated() {
+            #expect(gate.shouldFire(mask: mask) == expected, "paso \(i)")
+        }
     }
 
     // MARK: - Flechas separadas: separación (ND10)
@@ -262,9 +267,12 @@ struct DpadInputTests {
             #expect(abs(frame.width - 140 * DpadArrows.extentFactor(spacing: spacing)) < 0.01)
             #expect(abs(frame.midX - cross.midX) < 0.001 && abs(frame.midY - cross.midY) < 0.001, "el centro no se mueve")
             let rects = DpadArrows.rects(in: frame, spacing: spacing)
-            // Distancia de cada flecha al centro: 0,32 × 140 × separación.
+            // Fórmula común con Android: 0,32 × 140 × k con k ≥ 1; por debajo, de 0,32 × 140 a
+            // 0,265 × 140 en línea recta (k = 0,7). El diámetro no cambia (0,36 × 140).
+            let expected = spacing >= 1 ? 44.8 * spacing : 37.1 + (spacing - 0.7) / 0.3 * (44.8 - 37.1)
             for r in rects {
-                #expect(abs(hypot(r.midX - frame.midX, r.midY - frame.midY) - 44.8 * spacing) < 0.01)
+                #expect(abs(hypot(r.midX - frame.midX, r.midY - frame.midY) - expected) < 0.01, "k = \(spacing)")
+                #expect(abs(r.width - 50.4) < 0.01, "k = \(spacing)")
             }
             // Nunca se tocan dos flechas vecinas, y caben en el marco.
             #expect(hypot(rects[0].midX - rects[1].midX, rects[0].midY - rects[1].midY) > rects[0].width)
@@ -321,7 +329,7 @@ struct DpadInputTests {
     }
 
     /// Un dedo que tiembla ±2 pt sobre el borde lateral de la flecha ↑ (separación 0,7, donde el
-    /// disco llega a 49° y la diagonal empieza a 60°) no parpadea entre ↑ y la diagonal.
+    /// disco llega a 47° y la diagonal empieza a 60°) no parpadea entre ↑ y la diagonal.
     @Test func tremblingOnTheSideOfAnArrowDoesNotFlicker() throws {
         let g = Self.arrowsGeometry(spacing: 0.7)
         let frame = try #require(g.frames[.dpad])

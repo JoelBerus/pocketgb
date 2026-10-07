@@ -320,51 +320,52 @@ enum DpadDirection {
     }
 }
 
-/// Háptica de la cruceta (N2): solo al cambiar de dirección. Volver a la misma dirección tras
-/// pasar por la zona muerta con el mismo dedo no vibra; levantar el dedo la reinicia.
+/// Háptica de la cruceta (N2, regla común con Android): vibra cuando se activa una dirección
+/// que no estaba activa. ↑ → ↑→ vibra (se activa →); ↑→ → ↑ no; ↑ → nada → ↑ sí.
+/// Temblar dentro de la misma dirección no vibra (la histéresis evita los parpadeos).
 struct DpadHapticGate: Sendable {
     private(set) var last: UInt8 = 0
 
-    mutating func shouldFire(mask: UInt8, fingerDown: Bool) -> Bool {
-        guard fingerDown else {
-            last = 0
-            return false
-        }
-        guard mask != 0, mask != last else { return false }
-        last = mask
-        return true
+    mutating func shouldFire(mask: UInt8) -> Bool {
+        defer { last = mask }
+        return mask & ~last != 0
     }
 }
 
-/// Geometría de las flechas separadas (N2, ND10). Con separación 1 coincide con la de antes:
-/// círculos de 0,36 × el ancho normal de la cruceta, a 0,32 × ese ancho del centro.
+/// Geometría de las flechas separadas (N2, ND10; fórmula común con Android). Círculos de
+/// diámetro fijo 0,36 × el ancho normal W de la cruceta. Su centro está a 0,32 W × k del centro
+/// para k ≥ 1 y, por debajo, se comprime en línea recta hasta 0,265 W con k = 0,7: así nunca
+/// se solapan ni cambian de tamaño. Con k = 1 coincide con la geometría de antes de N2.
 enum DpadArrows {
     static let diameterRatio: CGFloat = 0.36
     static let offsetRatio: CGFloat = 0.32
-    /// Con separaciones pequeñas las flechas encogen para no tocarse: su diámetro no pasa
-    /// del 92 % de la distancia entre los centros de dos flechas vecinas.
-    static let neighbourGap: CGFloat = 0.92
+    /// Distancia al centro con la separación mínima (0,7).
+    static let minOffsetRatio: CGFloat = 0.265
 
-    static func diameterRatio(spacing: CGFloat) -> CGFloat {
-        min(diameterRatio, offsetRatio * spacing * 2.squareRoot() * neighbourGap)
+    /// Distancia del centro de cada flecha al de la cruceta, en anchos normales W.
+    static func offsetRatio(spacing: CGFloat) -> CGFloat {
+        let k = max(spacing, ControlsLayout.arrowSpacingRange.lowerBound)
+        if k >= 1 { return offsetRatio * k }
+        let low = ControlsLayout.arrowSpacingRange.lowerBound
+        return minOffsetRatio + (k - low) / (1 - low) * (offsetRatio - minOffsetRatio)
     }
 
     /// Lado del marco de la cruceta respecto al ancho normal (1 con separación 1).
     static func extentFactor(spacing: CGFloat) -> CGFloat {
-        2 * offsetRatio * spacing + diameterRatio(spacing: spacing)
+        2 * offsetRatio(spacing: spacing) + diameterRatio
     }
 
     /// Distancia del centro de la cruceta al borde interior de las flechas.
     static func innerEdge(in rect: CGRect, spacing: CGFloat) -> CGFloat {
         let base = rect.width / extentFactor(spacing: spacing)
-        return base * (offsetRatio * spacing - diameterRatio(spacing: spacing) / 2)
+        return base * (offsetRatio(spacing: spacing) - diameterRatio / 2)
     }
 
     /// Círculos de arriba, derecha, abajo e izquierda dentro del marco `rect` de la cruceta.
     static func rects(in rect: CGRect, spacing: CGFloat) -> [CGRect] {
         let base = rect.width / extentFactor(spacing: spacing)
-        let d = base * diameterRatio(spacing: spacing)
-        let offset = base * offsetRatio * spacing
+        let d = base * diameterRatio
+        let offset = base * offsetRatio(spacing: spacing)
         return [CGPoint(x: 0, y: -offset), CGPoint(x: offset, y: 0), CGPoint(x: 0, y: offset), CGPoint(x: -offset, y: 0)]
             .map { CGRect(x: rect.midX + $0.x - d / 2, y: rect.midY + $0.y - d / 2, width: d, height: d) }
     }

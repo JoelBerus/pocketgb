@@ -14,7 +14,7 @@ Al pulsar, **solo se marca la dirección que estás pulsando**: en la cruz, ese 
 
 Con las flechas separadas, tocar **cualquier parte de una flecha** pulsa solo esa dirección, también su borde. Las diagonales salen al tocar el hueco entre dos flechas.
 
-Notarás una vibración suave cada vez que **cambias** de dirección (si tienes la háptica activada en Ajustes › Controles). Si el dedo tiembla un poco sobre la misma dirección, no vibra.
+Notarás una vibración suave cada vez que **se activa una dirección nueva** (si tienes la háptica activada en Ajustes › Controles): al pasar de arriba a arriba‑derecha vibra (se suma la derecha); al volver de arriba‑derecha a arriba, no; al soltar y volver a pulsar, sí. Si el dedo tiembla un poco sobre la misma dirección, no vibra.
 
 ## Diagonales
 En **Ajustes › Controles › Diagonales** decides cuánto cuesta pulsar una diagonal (por ejemplo, arriba y derecha a la vez):
@@ -32,7 +32,7 @@ Los controles se ajustan en el editor: toca el botón de **pausa** (arriba, sobr
 
 - **Mover:** arrastra cualquier control (la cruceta, A, B, Start, Select y, en Game Boy Advance, L y R). Al soltarlo se guarda.
 - **Tamaño:** toca un control para elegirlo y usa **−** y **+** (del 60 % al 160 %).
-- **Separación de las flechas:** con el estilo «Flechas separadas», toca la cruceta y aparece **Separación** con dos botones: juntar o separar las flechas (del 70 % al 150 %). Las flechas siempre quedan alineadas en rombo alrededor del centro; si las juntas mucho, encogen un poco para no tocarse. La zona que responde al dedo crece o encoge con ellas.
+- **Separación de las flechas:** con el estilo «Flechas separadas», toca la cruceta y aparece **Separación** con dos botones: juntar o separar las flechas (del 70 % al 150 %). Las flechas siempre quedan alineadas en rombo alrededor del centro y conservan su tamaño; por debajo del 100 % se acercan menos, para que nunca se toquen. La zona que responde al dedo crece o encoge con ellas.
 - **Restablecer:** devuelve todo a como venía, incluida la separación (100 %).
 
 Cada combinación se guarda por separado: **Game Boy en vertical, Game Boy en horizontal, Game Boy Advance en vertical y Game Boy Advance en horizontal**. Lo que cambias en una no toca las otras. También puedes restablecer cada una desde **Ajustes › Controles › Disposición**.
