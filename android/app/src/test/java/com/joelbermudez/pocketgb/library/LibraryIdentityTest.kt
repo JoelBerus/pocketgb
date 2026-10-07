@@ -20,7 +20,7 @@ class LibraryIdentityTest {
     val tmp = TemporaryFolder()
 
     private fun rom(id: String, title: String = id) =
-        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, false, 32768, true, null)
+        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, com.joelbermudez.pocketgb.library.RomConsole.GB, 32768, true, null)
 
     private val fpRed = "9d4c1e07b3a85f26c0de91ab47f3825e6b10c9d7a2f45e83b6c1d09e7f2a4b58"
     private val fpYellow = "5a2f9b315a2f9b315a2f9b315a2f9b315a2f9b315a2f9b315a2f9b315a2f9b31"

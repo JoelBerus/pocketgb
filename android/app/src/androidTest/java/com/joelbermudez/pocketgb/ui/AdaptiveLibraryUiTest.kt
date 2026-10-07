@@ -75,7 +75,7 @@ class AdaptiveLibraryUiTest {
         uri = "content://t/$id",
         fileName = id.substringAfterLast('/'),
         title = title,
-        isColor = color,
+        console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color),
         sizeBytes = 32L * 1024,
         headerChecksumOk = true,
         problem = null,

@@ -359,7 +359,7 @@ fun LibraryContent(
                     LibraryState.NoFolder -> EmptyState(
                         icon = Icons.Outlined.FolderOpen,
                         title = stringResource(R.string.library_pick_title),
-                        message = stringResource(R.string.library_pick_message),
+                        message = stringResource(R.string.n8_library_pick_message),
                         actions = { Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_action)) } },
                     )
                     is LibraryState.Scanning -> if (state.previous.isEmpty()) {
@@ -386,7 +386,7 @@ fun LibraryContent(
                         EmptyState(
                             icon = Icons.Outlined.SportsEsports,
                             title = stringResource(R.string.library_empty_title),
-                            message = stringResource(R.string.library_empty_message),
+                            message = stringResource(R.string.n8_library_empty_message),
                             actions = {
                                 Button(onClick = onRescan) { Text(stringResource(R.string.library_rescan)) }
                                 OutlinedButton(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }

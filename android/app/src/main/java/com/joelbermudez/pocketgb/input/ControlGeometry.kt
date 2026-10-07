@@ -13,7 +13,15 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-enum class ControlId { DPAD, A, B, START, SELECT, MENU }
+/**
+ * Controles táctiles. [L] y [R] solo existen en Game Boy Advance (N8, = iOS `ControlID.l/.r`); van al final para que los
+ * ordinales de los demás (ids virtuales de TalkBack) no cambien.
+ */
+enum class ControlId {
+    DPAD, A, B, START, SELECT, MENU, L, R;
+
+    val isShoulder: Boolean get() = this == L || this == R
+}
 
 enum class ControlsOrientation { PORTRAIT, LANDSCAPE }
 
@@ -54,17 +62,49 @@ data class ControlLayout(
     fun dpadSeparation(): Float = separation.coerceIn(MIN_DPAD_SEPARATION, MAX_DPAD_SEPARATION)
 
     companion object {
-        /** Disposición guardada por el usuario sobre la de fábrica: lo no guardado conserva su valor por defecto. */
-        fun from(stored: StoredControlLayout, orientation: ControlsOrientation): ControlLayout {
-            val base = defaults(orientation)
+        /**
+         * Disposición guardada por el usuario sobre la de fábrica: lo no guardado conserva su valor por defecto. Con
+         * [shoulders] (GBA) la de fábrica es la de Game Boy Advance, con L y R.
+         */
+        fun from(stored: StoredControlLayout, orientation: ControlsOrientation, shoulders: Boolean = false): ControlLayout {
+            val base = defaults(orientation, shoulders)
+            val keep: (ControlId) -> Boolean = { shoulders || !it.isShoulder }
             return ControlLayout(
-                centers = base.centers + stored.positions,
-                scales = base.scales + stored.scales,
+                centers = base.centers + stored.positions.filterKeys(keep),
+                scales = base.scales + stored.scales.filterKeys(keep),
                 separation = stored.separation,
             )
         }
 
-        fun defaults(orientation: ControlsOrientation): ControlLayout = when (orientation) {
+        /**
+         * Disposición de fábrica. Game Boy: imagen 10:9. Game Boy Advance ([shoulders], = iOS `ControlsLayout.defaults(_,
+         * shoulders: true)`): imagen 3:2, más ancha y más baja. En vertical, L y R en las esquinas superiores de la zona
+         * de controles, sobre la cruceta y sobre A/B; en horizontal, la cruceta (al 0,6), A, B, Start y Select en los
+         * márgenes laterales de la imagen y L/R arriba en esos márgenes.
+         */
+        fun defaults(orientation: ControlsOrientation, shoulders: Boolean = false): ControlLayout =
+            if (shoulders) gbaDefaults(orientation) else gbDefaults(orientation)
+
+        private fun gbaDefaults(orientation: ControlsOrientation): ControlLayout = when (orientation) {
+            ControlsOrientation.PORTRAIT -> gbDefaults(orientation).let {
+                it.copy(centers = it.centers + mapOf(ControlId.L to NormalizedPoint(0.17f, 0.14f), ControlId.R to NormalizedPoint(0.83f, 0.14f)))
+            }
+            ControlsOrientation.LANDSCAPE -> ControlLayout(
+                centers = mapOf(
+                    ControlId.DPAD to NormalizedPoint(0.065f, 0.62f),
+                    ControlId.A to NormalizedPoint(0.94f, 0.45f),
+                    ControlId.B to NormalizedPoint(0.94f, 0.74f),
+                    ControlId.START to NormalizedPoint(0.94f, 0.93f),
+                    ControlId.SELECT to NormalizedPoint(0.065f, 0.93f),
+                    ControlId.MENU to NormalizedPoint(0.5f, 0.06f),
+                    ControlId.L to NormalizedPoint(0.065f, 0.1f),
+                    ControlId.R to NormalizedPoint(0.94f, 0.1f),
+                ),
+                scales = mapOf(ControlId.DPAD to 0.6f, ControlId.L to 0.9f, ControlId.R to 0.9f),
+            )
+        }
+
+        private fun gbDefaults(orientation: ControlsOrientation): ControlLayout = when (orientation) {
             ControlsOrientation.PORTRAIT -> ControlLayout(
                 centers = mapOf(
                     ControlId.DPAD to NormalizedPoint(0.25f, 0.44f),
@@ -107,8 +147,13 @@ class ControlGeometry(
     val dpadStyle: DpadStyle = DpadStyle.CROSS,
     /** Qué diagonales cuentan en la cruceta (N2). */
     val diagonals: DiagonalMode = DiagonalMode.REDUCED,
+    /** N8: dibuja y atiende L y R (solo Game Boy Advance). */
+    val shoulders: Boolean = false,
 ) {
     private val layout = layout
+
+    /** Controles que existen en esta geometría: todos, salvo L y R fuera de GBA (y MENU solo si [showMenu] para tocar). */
+    val controls: List<ControlId> = ControlId.entries.filter { shoulders || !it.isShoulder }
 
     /** Separación efectiva de las flechas (1,0 si el estilo es la cruz). */
     val dpadSeparation: Float = if (dpadStyle == DpadStyle.ARROWS) layout.dpadSeparation() else 1f
@@ -116,14 +161,14 @@ class ControlGeometry(
     fun scale(id: ControlId): Float =
         (layout.scale(id) * sizeScale).coerceIn(MIN_CONTROL_SCALE, MAX_CONTROL_SCALE * MAX_SIZE_SCALE)
 
-    val frames: Map<ControlId, ControlBounds> = ControlId.entries.associateWith { id ->
+    val frames: Map<ControlId, ControlBounds> = controls.associateWith { id ->
         val base = baseSize(id)
         val scale = scale(id)
         // El grupo de flechas separadas (separación incluida) es el «control»: su zona táctil y su marco siguen al dibujo.
         val footprint = if (id == ControlId.DPAD && dpadStyle == DpadStyle.ARROWS) DpadShape.footprint(dpadSeparation) else 1f
         val width = base.first * scale * density * footprint
         val height = base.second * scale * density * footprint
-        val relative = layout.centers[id] ?: ControlLayout.defaults(orientation).centers.getValue(id)
+        val relative = layout.centers[id] ?: ControlLayout.defaults(orientation, shoulders).centers.getValue(id)
         var halfWidth = min(width / 2f, area.width / 2f)
         var halfHeight = min(height / 2f, area.height / 2f)
         if (base.first == base.second) {
@@ -163,6 +208,12 @@ class ControlGeometry(
     }
 
     fun hit(point: ControlPoint): ControlHit? {
+        // L y R primero (como iOS): nunca quedan inalcanzables aunque otro control se mueva encima.
+        if (shoulders) {
+            listOf(ControlId.L, ControlId.R).forEach { id ->
+                if (touchFrame(id).expand(6f * density, 6f * density).contains(point)) return ControlHit.Single(id)
+            }
+        }
         if (inCircle(point, abFrame)) return ControlHit.AB
         listOf(ControlId.A, ControlId.B, ControlId.DPAD, ControlId.MENU).forEach { id ->
             if (id == ControlId.MENU && !showMenu) return@forEach
@@ -270,6 +321,8 @@ class ControlGeometry(
             ControlId.A, ControlId.B -> 68f to 68f
             ControlId.START, ControlId.SELECT -> 66f to 28f
             ControlId.MENU -> 48f to 48f
+            // Cápsulas de L y R (iOS `shoulderSize`, 92×40 pt).
+            ControlId.L, ControlId.R -> 92f to 40f
         }
     }
 }

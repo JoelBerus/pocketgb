@@ -143,7 +143,7 @@ class LibraryViewModelTest {
         folders = folders,
         openTree = { tree },
         roms = RomSource { uri, limit -> romBytes(uri, limit) },
-        inspector = { inspector(it) },
+        inspector = { rom, _ -> inspector(rom) },
         preferencesFile = store,
         io = Dispatchers.IO,
         scope = scope,
@@ -358,7 +358,7 @@ class LibraryViewModelTest {
         store.loadHook = { loading.countDown() }
         store.loadGate = gate
         val vm = viewModel()
-        val entry = RomEntry("nuevo.gb", "content://x", "nuevo.gb", "N", false, 1, true, null)
+        val entry = RomEntry("nuevo.gb", "content://x", "nuevo.gb", "N", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null)
         assertTrue("la carga debe estar en curso", loading.await(5, TimeUnit.SECONDS))
         vm.toggleFavorite(entry)
         // Con la carga todavía bloqueada, la memoria ya refleja el cambio y el disco no se ha tocado.
@@ -397,7 +397,7 @@ class LibraryViewModelTest {
                 folders = folders,
                 openTree = { tree },
                 roms = RomSource { uri, limit -> romBytes(uri, limit) },
-                inspector = { inspector(it) },
+                inspector = { rom, _ -> inspector(rom) },
                 preferencesFile = flaky,
                 io = Dispatchers.IO,
                 scope = scope,
@@ -407,7 +407,7 @@ class LibraryViewModelTest {
                 Thread {
                     start.await()
                     repeat(10) { i ->
-                        vm.toggleFavorite(RomEntry("w$worker-$i", "u", "f", "t", false, 1, true, null))
+                        vm.toggleFavorite(RomEntry("w$worker-$i", "u", "f", "t", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null))
                         if (i % 3 == 0) Thread.yield()
                     }
                 }.also { it.start() }
@@ -424,7 +424,7 @@ class LibraryViewModelTest {
     fun preferenceWriteFailureStaysPendingAndFlushReportsIt() {
         val vm = viewModel()
         assertEquals(PersistResult.Saved, await { vm.flushPreferences() })
-        val entry = RomEntry("x.gb", "u", "x.gb", "X", false, 1, true, null)
+        val entry = RomEntry("x.gb", "u", "x.gb", "X", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null)
         // Dos intentos fallan: el de la señal del propio cambio y el del flush.
         store.saveFailures = 2
         vm.toggleFavorite(entry)
@@ -455,7 +455,7 @@ class LibraryViewModelTest {
         prefsFile.save(LibraryPreferencesData(favorites = setOf("viejo.gb")))
         store.loadFailures = 3 // carga inicial, señal del cambio y flush
         val vm = viewModel()
-        vm.toggleFavorite(RomEntry("nuevo.gb", "u", "n", "N", false, 1, true, null))
+        vm.toggleFavorite(RomEntry("nuevo.gb", "u", "n", "N", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null))
         assertTrue(await { vm.flushPreferences() } is PersistResult.Failed)
         assertEquals("el archivo no se toca", setOf("viejo.gb"), prefsFile.load().favorites)
         // Cuando el disco responde, se carga lo que había y se le suma el cambio pendiente.

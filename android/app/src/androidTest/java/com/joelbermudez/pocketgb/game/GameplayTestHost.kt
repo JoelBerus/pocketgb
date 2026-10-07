@@ -17,7 +17,7 @@ object GameplayTestHost {
         uri = "content://prueba/Contador.gb",
         fileName = "Contador.gb",
         title = "CONTADOR",
-        isColor = false,
+        console = com.joelbermudez.pocketgb.library.RomConsole.GB,
         sizeBytes = 32L * 1024,
         headerChecksumOk = true,
         problem = null,

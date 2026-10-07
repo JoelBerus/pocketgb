@@ -2,9 +2,16 @@ package com.joelbermudez.pocketgb.game
 
 import android.content.ContentResolver
 import android.net.Uri
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.CoreError
 import com.joelbermudez.pocketgb.emulator.EmulationOptions
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
+import com.joelbermudez.pocketgb.emulator.GbaBios
+import com.joelbermudez.pocketgb.emulator.GbaOptions
+import com.joelbermudez.pocketgb.emulator.GbaRtc
+import com.joelbermudez.pocketgb.emulator.GbaSaveType
+import com.joelbermudez.pocketgb.emulator.RomInfo
+import com.joelbermudez.pocketgb.library.GbaSaveNames
 import com.joelbermudez.pocketgb.library.DocumentReadException
 import com.joelbermudez.pocketgb.library.FolderStore
 import com.joelbermudez.pocketgb.library.LibraryScanner
@@ -13,6 +20,7 @@ import com.joelbermudez.pocketgb.library.RomProblem
 import com.joelbermudez.pocketgb.library.RomSource
 import com.joelbermudez.pocketgb.saves.ExactContinuation
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
+import com.joelbermudez.pocketgb.saves.GameSettingsSaveCheck
 import com.joelbermudez.pocketgb.saves.LaunchMode
 import com.joelbermudez.pocketgb.saves.MirrorChannelRegistry
 import com.joelbermudez.pocketgb.saves.ResumableCore
@@ -54,6 +62,9 @@ sealed interface OpenError {
 
     /** El archivo supera los 8 MiB: no es un ROM de Game Boy. */
     data object RomTooLarge : OpenError
+
+    /** N8: el `.gba` supera los 32 MiB: no es un ROM de Game Boy Advance. */
+    data object RomTooLargeGba : OpenError
 
     /** El núcleo rechazó el ROM (cabecera, tamaño, MBC no soportado, solo CGB...). */
     data class RomRejected(val error: CoreError) : OpenError
@@ -141,7 +152,8 @@ class GameLauncher(
     private val now: () -> Long = System::currentTimeMillis,
     private val fileOps: SaveFileOps = PosixSaveFileOps,
     private val registry: MirrorChannelRegistry = MirrorChannelRegistry.shared,
-    private val newSession: () -> EmulatorSession = ::EmulatorSession,
+    /** Crea la sesión nativa de la consola del juego (N8: `core/` o `gba/`). */
+    private val newSession: (Console) -> EmulatorSession = ::EmulatorSession,
     private val policy: () -> SramFlushPolicy = { SramFlushPolicy({ System.nanoTime() / 1_000_000 }) },
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Cuánto espera la apertura a que se vacíe el canal del espejo de esta huella antes de darlo por no disponible. */
@@ -153,6 +165,16 @@ class GameLauncher(
      * marca un cartucho CGB. La app real la alimenta con `GameplaySettingsRepository`; por defecto, AUTO y paleta 0.
      */
     private val emulationFor: (fingerprint: String, isCgbRom: Boolean) -> EmulationOptions = { _, _ -> EmulationOptions() },
+    /**
+     * N8: opciones de un juego de GBA (tipo de partida, reloj y BIOS) por huella SHA-256 del ROM: la app real las saca de
+     * `GameplaySettingsRepository`; por defecto, todo detectado y la BIOS del usuario si la hay.
+     */
+    private val gbaOptionsFor: (fingerprint: String) -> GbaOptions = { GbaOptions() },
+    /**
+     * N8: `gba_bios.bin` de la raíz de la carpeta (SAF), o `null`. Solo se lee si el juego la usa; si no es la oficial
+     * ([GbaBios]) no llega al núcleo y se emula (HLE). Bloquea: se llama en [io].
+     */
+    private val biosReader: () -> ByteArray? = { null },
 ) {
     /**
      * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
@@ -169,8 +191,10 @@ class GameLauncher(
     fun openBlocking(entry: RomEntry, options: EmulationOptions? = null, mode: LaunchMode = LaunchMode.FRESH): OpenResult {
         entry.problem?.let { return OpenResult.Failed(OpenError.Unplayable(it)) }
         if (!hasFolderPermission()) return OpenResult.Failed(OpenError.PermissionRevoked)
+        val console = entry.core
+        val limit = LibraryScanner.romLimit(entry.console)
         val rom = try {
-            roms.read(entry.uri, LibraryScanner.MAX_ROM_BYTES.toInt() + 1)
+            roms.read(entry.uri, limit.toInt() + 1)
         } catch (error: DocumentReadException) {
             return OpenResult.Failed(
                 when {
@@ -189,11 +213,16 @@ class GameLauncher(
         } catch (error: RuntimeException) {
             return OpenResult.Failed(OpenError.Core(error))
         }
-        if (rom.size > LibraryScanner.MAX_ROM_BYTES) return OpenResult.Failed(OpenError.RomTooLarge)
+        if (rom.size > limit) {
+            return OpenResult.Failed(if (console == Console.GBA) OpenError.RomTooLargeGba else OpenError.RomTooLarge)
+        }
 
-        val resolved = options ?: resolveOptions(rom)
+        // GB: modelo y paleta. GBA: tipo de partida, reloj y BIOS (todo se fija al abrir).
+        val fingerprintOfRom by lazy(LazyThreadSafetyMode.NONE) { sha256Hex(rom) }
+        val resolved = if (console == Console.GB) options ?: resolveOptions(rom) else EmulationOptions()
+        val gbaOptions = if (console == Console.GBA) gbaOptionsFor(fingerprintOfRom) else GbaOptions()
         val session = try {
-            newSession()
+            newSession(console)
         } catch (error: CoreError) {
             return OpenResult.Failed(OpenError.Core(error))
         }
@@ -201,7 +230,10 @@ class GameLauncher(
         var lease: FingerprintOwnership.Lease? = null
         try {
             val info = try {
-                session.load(rom, now() / 1000, resolved)
+                when (console) {
+                    Console.GB -> session.load(rom, now() / 1000, resolved)
+                    Console.GBA -> session.loadGba(rom, now() / 1000, gbaOptions, if (gbaOptions.useBios) officialBios() else null)
+                }
             } catch (error: CoreError) {
                 return OpenResult.Failed(OpenError.RomRejected(error))
             }
@@ -222,13 +254,18 @@ class GameLauncher(
             var warning: SaveLoadWarning? = null
             var baseline: ByteArray? = null
             var validSizesForIndex: Set<Int>? = null
+            // N8 (= iOS `GameSettingsSaveWarning`): con tipo de partida o reloj forzados en GBA, un `.sav` existente que
+            // no casa no se toca y se avisa nombrando el ajuste como causa.
+            val forcedGba = console == Console.GBA && (gbaOptions.saveType != GbaSaveType.AUTO || gbaOptions.rtc != GbaRtc.AUTO)
+            var settingsMismatch: SaveLoadWarning? = null
             if (info.hasBattery && session.sramSaveSize > 0) {
-                val validSizes = SaveSizes.validSizes(info.hasRtc, info.sramBytes)
+                val validSizes = SaveSizes.forInfo(info)
                 validSizesForIndex = validSizes
                 val store = SaveStore(savesDirectory, fingerprint, fileOps)
                 saveStore = store
                 val outcome = try {
                     store.recoverOrphans(validSizes)
+                    val localSize = if (forcedGba) localSaveSize(store) else null
                     val setup = mirrors.locate(entry, store, validSizes) { events.post(GameEvent.MirrorDisabled(it)) }
                     val snapshot = if (setup == null || setup.mode == SaveOpening.MirrorMode.Shared) {
                         SaveMirror.Snapshot.Absent
@@ -236,6 +273,10 @@ class GameLauncher(
                         // Solo con el canal de esta huella en reposo (una escritura SAF en vuelo dejaría un .sav
                         // parcial); si no se vacía a tiempo, el espejo es Unavailable: nunca se lee parcial.
                         SaveOpening.snapshotWhenIdle(setup.mirror, registry.channel(fingerprint), mirrorIdleWaitMs)
+                    }
+                    if (forcedGba) {
+                        val sizes = listOfNotNull(localSize, (snapshot as? SaveMirror.Snapshot.Read)?.data?.size)
+                        settingsMismatch = GameSettingsSaveCheck.check(forced = true, validSizes = validSizes, existingSizes = sizes)
                     }
                     SaveOpening.prepare(
                         store = store,
@@ -262,11 +303,20 @@ class GameLauncher(
                     }
                 }
                 target = outcome.target
-                warning = outcome.warning
+                // El aviso de los ajustes explica la causa (el de tamaño incorrecto sería solo su consecuencia).
+                warning = settingsMismatch ?: outcome.warning
                 // Lo que hay ahora en el núcleo es lo que está en disco: punto de partida de los guardados.
                 if (target != null) baseline = session.copySram()
             }
-            index.record(fingerprint, info.title, entry.fileName, validSizesForIndex)
+            if (forcedGba && saveStore == null) {
+                // «Sin partida» (y sin reloj) forzado: esta sesión no guarda; si ya hay una partida, se avisa sin tocarla.
+                val local = localSaveSize(SaveStore(savesDirectory, fingerprint, fileOps))
+                val sizes = listOfNotNull(local, entry.mirrorSaveDate?.let { -1 })
+                warning = GameSettingsSaveCheck.check(forced = true, validSizes = emptySet(), existingSizes = sizes)
+            }
+            // GBA sin ajustes forzados: el medio y el reloj detectados, para «Detectado (…)» en los ajustes del juego.
+            val detected = if (console == Console.GBA && !forcedGba) detectedGba(info) else null
+            index.record(fingerprint, info.title, entry.fileName, validSizesForIndex, detected)
 
             // Hay partida que guardar pero esta sesión no la carga ni la guarda (J10, ilegible, solo un espejo de
             // tamaño incorrecto): el AUTO no se puede comparar y su contenido puede ser la única copia (A9-H2).
@@ -275,7 +325,7 @@ class GameLauncher(
             // antes de crear el guardado y el hilo. Nunca escribe: si el estado vale, su RAM ya es la de disco.
             var resumed = false
             if (mode == LaunchMode.RESUME) {
-                val core = SessionResumableCore(session, info.sramBytes) { now() / 1000 }
+                val core = SessionResumableCore(session, info) { now() / 1000 }
                 val outcome = try {
                     ExactContinuation.resume(core, states, saveStore?.modificationDateMs, saveLoaded = !unsavedCartridge)
                 } catch (_: RuntimeException) {
@@ -338,10 +388,34 @@ class GameLauncher(
     /** Huella (SHA-256 del ROM completo) y marca CGB (`0x143` con el bit 7) para pedir las opciones a los ajustes. */
     private fun resolveOptions(rom: ByteArray): EmulationOptions {
         if (rom.size <= CGB_FLAG_OFFSET) return EmulationOptions()
-        val fingerprint = MessageDigest.getInstance("SHA-256").digest(rom).joinToString("") { "%02x".format(it) }
+        val fingerprint = sha256Hex(rom)
         val isCgbRom = (rom[CGB_FLAG_OFFSET].toInt() and 0x80) != 0
         return emulationFor(fingerprint, isCgbRom)
     }
+
+    private fun sha256Hex(rom: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(rom).joinToString("") { "%02x".format(it) }
+
+    /** La BIOS del usuario solo si es la oficial (el puente nativo lo vuelve a comprobar); si no, HLE. Mejor esfuerzo. */
+    private fun officialBios(): ByteArray? = try {
+        biosReader()?.takeIf(GbaBios::isOfficial)
+    } catch (_: IOException) {
+        null
+    } catch (_: RuntimeException) {
+        null
+    }
+
+    /** Tamaño de la partida local en disco, o `null` si no hay (para el aviso de ajustes forzados). */
+    private fun localSaveSize(store: SaveStore): Int? = when (val local = store.inspectLocal()) {
+        is SaveStore.LocalSave.Present -> local.data.size
+        is SaveStore.LocalSave.Oversize -> -1
+        is SaveStore.LocalSave.Unreadable -> -1
+        SaveStore.LocalSave.Absent -> null
+    }
+
+    /** Medio («Flash 64 KiB») y reloj que detectó el núcleo (GBA sin ajustes forzados). */
+    private fun detectedGba(info: RomInfo): Pair<String, Boolean> =
+        GbaSaveNames.describe(info.gbaSaveType) to info.hasRtc
 
     private companion object {
         const val CGB_FLAG_OFFSET = 0x143
@@ -355,12 +429,20 @@ class GameLauncher(
  */
 internal class SessionResumableCore(
     private val session: EmulatorSession,
-    private val ramBytes: Int,
+    private val info: RomInfo,
     private val nowSeconds: () -> Long,
 ) : ResumableCore {
+    /**
+     * GB: los primeros `sramBytes`. GBA (N8): el medio REAL de ese instante (tras `loadSram`; una EEPROM puede medir ya
+     * 8 KiB aunque la cabecera diga 512) sin los 16 bytes del RTC, como iOS `ramBytes()` (INT-H1).
+     */
     override fun cartridgeRam(): ByteArray {
         val sram = session.copySram()
-        return sram.copyOf(minOf(ramBytes, sram.size))
+        val ram = when (info.console) {
+            Console.GB -> minOf(info.sramBytes, sram.size)
+            Console.GBA -> sram.size - SaveSizes.footerBytes(info, sram.size)
+        }
+        return sram.copyOf(ram.coerceAtLeast(0))
     }
 
     override fun captureState(): ByteArray = session.saveStateParked()

@@ -228,9 +228,18 @@ class GameSession(
     @Volatile var autoHoldsLoadUndo = false
         private set
 
+    /**
+     * N8: tamaño del `.sav` al abrir. Una EEPROM de GBA sin ajuste mide 512 B hasta que el `.sav` o la primera DMA
+     * confirman 8 KiB; si la DMA lo confirma solo leyendo, el juego no «guarda» y no habría `.sav` de 8 KiB, así que el
+     * estado automático de esa sesión (ya con 8 KiB) daría `StateConfig` al continuar (nota de la auditoría N8 nativo).
+     * Por eso un cambio de tamaño cuenta como un guardado más: se escribe la partida con su tamaño nuevo.
+     */
+    private val openedSaveSize: Int = try { session.sramSaveSize } catch (_: RuntimeException) { 0 }
+
     private val coordinator = SaveCoordinator(
         source = object : SramSource {
-            override fun dirtySeq(): Long = session.sramDirtySequence()
+            override fun dirtySeq(): Long =
+                session.sramDirtySequence() + if (session.sramSaveSize != openedSaveSize) SIZE_CHANGE_SEQ else 0L
             override fun copy(): ByteArray = session.copySram()
         },
         target = target,
@@ -720,5 +729,8 @@ class GameSession(
         const val REPAIR_BACKOFF_START_MS = 200L
         const val REPAIR_BACKOFF_MAX_MS = 5_000L
         const val RECENT_TIMEOUT_NS = 10_000_000_000L
+
+        /** Desplazamiento de la secuencia de guardado cuando cambia el tamaño del `.sav` (EEPROM 512 B → 8 KiB, N8). */
+        const val SIZE_CHANGE_SEQ = 1L shl 40
     }
 }

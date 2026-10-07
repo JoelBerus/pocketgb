@@ -385,12 +385,12 @@ private fun DetailsInfo(
         }
         if (LocalLargeFont.current) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ConsoleChip(entry.isColor)
+                ConsoleChip(entry.console)
                 locationText()
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ConsoleChip(entry.isColor)
+                ConsoleChip(entry.console)
                 locationText()
             }
         }
@@ -744,18 +744,32 @@ private fun Facts(entry: RomEntry, load: DetailsLoad) {
 
 @Composable
 private fun LoadedFacts(details: GameDetails) {
-    Fact(stringResource(R.string.details_fact_cartridge), details.cartridge)
-    Fact("ROM", ByteFormat.format(details.romBytes.toLong()))
-    Fact(
-        stringResource(R.string.details_fact_save),
-        buildString {
-            append(if (details.sramBytes == 0) stringResource(R.string.details_no_ram) else ByteFormat.format(details.sramBytes.toLong()))
-            if (details.hasBattery) append(stringResource(R.string.details_battery_suffix))
-            if (details.hasRtc) append(stringResource(R.string.details_rtc_suffix))
-        },
-    )
-    ChecksumFact("Checksum de cabecera", details.headerChecksumOk, "Correcto", "Incorrecto")
-    ChecksumFact("Checksum global", details.globalChecksumOk, "Correcto", "No coincide (la consola real lo ignora)")
+    val gba = details.gba
+    if (gba != null) {
+        // N8 (= iOS `GameTechnicalInfo`): tipo de partida detectado, código de juego y reloj; sin checksum global.
+        Fact(stringResource(R.string.n8_details_fact_save_type), stringResource(R.string.n8_details_detected, details.cartridge))
+        gba.codeLine?.let { Fact(stringResource(R.string.n8_details_fact_game_code), it) }
+        Fact("ROM", ByteFormat.format(details.romBytes.toLong()))
+        Fact(stringResource(R.string.details_fact_save), details.saveDescription)
+        Fact(
+            stringResource(R.string.n8_details_fact_rtc),
+            stringResource(if (details.hasRtc) R.string.n8_details_rtc_yes else R.string.n8_details_rtc_no),
+        )
+        ChecksumFact("Checksum de cabecera", details.headerChecksumOk, "Correcto", "Incorrecto")
+    } else {
+        Fact(stringResource(R.string.details_fact_cartridge), details.cartridge)
+        Fact("ROM", ByteFormat.format(details.romBytes.toLong()))
+        Fact(
+            stringResource(R.string.details_fact_save),
+            buildString {
+                append(if (details.sramBytes == 0) stringResource(R.string.details_no_ram) else ByteFormat.format(details.sramBytes.toLong()))
+                if (details.hasBattery) append(stringResource(R.string.details_battery_suffix))
+                if (details.hasRtc) append(stringResource(R.string.details_rtc_suffix))
+            },
+        )
+        ChecksumFact("Checksum de cabecera", details.headerChecksumOk, "Correcto", "Incorrecto")
+        ChecksumFact("Checksum global", details.globalChecksumOk, "Correcto", "No coincide (la consola real lo ignora)")
+    }
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Text(stringResource(R.string.details_sha_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SelectionContainer {

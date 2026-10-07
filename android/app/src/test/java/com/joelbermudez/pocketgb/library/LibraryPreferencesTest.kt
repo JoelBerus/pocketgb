@@ -16,7 +16,7 @@ class LibraryPreferencesTest {
     val tmp = TemporaryFolder()
 
     private fun rom(id: String, title: String = id, color: Boolean = false, problem: RomProblem? = null) =
-        RomEntry(id, "content://$id", "$id.gb", title, color, 32768, true, problem)
+        RomEntry(id, "content://$id", "$id.gb", title, com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color), 32768, true, problem)
 
     private val red = rom("Rojo", "POKEMON RED")
     private val yellow = rom("Amarillo", "POKEMON YELLOW", color = true)

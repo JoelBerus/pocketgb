@@ -49,7 +49,7 @@ class ExactContinuationTest {
         uri = "content://a9/Contador.gb",
         fileName = "Contador.gb",
         title = "CONTADOR",
-        isColor = false,
+        console = com.joelbermudez.pocketgb.library.RomConsole.GB,
         sizeBytes = rom.size.toLong(),
         headerChecksumOk = true,
         problem = null,

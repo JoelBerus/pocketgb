@@ -46,7 +46,7 @@ object SaveStress {
         uri = "content://stress/Contador16.gb",
         fileName = "Contador16.gb",
         title = "A5 CONTADOR16",
-        isColor = false,
+        console = com.joelbermudez.pocketgb.library.RomConsole.GB,
         sizeBytes = rom.size.toLong(),
         headerChecksumOk = true,
         problem = null,

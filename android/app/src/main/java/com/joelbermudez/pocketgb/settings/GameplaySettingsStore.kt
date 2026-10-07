@@ -96,6 +96,8 @@ class GameplaySettingsFile(
             sizeScale = field("sizeScale", Float.serializer(), d.sizeScale),
             portraitLayout = layout(root["portraitLayout"]),
             landscapeLayout = layout(root["landscapeLayout"]),
+            gbaPortraitLayout = layout(root["gbaPortraitLayout"]),
+            gbaLandscapeLayout = layout(root["gbaLandscapeLayout"]),
             integerScaleLandscape = field("integerScaleLandscape", Boolean.serializer(), d.integerScaleLandscape),
             dpadStyle = field("dpadStyle", DpadStyle.serializer(), d.dpadStyle),
             diagonalMode = field("diagonalMode", DiagonalMode.serializer(), d.diagonalMode),

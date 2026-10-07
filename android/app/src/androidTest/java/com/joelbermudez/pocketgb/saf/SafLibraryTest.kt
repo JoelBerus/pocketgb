@@ -94,7 +94,7 @@ class SafLibraryTest {
         assertEquals("root/Sub/Deeper", entries.getValue("Sub/Deeper/Hondo.gb").folderDocumentId)
         assertEquals("ALFA", entries.getValue("Alfa.gb").title)
         assertNull(entries.getValue("Alfa.gb").problem)
-        assertTrue(entries.getValue("Beta.GBC").isColor)
+        assertTrue(entries.getValue("Beta.GBC").console == com.joelbermudez.pocketgb.library.RomConsole.GBC)
         assertEquals("Sub", entries.getValue("Sub/Gamma.gb").subfolder)
         assertEquals(RomProblem.TOO_LARGE, entries.getValue("Grande.gb").problem)
         assertEquals(RomProblem.INVALID_HEADER, entries.getValue("Roto.gb").problem)

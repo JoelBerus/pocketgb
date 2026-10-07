@@ -50,6 +50,8 @@ fun saveLoadWarningText(warning: SaveLoadWarning): String = when (warning) {
     SaveLoadWarning.MirrorReadOnly -> stringResource(R.string.warning_mirror_read_only)
     SaveLoadWarning.LocalSetAside -> stringResource(R.string.n1_warning_local_set_aside)
     is SaveLoadWarning.Unreadable -> stringResource(R.string.warning_unreadable, warning.detail)
+    is SaveLoadWarning.GameSettingsMismatch ->
+        stringResource(if (warning.noSave) R.string.n8_warning_settings_no_save else R.string.n8_warning_settings_mismatch)
 }
 
 @Composable
@@ -59,6 +61,7 @@ fun openErrorText(error: OpenError): String = when (error) {
     OpenError.PermissionRevoked -> stringResource(R.string.open_error_permission)
     OpenError.RemotePending -> stringResource(R.string.open_error_remote)
     OpenError.RomTooLarge -> stringResource(R.string.open_error_too_large)
+    OpenError.RomTooLargeGba -> stringResource(R.string.n8_open_error_too_large_gba)
     is OpenError.RomRejected -> stringResource(R.string.open_error_rom, causeText(error.error))
     OpenError.MirrorNotDownloaded -> stringResource(R.string.open_error_mirror_not_downloaded)
     OpenError.SaveIncompatible -> stringResource(R.string.open_error_save_incompatible)
@@ -161,7 +164,17 @@ fun OpeningOverlay(modifier: Modifier = Modifier) {
 fun SaveLoadWarningDialog(warning: SaveLoadWarning, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.warning_title)) },
+        title = {
+            Text(
+                stringResource(
+                    when {
+                        warning is SaveLoadWarning.GameSettingsMismatch && warning.noSave -> R.string.n8_warning_settings_no_save_title
+                        warning is SaveLoadWarning.GameSettingsMismatch -> R.string.n8_warning_settings_mismatch_title
+                        else -> R.string.warning_title
+                    },
+                ),
+            )
+        },
         text = { Text(saveLoadWarningText(warning)) },
         confirmButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("warning-ok")) {

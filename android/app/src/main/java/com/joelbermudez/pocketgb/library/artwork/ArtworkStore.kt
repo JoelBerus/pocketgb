@@ -37,7 +37,7 @@ class ArtworkStore(
     /** Crece cada vez que cambia el contenido (guardar o borrar): la UI recarga las portadas al verlo. */
     val version: StateFlow<Long> = _version.asStateFlow()
 
-    /** Caché LRU pequeña de portadas decodificadas (160×144 cada una). */
+    /** Caché LRU pequeña de portadas decodificadas (160×144 en GB, 240×160 en GBA). */
     private val cache = object : LinkedHashMap<String, ImageBitmap>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?) = size > CACHE_ENTRIES
     }

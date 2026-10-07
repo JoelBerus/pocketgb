@@ -44,6 +44,10 @@ class GameplaySettingsRepository(
     fun emulationProvider(): (String, Boolean) -> EmulationOptions =
         { fingerprint, isCgbRom -> _state.value.emulation(fingerprint, isCgbRom).toOptions() }
 
+    /** N8: proveedor para `GameLauncher.gbaOptionsFor`: tipo de partida, reloj y BIOS del juego de GBA (por huella). */
+    fun gbaOptionsProvider(): (String) -> com.joelbermudez.pocketgb.emulator.GbaOptions =
+        { fingerprint -> _state.value.gbaOptions(fingerprint) }
+
     /** Aplica [change] sobre el valor actual (ya sanitizado) y lo guarda. */
     fun update(change: (GameplaySettingsData) -> GameplaySettingsData): Job = scope.launch {
         mutex.withLock {

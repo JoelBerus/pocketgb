@@ -546,6 +546,8 @@ class GameplayViewModelFactory(
             mirrors = SafMirrorLocator(resolver, folders),
             hasFolderPermission = folders::hasPersistedPermission,
             emulationFor = GameplaySettingsRepository.shared(appContext).emulationProvider(),
+            gbaOptionsFor = GameplaySettingsRepository.shared(appContext).gbaOptionsProvider(),
+            biosReader = { com.joelbermudez.pocketgb.library.GbaBiosSource.read(appContext) },
         )
         val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(

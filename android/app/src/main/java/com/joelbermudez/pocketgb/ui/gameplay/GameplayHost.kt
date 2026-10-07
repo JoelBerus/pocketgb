@@ -105,7 +105,7 @@ fun GameplayHost(
     val padEnabled = menu == GameMenu.None && dialog == null
     DisposableEffect(game, padEnabled, prefs.controllerMapping) {
         if (!padEnabled) return@DisposableEffect onDispose { }
-        val state = GamepadState(prefs.controllerMapping)
+        val state = GamepadState(prefs.controllerMapping, game.session.console)
         fun apply(out: PadOutput) {
             game.session.setPhysicalButtons(out.mask)
             for (action in out.actions) when (action) {

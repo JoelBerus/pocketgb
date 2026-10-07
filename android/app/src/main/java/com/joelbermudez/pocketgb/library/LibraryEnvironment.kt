@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.CoreBridge
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import java.io.ByteArrayOutputStream
@@ -47,9 +48,14 @@ class ContentResolverRomSource(private val resolver: ContentResolver) : RomSourc
     }
 }
 
-/** Metadatos con el núcleo real: se crea una instancia efímera y se cierra al terminar. */
+/** Metadatos con el núcleo real de cada consola: se crea una instancia efímera y se cierra al terminar. */
 class CoreRomInspector : RomInspector {
-    override fun inspect(rom: ByteArray): RomInfo = CoreBridge().use { it.loadRom(rom) }
+    override fun inspect(rom: ByteArray, console: Console): RomInfo = CoreBridge(console).use {
+        when (console) {
+            Console.GB -> it.loadRom(rom)
+            Console.GBA -> it.loadGbaRom(rom)
+        }
+    }
 }
 
 /** N1b: una línea por escaneo en el registro del sistema (`adb logcat -s PocketGB/Library`), sin rutas ni nombres. */

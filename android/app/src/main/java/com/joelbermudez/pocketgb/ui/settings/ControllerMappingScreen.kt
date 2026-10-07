@@ -32,6 +32,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.emulator.Console
+import com.joelbermudez.pocketgb.input.GamepadMapping
 import com.joelbermudez.pocketgb.input.PadAction
 import com.joelbermudez.pocketgb.settings.ControllerMappingData
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
@@ -78,6 +80,38 @@ fun ControllerMappingContent(
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier.testTag("pad-row-${action.name}").clickable { assigning = action },
+                )
+            }
+        }
+        // N8: en GBA, L1/R1 son L y R del juego y lo que tuvieran pasa a L2/R2 (GamepadMapping.forConsole).
+        val gba = GamepadMapping.forConsole(resolved, Console.GBA)
+        SettingsGroup(
+            header = stringResource(R.string.n8_controller_gba_header),
+            footer = stringResource(R.string.n8_controller_gba_footer),
+        ) {
+            listOf(R.string.n8_editor_control_l to KeyEvent.KEYCODE_BUTTON_L1, R.string.n8_editor_control_r to KeyEvent.KEYCODE_BUTTON_R1)
+                .forEach { (label, key) ->
+                    ListItem(
+                        headlineContent = { Text(stringResource(label)) },
+                        supportingContent = { Text(padKeyLabel(key), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.testTag("pad-gba-${stringResource(label)}"),
+                    )
+                }
+            PadAction.entries.forEach { action ->
+                val before = resolved.filterValues { it == action }.keys
+                val after = gba.filterValues { it == action }.keys
+                if (before == after) return@forEach
+                ListItem(
+                    headlineContent = { Text(padActionLabel(action)) },
+                    supportingContent = {
+                        Text(
+                            if (after.isEmpty()) stringResource(R.string.controller_unassigned) else after.map { padKeyLabel(it) }.joinToString(" / "),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("pad-gba-key-${action.name}"),
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
             }
         }

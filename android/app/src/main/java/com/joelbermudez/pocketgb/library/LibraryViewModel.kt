@@ -30,9 +30,12 @@ fun interface RomSource {
     fun read(uri: String, limit: Int): ByteArray
 }
 
-/** Obtiene los metadatos del cartucho con el núcleo. Lanza [CoreError] si lo rechaza. */
+/**
+ * Obtiene los metadatos del cartucho con el núcleo de [console] (N8: `core/` o `gba/`). Lanza [CoreError] si lo
+ * rechaza. En GBA el medio es el detectado (sin ajustes por juego) y la BIOS, la emulada: solo se lee la cabecera.
+ */
 fun interface RomInspector {
-    fun inspect(rom: ByteArray): com.joelbermudez.pocketgb.emulator.RomInfo
+    fun inspect(rom: ByteArray, console: com.joelbermudez.pocketgb.emulator.Console): com.joelbermudez.pocketgb.emulator.RomInfo
 }
 
 /**
@@ -452,13 +455,14 @@ class LibraryViewModel(
 
     // ---- Detalle ----
 
-    /** Lee el ROM completo (≤ 8 MiB), obtiene sus metadatos con el núcleo y registra su huella. */
+    /** Lee el ROM completo (≤ 8 MiB, o 32 MiB en GBA), obtiene sus metadatos con el núcleo y registra su huella. */
     suspend fun loadDetails(id: String): DetailsLoad {
         val entry = entryFor(id) ?: return DetailsLoad.Failed(DetailsError.NotFound)
         entry.problem?.let { return DetailsLoad.Failed(DetailsError.Problem(it)) }
+        val limit = LibraryScanner.romLimit(entry.console)
         return withContext(io) {
             val bytes = try {
-                roms.read(entry.uri, LibraryScanner.MAX_ROM_BYTES.toInt() + 1)
+                roms.read(entry.uri, limit.toInt() + 1)
             } catch (error: DocumentReadException) {
                 return@withContext DetailsLoad.Failed(if (error.remote) DetailsError.Remote else DetailsError.Unreadable)
             } catch (error: CancellationException) {
@@ -471,11 +475,11 @@ class LibraryViewModel(
                 // Red de seguridad: un proveedor mal portado no debe tumbar la pantalla de detalle.
                 return@withContext DetailsLoad.Failed(DetailsError.Unreadable)
             }
-            if (bytes.size > LibraryScanner.MAX_ROM_BYTES) {
-                return@withContext DetailsLoad.Failed(DetailsError.TooLarge)
+            if (bytes.size > limit) {
+                return@withContext DetailsLoad.Failed(if (entry.isGba) DetailsError.TooLargeGba else DetailsError.TooLarge)
             }
             val info = try {
-                inspector.inspect(bytes)
+                inspector.inspect(bytes, entry.core)
             } catch (error: CoreError) {
                 return@withContext DetailsLoad.Failed(DetailsError.CoreRejected(error))
             } catch (error: CancellationException) {

@@ -48,7 +48,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.emulator.GbaBiosStatus
+import com.joelbermudez.pocketgb.emulator.GbaRtc
+import com.joelbermudez.pocketgb.emulator.GbaSaveType
 import com.joelbermudez.pocketgb.library.DetailsLoad
+import com.joelbermudez.pocketgb.library.RomConsole
 import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.LibraryTree
@@ -129,11 +133,13 @@ fun GameSettingsHost(
         onHide = { confirmHide = true },
         saveFailed = saveFailed,
     )
+    val gbaInfo = if (entry.isGba) rememberGbaSettingsInfo(fingerprint?.takeIf { confirmed }) else GbaSettingsInfo()
     GameSettingsSheet(
         title = shown.displayTitle,
         headerTitle = entry.title,
         onRename = { renaming = true },
-        isColor = entry.isColor,
+        console = entry.console,
+        gbaInfo = gbaInfo,
         global = settings,
         overrides = fingerprint?.takeIf { confirmed }?.let { settings.perGame[it] } ?: GameOverrides(),
         onOverridesChange = { next ->
@@ -223,7 +229,8 @@ class GameCenterState(
 @Composable
 fun GameSettingsSheet(
     title: String,
-    isColor: Boolean,
+    /** N8: GB/GBC (color y paleta) o GBA (tipo de partida, reloj y BIOS). */
+    console: RomConsole,
     global: GameplaySettingsData,
     overrides: GameOverrides,
     onOverridesChange: (GameOverrides) -> Unit,
@@ -239,6 +246,8 @@ fun GameSettingsSheet(
     center: GameCenterState? = null,
     /** Solo el catálogo de capturas: el contenido arranca desplazado estos px (se limita al final). */
     initialScroll: Int = 0,
+    /** N8: lo detectado del juego de GBA y el estado de la BIOS (para «Detectado (…)» y la fila de BIOS). */
+    gbaInfo: GbaSettingsInfo = GbaSettingsInfo(),
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -268,8 +277,10 @@ fun GameSettingsSheet(
                 CenterStatus(loading, unavailable, center.saveFailed)
                 GameCenterRows(center)
                 if (!loading && !unavailable) {
-                    CenterSectionHeader(stringResource(R.string.n4_center_color_header))
-                    SettingsBody(isColor, global, overrides, onOverridesChange)
+                    CenterSectionHeader(
+                        stringResource(if (console == RomConsole.GBA) R.string.n8_center_gba_header else R.string.n4_center_color_header),
+                    )
+                    SettingsBody(console, global, overrides, onOverridesChange, gbaInfo)
                 }
                 HideRow(center.onHide)
                 Text(
@@ -293,7 +304,7 @@ fun GameSettingsSheet(
                         modifier = Modifier.padding(16.dp).testTag("game-settings-unavailable"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    else -> SettingsBody(isColor, global, overrides, onOverridesChange)
+                    else -> SettingsBody(console, global, overrides, onOverridesChange, gbaInfo)
                 }
             }
         }
@@ -330,11 +341,17 @@ private fun NameRow(title: String, headerTitle: String?, onRename: () -> Unit) {
 
 @Composable
 private fun SettingsBody(
-    isColor: Boolean,
+    console: RomConsole,
     global: GameplaySettingsData,
     overrides: GameOverrides,
     onOverridesChange: (GameOverrides) -> Unit,
+    gbaInfo: GbaSettingsInfo,
 ) {
+    if (console == RomConsole.GBA) {
+        GbaSettingsBody(overrides, onOverridesChange, gbaInfo)
+        return
+    }
+    val isColor = console == RomConsole.GBC
     val effectiveColor = overrides.colorForGameBoy ?: global.colorForGameBoy
     Text(
         stringResource(if (isColor) R.string.game_settings_header_gbc else R.string.game_settings_header_dmg),
@@ -424,3 +441,131 @@ private fun <T> GameSettingRow(
         }
     }
 }
+
+/**
+ * N8: lo que los ajustes de un juego de GBA muestran además de los valores: el medio y el reloj que detectó el núcleo
+ * la última vez que se abrió sin ajustes forzados (`SavesIndex`, = iOS `gbaMedia`/`gbaHasRTC`) y el estado de la BIOS
+ * de la carpeta (`gba_bios.bin`). `null` = aún no se sabe.
+ */
+data class GbaSettingsInfo(
+    val detectedMedia: String? = null,
+    val detectedRtc: Boolean? = null,
+    val biosStatus: GbaBiosStatus? = null,
+)
+
+/** Tipos de partida que se pueden forzar (= iOS `gbaSaveTypes`); sin forzar, el núcleo detecta el tipo. */
+internal val GBA_SAVE_TYPE_CHOICES: List<GbaSaveType> = listOf(
+    GbaSaveType.NONE, GbaSaveType.SRAM, GbaSaveType.FLASH64, GbaSaveType.FLASH128, GbaSaveType.EEPROM512, GbaSaveType.EEPROM8K,
+)
+
+@Composable
+internal fun gbaSaveTypeTitle(type: GbaSaveType): String = stringResource(
+    when (type) {
+        GbaSaveType.NONE -> R.string.n8_save_type_none
+        GbaSaveType.SRAM -> R.string.n8_save_type_sram
+        GbaSaveType.FLASH64 -> R.string.n8_save_type_flash64
+        GbaSaveType.FLASH128 -> R.string.n8_save_type_flash128
+        GbaSaveType.EEPROM512 -> R.string.n8_save_type_eeprom512
+        GbaSaveType.EEPROM8K -> R.string.n8_save_type_eeprom8k
+        GbaSaveType.AUTO -> R.string.n8_save_type_detected
+    },
+)
+
+/** Lee en segundo plano lo detectado de [fingerprint] y el estado de la BIOS para [GbaSettingsInfo]. */
+@Composable
+private fun rememberGbaSettingsInfo(fingerprint: String?): GbaSettingsInfo {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var info by remember(fingerprint) { mutableStateOf(GbaSettingsInfo()) }
+    LaunchedEffect(fingerprint) {
+        info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val record = fingerprint?.let {
+                com.joelbermudez.pocketgb.saves.SavesIndex(java.io.File(context.filesDir, "saves")).load()[it]
+            }
+            GbaSettingsInfo(record?.gbaMedia, record?.gbaHasRtc, com.joelbermudez.pocketgb.library.GbaBiosSource.status(context))
+        }
+    }
+    return info
+}
+
+@Composable
+private fun GbaSettingsBody(overrides: GameOverrides, onOverridesChange: (GameOverrides) -> Unit, info: GbaSettingsInfo) {
+    Text(
+        stringResource(R.string.n8_game_settings_header_gba),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("game-settings-header"),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    val detectedMedia = info.detectedMedia?.let { stringResource(R.string.n8_detected_with, it) }
+        ?: stringResource(R.string.n8_save_type_detected)
+    GameSettingRow(
+        title = stringResource(R.string.n8_game_setting_save_type),
+        customized = overrides.gbaSaveType != null,
+        options = listOf<Pair<Int?, String>>(null to detectedMedia) +
+            GBA_SAVE_TYPE_CHOICES.map { it.native to gbaSaveTypeTitle(it) },
+        selected = overrides.gbaSaveType,
+        onSelect = { onOverridesChange(overrides.copy(gbaSaveType = it)) },
+        enabled = true,
+        tag = "game-setting-gba-save",
+    )
+    val detectedRtc = info.detectedRtc?.let {
+        stringResource(R.string.n8_detected_with, stringResource(if (it) R.string.n8_rtc_with_lower else R.string.n8_rtc_without_lower))
+    } ?: stringResource(R.string.n8_save_type_detected)
+    GameSettingRow(
+        title = stringResource(R.string.n8_game_setting_rtc),
+        customized = overrides.gbaRtc != null,
+        options = listOf<Pair<Int?, String>>(
+            null to detectedRtc,
+            GbaRtc.ON.native to stringResource(R.string.n8_rtc_on),
+            GbaRtc.OFF.native to stringResource(R.string.n8_rtc_off),
+        ),
+        selected = overrides.gbaRtc,
+        onSelect = { onOverridesChange(overrides.copy(gbaRtc = it)) },
+        enabled = true,
+        tag = "game-setting-gba-rtc",
+    )
+    GameSettingRow(
+        title = stringResource(R.string.n8_game_setting_bios),
+        customized = overrides.gbaUseBios != null,
+        options = listOf<Pair<Boolean?, String>>(
+            null to stringResource(R.string.n8_bios_global),
+            false to stringResource(R.string.n8_bios_emulated),
+        ),
+        selected = overrides.gbaUseBios,
+        onSelect = { onOverridesChange(overrides.copy(gbaUseBios = it)) },
+        enabled = true,
+        tag = "game-setting-gba-bios",
+    )
+    info.biosStatus?.let { status ->
+        Text(
+            gbaBiosStatusText(status),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("game-settings-bios-status"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Text(
+        stringResource(R.string.n8_game_settings_gba_footer),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (overrides.gbaSaveType != null || overrides.gbaRtc != null || overrides.gbaUseBios != null) {
+        OutlinedButton(
+            onClick = { onOverridesChange(overrides.copy(gbaSaveType = null, gbaRtc = null, gbaUseBios = null)) },
+            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).testTag("game-settings-reset"),
+        ) {
+            Icon(Icons.AutoMirrored.Outlined.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(stringResource(R.string.n8_game_settings_gba_reset), modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+}
+
+/** Estado de la BIOS de la carpeta en texto (= iOS `BIOSFile.Status.settingsText`). */
+@Composable
+fun gbaBiosStatusText(status: GbaBiosStatus): String = stringResource(
+    when (status) {
+        GbaBiosStatus.ABSENT -> R.string.n8_bios_status_absent
+        GbaBiosStatus.VALID -> R.string.n8_bios_status_valid
+        GbaBiosStatus.INVALID -> R.string.n8_bios_status_invalid
+    },
+)

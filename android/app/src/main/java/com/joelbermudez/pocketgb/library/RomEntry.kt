@@ -1,9 +1,15 @@
 package com.joelbermudez.pocketgb.library
 
+import com.joelbermudez.pocketgb.emulator.Console
+
 /** Qué impide jugar a un archivo de la carpeta. Cada caso tiene su propia recuperación. */
 enum class RomProblem(val message: String) {
     TOO_LARGE("Supera los 8 MiB, así que no es un ROM de Game Boy."),
     INVALID_HEADER("No tiene una cabecera de Game Boy válida."),
+    /** N8: un `.gba` de más de 32 MiB (= iOS `tooLargeGBA`). */
+    TOO_LARGE_GBA("Supera los 32 MiB, así que no es un ROM de Game Boy Advance."),
+    /** N8: un `.gba` demasiado corto o sin el byte fijo 0x96 de la cabecera (= iOS `invalidHeaderGBA`). */
+    INVALID_HEADER_GBA("No tiene una cabecera de Game Boy Advance válida."),
     UNREADABLE("No se pudo leer el archivo."),
     REMOTE_UNAVAILABLE("El proveedor aún no tiene el archivo disponible. Reintenta con conexión."),
 }
@@ -11,7 +17,30 @@ enum class RomProblem(val message: String) {
 /** Dónde está un archivo dentro de la carpeta de la biblioteca: carpetas desde la raíz y nombre (N1). */
 data class RomLocation(val folderPath: List<String>, val fileName: String)
 
-/** Un `.gb`/`.gbc` de la carpeta de la biblioteca. Valor inmutable creado por el escáner. */
+/**
+ * Consola de un juego de la biblioteca tal y como la ve el usuario (chip, filtro, detalle; = iOS `ConsoleBadge`): Game
+ * Boy, Game Boy Color o Game Boy Advance. [core] es el núcleo que lo ejecuta (GB y GBC comparten `core/`).
+ */
+enum class RomConsole(val shortName: String, val displayName: String, val core: Console) {
+    GB("GB", "Game Boy", Console.GB),
+    GBC("GBC", "Game Boy Color", Console.GB),
+    GBA("GBA", "Game Boy Advance", Console.GBA),
+    ;
+
+    companion object {
+        /** GB o GBC según el bit 7 de `0x143` (lo que el escáner lee de la cabecera). */
+        fun gameBoy(isColor: Boolean): RomConsole = if (isColor) GBC else GB
+
+        /** Sin cabecera (no se pudo leer): por la extensión, como iOS (`.gba` GBA, `.gbc` GBC, el resto GB). */
+        fun fromFileName(name: String): RomConsole = when (name.substringAfterLast('.', "").lowercase()) {
+            "gba" -> GBA
+            "gbc" -> GBC
+            else -> GB
+        }
+    }
+}
+
+/** Un `.gb`/`.gbc`/`.gba` de la carpeta de la biblioteca. Valor inmutable creado por el escáner. */
 data class RomEntry(
     /**
      * Ruta relativa a la carpeta ("Pokemon Red.gb" o "Pokémon/Gen 1/Pokemon Red.gb"), con sufijo `#…` si dos documentos
@@ -23,7 +52,8 @@ data class RomEntry(
     val fileName: String,
     /** Título de la cabecera, o el nombre del archivo si no se pudo leer. */
     val title: String,
-    val isColor: Boolean,
+    /** N8: GB, GBC o GBA (sustituye a `isColor`). GB/GBC por la cabecera; GBA por la extensión `.gba`. */
+    val console: RomConsole,
     val sizeBytes: Long,
     val headerChecksumOk: Boolean,
     val problem: RomProblem?,
@@ -95,11 +125,18 @@ data class RomEntry(
         get() = problem == null
 
     val system: String
-        get() = if (isColor) "Game Boy Color" else "Game Boy"
+        get() = console.displayName
 
     /** Etiqueta corta para tarjetas estrechas. */
     val systemShort: String
-        get() = if (isColor) "GBC" else "GB"
+        get() = console.shortName
+
+    /** N8: núcleo que lo ejecuta ([Console.GB] para GB y GBC). */
+    val core: Console
+        get() = console.core
+
+    val isGba: Boolean
+        get() = console == RomConsole.GBA
 }
 
 /** Lectura de la cabecera del cartucho (docs/03 §Cabecera), solo para mostrar. */
@@ -149,4 +186,52 @@ object RomHeader {
         for (i in 0x134..0x14C) x = (x - (bytes[i].toInt() and 0xFF) - 1) and 0xFF
         return x == (bytes[0x14D].toInt() and 0xFF)
     }
+
+    // ---- Game Boy Advance (N8; = iOS `RomHeader.parseGBA`) ----
+
+    /** Bytes de la cabecera de GBA: título 0xA0, código 0xAC, fabricante 0xB0, byte fijo 0xB2 y checksum 0xBD. */
+    const val GBA_MINIMUM_BYTES = 0xC0
+
+    private const val GBA_IDENTITY_START = 0xA0
+    private const val GBA_IDENTITY_END = 0xC0
+
+    /**
+     * Cabecera de GBA (solo para mostrar; la validación de verdad la hace el núcleo): `null` si no llega a 0xC0 bytes o
+     * el byte fijo 0xB2 no es 0x96. El título son los 12 bytes de 0xA0 hasta el primer 0 (no imprimibles → `?`); el
+     * checksum de cabecera es el complemento de 0xA0..0xBC menos 0x19.
+     */
+    fun parseGba(bytes: ByteArray): Info? {
+        if (bytes.size < GBA_MINIMUM_BYTES) return null
+        if (bytes[0xB2].toInt() and 0xFF != 0x96) return null
+        var sum = 0
+        for (i in 0xA0..0xBC) sum = (sum - (bytes[i].toInt() and 0xFF)) and 0xFF
+        val checksumOk = ((sum - 0x19) and 0xFF) == (bytes[0xBD].toInt() and 0xFF)
+        val raw = (0xA0 until 0xAC).map { bytes[it].toInt() and 0xFF }.takeWhile { it != 0 }
+        val title = raw.joinToString("") { b -> if (b in 0x20 until 0x7F) b.toChar().toString() else "?" }.trim()
+        return Info(title = title, isColor = false, checksumOk = checksumOk)
+    }
+
+    /**
+     * Identidad de una cabecera de GBA (0xA0..0xBF: título, códigos, byte fijo, versión y checksum), con la misma
+     * función que [identity] en el sello de N1 (64 caracteres hex; la de GB tiene 56, así que nunca se confunden).
+     */
+    fun gbaIdentity(bytes: ByteArray): String? {
+        if (bytes.size < GBA_MINIMUM_BYTES) return null
+        return (GBA_IDENTITY_START until GBA_IDENTITY_END).joinToString("") { "%02x".format(bytes[it].toInt() and 0xFF) }
+    }
+
+    /** Lo contrario de [gbaIdentity]: 0xC0 bytes con la identidad en su sitio, o `null`. */
+    fun fromGbaIdentity(hex: String): ByteArray? {
+        val length = GBA_IDENTITY_END - GBA_IDENTITY_START
+        if (hex.length != length * 2) return null
+        val bytes = ByteArray(GBA_MINIMUM_BYTES)
+        for (i in 0 until length) {
+            val value = hex.substring(i * 2, i * 2 + 2).toIntOrNull(16) ?: return null
+            bytes[GBA_IDENTITY_START + i] = value.toByte()
+        }
+        return bytes
+    }
+
+    /** La cabecera de una identidad de cualquiera de las dos consolas ([fromIdentity] o [fromGbaIdentity]). */
+    fun fromAnyIdentity(hex: String): ByteArray? = fromIdentity(hex) ?: fromGbaIdentity(hex)
 }

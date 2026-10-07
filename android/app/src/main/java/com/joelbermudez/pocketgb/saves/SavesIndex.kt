@@ -18,6 +18,12 @@ class SavesIndex(private val directory: File, private val ops: SaveFileOps = Pos
         val fileName: String,
         /** Tamaños de `.sav` válidos del cartucho (para validar una restauración); `null` en entradas antiguas. */
         val validSizes: List<Int>? = null,
+        /**
+         * N8 (= iOS `gbaMedia`/`gbaHasRTC`): medio y reloj que detectó el núcleo al abrir el juego de GBA SIN ajustes
+         * forzados, para mostrar «Detectado (Flash 64 KiB)» en los ajustes del juego. `null` si aún no se sabe.
+         */
+        val gbaMedia: String? = null,
+        val gbaHasRtc: Boolean? = null,
     )
 
     class SavedGame(val fingerprint: String, val record: Record?)
@@ -32,10 +38,24 @@ class SavesIndex(private val directory: File, private val ops: SaveFileOps = Pos
         emptyMap()
     }
 
-    /** Mejor esfuerzo: un fallo aquí nunca afecta a las partidas. */
-    fun record(fingerprint: String, title: String, fileName: String, validSizes: Set<Int>? = null) {
+    /**
+     * Mejor esfuerzo: un fallo aquí nunca afecta a las partidas. [detected] (GBA sin ajustes forzados) actualiza el medio
+     * y el reloj detectados; sin él se conservan los de antes.
+     */
+    fun record(
+        fingerprint: String,
+        title: String,
+        fileName: String,
+        validSizes: Set<Int>? = null,
+        detected: Pair<String, Boolean>? = null,
+    ) {
         val records = load().toMutableMap()
-        val new = Record(title, fileName, validSizes?.sorted())
+        val previous = records[fingerprint]
+        val new = Record(
+            title, fileName, validSizes?.sorted(),
+            gbaMedia = detected?.first ?: previous?.gbaMedia,
+            gbaHasRtc = detected?.second ?: previous?.gbaHasRtc,
+        )
         if (records[fingerprint] == new) return
         records[fingerprint] = new
         try {

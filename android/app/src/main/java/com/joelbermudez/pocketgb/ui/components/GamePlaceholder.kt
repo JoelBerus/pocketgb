@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.library.RomConsole
 import kotlin.math.min
 
 /**
@@ -76,14 +77,14 @@ private val placeholderColors = listOf(
 )
 
 /**
- * Portada generada (SPEC §11): color y glifo derivados de la huella, iniciales y chip GB/GBC. No imita arte
+ * Portada generada (SPEC §11): color y glifo derivados de la huella, iniciales y chip GB/GBC/GBA. No imita arte
  * comercial. Colores fijos (no dependen del tema); se dibuja sin suavizado. El llamador fija la proporción.
  */
 @Composable
 fun GamePlaceholder(
     seed: String,
     title: String,
-    isColor: Boolean,
+    console: RomConsole,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
@@ -124,7 +125,7 @@ fun GamePlaceholder(
                 modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
             )
             Text(
-                if (isColor) "GBC" else "GB",
+                console.shortName,
                 color = Color.White,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,

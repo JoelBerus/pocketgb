@@ -42,7 +42,7 @@ class TouchTargetTest {
     @get:Rule val compose = createComposeRule()
 
     private fun entry(id: String, title: String, color: Boolean) = RomEntry(
-        id = id, uri = "content://t/$id", fileName = id, title = title, isColor = color,
+        id = id, uri = "content://t/$id", fileName = id, title = title, console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color),
         sizeBytes = 32L * 1024, headerChecksumOk = true, problem = null,
     )
 

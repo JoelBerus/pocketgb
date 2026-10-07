@@ -8,6 +8,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.customview.widget.ExploreByTouchHelper
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.emulator.GbaButtonBits
 import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import kotlin.math.hypot
 
@@ -21,9 +22,9 @@ internal object ControlsAccessibilityModel {
     /** Duración de una pulsación accesible (R7). */
     const val PRESS_MS = 100L
 
-    /** Controles que existen para TalkBack: todos salvo MENU cuando no se dibuja (K13). */
-    fun visibleControls(showMenu: Boolean): List<ControlId> =
-        ControlId.entries.filter { it != ControlId.MENU || showMenu }
+    /** Controles que existen para TalkBack: todos salvo MENU cuando no se dibuja (K13) y L/R fuera de GBA (N8). */
+    fun visibleControls(showMenu: Boolean, shoulders: Boolean = false): List<ControlId> =
+        ControlId.entries.filter { (it != ControlId.MENU || showMenu) && (shoulders || !it.isShoulder) }
 
     /** Máscara de `ACTION_CLICK` sobre [id]; `null` si el clic no pulsa nada del juego (cruceta y menú). */
     fun pressMask(id: ControlId): Int? = when (id) {
@@ -31,6 +32,8 @@ internal object ControlsAccessibilityModel {
         ControlId.B -> GameBoyButton.B.mask
         ControlId.START -> GameBoyButton.START.mask
         ControlId.SELECT -> GameBoyButton.SELECT.mask
+        ControlId.L -> GbaButtonBits.L
+        ControlId.R -> GbaButtonBits.R
         ControlId.DPAD, ControlId.MENU -> null
     }
 
@@ -70,7 +73,7 @@ class ControlsAccessibilityHelper(private val view: GameControlsView) : ExploreB
             ControlHit.AB -> nearerOfAB(geometry, x, y)
             null -> null
         }
-        return if (id != null && id in ControlsAccessibilityModel.visibleControls(view.renderOptions.showMenu)) id.ordinal else INVALID_ID
+        return if (id != null && id in visible()) id.ordinal else INVALID_ID
     }
 
     /** Para las pruebas instrumentadas: [getVirtualViewAt] es protegido. */
@@ -84,12 +87,15 @@ class ControlsAccessibilityHelper(private val view: GameControlsView) : ExploreB
 
     override fun getVisibleVirtualViews(virtualViewIds: MutableList<Int>) {
         if (!view.hasGeometry) return
-        ControlsAccessibilityModel.visibleControls(view.renderOptions.showMenu).forEach { virtualViewIds += it.ordinal }
+        visible().forEach { virtualViewIds += it.ordinal }
     }
+
+    private fun visible(): List<ControlId> =
+        ControlsAccessibilityModel.visibleControls(view.renderOptions.showMenu, view.controlGeometry.shoulders)
 
     override fun onPopulateNodeForVirtualView(virtualViewId: Int, node: AccessibilityNodeInfoCompat) {
         val id = ControlId.entries.getOrNull(virtualViewId)
-        if (id == null || !view.hasGeometry) {
+        if (id == null || !view.hasGeometry || id !in view.controlGeometry.frames) {
             node.contentDescription = ""
             node.setBoundsInParent(Rect(0, 0, 1, 1))
             return
@@ -124,7 +130,7 @@ class ControlsAccessibilityHelper(private val view: GameControlsView) : ExploreB
 
     override fun onPerformActionForVirtualView(virtualViewId: Int, action: Int, arguments: Bundle?): Boolean {
         val id = ControlId.entries.getOrNull(virtualViewId) ?: return false
-        if (view.editing) return false
+        if (view.editing || !view.hasGeometry || id !in view.controlGeometry.frames) return false
         return when (action) {
             AccessibilityNodeInfo.ACTION_CLICK -> when {
                 ControlsAccessibilityModel.opensMenu(id) -> view.openMenuFromAccessibility()
@@ -151,6 +157,8 @@ class ControlsAccessibilityHelper(private val view: GameControlsView) : ExploreB
             ControlId.START -> R.string.controls_a11y_start
             ControlId.SELECT -> R.string.controls_a11y_select
             ControlId.MENU -> R.string.controls_a11y_menu
+            ControlId.L -> R.string.n8_controls_a11y_l
+            ControlId.R -> R.string.n8_controls_a11y_r
         },
     )
 

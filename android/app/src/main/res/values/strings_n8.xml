@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N8 Kotlin: Game Boy Advance en la app (biblioteca, partida, controles L/R, ajustes por juego). -->
+<resources>
+    <string name="n8_controls_a11y_l">Botón L</string>
+    <string name="n8_controls_a11y_r">Botón R</string>
+    <string name="n8_editor_control_l">L</string>
+    <string name="n8_editor_control_r">R</string>
+    <string name="n8_editor_title_gba_portrait">Controles GBA · Vertical</string>
+    <string name="n8_editor_title_gba_landscape">Controles GBA · Horizontal</string>
+    <string name="n8_game_system_gba">Game Boy Advance</string>
+    <string name="n8_details_fact_save_type">Tipo de partida</string>
+    <string name="n8_details_detected">%1$s (detectado)</string>
+    <string name="n8_details_fact_game_code">Código del juego</string>
+    <string name="n8_details_fact_rtc">Reloj (RTC)</string>
+    <string name="n8_details_rtc_yes">Sí</string>
+    <string name="n8_details_rtc_no">No</string>
+    <string name="n8_center_gba_header">Partida, reloj y BIOS</string>
+    <string name="n8_game_settings_header_gba">Juego de Game Boy Advance</string>
+    <string name="n8_game_setting_save_type">Tipo de partida</string>
+    <string name="n8_game_setting_rtc">Reloj (RTC)</string>
+    <string name="n8_game_setting_bios">BIOS</string>
+    <string name="n8_save_type_detected">Detectado</string>
+    <string name="n8_detected_with">Detectado (%1$s)</string>
+    <string name="n8_save_type_none">Sin partida</string>
+    <string name="n8_save_type_sram">SRAM 32 KiB</string>
+    <string name="n8_save_type_flash64">Flash 64 KiB</string>
+    <string name="n8_save_type_flash128">Flash 128 KiB</string>
+    <string name="n8_save_type_eeprom512">EEPROM 512 B</string>
+    <string name="n8_save_type_eeprom8k">EEPROM 8 KiB</string>
+    <string name="n8_rtc_on">Con reloj</string>
+    <string name="n8_rtc_off">Sin reloj</string>
+    <string name="n8_rtc_with_lower">con reloj</string>
+    <string name="n8_rtc_without_lower">sin reloj</string>
+    <string name="n8_bios_global">Global (la tuya si existe)</string>
+    <string name="n8_bios_emulated">Emulada</string>
+    <string name="n8_bios_status_absent">BIOS: emulada (no hay gba_bios.bin en la carpeta de juegos)</string>
+    <string name="n8_bios_status_valid">BIOS: oficial verificada</string>
+    <string name="n8_bios_status_invalid">BIOS: gba_bios.bin no es la BIOS oficial; se usa la emulada</string>
+    <string name="n8_game_settings_gba_footer">Cambia solo si un juego no guarda bien. Si el tipo no coincide con su partida guardada, PocketGB no la sobrescribe y avisa. Se aplica la próxima vez que abras el juego.</string>
+    <string name="n8_game_settings_gba_reset">Volver a lo detectado</string>
+    <string name="n8_open_error_too_large_gba">El archivo supera los 32 MiB, así que no es un ROM de Game Boy Advance.</string>
+    <string name="n8_warning_settings_no_save_title">Partida sin usar por los ajustes del juego</string>
+    <string name="n8_warning_settings_no_save">«Ajustes del juego» fuerza «Sin partida», así que este juego no guarda. Ya existe una partida guardada (.sav): no se toca. Pon el tipo de partida en «Detectado» en «Ajustes del juego» para recuperarla.</string>
+    <string name="n8_warning_settings_mismatch_title">Partida distinta de los ajustes del juego</string>
+    <string name="n8_warning_settings_mismatch">El archivo de partida (.sav) no coincide con el tipo de partida o el reloj fijados en «Ajustes del juego». No se tocará; si no hay otra partida válida, esta sesión no guardará. Pon esos ajustes en «Detectado» para recuperarla.</string>
+    <string name="n8_emulation_gba_header">Juegos de Game Boy Advance</string>
+    <string name="n8_emulation_gba_footer">Opcional: copia tu propio volcado como «gba_bios.bin» en la raíz de la carpeta de juegos. Solo se usa si es la BIOS oficial; si no, PocketGB emula sus funciones y los juegos funcionan igual. PocketGB nunca incluye la BIOS.</string>
+    <string name="n8_bios_checking">Comprobando…</string>
+    <string name="n8_bios_short_absent">Emulada (sin gba_bios.bin en la carpeta de juegos)</string>
+    <string name="n8_bios_short_valid">BIOS oficial verificada</string>
+    <string name="n8_bios_short_invalid">gba_bios.bin no es la BIOS oficial: se usa la emulada</string>
+    <string name="n8_library_empty_message">Solo se buscan archivos .gb, .gbc y .gba en la carpeta y sus subcarpetas.</string>
+    <string name="n8_library_pick_message">PocketGB busca archivos .gb, .gbc y .gba en la carpeta y sus subcarpetas. Nunca los copia ni los modifica.</string>
+    <string name="n8_about_consoles_value">Game Boy, Game Boy Color y Game Boy Advance</string>
+    <string name="n8_controller_gba_header">En juegos de Game Boy Advance</string>
+    <string name="n8_controller_gba_footer">En GBA los botones superiores L1 y R1 son siempre L y R del juego. Lo que tuvieran asignado pasa a L2 y R2 (de fábrica: el menú en L2 y la velocidad en R2); el botón Guía sigue abriendo el menú.</string>
+</resources>

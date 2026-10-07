@@ -136,7 +136,7 @@ internal val libraryCatalogScreens: Map<String, @Composable (DebugIntent) -> Uni
             CatalogLibrary(ready, prefs)
             GameSettingsSheet(
                 title = CatalogData.games[0].title,
-                isColor = false,
+                console = com.joelbermudez.pocketgb.library.RomConsole.GB,
                 global = GameplaySettingsData(),
                 overrides = GameOverrides(colorForGameBoy = true, compatPalette = 5),
                 onOverridesChange = {},

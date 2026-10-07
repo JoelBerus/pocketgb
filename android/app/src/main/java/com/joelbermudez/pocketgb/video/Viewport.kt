@@ -1,13 +1,15 @@
 package com.joelbermudez.pocketgb.video
 
-import com.joelbermudez.pocketgb.emulator.CoreBridge
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.ScaleMode
+import com.joelbermudez.pocketgb.emulator.ScreenSize
 import kotlin.math.min
 
 /**
- * Rectángulo donde se dibuja la imagen de 160x144 dentro de la superficie. Espeja `compute_layout` de
- * `native_session.c`: [ScaleMode.INTEGER] usa el mayor múltiplo entero que quepa (si no cabe ninguno, el
- * fraccional que quepa) y [ScaleMode.FILL] el 10:9 que quepa, centrado. [scale] es 0 en Llenar.
+ * Rectángulo donde se dibuja la imagen de la consola ([ScreenSize]: 160×144 en GB, 240×160 en GBA) dentro de la
+ * superficie. Espeja `compute_layout` de `native_session.c` con la misma geometría que el blit (N8): [ScaleMode.INTEGER]
+ * usa el mayor múltiplo entero que quepa (si no cabe ninguno, el fraccional que quepa) y [ScaleMode.FILL] la proporción
+ * de la consola (10:9 o 3:2) que quepa, centrado. [scale] es 0 en Llenar.
  */
 data class Viewport(
     val left: Int,
@@ -17,21 +19,31 @@ data class Viewport(
     val scale: Int,
 ) {
     companion object {
-        fun calculate(width: Int, height: Int, mode: ScaleMode = ScaleMode.INTEGER): Viewport {
+        fun calculate(
+            width: Int,
+            height: Int,
+            mode: ScaleMode = ScaleMode.INTEGER,
+            screen: ScreenSize = Console.GB.screen,
+        ): Viewport {
             require(width > 0 && height > 0)
-            val scale = min(width / CoreBridge.SCREEN_WIDTH, height / CoreBridge.SCREEN_HEIGHT)
-            val drawWidth: Int
-            val drawHeight: Int
+            val screenWidth = screen.width
+            val screenHeight = screen.height
+            val scale = min(width / screenWidth, height / screenHeight)
+            var drawWidth: Int
+            var drawHeight: Int
             if (mode == ScaleMode.INTEGER && scale >= 1) {
-                drawWidth = CoreBridge.SCREEN_WIDTH * scale
-                drawHeight = CoreBridge.SCREEN_HEIGHT * scale
-            } else if (width.toLong() * CoreBridge.SCREEN_HEIGHT <= height.toLong() * CoreBridge.SCREEN_WIDTH) {
+                drawWidth = screenWidth * scale
+                drawHeight = screenHeight * scale
+            } else if (width.toLong() * screenHeight <= height.toLong() * screenWidth) {
                 drawWidth = width
-                drawHeight = (width.toLong() * CoreBridge.SCREEN_HEIGHT / CoreBridge.SCREEN_WIDTH).toInt().coerceAtLeast(1)
+                drawHeight = (width.toLong() * screenHeight / screenWidth).toInt()
             } else {
                 drawHeight = height
-                drawWidth = (height.toLong() * CoreBridge.SCREEN_WIDTH / CoreBridge.SCREEN_HEIGHT).toInt().coerceAtLeast(1)
+                drawWidth = (height.toLong() * screenWidth / screenHeight).toInt()
             }
+            // Como el nativo: el mínimo de 1 px se aplica después de elegir el caso.
+            if (drawWidth < 1) drawWidth = 1
+            if (drawHeight < 1) drawHeight = 1
             return Viewport(
                 left = (width - drawWidth) / 2,
                 top = (height - drawHeight) / 2,

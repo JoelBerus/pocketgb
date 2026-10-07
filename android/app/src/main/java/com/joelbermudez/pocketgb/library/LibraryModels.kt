@@ -1,6 +1,8 @@
 package com.joelbermudez.pocketgb.library
 
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.CoreError
+import com.joelbermudez.pocketgb.emulator.GbaSaveType
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import java.util.Locale
 
@@ -51,11 +53,26 @@ data class GameDetails(
     val globalChecksumOk: Boolean,
     /** SHA-256 del ROM en hexadecimal. */
     val fingerprint: String,
+    /** N8: datos de la cabecera y del medio de un juego de GBA (= iOS `GameTechnicalInfo`); `null` en GB/GBC. */
+    val gba: GbaDetails? = null,
 ) {
+    /** «32 KiB · batería · reloj» o «Sin RAM» (GB); «SRAM…», «EEPROM (512 B u 8 KiB)» o «Sin partida» (GBA). */
+    val saveDescription: String
+        get() {
+            val gba = gba
+            var text = if (gba != null) {
+                if (gba.eeprom) "EEPROM (512 B u 8 KiB)" else if (sramBytes == 0) "Sin partida" else ByteFormat.format(sramBytes.toLong())
+            } else {
+                (if (sramBytes == 0) "Sin RAM" else ByteFormat.format(sramBytes.toLong())) + if (hasBattery) " · batería" else ""
+            }
+            if (hasRtc) text += " · reloj"
+            return text
+        }
+
     companion object {
         fun from(entry: RomEntry, info: RomInfo) = GameDetails(
             entry = entry,
-            cartridge = CartridgeNames.describe(info.cartType),
+            cartridge = if (info.console == Console.GBA) GbaSaveNames.describe(info.gbaSaveType) else CartridgeNames.describe(info.cartType),
             romBytes = info.romBytes,
             sramBytes = info.sramBytes,
             hasBattery = info.hasBattery,
@@ -63,7 +80,47 @@ data class GameDetails(
             headerChecksumOk = info.headerChecksumOk,
             globalChecksumOk = info.globalChecksumOk,
             fingerprint = info.fingerprintHex,
+            gba = if (info.console == Console.GBA) GbaDetails.from(info) else null,
         )
+    }
+}
+
+/**
+ * N8: lo propio de un juego de GBA en el detalle (= iOS `GameTechnicalInfo`): código de juego · fabricante · versión,
+ * medio detectado (con «Detectado»: el que reconoce el núcleo por las cadenas de la biblioteca de Nintendo) y RTC.
+ */
+data class GbaDetails(
+    val gameCode: String,
+    val makerCode: String,
+    val version: Int,
+    val saveType: GbaSaveType?,
+    val eeprom: Boolean,
+) {
+    /** «AXVS · 01 · v0» (lo que hay: sin código, `null`). */
+    val codeLine: String?
+        get() = listOf(gameCode, makerCode).filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+            ?.let { (it + "v$version").joinToString(" · ") }
+
+    companion object {
+        fun from(info: RomInfo) = GbaDetails(
+            gameCode = info.gameCode,
+            makerCode = info.makerCode,
+            version = info.version,
+            saveType = info.gbaSaveType,
+            eeprom = info.eeprom,
+        )
+    }
+}
+
+/** Nombre del medio de guardado de GBA con los mismos nombres que «Ajustes del juego» (= iOS `gbaSaveName`). */
+object GbaSaveNames {
+    fun describe(type: GbaSaveType?): String = when (type) {
+        GbaSaveType.NONE -> "Sin partida"
+        GbaSaveType.SRAM -> "SRAM 32 KiB"
+        GbaSaveType.FLASH64 -> "Flash 64 KiB"
+        GbaSaveType.FLASH128 -> "Flash 128 KiB"
+        GbaSaveType.EEPROM512, GbaSaveType.EEPROM8K -> "EEPROM"
+        GbaSaveType.AUTO, null -> "Desconocido"
     }
 }
 
@@ -81,6 +138,11 @@ sealed interface DetailsError {
 
     data object TooLarge : DetailsError {
         override val message = RomProblem.TOO_LARGE.message
+    }
+
+    /** N8: el `.gba` supera los 32 MiB al leerlo. */
+    data object TooLargeGba : DetailsError {
+        override val message = RomProblem.TOO_LARGE_GBA.message
     }
 
     data object Remote : DetailsError {

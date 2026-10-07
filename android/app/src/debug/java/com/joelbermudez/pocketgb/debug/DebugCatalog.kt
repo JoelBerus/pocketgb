@@ -54,7 +54,7 @@ private fun demoEntry(
     uri = "content://demo/$id",
     fileName = id.substringAfterLast('/'),
     title = title,
-    isColor = isColor,
+    console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(isColor),
     sizeBytes = sizeBytes,
     headerChecksumOk = problem == null,
     problem = problem,

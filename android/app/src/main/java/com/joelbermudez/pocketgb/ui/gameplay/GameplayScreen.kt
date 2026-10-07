@@ -42,7 +42,6 @@ import com.joelbermudez.pocketgb.emulator.EmulatorSession
 import com.joelbermudez.pocketgb.emulator.ScaleMode
 import com.joelbermudez.pocketgb.emulator.SessionState
 import com.joelbermudez.pocketgb.input.ControlId
-import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsEditorBinding
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.input.GameControlsOverlay
@@ -85,6 +84,8 @@ fun GameplayScreen(
     LaunchedEffect(speedCycleRequests) { speedCycleRequests.collect { currentCycle() } }
     val sessionState by session.state.collectAsStateWithLifecycle()
     var selected by remember(editing) { mutableStateOf(initialSelected) }
+    // N8: la consola fija la proporción de la imagen (10:9 o 3:2) y la disposición de los controles (GB o GBA).
+    val console = session.console
     val pause = {
         if (onMenu != null) onMenu()
         else if (session.state.value == SessionState.Running) session.pause()
@@ -105,7 +106,7 @@ fun GameplayScreen(
             ControlsEditorBinding(
                 selected = selected,
                 onSelect = { selected = it },
-                onCommit = { id, point -> onSettingsChange { it.move(orientation, id, point) } },
+                onCommit = { id, point -> onSettingsChange { it.move(orientation, id, point, console) } },
             )
         } else {
             null
@@ -124,7 +125,7 @@ fun GameplayScreen(
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))) {
                 GameSurface(
                     session,
-                    Modifier.fillMaxWidth().aspectRatio(10f / 9f).testTag("gameplay-surface"),
+                    Modifier.fillMaxWidth().aspectRatio(console.screen.aspectRatio).testTag("gameplay-surface"),
                     scaleMode,
                 )
                 GameControlsOverlay(
@@ -141,15 +142,16 @@ fun GameplayScreen(
             ControlsEditorBar(
                 orientation = orientation,
                 selected = selected,
-                selectedScale = selected?.let { ControlLayout.from(settings.layout(orientation), orientation).scale(it) } ?: 1f,
-                onReset = { onSettingsChange { it.resetLayout(orientation) } },
+                selectedScale = selected?.let { settings.controlLayout(orientation, console).scale(it) } ?: 1f,
+                onReset = { onSettingsChange { it.resetLayout(orientation, console) } },
                 onDone = onEditingDone,
-                onSmaller = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, -0.1f) } } },
-                onLarger = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, 0.1f) } } },
+                onSmaller = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, -0.1f, console) } } },
+                onLarger = { selected?.let { id -> onSettingsChange { it.resize(orientation, id, 0.1f, console) } } },
                 showSeparation = settings.dpadStyle == DpadStyle.ARROWS,
-                separation = settings.layout(orientation).separation,
-                onCloser = { onSettingsChange { it.adjustSeparation(orientation, -DPAD_SEPARATION_STEP) } },
-                onFarther = { onSettingsChange { it.adjustSeparation(orientation, DPAD_SEPARATION_STEP) } },
+                separation = settings.layout(orientation, console).separation,
+                onCloser = { onSettingsChange { it.adjustSeparation(orientation, -DPAD_SEPARATION_STEP, console) } },
+                onFarther = { onSettingsChange { it.adjustSeparation(orientation, DPAD_SEPARATION_STEP, console) } },
+                console = console,
                 modifier = Modifier
                     .align(if (landscape) Alignment.Center else Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),

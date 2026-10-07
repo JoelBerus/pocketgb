@@ -68,7 +68,7 @@ class LibraryScannerTest {
         val entries = LibraryScanner.scan(tree)
         assertEquals(listOf("Rojo.gb", "Amarillo/Yellow.GBC", "Amarillo/Mas/Hondo.gb"), entries.sortedBy { it.id.length }.map { it.id })
         assertEquals(setOf("POKEMON RED", "POKEMON YELLOW", "HONDO"), entries.map { it.title }.toSet())
-        assertTrue(entries.single { it.id == "Amarillo/Yellow.GBC" }.isColor)
+        assertTrue(entries.single { it.id == "Amarillo/Yellow.GBC" }.console == com.joelbermudez.pocketgb.library.RomConsole.GBC)
         assertEquals("Amarillo", entries.single { it.title == "POKEMON YELLOW" }.subfolder)
         assertEquals(listOf("Amarillo", "Mas"), entries.single { it.title == "HONDO" }.folderPath)
         assertEquals(emptyList<String>(), entries.single { it.id == "Rojo.gb" }.folderPath)
@@ -503,7 +503,7 @@ class LibraryScannerTest {
         assertEquals(1, second.stats.headReads)
         assertEquals(2, second.stats.headerCacheHits)
         assertEquals(first.entries.map { it.id to it.title }, second.entries.map { it.id to it.title })
-        assertTrue(second.entries.single { it.id == "Sub/Oro.gbc" }.isColor)
+        assertTrue(second.entries.single { it.id == "Sub/Oro.gbc" }.console == com.joelbermudez.pocketgb.library.RomConsole.GBC)
         assertEquals(red.headerKey, second.entries.single { it.id == "Rojo.gb" }.headerKey)
 
         // Si cambia el tamaño o la fecha, se vuelve a leer.

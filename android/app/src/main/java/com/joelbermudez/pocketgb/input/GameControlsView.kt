@@ -117,6 +117,15 @@ class GameControlsView(
             rebuild()
         }
 
+    /** N8: L y R de Game Boy Advance (se dibujan y se atienden solo con esto). */
+    var shoulders: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            dragPreview = null
+            rebuild()
+        }
+
     /** `null` = se deduce del tamaño (ancho > alto es horizontal). */
     var orientationOverride: ControlsOrientation? = null
         set(value) {
@@ -214,7 +223,7 @@ class GameControlsView(
         a11yHelper.invalidateRoot()
         val orientation = orientationOverride
             ?: if (width > height) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
-        var layout = controlLayout ?: ControlLayout.defaults(orientation)
+        var layout = controlLayout ?: ControlLayout.defaults(orientation, shoulders)
         dragPreview?.let { (id, point) -> layout = layout.copy(centers = layout.centers + (id to point)) }
         val insets = safeInsets
         controlGeometry = ControlGeometry(
@@ -231,6 +240,7 @@ class GameControlsView(
             showMenu = renderOptions.showMenu,
             dpadStyle = renderOptions.dpadStyle,
             diagonals = renderOptions.diagonals,
+            shoulders = shoulders,
         )
         inputEngine = TouchInputEngine(controlGeometry)
         updateGestureExclusion()
@@ -309,7 +319,7 @@ class GameControlsView(
     }
 
     /** El control tocado en el editor: el más pequeño bajo el dedo, para poder elegir uno que tape a otro. */
-    private fun pickControl(point: ControlPoint): ControlId? = ControlId.entries
+    private fun pickControl(point: ControlPoint): ControlId? = controlGeometry.controls
         .filter { (it != ControlId.MENU || renderOptions.showMenu) && controlGeometry.touchFrame(it).contains(point) }
         .minByOrNull { controlGeometry.touchFrame(it).let { frame -> frame.width * frame.height } }
 
@@ -325,7 +335,7 @@ class GameControlsView(
         if (fadeAlpha > 0f) {
             // En el editor los controles se ven siempre al 100 %: la opacidad elegida no se aplica.
             val options = if (editing) renderOptions.copy(opacity = 100) else renderOptions
-            val drawn = ControlId.entries.filter { it != ControlId.MENU || renderOptions.showMenu }
+            val drawn = controlGeometry.controls.filter { it != ControlId.MENU || renderOptions.showMenu }
             // Primero todas las capas oscuras y después los controles: la capa de un control nunca tapa a su vecino.
             drawn.forEach { id -> drawScrim(canvas, id, options, fadeAlpha) }
             drawn.forEach { id -> drawControl(canvas, id, engine, options, fadeAlpha) }
@@ -384,6 +394,15 @@ class GameControlsView(
                 canvas.drawRoundRect(rect, radius, radius, paint)
                 ring(canvas, rect, radius, null, o, fade)
                 label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, pressed, o, fade)
+            }
+            ControlId.L, ControlId.R -> {
+                // Cápsulas de los gatillos de GBA (como iOS): la letra grande, contorno neutro.
+                val radius = b.height / 2f
+                paint.style = Paint.Style.FILL
+                paint.color = fill(pressed, o, fade)
+                canvas.drawRoundRect(rect, radius, radius, paint)
+                ring(canvas, rect, radius, null, o, fade)
+                label(canvas, label(id), b, b.height * 0.5f, pressed, o, fade)
             }
             else -> {
                 paint.style = Paint.Style.FILL
@@ -493,7 +512,7 @@ class GameControlsView(
                     canvas.drawCircle(it.centerX, it.centerY, it.radius + pad, paint)
                 }
             id == ControlId.DPAD -> canvas.drawCircle(b.centerX, b.centerY, b.width / 2f + pad, paint)
-            id == ControlId.START || id == ControlId.SELECT -> {
+            id == ControlId.START || id == ControlId.SELECT || id.isShoulder -> {
                 val radius = b.height / 2f + pad
                 canvas.drawRoundRect(RectF(b.left - pad, b.top - pad, b.right + pad, b.bottom + pad), radius, radius, paint)
             }
@@ -567,6 +586,8 @@ class GameControlsView(
         ControlId.START -> "START"
         ControlId.SELECT -> "SELECT"
         ControlId.MENU -> "MENÚ"
+        ControlId.L -> "L"
+        ControlId.R -> "R"
     }
 
     private fun argb(alpha: Float, rgb: Int): Int =

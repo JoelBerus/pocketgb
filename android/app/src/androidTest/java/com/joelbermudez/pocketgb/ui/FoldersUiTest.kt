@@ -31,7 +31,7 @@ class FoldersUiTest {
     @get:Rule val compose = createComposeRule()
 
     private fun entry(id: String, title: String) = RomEntry(
-        id = id, uri = "content://t/$id", fileName = id.substringAfterLast('/'), title = title, isColor = false,
+        id = id, uri = "content://t/$id", fileName = id.substringAfterLast('/'), title = title, console = com.joelbermudez.pocketgb.library.RomConsole.GB,
         sizeBytes = 32L * 1024, headerChecksumOk = true, problem = null,
     )
 
