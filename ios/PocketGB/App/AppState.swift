@@ -74,6 +74,9 @@ private enum ContinuationOpenError: LocalizedError, Sendable {
 private struct GameOpeningPayload: Sendable {
     let rom: Data
     let automaticState: Data?
+    /// Huella calculada de los bytes leídos (la misma que dará el núcleo): los ajustes del juego
+    /// se encuentran aunque el archivo se acabe de mover y aún no tenga huella en la biblioteca.
+    let fingerprint: String?
 }
 
 /// Estado global de la app: shell de tabs, biblioteca y el juego abierto.
@@ -81,8 +84,8 @@ private struct GameOpeningPayload: Sendable {
 final class AppState {
     var selectedTab: AppTab = .library
     var settingsPath: [SettingsRoute] = []
-    let library = LibraryStore()
-    /// Favoritos, recientes, ocultos, vista y orden (D3).
+    let library: LibraryStore
+    /// Favoritos, recientes, ocultos, alias, ajustes por juego, vista y orden (D3, N1a), por huella.
     let libraryPrefs: LibraryPreferences
     /// Portadas locales: el último frame de cada juego (SPEC §11).
     let artwork: GameArtworkStore
@@ -150,6 +153,8 @@ final class AppState {
     /// Permite recuperarse explícitamente de un autoestado ausente, dañado o ajeno.
     var resumeFallbackEntry: RomEntry?
     private(set) var resumableFingerprints: Set<String> = []
+    /// Huellas cuya continuación ya se comprobó (una huella nueva vuelve a comprobar).
+    @ObservationIgnored private var checkedFingerprints: Set<String> = []
 
     /// BIOS de Game Boy Advance en la carpeta de juegos (Ajustes › Emulación). `nil` hasta
     /// que se comprueba.
@@ -159,6 +164,7 @@ final class AppState {
         #if DEBUG
         // Capturas y tests de UI: preferencias y portadas solo en memoria.
         let inMemory = DebugScreenRouter.overridesLibrary
+        library = LibraryStore(cacheURL: inMemory ? nil : FingerprintCacheData.defaultURL())
         libraryPrefs = LibraryPreferences(fileURL: inMemory ? nil : LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: inMemory ? nil : GameArtworkStore.defaultDirectory())
         // Con argumentos de controles o `-screen`, ajustes solo en memoria (no persistentes).
@@ -166,16 +172,22 @@ final class AppState {
             || DebugArguments.value("-controlsVisibility") != nil
             || DebugArguments.value("-dpadStyle") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
+        // Con ajustes solo en memoria no hay copia antigua que importar (y no se marca como hecho).
+        if !fixedControls { libraryPrefs.importLegacyGameSettings(gameplay.data.perGame) }
         gameplay.applyDebugArguments()
         let catalogRun = DebugArguments.screen != nil || DebugArguments.arguments.contains("-rom")
         gamepad = GamepadInput(observesHardware: !catalogRun)
         if DebugArguments.value("-demoController") == "connected" { gamepad.applyDemo() }
         #else
+        library = LibraryStore()
         libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
         gameplay = GameplaySettings(defaults: .standard)
+        // N1a: los ajustes por juego antiguos (por ruta, en UserDefaults) pasan a la huella.
+        libraryPrefs.importLegacyGameSettings(gameplay.data.perGame)
         gamepad = GamepadInput()
         #endif
+        wireLibraryIdentity()
         #if DEBUG
         DebugScreenRouter.apply(to: self)
         if debugUnknownScreen == nil && !DebugScreenRouter.overridesLibrary {
@@ -189,6 +201,23 @@ final class AppState {
 
     func chooseFolder() {
         pickingFolder = true
+    }
+
+    /// N1a: las huellas que llegan del escaneo se llevan los metadatos provisionales por ruta, y
+    /// los problemas del archivo de preferencias se avisan (nunca se pierden en silencio).
+    private func wireLibraryIdentity() {
+        library.onFingerprintsResolved = { [weak self] resolved in
+            guard let self else { return }
+            libraryPrefs.adopt(resolved)
+            if !Set(resolved.values).isSubset(of: checkedFingerprints) { refreshContinuations() }
+        }
+        libraryPrefs.onIssue = { [weak self] issue in self?.showAlert(issue.title, issue.message) }
+        if let issue = libraryPrefs.issue { showAlert(issue.title, issue.message) }
+    }
+
+    /// El juego con su huella actual (una vista puede guardar una copia anterior al cálculo).
+    private func current(_ entry: RomEntry) -> RomEntry {
+        library.entries.first { $0.id == entry.id } ?? entry
     }
 
     /// Volver a primer plano: reescanear la carpeta (docs/04 §Ciclo de vida).
@@ -226,14 +255,18 @@ final class AppState {
 
     /// Oculta el juego (solo preferencias: ROM, partida y copias intactos) y cierra su detalle.
     func hide(_ entry: RomEntry) {
+        let entry = current(entry)
         libraryPrefs.hide(entry)
         hideCandidate = nil
-        libraryPath.removeAll { $0.entryID == entry.id }
-        favoritesPath.removeAll { $0.entryID == entry.id }
+        // Ocultar va por huella: sus duplicados también se ocultan.
+        let ids = Set([entry.id] + entry.duplicatePaths)
+        libraryPath.removeAll { ids.contains($0.entryID) }
+        favoritesPath.removeAll { ids.contains($0.entryID) }
     }
 
     func explainProblem(_ entry: RomEntry) {
-        let place = entry.subfolder.isEmpty ? "en la carpeta de juegos" : "en la subcarpeta “\(entry.subfolder)”"
+        let folders = entry.folderPath.joined(separator: " › ")
+        let place = folders.isEmpty ? "en la carpeta de juegos" : "en la subcarpeta “\(folders)”"
         showAlert("No se puede abrir “\(entry.fileName)”",
                   "\(entry.problem?.message ?? "") Está \(place). PocketGB no lo abrirá ni lo modificará.")
     }
@@ -241,6 +274,7 @@ final class AppState {
     /// Abre un juego de la biblioteca: lectura coordinada fuera del hilo principal,
     /// y la partida con su espejo junto al ROM.
     func open(entry: RomEntry, mode: GameLaunchMode = .fresh) {
+        let entry = current(entry)
         guard entry.problem == nil else {
             showAlert("No se puede abrir “\(entry.fileName)”", entry.problem?.message ?? "")
             return
@@ -268,8 +302,9 @@ final class AppState {
             // puede esperar a que iCloud descargue (auditoría D2, H1/H2).
             let result = Result<GameOpeningPayload, Error> {
                 let rom = try LibraryScanner.readROM(url, limit: LibraryScanner.romLimit(for: console))
+                let romFingerprint = RomFingerprint.compute(data: rom, console: console)
                 guard mode == .resumeAutomatic else {
-                    return GameOpeningPayload(rom: rom, automaticState: nil)
+                    return GameOpeningPayload(rom: rom, automaticState: nil, fingerprint: romFingerprint)
                 }
                 guard let fingerprint else { throw ContinuationOpenError.unavailable }
                 let states = StateStore(root: try StateStore.defaultRoot(), fingerprint: fingerprint)
@@ -277,7 +312,8 @@ final class AppState {
                 guard states.automaticEntry(newerThan: saves.modificationDate) != nil else {
                     throw ContinuationOpenError.unavailable
                 }
-                return GameOpeningPayload(rom: rom, automaticState: try states.load(.auto))
+                return GameOpeningPayload(rom: rom, automaticState: try states.load(.auto),
+                                          fingerprint: romFingerprint)
             }
             let snapshot: SaveMirror.Snapshot = shared ? .absent : mirror.snapshot()
             let bios: (data: Data?, status: BIOSFile.Status) =
@@ -296,7 +332,9 @@ final class AppState {
         switch result {
         case .success(let payload):
             start(romData: payload.rom, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
-                  entryID: entry.id, restoring: payload.automaticState,
+                  entryID: entry.id,
+                  overrides: libraryPrefs.overrides(fingerprint: payload.fingerprint, path: entry.id),
+                  restoring: payload.automaticState,
                   resumeFallback: mode == .resumeAutomatic ? entry : nil,
                   extraWarning: shared ? .mirrorShared : nil,
                   console: console, bios: bios.data)
@@ -326,7 +364,7 @@ final class AppState {
     /// lecturas coordinadas y los espejos van fuera del hilo principal.
     /// - Parameter confirmedContinuation: ya se avisó de que algún juego tiene continuación.
     func openLink(_ request: LinkRequest, confirmedContinuation: Bool = false) {
-        let entries = [request.first, request.second]
+        let entries = [current(request.first), current(request.second)]
         for entry in entries {
             guard entry.problem == nil else {
                 showAlert("No se puede abrir “\(entry.fileName)”", entry.problem?.message ?? "")
@@ -361,7 +399,7 @@ final class AppState {
         let games = sources.map {
             LinkSession.Game(fileName: $0.entry.fileName, title: libraryPrefs.displayTitle($0.entry), rom: Data(),
                              console: .gameBoy, mirror: $0.mirror,
-                             emulation: gameplay.data.emulation(for: $0.entry.id))
+                             emulation: gameplay.data.emulation(with: libraryPrefs.overrides(for: $0.entry)))
         }
         let ids = entries.map(\.id)
         let urls = entries.map(\.url)
@@ -414,6 +452,7 @@ final class AppState {
                 SavesIndex(directory: savesDirectory).record(fingerprint: info.fingerprint,
                                                             title: link.indexTitles[i], fileName: games[i].fileName)
                 if let id = entryIDs[i] {
+                    library.learnFingerprint(info.fingerprint, forPath: id)
                     libraryPrefs.recordPlayed(id: id, fingerprint: info.fingerprint, at: Date())
                 }
             }
@@ -492,13 +531,14 @@ final class AppState {
 
     /// Crea la sesión con la partida local y, si hay biblioteca, su espejo.
     private func start(romData: Data, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot = .absent,
-                       fileName: String, entryID: String? = nil, restoring automaticState: Data? = nil,
+                       fileName: String, entryID: String? = nil, overrides: GameOverrides? = nil,
+                       restoring automaticState: Data? = nil,
                        resumeFallback: RomEntry? = nil, extraWarning: SaveLoadWarning? = nil,
                        console: Console = .gameBoy, bios: Data? = nil) {
         closeGame()
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
-            let emulation = gameplay.data.emulation(for: entryID)
+            let emulation = gameplay.data.emulation(with: overrides)
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
                                               emulation: emulation,
@@ -515,6 +555,7 @@ final class AppState {
                                                         title: session.info.title, fileName: fileName,
                                                         detected: detected)
             if let entryID {
+                library.learnFingerprint(session.info.fingerprint, forPath: entryID)
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
             self.session = session
@@ -660,7 +701,11 @@ final class AppState {
     /// Revisa fuera del actor principal la fecha y la cabecera de 4 bytes del estado `.auto`
     /// (sin leer miniaturas); el contenido se valida al reanudar, en `EmulatorSession`.
     func refreshContinuations() {
-        let fingerprints = Set(libraryPrefs.data.fingerprints.values)
+        var known = Set(libraryPrefs.data.fingerprints.values)
+        known.formUnion(libraryPrefs.data.games.keys)
+        known.formUnion(library.entries.compactMap(\.fingerprint))
+        checkedFingerprints = known
+        let fingerprints = known
         Task.detached(priority: .utility) { [weak self] in
             guard let statesRoot = try? StateStore.defaultRoot(),
                   let savesDirectory = try? SaveStore.defaultDirectory() else { return }

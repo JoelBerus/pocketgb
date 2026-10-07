@@ -24,7 +24,7 @@ struct LibrarySettingsView: View {
             } header: {
                 Text("Carpeta de juegos")
             } footer: {
-                Text("PocketGB lee los ROMs de esta carpeta sin copiarlos ni modificarlos.")
+                Text("PocketGB lee los ROMs de esta carpeta y de sus subcarpetas (hasta 5 niveles) sin copiarlos ni modificarlos. Las carpetas que empiezan por “_” o “.” y la carpeta “PocketGB” no se leen.")
             }
             Section("Presentación") {
                 Picker("Vista", selection: Binding(get: { prefs.data.layout }, set: { prefs.setLayout($0) })) {
@@ -45,10 +45,11 @@ struct LibrarySettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.title)
                                     .lineLimit(2)
-                                Text(entry.fileName)
+                                Text(entry.locationText)
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .truncationMode(.middle)
                             }
                             Spacer()
                             Button("Mostrar") { prefs.unhide(entry) }

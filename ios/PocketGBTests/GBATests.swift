@@ -180,15 +180,22 @@ struct GBATests {
     }
 
     @Test func perGameOverridesForceSaveTypeAndRTC() throws {
-        var data = GameplaySettingsData()
-        data.perGame["x.gba"] = GameOverrides(gbaSaveType: 3, gbaRTC: 2, gbaUseBIOS: false)
-        let o = data.emulation(for: "x.gba")
+        let data = GameplaySettingsData()
+        // N1a: los ajustes van por huella en LibraryPreferences; aquí solo se resuelven.
+        let forced = GameOverrides(gbaSaveType: 3, gbaRTC: 2, gbaUseBIOS: false)
+        let o = data.emulation(with: forced)
         #expect(o.gbaSaveType == 3 && o.gbaRTC == 2 && !o.gbaUseBIOS)
-        let global = data.emulation(for: "otro.gba")
+        let global = data.emulation(with: nil)
         #expect(global.gbaSaveType == 0 && global.gbaRTC == 0 && global.gbaUseBIOS)
-        // Se guardan y se leen; un juego sin ajustes nunca deja una entrada vacía.
-        let decoded = try JSONDecoder().decode(GameplaySettingsData.self, from: JSONEncoder().encode(data))
-        #expect(decoded.perGame["x.gba"]?.gbaSaveType == 3)
+        // Se guardan y se leen por huella; un juego sin ajustes nunca deja una entrada vacía.
+        let prefs = LibraryPreferences(fileURL: nil)
+        var game = LibraryPreferencesTests.entry("x.gba", "X", color: false)
+        game.fingerprint = "fp-x"
+        prefs.setOverrides(forced, for: game)
+        let decoded = try JSONDecoder().decode(LibraryPreferencesData.self, from: JSONEncoder().encode(prefs.data))
+        #expect(decoded.games["fp-x"]?.overrides.gbaSaveType == 3)
+        prefs.setOverrides(GameOverrides(), for: game)
+        #expect(prefs.data.games["fp-x"] == nil)
         #expect(GameOverrides().isEmpty && !GameOverrides(gbaRTC: 1).isEmpty)
 
         // El tipo forzado cambia el tamaño de la partida que el núcleo espera: Flash de 64 KiB
@@ -363,7 +370,8 @@ struct GBATests {
         #expect(data.perGame["a.gba"]?.isEmpty == true)
         #expect(data.perGame["b.gba"]?.isEmpty == true)
         #expect(data.perGame["c.gba"] == GameOverrides(gbaSaveType: 6, gbaRTC: 2, gbaUseBIOS: false))
-        #expect(data.emulation(for: "a.gba").gbaSaveType == 0 && data.emulation(for: "a.gba").gbaRTC == 0)
+        let a = data.emulation(with: data.perGame["a.gba"])
+        #expect(a.gbaSaveType == 0 && a.gbaRTC == 0)
     }
 
     /// Caso de G8-H2: EEPROM 512 B forzada, local de 512 B y espejo de 8 KiB más reciente. Antes

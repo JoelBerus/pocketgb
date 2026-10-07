@@ -48,9 +48,11 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
     // Audio (D6): volumen del juego y si suena con el interruptor de silencio.
     var volume: Double = 1
     var playsInSilentMode = false
-    // Emulación (D6): juegos de Game Boy en color y su paleta; ajustes por juego.
+    // Emulación (D6): juegos de Game Boy en color y su paleta.
     var colorForGameBoy = false
     var compatPalette: UInt8 = 0
+    /// Ajustes por juego hasta N0, por ruta. Desde N1a viven por huella en `LibraryPreferences`
+    /// (`importLegacyGameSettings`); esto ya no se escribe y queda como copia de respaldo.
     var perGame: [String: GameOverrides] = [:]
 
     static let opacities = [30, 50, 70, 100]
@@ -149,13 +151,6 @@ final class GameplaySettings {
             let value = ((layout.scale(id) + delta) * 10).rounded() / 10
             layout.scales[id] = min(max(value, ControlsLayout.scaleRange.lowerBound), ControlsLayout.scaleRange.upperBound)
             data.setLayout(layout, orientation, shoulders: shoulders)
-        }
-    }
-
-    /// Ajustes de un juego; al quedar todo en "Global" se borra la entrada.
-    func setOverrides(_ overrides: GameOverrides, for gameID: String) {
-        update { data in
-            data.perGame[gameID] = overrides.isEmpty ? nil : overrides
         }
     }
 

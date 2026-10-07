@@ -137,3 +137,11 @@ link-partner-picker-ax5 portrait  light -screen link-partner-picker-ax5 -demoLib
 link-open-refused       portrait  light -screen link-open-refused -demoLibrary standard -demoLinkError same-game
 link-open-refused       portrait  dark  -screen link-open-refused -demoLibrary standard -demoLinkError same-game
 link-continue-warning   portrait  light -screen link-continue-warning -demoLibrary standard
+
+# ---- N1 · Identidad y carpetas (iOS): subcarpetas hasta 5 niveles, duplicados y preferencias apartadas ----
+library-folders         portrait  light -screen library-folders -demoLibrary folders
+library-folders-list    portrait  dark  -screen library-folders-list -demoLibrary folders
+game-details-folders    portrait  light -screen game-details-folders -demoLibrary folders
+game-details-folders    portrait  dark  -screen game-details-folders -demoLibrary folders
+game-details-folders-ax5 portrait light -screen game-details-folders-ax5 -demoLibrary folders -contentSizeCategory accessibility5
+library-preferences-quarantined portrait light -screen library-preferences-quarantined -demoLibrary standard

@@ -39,8 +39,16 @@ final class LibraryStore {
     private(set) var scanProgress: ScanProgress?
     /// Aviso breve tras un escaneo con novedades ("2 juegos nuevos").
     private(set) var summary: String?
+    /// El último escaneo llegó al tope de `LibraryScanner.maxEntries` juegos.
+    private(set) var limitReached = false
+    /// Calculando huellas en segundo plano (N1a).
+    private(set) var isHashing = false
 
     var isScanning: Bool { scanProgress != nil }
+
+    /// Huellas recién conocidas (ruta → huella), por lotes: la app une ahí los metadatos
+    /// provisionales por ruta (`LibraryPreferences.adopt`).
+    @ObservationIgnored var onFingerprintsResolved: (([String: String]) -> Void)?
 
     private let storage: BookmarkStorage
     private var folderURL: URL?
@@ -51,10 +59,24 @@ final class LibraryStore {
     /// Último escaneo terminado: un aviso de progreso que llegue tarde no lo reabre (auditoría D2, H7).
     private var finishedGeneration = 0
     private static let knownKey = "libraryKnownROMs"
+    private let knownDefaults: UserDefaults
     private let log = Logger(subsystem: "com.joelbermudez.pocketgb", category: "library")
 
-    init(storage: BookmarkStorage = UserDefaultsBookmarkStorage()) {
+    /// Caché (ruta, tamaño, fecha) → huella; `cacheURL == nil` = solo en memoria.
+    @ObservationIgnored private var cache: FingerprintCacheData
+    @ObservationIgnored private let cacheURL: URL?
+    @ObservationIgnored private let cacheQueue = DispatchQueue(label: "PocketGB.fingerprint-cache", qos: .utility)
+    @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var hashTask: Task<Void, Never>?
+    @ObservationIgnored private var unsavedCacheItems = 0
+
+    init(storage: BookmarkStorage = UserDefaultsBookmarkStorage(),
+         cacheURL: URL? = FingerprintCacheData.defaultURL(),
+         knownDefaults: UserDefaults = .standard) {
         self.storage = storage
+        self.cacheURL = cacheURL
+        self.knownDefaults = knownDefaults
+        cache = FingerprintCacheData.load(cacheURL)
     }
 
     /// Al arrancar: resuelve el bookmark guardado y escanea.
@@ -103,14 +125,16 @@ final class LibraryStore {
         refresh()
     }
 
-    /// Vuelve a escanear (al volver a primer plano o a petición).
+    /// Vuelve a escanear (al volver a primer plano o a petición). Cancela el cálculo de
+    /// huellas pendiente: el escaneo nuevo lo vuelve a pedir con lo que siga sin huella.
     func refresh() {
         guard let folder = folderURL else { return }
         scanGeneration += 1
         let generation = scanGeneration
         scanProgress = ScanProgress(done: 0, total: 0)
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let found = LibraryScanner.scan(folder: folder) { done, total in
+        hashTask?.cancel()
+        scanTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let found = LibraryScanner.scanResult(folder: folder) { done, total in
                 guard done == total || done % 8 == 0 else { return }
                 Task { @MainActor [weak self] in
                     guard let self, self.scanGeneration == generation,
@@ -118,8 +142,15 @@ final class LibraryStore {
                     self.scanProgress = ScanProgress(done: done, total: total)
                 }
             }
-            await self?.finishScan(found, generation: generation)
+            await self?.finishScan(found, folder: folder, generation: generation)
         }
+    }
+
+    /// Espera al escaneo y al cálculo de huellas en curso (tests).
+    func waitUntilIdle() async {
+        await scanTask?.value
+        await hashTask?.value
+        cacheQueue.sync {}
     }
 
     /// Descarga un ROM que solo está en iCloud y reescanea al terminar.
@@ -141,12 +172,12 @@ final class LibraryStore {
         }
     }
 
-    private func finishScan(_ found: [RomEntry], generation: Int) {
+    private func finishScan(_ found: LibraryScanner.ScanResult, folder: URL, generation: Int) {
         guard generation == scanGeneration else { return }
         finishedGeneration = generation
-        let defaults = UserDefaults.standard
+        let defaults = knownDefaults
         let known = Set(defaults.stringArray(forKey: Self.knownKey) ?? [])
-        var result = found
+        var result = found.entries
         var newCount = 0
         if !known.isEmpty {
             for i in result.indices where !known.contains(result[i].id) {
@@ -154,10 +185,132 @@ final class LibraryStore {
                 newCount += 1
             }
         }
-        defaults.set(Array(known.union(found.map(\.id))), forKey: Self.knownKey)
-        entries = result
+        defaults.set(Array(known.union(result.map(\.id))), forKey: Self.knownKey)
+
+        // Identidad (N1a): huellas de la caché; las que faltan se calculan en segundo plano.
+        let root = folder.resolvingSymlinksInPath().path
+        if cache.root != root {
+            cache = FingerprintCacheData()
+            cache.root = root
+        }
+        if !found.limitReached {
+            // Solo se recuerdan las rutas que siguen en la carpeta.
+            let present = Set(result.map(\.id))
+            cache.items = cache.items.filter { present.contains($0.key) }
+        }
+        let resolved = LibraryIdentity.resolve(result, cache: cache)
+        entries = resolved.entries
+        limitReached = found.limitReached
         scanProgress = nil
-        if newCount > 0 { showSummary(newCount == 1 ? "1 juego nuevo" : "\(newCount) juegos nuevos") }
+        persistCache()
+        // Solo lo confirmado: una huella provisional (archivo cambiado o sin descargar) no
+        // se lleva los metadatos provisionales de la ruta.
+        if !resolved.verified.isEmpty { onFingerprintsResolved?(resolved.verified) }
+        startHashing(resolved.jobs, generation: generation)
+
+        if found.limitReached {
+            showSummary("Se muestran los primeros \(LibraryScanner.maxEntries.formatted()) juegos")
+        } else if newCount > 0 {
+            showSummary(newCount == 1 ? "1 juego nuevo" : "\(newCount) juegos nuevos")
+        }
+    }
+
+    // MARK: - Huellas en segundo plano (N1a)
+
+    /// Calcula las huellas que faltan fuera del hilo principal, con prioridad baja y lectura
+    /// coordinada, solo de archivos locales o ya descargados (`RomFingerprint`). Se cancela
+    /// con un escaneo nuevo; los resultados llegan por lotes.
+    private func startHashing(_ jobs: [LibraryIdentity.Job], generation: Int) {
+        hashTask?.cancel()
+        guard !jobs.isEmpty else {
+            isHashing = false
+            return
+        }
+        isHashing = true
+        hashTask = Task.detached(priority: .utility) { [weak self] in
+            var batch: [(job: LibraryIdentity.Job, fingerprint: String)] = []
+            var lastFlush = ContinuousClock.now
+            for job in jobs {
+                if Task.isCancelled { break }
+                do {
+                    if let fp = try RomFingerprint.compute(url: job.url, console: job.console) {
+                        batch.append((job, fp))
+                    }
+                } catch is CancellationError {
+                    break
+                } catch {
+                    // Un archivo que no se puede leer se queda sin huella (como en el escaneo).
+                }
+                if batch.count >= 16 || ContinuousClock.now - lastFlush > .milliseconds(400) {
+                    let done = batch
+                    batch = []
+                    lastFlush = .now
+                    if !done.isEmpty { await self?.applyFingerprints(done, generation: generation) }
+                }
+            }
+            let rest = batch
+            await self?.finishHashing(rest, generation: generation)
+        }
+    }
+
+    private func finishHashing(_ rest: [(job: LibraryIdentity.Job, fingerprint: String)], generation: Int) {
+        if !rest.isEmpty { applyFingerprints(rest, generation: generation) }
+        guard generation == scanGeneration else { return }
+        isHashing = false
+        unsavedCacheItems = 0
+        persistCache()
+    }
+
+    private func applyFingerprints(_ results: [(job: LibraryIdentity.Job, fingerprint: String)], generation: Int) {
+        guard generation == scanGeneration, !results.isEmpty else { return }
+        var index: [String: Int] = [:]
+        for (i, entry) in entries.enumerated() { index[entry.id] = i }
+        var updated = entries
+        var resolved: [String: String] = [:]
+        for (job, fp) in results {
+            cache.items[job.path] = .init(size: job.size, modified: job.modified, fingerprint: fp)
+            resolved[job.path] = fp
+            if let i = index[job.path] { updated[i].fingerprint = fp }
+        }
+        LibraryIdentity.markDuplicates(&updated)
+        entries = updated
+        // La caché entera se codifica en el hilo principal: no en cada lote, sino cada 256
+        // huellas y al terminar (si la app se cierra antes, solo se recalcula).
+        unsavedCacheItems += results.count
+        if unsavedCacheItems >= 256 {
+            unsavedCacheItems = 0
+            persistCache()
+        }
+        onFingerprintsResolved?(resolved)
+    }
+
+    /// Huella que dio el núcleo al abrir el juego: es la de verdad para esa ruta.
+    func learnFingerprint(_ fingerprint: String, forPath path: String) {
+        guard let i = entries.firstIndex(where: { $0.id == path }) else { return }
+        let entry = entries[i]
+        cache.items[path] = .init(size: entry.sizeBytes, modified: entry.modificationDate, fingerprint: fingerprint)
+        guard entry.fingerprint != fingerprint else {
+            persistCache()
+            return
+        }
+        var updated = entries
+        updated[i].fingerprint = fingerprint
+        LibraryIdentity.markDuplicates(&updated)
+        entries = updated
+        persistCache()
+    }
+
+    private func persistCache() {
+        guard let cacheURL, let encoded = try? JSONEncoder().encode(cache) else { return }
+        let log = self.log
+        cacheQueue.async {
+            do {
+                try FingerprintCacheData.write(encoded, to: cacheURL)
+            } catch {
+                // Es una caché: si no se guarda, la próxima vez se recalcula.
+                log.error("Caché de huellas sin guardar: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func showSummary(_ text: String) {

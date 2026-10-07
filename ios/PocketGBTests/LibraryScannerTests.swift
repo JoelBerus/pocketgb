@@ -30,14 +30,14 @@ struct LibraryScannerTests {
         return url
     }
 
-    @Test func findsOnlyGameBoyFilesUpToDepthOne() throws {
+    @Test func findsOnlyGameBoyFilesInSubfolders() throws {
         _ = try write(Self.rom(title: "ALPHA"), "alpha.gb")
         _ = try write(Self.rom(title: "BETA", color: true), "Sub/beta.GBC")
-        _ = try write(Self.rom(title: "DEEP"), "Sub/Deeper/deep.gb")     // profundidad 2: fuera
+        _ = try write(Self.rom(title: "DEEP"), "Sub/Deeper/deep.gb")     // N1b: ya se lee (≤ 5 niveles)
         _ = try write(Data("hola".utf8), "notas.txt")
         _ = try write(Self.rom(title: "HIDDEN"), ".oculto.gb")
         let entries = LibraryScanner.scan(folder: dir)
-        #expect(entries.map(\.id).sorted() == ["Sub/beta.GBC", "alpha.gb"])
+        #expect(entries.map(\.id).sorted() == ["Sub/Deeper/deep.gb", "Sub/beta.GBC", "alpha.gb"])
         let beta = try #require(entries.first { $0.id == "Sub/beta.GBC" })
         #expect(beta.title == "BETA" && beta.isColor && beta.headerChecksumOK && beta.isPlayable)
         #expect(beta.subfolder == "Sub")
