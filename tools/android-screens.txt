@@ -233,6 +233,7 @@ n4-home portrait light
 n4-home portrait dark
 n4-home-scrolled portrait light swipe=up
 n4-home-ax5 portrait light fontScale=2.0
+n4-home-ax5-scrolled portrait light fontScale=2.0 swipe=up
 n4-home-landscape landscape light
 n4-home-landscape landscape dark
 n4-home-landscape-scrolled landscape light

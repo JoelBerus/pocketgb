@@ -328,6 +328,8 @@ internal val n4CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("n4-home") { N4Home() }
     put("n4-home-scrolled") { N4Home() }
     put("n4-home-ax5") { N4Home() }
+    // Fuente 200 %, desplazada: estanterías con la portada a la izquierda y «Ver todo» bajo el título.
+    put("n4-home-ax5-scrolled") { N4Home() }
     put("n4-home-landscape") { N4Home() }
     put("n4-home-landscape-scrolled") { N4Home(LibraryToolsPreset(scrolled = true)) }
     put("n4-home-landscape-categories") { N4Home(LibraryToolsPreset(panel = LibraryPanel.CATEGORIES)) }
