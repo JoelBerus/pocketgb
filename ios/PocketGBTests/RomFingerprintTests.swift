@@ -83,6 +83,31 @@ struct RomFingerprintTests {
         #expect(RomFingerprint.compute(data: Data(count: 0x400), console: .gameBoyAdvance) == nil)   // sin 0x96
     }
 
+    /// Auditoría N1, H6: código de RAM fuera de la tabla y MBC no soportado (MBC6) → el núcleo
+    /// rechaza el ROM antes de hashear, así que tampoco hay huella aquí.
+    @Test func unsupportedRAMCodeOrMBCHaveNoFingerprint() throws {
+        func patched(_ offset: Int, _ value: UInt8) -> Data {
+            var rom = LibraryScannerTests.rom(title: "RECHAZO")
+            rom[offset] = value
+            var x: UInt8 = 0
+            for i in 0x134...0x14C { x = x &- rom[i] &- 1 }
+            rom[0x14D] = x
+            return rom
+        }
+        for (offset, value) in [(0x149, UInt8(0x09)), (0x149, 0x06), (0x147, 0x20), (0x147, 0xFC)] {
+            let rom = patched(offset, value)
+            #expect(throws: CoreError.self) { try Self.coreFingerprint(rom, console: .gameBoy) }
+            #expect(RomFingerprint.compute(data: rom, console: .gameBoy) == nil, "0x\(String(offset, radix: 16))")
+        }
+        // Los que sí acepta siguen teniendo la huella del núcleo (MBC5 + RAM 128 KiB + batería).
+        var ok = patched(0x147, 0x1B)
+        ok[0x149] = 0x04
+        var x: UInt8 = 0
+        for i in 0x134...0x14C { x = x &- ok[i] &- 1 }
+        ok[0x14D] = x
+        #expect(RomFingerprint.compute(data: ok, console: .gameBoy) == (try Self.coreFingerprint(ok, console: .gameBoy)))
+    }
+
     @Test func gameBoyAdvanceFingerprintMatchesTheCore() throws {
         let rom = GBATests.rom()
         let url = try write(rom, "juego.gba")
@@ -115,15 +140,24 @@ struct RomFingerprintTests {
 
     // MARK: Caché
 
-    @Test func cacheLookupIsInvalidatedBySizeOrDate() {
+    @Test func cacheLookupIsInvalidatedBySizeOrDates() {
         var cache = FingerprintCacheData()
         let date = Date(timeIntervalSince1970: 1_000)
-        cache.items["a.gb"] = .init(size: 32_768, modified: date, fingerprint: "fp-a")
-        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date) == .verified("fp-a"))
-        #expect(cache.lookup(path: "a.gb", size: 65_536, modified: date) == .stale("fp-a"))
-        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date.addingTimeInterval(1)) == .stale("fp-a"))
-        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: nil) == .stale("fp-a"))
-        #expect(cache.lookup(path: "b.gb", size: 32_768, modified: date) == .missing)
+        let changed = Date(timeIntervalSince1970: 1_500)
+        cache.items["a.gb"] = .init(size: 32_768, modified: date, changed: changed, fingerprint: "fp-a")
+        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date, changed: changed) == .verified("fp-a"))
+        #expect(cache.lookup(path: "a.gb", size: 65_536, modified: date, changed: changed) == .stale("fp-a"))
+        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date.addingTimeInterval(1), changed: changed)
+            == .stale("fp-a"))
+        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: nil, changed: changed) == .stale("fp-a"))
+        // H3: mismo tamaño y misma fecha de modificación, pero otra fecha de cambio (ctime).
+        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date, changed: changed.addingTimeInterval(0.01))
+            == .stale("fp-a"))
+        #expect(cache.lookup(path: "a.gb", size: 32_768, modified: date, changed: nil) == .stale("fp-a"))
+        #expect(cache.lookup(path: "b.gb", size: 32_768, modified: date, changed: changed) == .missing)
+        // Entrada de la caché versión 1 (sin fecha de cambio): nunca se da por verificada.
+        cache.items["v1.gb"] = .init(size: 32_768, modified: date, changed: nil, fingerprint: "fp-v1")
+        #expect(cache.lookup(path: "v1.gb", size: 32_768, modified: date, changed: changed) == .stale("fp-v1"))
     }
 
     @Test func resolveQueuesOnlyPlayableFilesWithoutAVerifiedFingerprint() {
@@ -131,12 +165,12 @@ struct RomFingerprintTests {
         func entry(_ id: String, cloud: RomEntry.CloudState = .current) -> RomEntry {
             RomEntry(id: id, url: URL(fileURLWithPath: "/demo/\(id)"), fileName: id, title: id, isColor: false,
                      sizeBytes: 32_768, headerChecksumOK: true, cloud: cloud, problem: nil,
-                     mirrorSaveDate: nil, modificationDate: date)
+                     mirrorSaveDate: nil, modificationDate: date, attributeModificationDate: date)
         }
         var cache = FingerprintCacheData()
-        cache.items["ok.gb"] = .init(size: 32_768, modified: date, fingerprint: "fp-ok")
-        cache.items["cambiado.gb"] = .init(size: 16_384, modified: date, fingerprint: "fp-viejo")
-        cache.items["nube.gb"] = .init(size: 1, modified: nil, fingerprint: "fp-nube")
+        cache.items["ok.gb"] = .init(size: 32_768, modified: date, changed: date, fingerprint: "fp-ok")
+        cache.items["cambiado.gb"] = .init(size: 16_384, modified: date, changed: date, fingerprint: "fp-viejo")
+        cache.items["nube.gb"] = .init(size: 1, modified: nil, changed: nil, fingerprint: "fp-nube")
         let r = LibraryIdentity.resolve([entry("ok.gb"), entry("cambiado.gb"), entry("nuevo.gb"),
                                          entry("nube.gb", cloud: .notDownloaded)], cache: cache)
         let fps = Dictionary(uniqueKeysWithValues: r.entries.map { ($0.id, $0.fingerprint) })
@@ -145,6 +179,35 @@ struct RomFingerprintTests {
         #expect(r.verified == ["ok.gb": "fp-ok"])
         // Nunca se pide hashear un archivo sin descargar.
         #expect(r.jobs.map(\.path).sorted() == ["cambiado.gb", "nuevo.gb"])
+    }
+
+    /// H3 extremo a extremo: otro ROM con el mismo tamaño y la misma fecha de modificación en la
+    /// misma ruta (como un set con fechas fijas o `cp -p`) no hereda la huella del anterior.
+    @Test func sameSizeAndModificationDateIsRecalculated() async throws {
+        let library = dir.appendingPathComponent("Juegos", isDirectory: true)
+        let cacheURL = dir.appendingPathComponent("cache.json")
+        let romURL = library.appendingPathComponent("juego.gb")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        let fixed = Date(timeIntervalSince1970: 851_385_600)                 // 24-12-1996
+        let a = LibraryScannerTests.rom(title: "PRIMERO")
+        let b = LibraryScannerTests.rom(title: "SEGUNDO")
+        #expect(a.count == b.count)
+        try a.write(to: romURL)
+        try FileManager.default.setAttributes([.modificationDate: fixed], ofItemAtPath: romURL.path)
+        let store = LibraryStore(storage: NoBookmarkStorage(), cacheURL: cacheURL, knownDefaults: Self.defaults())
+        store.choose(folder: library)
+        await store.waitUntilIdle()
+        let fpA = try Self.coreFingerprint(a, console: .gameBoy)
+        #expect(store.entries.first?.fingerprint == fpA)
+
+        try b.write(to: romURL)
+        try FileManager.default.setAttributes([.modificationDate: fixed], ofItemAtPath: romURL.path)
+        store.refresh()
+        await store.waitUntilIdle()
+        let fpB = try Self.coreFingerprint(b, console: .gameBoy)
+        #expect(fpA != fpB)
+        #expect(store.entries.first?.modificationDate == fixed)
+        #expect(store.entries.first?.fingerprint == fpB)
     }
 
     /// Extremo a extremo con `LibraryStore`: la caché se persiste, se reutiliza en el siguiente

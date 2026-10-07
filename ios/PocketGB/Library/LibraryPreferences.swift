@@ -123,11 +123,18 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        guard let stored = try c.decodeIfPresent(Int.self, forKey: .version) else {
+        // Solo un archivo **sin** la clave `version` es del formato 1 (auditoría N1, H4): un
+        // `null`, un texto o un número menor que 2 no se migran ni se leen como formato 2.
+        guard c.contains(.version) else {
             self = Self.migrating(try LegacyV1(from: decoder))
             return
         }
-        version = max(stored, Self.currentVersion)
+        let stored = try c.decode(Int.self, forKey: .version)
+        guard stored >= Self.currentVersion else {
+            throw DecodingError.dataCorruptedError(forKey: .version, in: c,
+                                                   debugDescription: "Versión \(stored) no válida")
+        }
+        version = stored
         // Las colecciones se leen estrictas: si una no se entiende, todo el archivo se aparta
         // (cuarentena) en lugar de perderla en silencio. Cada juego tolera campos dañados.
         games = try c.decodeIfPresent([String: GameMetadata].self, forKey: .games) ?? [:]
@@ -251,6 +258,8 @@ final class LibraryPreferences {
         case unreadable(String)
         case newerVersion(Int)
         case writeFailed(String)
+        /// No se pudo copiar el archivo del formato 1 antes de migrarlo: no se toca (H10).
+        case migrationBackupFailed(String)
 
         var title: String {
             switch self {
@@ -258,6 +267,7 @@ final class LibraryPreferences {
             case .unreadable: "No se pudieron leer las preferencias"
             case .newerVersion: "Preferencias de una versión más nueva"
             case .writeFailed: "No se pudieron guardar las preferencias"
+            case .migrationBackupFailed: "No se pudieron actualizar las preferencias"
             }
         }
 
@@ -271,6 +281,8 @@ final class LibraryPreferences {
                 "Las guardó una versión más nueva de PocketGB. Se usan, pero no se modificarán: los cambios de esta sesión no se guardarán."
             case .writeFailed(let detail):
                 "Los últimos cambios de favoritos, nombres o ajustes por juego no se guardaron (\(detail)). Tus partidas no se ven afectadas."
+            case .migrationBackupFailed(let detail):
+                "PocketGB no pudo guardar una copia del archivo de favoritos, nombres y ajustes antes de pasarlo al formato nuevo (\(detail)). Se usan, pero no se modificarán: los cambios de esta sesión no se guardarán. Tus partidas no se tocan."
             }
         }
     }
@@ -318,10 +330,60 @@ final class LibraryPreferences {
         var migrated = false
     }
 
-    /// `version` del JSON (nil = formato 1, que no la tenía).
+    /// Formato del archivo, mirado **antes** de decodificarlo (auditoría N1, H2 y H4).
+    enum FileFormat: Equatable, Sendable {
+        /// No es un objeto JSON.
+        case notAnObject
+        /// Sin clave `version`: formato 1.
+        case legacy
+        case version(Int)
+        /// `version` existe pero no es un entero (`null`, texto, decimal, booleano).
+        case invalidVersion
+    }
+
+    nonisolated static func fileFormat(_ raw: Data) -> FileFormat {
+        guard let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return .notAnObject }
+        guard let value = object["version"] else { return .legacy }
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let version = value as? Int else { return .invalidVersion }
+        return .version(version)
+    }
+
+    /// `version` del JSON (nil = formato 1 o no válida).
     nonisolated static func fileVersion(_ raw: Data) -> Int? {
-        guard let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return nil }
-        return object["version"] as? Int
+        if case .version(let v) = fileFormat(raw) { return v }
+        return nil
+    }
+
+    /// Copia exacta del archivo del formato 1 antes de migrarlo: `preferences.v1.json` o, si ya
+    /// existe con otro contenido (p. ej. una copia a medias), `preferences.v1-<fecha>[-n].json`.
+    /// Nunca pisa nada y comprueba lo escrito; si falla, lanza y no se migra en disco (H10).
+    nonisolated static func backupLegacy(_ raw: Data, beside fileURL: URL, now: Date) throws -> URL {
+        let fm = FileManager.default
+        let dir = fileURL.deletingLastPathComponent()
+        var target = dir.appendingPathComponent("preferences.v1.json")
+        if fm.fileExists(atPath: target.path) {
+            if (try? Data(contentsOf: target)) == raw { return target }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyyMMdd-HHmmss"
+            let stamp = formatter.string(from: now)
+            target = dir.appendingPathComponent("preferences.v1-\(stamp).json")
+            var n = 2
+            while fm.fileExists(atPath: target.path) {
+                target = dir.appendingPathComponent("preferences.v1-\(stamp)-\(n).json")
+                n += 1
+            }
+        }
+        let tmp = target.appendingPathExtension("tmp")
+        try AtomicFile.writeSynced(raw, to: tmp)
+        guard !fm.fileExists(atPath: target.path) else {
+            try? fm.removeItem(at: tmp)
+            throw CocoaError(.fileWriteFileExists)
+        }
+        try AtomicFile.rename(tmp, target)
+        guard (try Data(contentsOf: target)) == raw else { throw CocoaError(.fileWriteUnknown) }
+        return target
     }
 
     /// `preferences.corrupt-<fecha>.json` libre (con `-2`, `-3`… si ya existe): nunca se pisa.
@@ -361,17 +423,22 @@ final class LibraryPreferences {
             // Error de E/S: no es motivo para apartar ni sobrescribir el archivo.
             return Loaded(issue: .unreadable(error.localizedDescription), blocked: true)
         }
-        let version = fileVersion(raw)
+        let format = fileFormat(raw)
+        // Versión más nueva: se lee lo que se entienda, sin apartar el archivo ni escribirlo,
+        // aunque esta versión no sepa decodificarlo (auditoría N1, H2).
+        if case .version(let version) = format, version > LibraryPreferencesData.currentVersion {
+            let decoded = (try? decoder.decode(LibraryPreferencesData.self, from: raw)) ?? LibraryPreferencesData()
+            return Loaded(data: decoded, issue: .newerVersion(version), blocked: true)
+        }
         do {
             let decoded = try decoder.decode(LibraryPreferencesData.self, from: raw)
-            if let version, version > LibraryPreferencesData.currentVersion {
-                return Loaded(data: decoded, issue: .newerVersion(version), blocked: true)
-            }
-            guard version == nil else { return Loaded(data: decoded) }
-            // Formato 1: copia del original antes de escribir el 2 (nunca se pisa una copia previa).
-            let backup = fileURL.deletingLastPathComponent().appendingPathComponent("preferences.v1.json")
-            if !fm.fileExists(atPath: backup.path) {
-                try? fm.copyItem(at: fileURL, to: backup)
+            guard format == .legacy else { return Loaded(data: decoded) }
+            // Formato 1: copia exacta del original antes de escribir el 2; si no se puede, no
+            // se migra en disco (se usa en memoria, sin escribir) y se avisa (H10).
+            do {
+                _ = try backupLegacy(raw, beside: fileURL, now: now)
+            } catch {
+                return Loaded(data: decoded, issue: .migrationBackupFailed(error.localizedDescription), blocked: true)
             }
             return Loaded(data: decoded, migrated: true)
         } catch {

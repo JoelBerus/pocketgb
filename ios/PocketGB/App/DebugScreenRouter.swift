@@ -81,6 +81,8 @@ enum DebugScreen: String, CaseIterable {
     case gameDetailsFolders = "game-details-folders"
     case gameDetailsFoldersAX5 = "game-details-folders-ax5"
     case libraryPreferencesQuarantined = "library-preferences-quarantined"
+    // Auditoría N1, H1: copia apartada (no rota) en Ajustes › Partidas › juego (`-demoSaveState slots`)
+    case settingsSaveBackups = "settings-save-backups"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -150,6 +152,9 @@ enum DebugScreenRouter {
         case .settingsSaves:
             state.selectedTab = .settings
             state.settingsPath = [.saves]
+        case .settingsSaveBackups:
+            state.selectedTab = .settings
+            state.settingsPath = [.saves, .backups(fingerprint: "demo-dmg-acid2")]
         case .gameSettings:
             state.libraryPath = [.details(id: demoFavorite, source: demoFavorite)]
             // Un juego de Game Boy con paleta personalizada (Global/Personalizado visibles).
@@ -275,6 +280,17 @@ enum DebugScreenRouter {
             try? StateStore(root: states, fingerprint: fp).save(Data(repeating: 7, count: 40_000), thumbnail: nil, to: .auto)
         }
         try? Data(repeating: 0, count: 23_000).write(to: artwork.appendingPathComponent("demo.png"))
+        // Fechas fijas (capturas deterministas) y, solo en su captura, una copia apartada (H1).
+        let dmg = SaveStore(directory: saves, fingerprint: "demo-dmg-acid2")
+        if DebugArguments.screen == DebugScreen.settingsSaveBackups.rawValue {
+            try? dmg.keepMirrorLoser(Data(repeating: 9, count: 8_192), now: Date(timeIntervalSince1970: 1_790_100_000))
+        }
+        let fixed: [(URL, TimeInterval)] = [(dmg.saveURL, 1_790_600_000), (dmg.backupURL(1), 1_790_500_000),
+                                            (dmg.backupURL(2), 1_790_400_000)]
+            + dmg.keptCopies().map { ($0.url, 1_790_100_000) }
+        for (url, time) in fixed {
+            try? fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: time)], ofItemAtPath: url.path)
+        }
         return (saves, states, artwork)
     }()
 

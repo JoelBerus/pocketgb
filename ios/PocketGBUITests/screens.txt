@@ -145,3 +145,5 @@ game-details-folders    portrait  light -screen game-details-folders -demoLibrar
 game-details-folders    portrait  dark  -screen game-details-folders -demoLibrary folders
 game-details-folders-ax5 portrait light -screen game-details-folders-ax5 -demoLibrary folders -contentSizeCategory accessibility5
 library-preferences-quarantined portrait light -screen library-preferences-quarantined -demoLibrary standard
+# Auditoría N1, H1: la partida que pierde frente a un .sav ajeno queda apartada y restaurable
+settings-save-backups   portrait  light -screen settings-save-backups -demoSaveState slots

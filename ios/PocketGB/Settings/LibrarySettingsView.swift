@@ -21,6 +21,22 @@ struct LibrarySettingsView: View {
                     Button("Volver a escanear", systemImage: "arrow.clockwise") { state.library.refresh() }
                         .disabled(state.library.isScanning)
                 }
+                if state.library.isHashing {
+                    // N1a: reconocer cada juego por su contenido (huella) en segundo plano.
+                    HStack(spacing: PocketSpacing.sm) {
+                        ProgressView()
+                        Text("Reconociendo juegos nuevos o movidos…")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("library-hashing")
+                }
+                if state.library.limitReached {
+                    Label("La carpeta es demasiado grande y no se leyó entera: más de \(LibraryScanner.maxEntries.formatted()) juegos o \(LibraryScanner.maxVisitedItems.formatted()) archivos y carpetas. Aparta lo que no uses en carpetas que empiecen por “_”.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(PocketColor.danger)
+                        .accessibilityIdentifier("library-limit-reached")
+                }
             } header: {
                 Text("Carpeta de juegos")
             } footer: {

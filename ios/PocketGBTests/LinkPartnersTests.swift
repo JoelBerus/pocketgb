@@ -55,6 +55,20 @@ struct LinkPartnersTests {
         #expect(LinkPartners.candidates(for: source, in: entries, prefs: LibraryPreferencesData()).count == 1)
     }
 
+    /// Auditoría N1, H9: la otra copia de un duplicado (misma huella) no se ofrece.
+    @Test func excludesDuplicatesOfTheSource() {
+        var source = Self.entry("A/rojo.gb", "Rojo")
+        source.fingerprint = "fp-rojo"
+        var copy = Self.entry("B/rojo.gb", "Rojo")
+        copy.fingerprint = "fp-rojo"
+        var other = Self.entry("azul.gb", "Azul")
+        other.fingerprint = "fp-azul"
+        let unknown = Self.entry("sin-huella.gb", "Sin huella")
+        let ids = LinkPartners.candidates(for: source, in: [source, copy, other, unknown],
+                                          prefs: LibraryPreferencesData()).map(\.id)
+        #expect(ids.sorted() == ["azul.gb", "sin-huella.gb"])
+    }
+
     @Test func titleOrderUsesTheAlias() {
         let entries = [Self.entry("x.gb", "Zeta"), Self.entry("y.gb", "Alfa")]
         var prefs = LibraryPreferencesData()
