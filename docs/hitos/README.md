@@ -56,7 +56,7 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 | N1 · Identidad y carpetas | ✅ iOS y Android fusionados (Opus: 2 vueltas cada uno, respondidas) |
 | N2 · Controles | ✅ iOS y Android fusionados (Opus APROBAR CON CAMBIOS, respondidas; reglas comunes) |
 | N3 · Biblioteca y detalle adaptables | ✅ iOS y Android fusionados (Opus, respondidas) |
-| N4 · Categorías, etiquetas e inicio | Android ✅ fusionado (Opus, respondida); iOS ⏳ en implementación |
+| N4 · Categorías, etiquetas e inicio | Android ✅ fusionado (Opus, respondida); iOS ✅ fusionado (Opus aprobada) |
 | N5 · Portadas | Android ✅ fusionado (auditoría Opus respondida); iOS pendiente |
 | N6 · Momentos y progreso | parcial: lector Pokémon en C fusionado (Opus, respondida); app pendiente |
 | N7 · Partidas que viajan | parcial: contenedor `.pgbm` en C con META v1 fusionado (Opus, respondida) |
