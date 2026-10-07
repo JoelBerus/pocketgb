@@ -187,3 +187,7 @@ n2-settings-controls-scrolled portrait dark swipe=up
 n2-settings-controls-ax5 portrait light fontScale=2.0 swipe=up
 n2-settings-diagonals-ax5 portrait light fontScale=2.0
 n2-settings-diagonals-ax5 portrait dark fontScale=2.0
+# N1 · respuesta a la auditoría: preferencias de otra versión (H2) y aviso de partida apartada (H5)
+library-prefs-read-only portrait light
+library-prefs-read-only portrait dark
+save-warning-set-aside portrait dark

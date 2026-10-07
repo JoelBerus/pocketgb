@@ -1,8 +1,13 @@
 package com.joelbermudez.pocketgb.debug.catalog
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import com.joelbermudez.pocketgb.debug.DebugIntent
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
@@ -12,10 +17,13 @@ import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.SavedGameUi
 import com.joelbermudez.pocketgb.ui.settings.SavesSettingsContent
 import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
+import com.joelbermudez.pocketgb.ui.gameplay.SaveLoadWarningDialog
+import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import com.joelbermudez.pocketgb.ui.library.GameActions
 import com.joelbermudez.pocketgb.ui.library.LibraryContent
 
@@ -83,8 +91,9 @@ private val n1Actions = GameActions(
 )
 
 @Composable
-private fun N1Library(layout: LibraryLayout) {
+private fun N1Library(layout: LibraryLayout, preferencesReadOnly: Boolean = false) {
     LibraryContent(
+        preferencesReadOnly = preferencesReadOnly,
         state = LibraryState.Ready(N1Data.entries, "Roms"),
         prefs = remember(layout) { N1Data.prefs(layout, rail = false) },
         query = "",
@@ -150,4 +159,12 @@ internal val n1CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("library-duplicates-list") { N1Library(LibraryLayout.LIST) }
     // Ajustes › Partidas: «Apartadas (no se borran solas)» con su botón Restaurar.
     put("saves-set-aside") { N1SavesSetAside() }
+    // N1-H2: preferences.json de otra versión: aviso fijo de que los cambios no se guardarán.
+    put("library-prefs-read-only") { N1Library(LibraryLayout.GRID, preferencesReadOnly = true) }
+    // N1-H5: aviso al abrir cuando el .sav junto al juego sustituyó a la partida local (diálogos de partida: oscuros, K4).
+    put("save-warning-set-aside") {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            PocketGBTheme(forceDark = true, dynamicColor = false) { SaveLoadWarningDialog(SaveLoadWarning.LocalSetAside) {} }
+        }
+    }
 }
