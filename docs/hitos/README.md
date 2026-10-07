@@ -60,5 +60,5 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 | N5 · Portadas | pendiente |
 | N6 · Momentos y progreso | parcial: lector Pokémon en C fusionado (Opus, respondida); app pendiente |
 | N7 · Partidas que viajan | parcial: contenedor `.pgbm` en C con META v1 fusionado (Opus, respondida) |
-| N8 · GBA en Android | capa nativa ✅ fusionada; Kotlin ⏳ en implementación |
+| N8 · GBA en Android | ✅ nativa y Kotlin fusionadas (auditoría Opus aprobada); pendiente prueba de Joel N8-1…8 |
 | N9 · Carpetas de Joel, guía y cierre | pendiente |
