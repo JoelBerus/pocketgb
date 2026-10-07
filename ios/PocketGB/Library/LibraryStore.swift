@@ -208,8 +208,9 @@ final class LibraryStore {
         let resolved = LibraryIdentity.resolve(result, cache: cache)
         entries = resolved.entries
         limitReached = found.limitReached
-        // N5A-2: con el escaneo completo, las copias de portadas de la carpeta que ya no se usan se purgan.
-        if !found.limitReached { onScanCompleted?(entries) }
+        // N5A-2 / N5iA-4: solo con la carpeta leída entera (accesible y sin errores) se purgan las copias
+        // de portadas de la carpeta que ya no se usan; un escaneo vacío por carpeta inaccesible no purga.
+        if found.complete { onScanCompleted?(entries) }
         scanProgress = nil
         persistCache()
         // Solo lo confirmado: una huella provisional (archivo cambiado o sin descargar) no

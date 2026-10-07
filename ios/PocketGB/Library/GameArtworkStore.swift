@@ -78,7 +78,8 @@ final class GameArtworkStore {
     nonisolated private static func readImage(_ url: URL, untrusted: Bool) -> UIImage? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         if untrusted {
-            return CoverDecoder.decode(data).map { UIImage(cgImage: $0) }
+            // Solo copias propias en PNG (N5iA-1): cualquier otra cosa en la carpeta se ignora.
+            return CoverDecoder.decode(data, formats: CoverFormat.stored).map { UIImage(cgImage: $0) }
         }
         return UIImage(data: data)
     }
@@ -112,18 +113,21 @@ final class GameArtworkStore {
     }
 
     /// N5: guarda una copia ya reducida (PNG de `CoverDecoder.reduce`) con su imagen decodificada.
-    /// Escritura atómica en la cola; `false` si no se pudo escribir.
+    /// Escritura atómica en la cola, fuera del hilo principal (N5iA-3); `false` si no se pudo escribir.
     @discardableResult
-    func saveEncoded(_ key: String, png: Data, image: UIImage) -> Bool {
+    func saveEncoded(_ key: String, png: Data, image: UIImage) async -> Bool {
         if let url = fileURL(for: key) {
-            let ok = queue.sync { () -> Bool in
-                do {
-                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                            withIntermediateDirectories: true)
-                    try png.write(to: url, options: .atomic)
-                    return true
-                } catch {
-                    return false
+            let queue = queue
+            let ok = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+                queue.async {
+                    do {
+                        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                                withIntermediateDirectories: true)
+                        try png.write(to: url, options: .atomic)
+                        done.resume(returning: true)
+                    } catch {
+                        done.resume(returning: false)
+                    }
                 }
             }
             guard ok else { return false }
@@ -207,6 +211,11 @@ final class GameArtworkStore {
     }
 
     #if DEBUG
+    /// Capturas: una imagen ya decodificada, solo en memoria.
+    func applyDemo(key: String, image: UIImage) {
+        images[key] = image
+    }
+
     /// Portada de demostración: arte abstracto generado, nunca material de un juego.
     func applyDemo(fingerprint: String) {
         if let cg = Self.makeImage(Self.demoPixels()) {

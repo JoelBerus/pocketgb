@@ -142,10 +142,17 @@ enum SidecarCover {
     }
 }
 
-/// Formatos aceptados, reconocidos por sus primeros bytes (nunca por la extensión). HEIC solo es
-/// diferencia con Android: Fotos guarda así las fotos del iPhone.
+/// Formatos reconocidos por sus primeros bytes (nunca por la extensión). HEIC solo se acepta al importar
+/// (diferencia con Android: Fotos guarda así las fotos del iPhone); la carpeta, como Android.
 enum CoverFormat: Sendable {
     case png, jpeg, webp, heic
+
+    /// Formatos de la imagen de la carpeta (y de cualquier lectura que no sea importar): como Android.
+    static let folder: Set<CoverFormat> = [.png, .jpeg, .webp]
+    /// Al importar (Fotos o Archivos) se acepta también HEIC (N5iA-1: solo aquí).
+    static let imported: Set<CoverFormat> = [.png, .jpeg, .webp, .heic]
+    /// Copias reducidas que guarda la app: siempre PNG.
+    static let stored: Set<CoverFormat> = [.png]
 }
 
 /// Reglas de la imagen como entrada no confiable (N5): tope de bytes, formato por firma, dimensiones
@@ -185,8 +192,11 @@ enum CoverImageRules {
 ///    reserva el mapa de bits entero) y copia PNG (sin pérdida; conserva la transparencia).
 /// Cualquier fallo devuelve `nil`: quien llama pasa a la siguiente fuente o a la portada generada.
 enum CoverDecoder {
-    static func decode(_ data: Data, maxSide: Int = CoverImageRules.targetSide) -> CGImage? {
-        guard !data.isEmpty, data.count <= CoverImageRules.maxBytes, CoverImageRules.sniff(data) != nil else { return nil }
+    /// `formats`: firmas aceptadas (por defecto las de la carpeta; HEIC solo al importar, N5iA-1).
+    static func decode(_ data: Data, formats: Set<CoverFormat> = CoverFormat.folder,
+                       maxSide: Int = CoverImageRules.targetSide) -> CGImage? {
+        guard !data.isEmpty, data.count <= CoverImageRules.maxBytes,
+              let format = CoverImageRules.sniff(data), formats.contains(format) else { return nil }
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, options),
               CGImageSourceGetCount(source) > 0,
@@ -215,8 +225,8 @@ enum CoverDecoder {
     }
 
     /// Copia reducida lista para guardar, o `nil` si la imagen no vale.
-    static func reduce(_ data: Data) -> Data? {
-        decode(data).flatMap(pngData)
+    static func reduce(_ data: Data, formats: Set<CoverFormat> = CoverFormat.folder) -> Data? {
+        decode(data, formats: formats).flatMap(pngData)
     }
 
     /// Lee como mucho `maxBytes` de `url` (lectura coordinada: una imagen de iCloud sin descargar se

@@ -36,6 +36,9 @@ enum LibraryScanner {
     struct ScanResult: Sendable {
         var entries: [RomEntry]
         var limitReached: Bool
+        /// N5iA-4: la carpeta se leyó entera (accesible, sin carpetas ilegibles ni ROMs ilegibles y sin tope).
+        /// Solo entonces se purgan las copias de portadas que ya no se usan.
+        var complete = false
     }
 
     /// - Parameter progress: se llama con (procesados, total) al avanzar.
@@ -58,7 +61,9 @@ enum LibraryScanner {
             progress(i + 1, found.candidates.count)
         }
         entries.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-        return ScanResult(entries: entries, limitReached: found.limitReached)
+        let complete = found.rootReadable && found.unreadableFolders == 0 && !found.limitReached
+            && !entries.contains { $0.problem == .unreadable }
+        return ScanResult(entries: entries, limitReached: found.limitReached, complete: complete)
     }
 
     struct Candidate: Equatable, Sendable {
@@ -76,6 +81,9 @@ enum LibraryScanner {
         var limitReached = false
         /// Elementos recorridos (para el tope `maxVisitedItems`).
         var visited = 0
+        /// N5iA-4: la carpeta raíz se pudo listar; carpetas que no.
+        var rootReadable = false
+        var unreadableFolders = 0
     }
 
     /// Archivos candidatos: la carpeta y sus subcarpetas hasta `maxFolderDepth` niveles.
@@ -98,9 +106,12 @@ enum LibraryScanner {
 
     private static func walk(_ directory: URL, folders: [String], limit: Int, visitLimit: Int,
                              into listing: inout Listing) {
-        guard !listing.limitReached,
-              let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)
-        else { return }
+        guard !listing.limitReached else { return }
+        guard let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else {
+            listing.unreadableFolders += 1
+            return
+        }
+        if folders.isEmpty { listing.rootReadable = true }
         // Orden estable: con el tope, siempre quedan fuera los mismos.
         let sorted = items.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .literal) == .orderedAscending }
         let prefix = folders.isEmpty ? "" : folders.joined(separator: "/") + "/"

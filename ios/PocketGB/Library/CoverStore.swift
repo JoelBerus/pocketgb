@@ -34,7 +34,16 @@ final class CoverStore {
     /// Claves que se están leyendo: dos tarjetas del mismo juego no leen la imagen a la vez.
     @ObservationIgnored private var readingFolder: Set<String> = []
     @ObservationIgnored private let readFolderImage: @Sendable (URL) -> Data?
-    private let queue = DispatchQueue(label: "PocketGB.covers", qos: .utility)
+    /// Lecturas de imágenes de la carpeta: concurrentes con límite (N5iA-2), para que una descarga lenta de
+    /// iCloud no bloquee las demás portadas.
+    @ObservationIgnored private let readers: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "PocketGB.covers.folder"
+        queue.maxConcurrentOperationCount = CoverStore.maxConcurrentFolderReads
+        queue.qualityOfService = .utility
+        return queue
+    }()
+    nonisolated static let maxConcurrentFolderReads = 3
 
     init(captures: GameArtworkStore, pinned: GameArtworkStore, imported: GameArtworkStore,
          folderCache: GameArtworkStore, settingsURL: URL?,
@@ -136,15 +145,15 @@ final class CoverStore {
         }
         guard !folderCache.missing.contains(key), readingFolder.insert(key).inserted else { return }
         let read = readFolderImage
-        queue.async {
-            let png = read(url).flatMap(CoverDecoder.reduce)
+        readers.addOperation {
+            let png = read(url).flatMap { CoverDecoder.reduce($0, formats: CoverFormat.folder) }
             let image = png.flatMap { UIImage(data: $0) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.readingFolder.remove(key)
-                if let png, let image {
-                    self.folderCache.saveEncoded(key, png: png, image: image)
+                if let png, let image, await self.folderCache.saveEncoded(key, png: png, image: image) {
+                    self.readingFolder.remove(key)
                 } else {
+                    self.readingFolder.remove(key)
                     self.failedFolder.insert(key)
                 }
             }
@@ -164,10 +173,10 @@ final class CoverStore {
     /// la copia y elige «Imagen». `false` si la imagen no vale o no se pudo guardar (no cambia nada).
     func importImage(_ data: Data, fingerprint: String) async -> Bool {
         let reduced = await Task.detached(priority: .userInitiated) { () -> (Data, UIImage)? in
-            guard let png = CoverDecoder.reduce(data), let image = UIImage(data: png) else { return nil }
+            guard let png = CoverDecoder.reduce(data, formats: CoverFormat.imported), let image = UIImage(data: png) else { return nil }
             return (png, image)
         }.value
-        guard let (png, image) = reduced, imported.saveEncoded(fingerprint, png: png, image: image) else { return false }
+        guard let (png, image) = reduced, await imported.saveEncoded(fingerprint, png: png, image: image) else { return false }
         setChoice(.image, for: fingerprint)
         return true
     }
@@ -215,18 +224,18 @@ final class CoverStore {
     }
 
     func waitForPendingWork() {
-        queue.sync {}
+        readers.waitUntilAllOperationsAreFinished()
         for store in [captures, pinned, imported, folderCache] { store.waitForPendingWork() }
     }
 
     #if DEBUG
     /// Capturas: guarda en memoria una imagen pintada en código como importada o como imagen de la carpeta.
     func applyDemo(imported image: UIImage, fingerprint: String) {
-        imported.saveEncoded(fingerprint, png: Data(), image: image)
+        imported.applyDemo(key: fingerprint, image: image)
     }
 
     func applyDemo(folder image: UIImage, entry: RomEntry) {
-        if let key = Self.folderKey(entry) { folderCache.saveEncoded(key, png: Data(), image: image) }
+        if let key = Self.folderKey(entry) { folderCache.applyDemo(key: key, image: image) }
     }
 
     func applyDemo(settings: CoverSettings) {

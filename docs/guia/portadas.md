@@ -28,7 +28,7 @@ GMRoms/
 - Si en la carpeta hay **un solo juego**, también vale `portada.*` o `cover.*`.
 - Si hay varias imágenes con el mismo nombre, gana `.png`; después, `.jpg`, `.jpeg` y `.webp`.
 - Cuando la copies, usa **Volver a escanear** (Ajustes › Biblioteca) o vuelve a abrir la app.
-- Al buscar juegos, la app no abre las imágenes: solo mira sus nombres. La primera vez que una portada aparece en pantalla, la app lee la imagen y guarda una copia reducida. Si está en iCloud y no se ha descargado, se descarga solo esa imagen. No se vuelve a leer mientras no cambie. Si la quitas o la cambias, la copia vieja se borra en el siguiente escaneo.
+- Al buscar juegos, la app no abre las imágenes: solo mira sus nombres. La primera vez que una portada aparece en pantalla, la app lee la imagen y guarda una copia reducida. Si está en iCloud y no se ha descargado, se descarga solo esa imagen. Por eso **ver la biblioteca puede descargar portadas de iCloud** (las de los juegos que aparecen en pantalla, como mucho tres a la vez). Si no quieres que se descarguen, elige «Captura» o «Generada» para esos juegos o quita las imágenes de la carpeta. No se vuelve a leer mientras no cambie. Si la quitas o la cambias, la copia vieja se borra en el siguiente escaneo.
 
 ### Imagen importada
 
