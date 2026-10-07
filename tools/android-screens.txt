@@ -286,3 +286,4 @@ n8-editor portrait dark
 n8-editor-landscape landscape dark
 n8-states portrait dark
 n8-settings-warning portrait dark
+n8-details-technical portrait light

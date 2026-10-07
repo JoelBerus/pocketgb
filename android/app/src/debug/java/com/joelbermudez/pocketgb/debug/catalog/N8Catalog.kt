@@ -182,7 +182,7 @@ private fun N8Library(initialFilter: LibraryFilter = LibraryFilter.ALL, preset: 
 }
 
 @Composable
-private fun N8Details(entry: RomEntry = N8Data.emerald) {
+private fun N8Details(entry: RomEntry = N8Data.emerald, infoScroll: Int = 0) {
     N8Frame {
         GameDetailsContent(
             entry = entry,
@@ -197,9 +197,13 @@ private fun N8Details(entry: RomEntry = N8Data.emerald) {
             onOpenSettings = {},
             onRename = {},
             canResume = true,
+            initialInfoScroll = infoScroll,
         )
     }
 }
+
+/** Desplazamiento (px a densidad 2,0 del AVD de capturas) que deja arriba la sección «Partida, reloj y BIOS». */
+private const val GBA_SECTION_SCROLL = 1250
 
 @Composable
 private fun N8Center(overrides: GameOverrides = GameOverrides(), scrolled: Boolean = false) {
@@ -226,7 +230,7 @@ private fun N8Center(overrides: GameOverrides = GameOverrides(), scrolled: Boole
             onOpenSaves = {},
             onHide = {},
         ),
-        initialScroll = if (scrolled) Int.MAX_VALUE / 2 else 0,
+        initialScroll = if (scrolled) GBA_SECTION_SCROLL else 0,
         gbaInfo = GbaSettingsInfo(detectedMedia = "Flash 128 KiB", detectedRtc = true, biosStatus = GbaBiosStatus.ABSENT),
     )
 }
@@ -259,6 +263,8 @@ internal val n8CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     // Detalle de un juego de GBA: imagen 3:2, tipo de partida detectado, código del juego y reloj.
     put("n8-details") { N8Details() }
     put("n8-details-landscape") { N8Details() }
+    // Desplazado: «Información técnica» con el tipo de partida detectado, el código del juego y el reloj.
+    put("n8-details-technical") { N8Details(infoScroll = Int.MAX_VALUE / 2) }
     // Centro de ajustes del juego de GBA: tipo de partida, reloj y BIOS (todo detectado / personalizado).
     put("n8-game-center") { N8Center(scrolled = true) }
     put("n8-game-center-custom") {

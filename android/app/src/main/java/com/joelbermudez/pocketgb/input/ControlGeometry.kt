@@ -80,7 +80,8 @@ data class ControlLayout(
          * Disposición de fábrica. Game Boy: imagen 10:9. Game Boy Advance ([shoulders], = iOS `ControlsLayout.defaults(_,
          * shoulders: true)`): imagen 3:2, más ancha y más baja. En vertical, L y R en las esquinas superiores de la zona
          * de controles, sobre la cruceta y sobre A/B; en horizontal, la cruceta (al 0,6), A, B, Start y Select en los
-         * márgenes laterales de la imagen y L/R arriba en esos márgenes.
+         * márgenes laterales de la imagen y L/R arriba en esos márgenes. Diferencia con iOS: en horizontal L/R bajan de
+         * y = 0,1 a 0,26 porque en Android la pausa y la velocidad (HUD) ocupan la esquina superior derecha y taparían R.
          */
         fun defaults(orientation: ControlsOrientation, shoulders: Boolean = false): ControlLayout =
             if (shoulders) gbaDefaults(orientation) else gbDefaults(orientation)
@@ -97,12 +98,15 @@ data class ControlLayout(
                     ControlId.START to NormalizedPoint(0.94f, 0.93f),
                     ControlId.SELECT to NormalizedPoint(0.065f, 0.93f),
                     ControlId.MENU to NormalizedPoint(0.5f, 0.06f),
-                    ControlId.L to NormalizedPoint(0.065f, 0.1f),
-                    ControlId.R to NormalizedPoint(0.94f, 0.1f),
+                    ControlId.L to NormalizedPoint(0.065f, GBA_LANDSCAPE_SHOULDER_Y),
+                    ControlId.R to NormalizedPoint(0.94f, GBA_LANDSCAPE_SHOULDER_Y),
                 ),
                 scales = mapOf(ControlId.DPAD to 0.6f, ControlId.L to 0.9f, ControlId.R to 0.9f),
             )
         }
+
+        /** Altura de L/R en GBA horizontal: por debajo del HUD de pausa y velocidad (esquina superior derecha). */
+        const val GBA_LANDSCAPE_SHOULDER_Y = 0.26f
 
         private fun gbDefaults(orientation: ControlsOrientation): ControlLayout = when (orientation) {
             ControlsOrientation.PORTRAIT -> ControlLayout(

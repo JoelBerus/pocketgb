@@ -21,8 +21,9 @@ class ControlsGbaLayoutTest {
         assertEquals(NormalizedPoint(0.83f, 0.14f), portrait.centers[ControlId.R])
         assertEquals("el resto, como en Game Boy", ControlLayout.defaults(ControlsOrientation.PORTRAIT).centers, portrait.centers - ControlId.L - ControlId.R)
         val landscape = ControlLayout.defaults(ControlsOrientation.LANDSCAPE, shoulders = true)
-        assertEquals(NormalizedPoint(0.065f, 0.1f), landscape.centers[ControlId.L])
-        assertEquals(NormalizedPoint(0.94f, 0.1f), landscape.centers[ControlId.R])
+        // iOS los pone a y = 0,1; en Android bajan a 0,26 para no quedar bajo el HUD (pausa y velocidad, arriba a la derecha).
+        assertEquals(NormalizedPoint(0.065f, 0.26f), landscape.centers[ControlId.L])
+        assertEquals(NormalizedPoint(0.94f, 0.26f), landscape.centers[ControlId.R])
         assertEquals(0.6f, landscape.scale(ControlId.DPAD), 0f)
         assertEquals(0.9f, landscape.scale(ControlId.L), 0f)
         assertFalse(ControlId.L in ControlLayout.defaults(ControlsOrientation.LANDSCAPE).centers)
@@ -46,6 +47,17 @@ class ControlsGbaLayoutTest {
             assertTrue(l.centerX < g.frames.getValue(ControlId.R).centerX)
             assertTrue(l.centerY < g.frames.getValue(ControlId.A).centerY)
         }
+    }
+
+    @Test
+    fun inLandscapeRStaysClearOfTheHudAndOfA() {
+        // Teléfono horizontal de 360 dp de alto: el HUD (48 dp + 8 de margen) ocupa la esquina superior derecha.
+        val area = ControlBounds(0f, 0f, 800f, 360f)
+        val g = geometry(ControlsOrientation.LANDSCAPE, area)
+        val r = g.frames.getValue(ControlId.R)
+        assertTrue("R bajo el HUD (${r.top})", r.top >= 64f)
+        assertTrue("R sobre A", r.bottom <= g.frames.getValue(ControlId.A).top)
+        assertTrue("L sobre la cruceta", g.frames.getValue(ControlId.L).bottom <= g.frames.getValue(ControlId.DPAD).top)
     }
 
     @Test
