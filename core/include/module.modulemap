@@ -1,4 +1,5 @@
 module PocketGBCore {
     header "pocketgb.h"
+    header "pocketgb_progress.h"
     export *
 }

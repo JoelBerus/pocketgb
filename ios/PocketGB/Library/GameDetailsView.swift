@@ -72,6 +72,7 @@ struct GameDetailsView: View {
                 primaryAction(entry)
                 linkAction(entry)
                 secondaryActions(entry)
+                progressSection(entry)
                 technicalSection(entry)
                 hideAction()
             }
@@ -95,6 +96,7 @@ struct GameDetailsView: View {
                     stats(entry)
                     linkAction(entry)
                     secondaryActions(entry)
+                    progressSection(entry)
                     technicalSection(entry)
                     hideAction()
                 }
@@ -462,7 +464,14 @@ struct GameDetailsView: View {
         }
     }
 
-    /// Favorito, estados y ajustes. Si no caben en una fila (AX5 o la columna estrecha del
+    /// N6 · progreso (tiempo, hitos, lector Pokémon), con la huella confirmada.
+    @ViewBuilder private func progressSection(_ entry: RomEntry) -> some View {
+        if let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry) {
+            GameProgressSection(entry: entry, fingerprint: fingerprint)
+        }
+    }
+
+    /// Favorito, momentos y ajustes. Si no caben en una fila (AX5 o la columna estrecha del
     /// horizontal), van en columna: nunca se recortan.
     private func secondaryActions(_ entry: RomEntry) -> some View {
         GlassEffectContainer(spacing: PocketSpacing.xs) {
@@ -483,21 +492,28 @@ struct GameDetailsView: View {
         } label: {
             Label("Favorito", systemImage: favorite ? "star.fill" : "star")
                 .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
                 .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
         }
         .accessibilityLabel(favorite ? "Quitar de favoritos" : "Añadir a favoritos")
-        Button {} label: {
-            Label("Estados", systemImage: "square.stack")
+        let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry)
+        Button {
+            if let fingerprint { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
+        } label: {
+            Label("Momentos", systemImage: "bookmark")
                 .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
                 .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
         }
-        .disabled(true)
-        .accessibilityHint("Próximamente")
+        .disabled(fingerprint == nil)
+        .accessibilityHint(fingerprint == nil ? "Disponible cuando se haya leído el juego" : "")
+        .accessibilityIdentifier("game-details-moments-button")
         Button {
             state.gameSettingsEntry = entry
         } label: {
             Label("Ajustes", systemImage: "slider.horizontal.3")
                 .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
                 .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
         }
         .accessibilityLabel("Ajustes del juego")
@@ -532,8 +548,9 @@ struct GameContextMenu: View {
             state.libraryPrefs.toggleFavorite(entry)
         }
         Button("Renombrar", systemImage: "pencil") { state.renamingEntry = entry }
-        Button("Estados (próximamente)", systemImage: "square.stack") {}
-            .disabled(true)
+        if let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry) {
+            Button("Momentos", systemImage: "bookmark") { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
+        }
         Button("Ajustes del juego", systemImage: "slider.horizontal.3") { state.gameSettingsEntry = entry }
         Divider()
         Button("Ocultar de PocketGB", systemImage: "eye.slash", role: .destructive) {

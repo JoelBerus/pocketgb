@@ -9,13 +9,17 @@ enum GameCenterRoute: Hashable {
     case saves(fingerprint: String)
     /// N5 · Portada (por la huella confirmada).
     case cover(fingerprint: String)
+    /// N6 · Momentos del juego (sin abrirlo).
+    case moments(fingerprint: String)
+    /// N6 · Progreso: hitos, plantilla, porcentaje y lector Pokémon.
+    case progress(fingerprint: String)
 }
 
 /// N4 · centro de ajustes del juego (sustituye a la hoja de ajustes por juego): todo lo que la app
 /// recuerda de un juego, sin tocar sus archivos. Desde el detalle («Ajustes») y el menú contextual
 /// («Ajustes del juego»); la pausa sigue sin él (decisión de N4 Android).
 /// - Nombre (alias), Categoría (virtual, ND3: «Cambiar» y «Volver a su carpeta»), Etiquetas.
-/// - Portada (N5): qué se elige y qué se ve, con «Cambiar». Progreso y momentos (N6): «Próximamente».
+/// - Portada (N5): qué se elige y qué se ve, con «Cambiar». Progreso y momentos (N6).
 /// - Partida: las copias de este juego (lo mismo que Ajustes › Partidas).
 /// - Color y paleta (GB) o tipo de partida, reloj y BIOS (GBA), como antes.
 /// - Ocultar, con confirmación.
@@ -74,7 +78,7 @@ struct GameCenterView: View {
                 identitySection(entry)
                 organizationSection(entry)
                 coverSection(entry)
-                comingSoonSection
+                progressSection(entry)
                 saveSection(entry)
                 GameEmulationSections(entry: entry)
                 Section {
@@ -103,6 +107,8 @@ struct GameCenterView: View {
                 case .tags: TagEditorView(entryID: entry.id)
                 case .saves(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
                 case .cover(let fingerprint): CoverCenterView(entryID: entry.id, fingerprint: fingerprint)
+                case .moments(let fingerprint): MomentsView(context: .detail(entryID: entry.id, fingerprint: fingerprint))
+                case .progress(let fingerprint): ProgressEditorView(entryID: entry.id, fingerprint: fingerprint)
                 }
             }
             .alert("¿Ocultar “\(prefs.displayTitle(entry))”?", isPresented: $confirmingHide) {
@@ -336,25 +342,42 @@ struct GameCenterView: View {
         }
     }
 
-    private var comingSoonSection: some View {
+    /// N6 · Momentos y Progreso (por la huella confirmada).
+    @ViewBuilder private func progressSection(_ entry: RomEntry) -> some View {
+        let fingerprint = prefs.confirmedFingerprint(of: entry)
         Section {
-            comingSoon("Progreso y momentos", systemImage: "flag.checkered")
+            if let fingerprint {
+                NavigationLink(value: GameCenterRoute.moments(fingerprint: fingerprint)) {
+                    Label("Momentos", systemImage: "bookmark")
+                }
+                .accessibilityIdentifier("game-center-moments")
+                NavigationLink(value: GameCenterRoute.progress(fingerprint: fingerprint)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Progreso", systemImage: "flag.checkered")
+                        Text(ProgressSummary.line(state.progress.progress(fingerprint)))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                .accessibilityIdentifier("game-center-progress")
+            } else {
+                ForEach([("Momentos", "bookmark"), ("Progreso", "flag.checkered")], id: \.0) { title, icon in
+                    LabeledContent {
+                        Text(confirmation == .unavailable ? "No disponible" : "Leyendo el juego…")
+                    } label: {
+                        Label(title, systemImage: icon)
+                    }
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                }
+            }
         } header: {
-            Text("Próximamente")
+            Text("Momentos y progreso")
+        } footer: {
+            Text("Los momentos guardan un instante exacto del juego; el progreso, tu tiempo de juego y los hitos que marques. Solo en este iPhone.")
         }
-    }
-
-    private func comingSoon(_ title: String, systemImage: String) -> some View {
-        LabeledContent {
-            Text("Próximamente")
-        } label: {
-            Label(title, systemImage: systemImage)
-        }
-        .foregroundStyle(.secondary)
-        .disabled(true)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityValue("No disponible todavía")
     }
 
     @ViewBuilder private func saveSection(_ entry: RomEntry) -> some View {

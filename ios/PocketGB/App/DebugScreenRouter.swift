@@ -166,6 +166,21 @@ enum DebugScreen: String, CaseIterable {
     case n5Pause = "n5-pause"
     case n5SettingsLibrary = "n5-settings-library"
     case n5SettingsStorage = "n5-settings-storage"
+    // N6 (iOS): momentos y progreso (`-demoMoments rich`, `-demoLibrary n5`; ver `applyN6`)
+    case n6MomentsPause = "n6-moments-pause"
+    case n6MomentsDetail = "n6-moments-detail"
+    case n6MomentsPauseLoad = "n6-moments-pause-load"
+    case n6MomentsPauseRecover = "n6-moments-pause-recover"
+    case n6MomentsPauseNew = "n6-moments-pause-new"
+    case n6MomentsDetailFilter = "n6-moments-detail-filter"
+    case n6MomentsDetailInstall = "n6-moments-detail-install"
+    case n6MomentsDetailLoad = "n6-moments-detail-load"
+    case n6MomentsAX5 = "n6-moments-ax5"
+    case n6MomentEdit = "n6-moment-edit"
+    case n6ProgressDetails = "n6-progress-details"
+    case n6ProgressEditor = "n6-progress-editor"
+    case n6ProgressAX5 = "n6-progress-ax5"
+    case n6LibraryPercent = "n6-library-percent"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -317,6 +332,7 @@ enum DebugScreenRouter {
         applyAdaptive(screen, to: state)
         applyN4(screen, to: state)
         applyN5(screen, to: state)
+        applyN6(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -347,14 +363,19 @@ enum DebugScreenRouter {
                 try? await Task.sleep(for: .seconds(2))
                 state.switchLinkSide()
             }
-        case .saveStates, .loadStateConfirm, .replaceStateConfirm:
+        case .n6MomentsPause, .n6MomentsPauseLoad, .n6MomentsPauseRecover, .n6MomentsPauseNew:
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
                 state.pauseGame()
-                state.pausePath = [.states]
+                state.pausePath = [.moments]
+            }
+        case .saveStates, .loadStateConfirm, .replaceStateConfirm:
+            // N6: las ranuras pasan a momentos; estas capturas abren la pantalla de Momentos (con las ranuras de
+            // demostración ya migradas). `replace-state-confirm` ya no existe como tal: muestra la misma pantalla.
+            Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
-                if screen == .loadStateConfirm { state.pendingStateLoad = .manual1 }
-                if screen == .replaceStateConfirm { state.pendingStateReplace = .manual2 }
+                state.pauseGame()
+                state.pausePath = [.moments]
             }
         default:
             break
@@ -593,8 +614,8 @@ extension DebugScreenRouter {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
             state.pauseGame()
-            state.saveState(to: .manual1)
-            state.pausePath = [.states]
+            state.createMoment(name: "Momento 1")
+            state.pausePath = [.moments]
         }
     }
 
@@ -764,6 +785,156 @@ extension DebugScreenRouter {
         state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
     }
 }
+// MARK: - N6 (iOS): momentos y progreso
+
+extension DebugScreenRouter {
+    nonisolated static let n6Pokemon = "Homebrew/lector-pokemon-sintetico.gb"
+    nonisolated(unsafe) private static var demoMomentRoot: URL?
+
+    /// `-momentsOpen load|new|edit|install|filter`: lo que la pantalla de Momentos abre al aparecer (capturas).
+    static var momentsOpen: String? { DebugArguments.value("-momentsOpen") }
+
+    /// `-demoMoments rich`: momentos de demostración en una carpeta temporal por arranque (cualquier huella):
+    /// tres momentos en dos colecciones con etiquetas y nota, uno sin colección, una ranura migrada y dos entradas
+    /// en «Antes de cargar». Estados de mentira («PGBS-demo»: no cargan) y miniaturas pintadas en código.
+    static func demoMomentStore(fingerprint: String) -> MomentStore? {
+        guard DebugArguments.value("-demoMoments") == "rich" else { return nil }
+        if demoMomentRoot == nil {
+            demoMomentRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent("demo-moments-\(UUID().uuidString)", isDirectory: true)
+        }
+        guard let root = demoMomentRoot else { return nil }
+        var store = MomentStore(root: root, fingerprint: fingerprint)
+        if FileManager.default.fileExists(atPath: store.directory.path) { return store }
+        let base = GameArtworkStore.demoPixels()
+        func thumb(_ shift: Int) -> Data? {
+            var pixels = base
+            for y in 0..<FrameBuffers.height {
+                for x in 0..<FrameBuffers.width {
+                    pixels[y * FrameBuffers.width + x] = base[y * FrameBuffers.width + (x + shift) % FrameBuffers.width]
+                }
+            }
+            return AppState.thumbnail(pixels)
+        }
+        let state = Data("PGBS-demo".utf8)
+        let sram = Data(repeating: 0x5A, count: 8_192)
+        let gb = ["console": "gb", "model": "dmg", "palette": "0"]
+        let items: [(String, String, [String], String?, String, TimeInterval, TimeInterval, Int, [String: String])] = [
+            ("m1", "Antes del jefe", ["jefe"], "Principal", "Con 3 pociones y el nivel justo.", 1_790_600_000, 4 * 3600 + 300, 20, gb),
+            ("m2", "Probar otro camino", ["experimento", "jefe"], "Experimentos", "", 1_790_500_000, 3 * 3600, 60, gb),
+            ("m3", "Con la otra paleta", ["experimento"], "Experimentos", "", 1_790_400_000, 2 * 3600 + 900, 100,
+             ["console": "gb", "model": "cgb", "palette": "3"]),
+            ("m4", "Entrada a la cueva", [], nil, "", 1_790_300_000, 3600, 140, gb),
+        ]
+        for item in items {
+            store.newID = { item.0 }
+            _ = try? store.create(.init(state: state, sram: sram, thumbnail: thumb(item.7)), name: item.1, config: item.8,
+                                  playTime: item.6, tags: item.2, collection: item.3, note: item.4,
+                                  created: Date(timeIntervalSince1970: item.5))
+        }
+        let ring: [(String, String, TimeInterval, Bool)] = [("b1", "Antes de cargar «Antes del jefe»", 1_790_700_000, true),
+                                                           ("b2", "Antes de recuperar", 1_790_650_000, false)]
+        for (i, entry) in ring.enumerated() {
+            store.newID = { entry.0 }
+            store.now = { Date(timeIntervalSince1970: entry.2) }
+            _ = try? store.pushBeforeLoad(.init(state: entry.3 ? state : nil, sram: sram, thumbnail: entry.3 ? thumb(180 + i) : nil),
+                                          label: entry.1, config: gb)
+        }
+        store.newID = { "m5" }
+        _ = try? store.create(.init(state: state, sram: nil, thumbnail: nil), name: "Ranura 1",
+                              created: Date(timeIntervalSince1970: 1_790_100_000))
+        return MomentStore(root: root, fingerprint: fingerprint)
+    }
+
+    /// Partida sintética de 1.ª generación construida byte a byte (nunca una real): nombre «PRUEBA», 3 medallas,
+    /// 24 capturados, 40 vistos, 12 h 34 min, 3.456 ₽. Offsets de docs/03-core-spec.md §Lector de progreso Pokémon.
+    static func syntheticGen1Save() -> Data {
+        var sav = Data(repeating: 0, count: 0x8000)
+        let name: [UInt8] = [0x8F, 0x91, 0x94, 0x84, 0x81, 0x80, 0x50]   // PRUEBA + fin
+        sav.replaceSubrange(0x2598..<(0x2598 + name.count), with: name)
+        func bits(_ at: Int, _ n: Int) { for i in 0..<n { sav[at + i / 8] |= UInt8(1 << (i % 8)) } }
+        bits(0x25A3, 24)
+        bits(0x25B6, 40)
+        sav[0x25F3] = 0x00; sav[0x25F4] = 0x34; sav[0x25F5] = 0x56
+        sav[0x2602] = 0b0000_0111
+        sav[0x2CED] = 12; sav[0x2CEF] = 34; sav[0x2CF0] = 5
+        var sum: UInt8 = 0
+        for i in 0x2598..<0x3523 { sum &+= sav[i] }
+        sav[0x3523] = ~sum
+        return sav
+    }
+
+    static func syntheticGen1Header() -> Data {
+        var h = Data(repeating: 0, count: ProgressLibrary.headerBytes)
+        let title = Array("POKEMON RED".utf8)
+        h.replaceSubrange(0x134..<(0x134 + title.count), with: title)
+        h[0x14A] = 1
+        return h
+    }
+
+    /// `-demoMoments rich` en el detalle: partidas de demostración (la del lector, sintética) en una carpeta temporal.
+    static let demoN6Saves: URL? = {
+        guard DebugArguments.value("-demoMoments") == "rich", DebugArguments.demoLibrary == "n5" else { return nil }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("demo-n6-saves-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? SaveStore(directory: dir, fingerprint: "demo-pokemon").save(syntheticGen1Save())
+        try? SaveStore(directory: dir, fingerprint: "demo-dmg-acid2").save(Data(repeating: 0x5A, count: 8_192))
+        return dir
+    }()
+
+    static func applyN6(_ screen: DebugScreen, to state: AppState) {
+        guard DebugArguments.demoLibrary == "n5", DebugArguments.value("-demoMoments") == "rich" else { return }
+        var entries = state.library.entries
+        var e = RomEntry(id: n6Pokemon, url: URL(fileURLWithPath: "/demo/\(n6Pokemon)"), fileName: "lector-pokemon-sintetico.gb",
+                         title: "LECTOR (SINTÉTICO)", isColor: false, sizeBytes: 32_768, headerChecksumOK: true,
+                         cloud: .current, problem: nil, mirrorSaveDate: Date(timeIntervalSince1970: 1_790_000_000))
+        e.fingerprint = "demo-pokemon"
+        e.fingerprintVerified = true
+        entries.append(e)
+        state.library.applyDemo(phase: state.library.phase, entries: entries)
+        var dmg = GameProgress()
+        dmg.playTime = 4 * 3600 + 25 * 60
+        dmg.sessions = 7
+        dmg.firstPlayed = Date(timeIntervalSince1970: 1_789_000_000)
+        dmg.lastPlayed = Date(timeIntervalSince1970: 1_790_600_000)
+        dmg.template = .free
+        dmg.milestones = [Milestone(id: "h1", title: "Primer jefe", done: true),
+                          Milestone(id: "h2", title: "Segundo mundo", done: true),
+                          Milestone(id: "h3", title: "Final"), Milestone(id: "h4", title: "Todo al 100 %")]
+        dmg.showPercent = true
+        state.progress.seed("demo-dmg-acid2", dmg)
+        var poke = GameProgress()
+        poke.playTime = 12 * 3600 + 40 * 60
+        poke.sessions = 15
+        poke.firstPlayed = Date(timeIntervalSince1970: 1_788_000_000)
+        poke.lastPlayed = Date(timeIntervalSince1970: 1_790_650_000)
+        poke.template = .pokemon
+        poke.milestones = MilestoneTemplate.pokemon.titles.enumerated().map {
+            Milestone(id: "p\($0.offset)", title: $0.element, done: $0.offset == 0)
+        }
+        poke.romHeader = syntheticGen1Header()
+        state.progress.seed("demo-pokemon", poke)
+
+        let imported = state.library.entries.first { $0.id == "Acid/dmg-acid2.gb" }
+        let pokemon = state.library.entries.first { $0.id == n6Pokemon }
+        switch screen {
+        case .n6MomentsDetail, .n6MomentsAX5, .n6MomentEdit, .n6MomentsDetailFilter, .n6MomentsDetailInstall,
+             .n6MomentsDetailLoad:
+            state.libraryPath = [.details(id: "Acid/dmg-acid2.gb", source: "Acid/dmg-acid2.gb")]
+            if let imported { state.showGameCenter(imported, at: .moments(fingerprint: "demo-dmg-acid2")) }
+        case .n6LibraryPercent:
+            state.libraryFilter = .gb   // cuadrícula con tarjetas (el porcentaje va en su línea de metadatos)
+        case .n6ProgressDetails:
+            state.libraryPath = [.details(id: n6Pokemon, source: n6Pokemon)]
+        case .n6ProgressEditor, .n6ProgressAX5:
+            state.libraryPath = [.details(id: n6Pokemon, source: n6Pokemon)]
+            if let pokemon { state.showGameCenter(pokemon, at: .progress(fingerprint: "demo-pokemon")) }
+        default:
+            break
+        }
+    }
+}
+
 // MARK: - N5 (iOS): portadas
 
 extension DebugScreenRouter {

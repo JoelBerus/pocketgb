@@ -47,7 +47,7 @@ struct PauseView: View {
                             state.resumeKeepingEditorPaused()
                         }
                     } footer: {
-                        Text("Con el cable link no hay estados guardados: cargar uno en un juego rompería la conexión con el otro. Cada juego guarda su partida sola.")
+                        Text("Con el cable link no hay momentos: cargar uno en un juego rompería la conexión con el otro. Cada juego guarda su partida sola.")
                     }
                     Section {
                         Button("Salir del cable", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -59,9 +59,10 @@ struct PauseView: View {
                     }
                 } else {
                     Section {
-                        NavigationLink(value: PauseRoute.states) {
-                            Label("Estados guardados", systemImage: "square.stack")
+                        NavigationLink(value: PauseRoute.moments) {
+                            Label("Momentos", systemImage: "bookmark")
                         }
+                        .accessibilityIdentifier("pause-moments")
                         Button("Personalizar controles", systemImage: "slider.horizontal.3") {
                             state.editingControls = true
                             state.resumeKeepingEditorPaused()
@@ -76,7 +77,7 @@ struct PauseView: View {
                         if pinned == false {
                             Text("Esta escena es de un solo color y no sirve como portada. Prueba con otra.")
                         } else {
-                            Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras. «Usar como portada» fija la escena actual como portada del juego.")
+                            Text("La partida del juego se guarda sola. Los momentos guardan este instante exacto para volver a él cuando quieras. «Usar como portada» fija la escena actual como portada del juego.")
                         }
                     }
                     Section {
@@ -92,7 +93,7 @@ struct PauseView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: PauseRoute.self) { route in
                 switch route {
-                case .states: SaveStatesView()
+                case .moments: MomentsView(context: .pause)
                 }
             }
         }

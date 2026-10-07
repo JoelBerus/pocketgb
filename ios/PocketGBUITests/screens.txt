@@ -274,3 +274,25 @@ n5-pause                    portrait  light -screen n5-pause -rom $FIXTURES/dmg-
 n5-pause                    portrait  dark  -screen n5-pause -rom $FIXTURES/dmg-acid2.gb -paused -uiTap pause-use-as-cover
 n5-settings-library         portrait  light -screen n5-settings-library -demoLibrary n5 -uiSwipeUp
 n5-settings-storage         portrait  light -screen n5-settings-storage -demoLibrary n5 -demoSaveState slots
+
+# ---- N6 · Momentos y progreso (iOS). `-demoMoments rich`: momentos de demostración (estados de mentira,
+# miniaturas pintadas en código) y, con `-demoLibrary n5`, progreso sembrado y una partida Pokémon SINTÉTICA
+# construida byte a byte (DebugScreenRouter.syntheticGen1Save). `-momentsOpen` abre una confirmación o el editor.
+n6-moments-pause            portrait  light -screen n6-moments-pause -rom $FIXTURES/dmg-acid2.gb -demoMoments rich
+n6-moments-pause            portrait  dark  -screen n6-moments-pause -rom $FIXTURES/dmg-acid2.gb -demoMoments rich -uiSwipeUp
+n6-moments-pause-load       portrait  light -screen n6-moments-pause-load -rom $FIXTURES/dmg-acid2.gb -demoMoments rich -momentsOpen load
+n6-moments-pause-recover    portrait  light -screen n6-moments-pause-recover -rom $FIXTURES/dmg-acid2.gb -demoMoments rich -momentsOpen recover
+n6-moments-pause-new        portrait  dark  -screen n6-moments-pause-new -rom $FIXTURES/dmg-acid2.gb -demoMoments rich -momentsOpen new
+n6-moments-detail           portrait  light -screen n6-moments-detail -demoLibrary n5 -demoMoments rich
+n6-moments-detail           portrait  dark  -screen n6-moments-detail -demoLibrary n5 -demoMoments rich -uiSwipeUp
+n6-moments-detail-filter    portrait  light -screen n6-moments-detail-filter -demoLibrary n5 -demoMoments rich -momentsOpen filter
+n6-moments-detail-install   portrait  light -screen n6-moments-detail-install -demoLibrary n5 -demoMoments rich -momentsOpen install
+n6-moments-detail-load      portrait  light -screen n6-moments-detail-load -demoLibrary n5 -demoMoments rich -momentsOpen load
+n6-moments-ax5              portrait  light -screen n6-moments-ax5 -demoLibrary n5 -demoMoments rich -contentSizeCategory accessibility5
+n6-moment-edit              portrait  light -screen n6-moment-edit -demoLibrary n5 -demoMoments rich -momentsOpen edit
+n6-progress-details         portrait  light -screen n6-progress-details -demoLibrary n5 -demoMoments rich -uiDrag 0.5,0.8,0.5,0.3
+n6-progress-details         portrait  dark  -screen n6-progress-details -demoLibrary n5 -demoMoments rich -uiDrag 0.5,0.8,0.5,0.3
+n6-progress-editor          portrait  light -screen n6-progress-editor -demoLibrary n5 -demoMoments rich
+n6-progress-editor          portrait  dark  -screen n6-progress-editor -demoLibrary n5 -demoMoments rich -uiSwipeUp
+n6-progress-ax5             portrait  light -screen n6-progress-ax5 -demoLibrary n5 -demoMoments rich -contentSizeCategory accessibility5
+n6-library-percent          portrait  light -screen n6-library-percent -demoLibrary n5 -demoMoments rich
