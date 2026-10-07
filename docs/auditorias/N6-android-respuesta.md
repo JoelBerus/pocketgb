@@ -46,3 +46,8 @@ BUILD SUCCESSFUL in 4m 1s
 JVM 752 pruebas, 0 fallos
 0 errors, 22 warnings
 ```
+
+Ruta `loadMoment` (instrumentada, núcleo real): `MomentsSessionTest.recoveringTheOldestRingEntryWithAFullRingSurvivesAFailedLoad`
+llena el anillo con tres cargas, corrompe el estado de la entrada más antigua y la recupera, con lo que `applyLoadedState`
+falla (`StateError.Core`). La entrada y su RAM siguen ahí y la partida no cambia. `MomentsSessionTest` (con `with-lock.sh emu`):
+5 pruebas, 0 fallos. Mutación (`protect = null` en `GameSession.loadMoment`): 1 fallo, «la entrada recuperada sigue en el anillo».
