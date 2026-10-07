@@ -120,7 +120,6 @@
     <string name="about_core">Núcleo</string>
     <string name="about_core_value">PocketGB core (C11)</string>
     <string name="about_consoles">Consolas</string>
-    <string name="about_consoles_value">Game Boy y Game Boy Color</string>
     <string name="about_privacy_header">Privacidad</string>
     <string name="about_privacy_body">PocketGB no se conecta a internet: sin telemetría, sin anuncios y sin descargar portadas. Tus juegos y partidas se quedan en tu teléfono y en la carpeta que elijas.</string>
     <string name="about_games_header">Juegos</string>

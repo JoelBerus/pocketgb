@@ -125,7 +125,6 @@
     <string name="library_pick_action">Elegir carpeta</string>
     <string name="library_empty_title">No hay juegos en esta carpeta</string>
     <string name="library_pick_other_action">Elegir otra carpeta</string>
-    <string name="library_empty_message">Solo se buscan archivos .gb y .gbc en la carpeta y un nivel de subcarpetas.</string>
     <string name="library_access_lost_title">PocketGB perdió el acceso a la carpeta</string>
     <string name="library_folder_missing_title">La carpeta ya no existe</string>
     <string name="library_folder_missing_message">Se movió o se borró. Elige otra carpeta o reintenta si la restauraste.</string>
@@ -137,7 +136,6 @@
     <string name="library_all_hidden_title">Todos los juegos están ocultos</string>
     <string name="library_all_hidden_message">Muéstralos de nuevo en Ajustes › Biblioteca.</string>
     <string name="library_selected">Seleccionado</string>
-    <string name="library_pick_message">PocketGB busca archivos .gb y .gbc en la carpeta y sus subcarpetas directas. Nunca los copia ni los modifica.</string>
     <string name="library_access_lost_message">El sistema revocó el permiso. Tus juegos y partidas siguen donde estaban; elige la carpeta otra vez para concederlo de nuevo.</string>
     <string name="library_persist_failed_message">El sistema no permitió recordar la carpeta elegida. La carpeta anterior no se tocó; elige otra vez o reintenta con la que ya tenías.</string>
     <string name="favorites_no_folder_title">Sin carpeta de juegos</string>
