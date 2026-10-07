@@ -43,7 +43,7 @@ fun RenameGameDialog(
     currentAlias: String?,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
-    /** Solo el catálogo de capturas: no pide el foco (sin teclado en la captura). */
+    /** `false` solo en el catálogo de capturas: no pide el foco (la app sí, para escribir enseguida). */
     requestFocus: Boolean = true,
 ) {
     var value by rememberSaveable(entry.id, stateSaver = TextFieldValue.Saver) {

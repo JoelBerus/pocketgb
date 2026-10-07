@@ -103,7 +103,8 @@ private fun A9Details(prefs: LibraryPreferencesData, canResume: Boolean, menuOpe
 internal val a9CatalogScreens: Map<String, CatalogScreen> = buildMap {
     // Detalle con «Continuar» exacto y «Jugar desde el inicio» (estado automático vigente), juego renombrado.
     put("details-resume-exact") { A9Details(remember { renamedPrefs() }, canResume = true) }
-    // Diálogo de renombrar sobre el detalle, con el alias actual seleccionado (sin teclado: no pide el foco).
+    // Diálogo de renombrar sobre el detalle, con el alias actual seleccionado. No pide el foco, pero el sistema puede
+    // mostrar el teclado igualmente (como en la app, donde sí se pide).
     put("details-rename") {
         val prefs = remember { renamedPrefs() }
         Box(Modifier.fillMaxSize()) {
