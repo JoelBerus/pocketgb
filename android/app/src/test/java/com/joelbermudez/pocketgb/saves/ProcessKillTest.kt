@@ -67,6 +67,12 @@ class ProcessKillTest {
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (synchronized(output) { !output.contains("ready") } && System.nanoTime() < deadline) Thread.sleep(2)
             assertTrue("$label: el hijo no arrancó: $output", synchronized(output) { output.contains("ready") })
+            // Una de cada cuatro muertes espera a que haya al menos un guardado confirmado: así la prueba siempre es
+            // significativa (≥ 50 guardados completos) aunque el anfitrión esté saturado; las demás matan al azar.
+            if (iteration % 4 == 0) {
+                val confirmDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                while (synchronized(output) { !output.contains("\nc") } && System.nanoTime() < confirmDeadline) Thread.sleep(2)
+            }
             Thread.sleep(rnd.nextLong(0, 90), rnd.nextInt(0, 1_000_000))
             process.destroyForcibly()
             assertTrue("$label: el hijo no murió", process.waitFor(10, TimeUnit.SECONDS))
