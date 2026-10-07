@@ -47,17 +47,38 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
     fun entries(): Map<StateSlot, Entry> {
         val result = linkedMapOf<StateSlot, Entry>()
         for (slot in StateSlot.entries) {
-            val file = stateFile(slot)
-            if (!ops.exists(file)) continue
-            val head = try { ops.readPrefix(file, MAGIC.size) } catch (_: IOException) { ByteArray(0) }
-            val thumb = try {
+            entry(slot, withThumbnail = true)?.let { result[slot] = it }
+        }
+        return result
+    }
+
+    /** Una ranura: fecha y firma de 4 bytes; la miniatura PNG solo si se pide. `null` si no existe. */
+    fun entry(slot: StateSlot, withThumbnail: Boolean): Entry? {
+        val file = stateFile(slot)
+        if (!ops.exists(file)) return null
+        val head = try { ops.readPrefix(file, MAGIC.size) } catch (_: IOException) { ByteArray(0) }
+        val thumb = if (!withThumbnail) {
+            null
+        } else {
+            try {
                 if (ops.exists(thumbnailFile(slot))) ops.readBytes(thumbnailFile(slot), MAX_THUMBNAIL_BYTES) else null
             } catch (_: IOException) {
                 null
             }
-            result[slot] = Entry(slot, ops.lastModified(file) ?: 0L, thumb, !head.contentEquals(MAGIC))
         }
-        return result
+        return Entry(slot, ops.lastModified(file) ?: 0L, thumb, !head.contentEquals(MAGIC))
+    }
+
+    /**
+     * Estado automático que «Continuar» puede ofrecer (A9, iOS `automaticEntry(newerThan:)`): existe, su firma es
+     * `PGBS` y no es anterior a la partida local ([saveDateMs], `null` si no hay `.sav`). Una partida guardada después
+     * lo invalida: restaurar un backup nunca debe quedar revertido al continuar. Solo lee la fecha y 4 bytes (la
+     * biblioteca lo consulta por cada juego); el contenido se valida al abrir ([ExactContinuation.apply]).
+     */
+    fun automaticEntry(saveDateMs: Long?): Entry? {
+        val entry = entry(StateSlot.AUTO, withThumbnail = false) ?: return null
+        if (entry.corrupt || !ExactContinuation.isFreshByDate(entry.dateMs, saveDateMs)) return null
+        return entry
     }
 
     /** Escribe el estado (atómico) y después su captura. Si la captura falla, el estado vale igual. */
