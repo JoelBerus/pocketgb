@@ -30,6 +30,8 @@ struct GameCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(GameAccessibility.label(entry, prefs: state.libraryPrefs))
         .accessibilityHint(GameAccessibility.hint(entry))
+        .accessibilityValue(state.progress.progress(state.libraryPrefs.confirmedFingerprint(of: entry)).visiblePercent
+            .map { "Progreso \($0) por ciento" } ?? "")
     }
 
     /// Estado que impide jugar ya: nube o error. Símbolo sobre fondo oscuro fijo para
@@ -79,6 +81,13 @@ struct GameMetaLine: View {
             if entry.isDuplicate { DuplicateBadge() }
             // N4: insignia discreta (solo el símbolo; el texto va en la etiqueta de VoiceOver).
             if state.libraryPrefs.isMovedInApp(entry) { MovedBadge(compact: true) }
+            // N6: porcentaje de hitos, solo si el usuario lo activó en Progreso.
+            if let percent = state.progress.progress(state.libraryPrefs.confirmedFingerprint(of: entry)).visiblePercent {
+                Text("\(percent) %")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(PocketColor.accent)
+                    .accessibilityLabel("Progreso \(percent) por ciento")
+            }
             Text(GameStatus.detail(entry, lastPlayed: state.libraryPrefs.lastPlayed(entry)))
                 .font(.caption)
                 .foregroundStyle(.secondary)

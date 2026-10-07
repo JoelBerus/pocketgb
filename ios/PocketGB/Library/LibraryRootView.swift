@@ -30,8 +30,10 @@ struct LibraryRootView: View {
                 #endif
         }
         // N4: el centro de ajustes del juego (sustituye a la hoja de ajustes por juego).
-        .sheet(item: Binding(get: { state.gameSettingsEntry }, set: { state.gameSettingsEntry = $0 })) { entry in
-            GameCenterView(entry: entry, initialPath: GameCenterView.initialPath(for: entry))
+        .sheet(item: Binding(get: { state.gameSettingsEntry }, set: { state.gameSettingsEntry = $0 }),
+               onDismiss: { state.gameCenterStart = [] }) { entry in
+            GameCenterView(entry: entry,
+                           initialPath: state.gameCenterStart.isEmpty ? GameCenterView.initialPath(for: entry) : state.gameCenterStart)
                 .environment(state)
                 #if DEBUG
                 .modifier(DebugDynamicType())   // la sheet no hereda el tipo accesible forzado (captura AX5)

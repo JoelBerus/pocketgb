@@ -362,6 +362,16 @@ final class EmulatorSession: @unchecked Sendable {
         }
     }
 
+    /// N6 (ND13): la RAM del cartucho del instante (el `.sav` completo, con el pie RTC), para guardarla junto al
+    /// estado de un momento. nil si el cartucho no guarda partida.
+    @MainActor
+    func cartridgeRAM() throws -> Data? {
+        try withParkedCore { core in
+            guard info.hasBattery, core.sramSaveSize > 0 else { return nil }
+            return try core.sramSave()
+        }
+    }
+
     /// Carga un estado con la sesión en pausa. Si el núcleo lo rechaza (dañado, de otro
     /// juego o de otra versión) no cambia nada, SRAM incluida. Si lo acepta, la SRAM del
     /// estado se guarda en el acto por la ruta normal: `AtomicFile` deja la partida

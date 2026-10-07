@@ -47,9 +47,21 @@ enum AppTab: Hashable {
     case library, favorites, settings
 }
 
+/// N6 · aviso de la pantalla de Momentos.
+struct MomentNotice: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let message: String
+    init(_ title: String, _ message: String) {
+        self.title = title
+        self.message = message
+    }
+}
+
 /// Pantallas de la sheet de pausa.
 enum PauseRoute: Hashable {
-    case states
+    /// N6 · Momentos del juego abierto (sustituye a las ranuras de estados).
+    case moments
 }
 
 /// Pantallas empujadas en la pila de Ajustes.
@@ -109,6 +121,7 @@ final class AppState {
     var editingControls = false {
         didSet {
             editorSelection = nil
+            updatePlayClock()
             guard editingControls != oldValue, let session else { return }
             // Editar no juega: la emulación se detiene mientras se mueven los controles.
             if editingControls { session.pause() } else if !paused { session.resume() }
@@ -123,16 +136,31 @@ final class AppState {
     var editorSelection: ControlID?
     /// Pila de la sheet de pausa (Estados).
     var pausePath: [PauseRoute] = []
-    /// Save states del juego abierto.
-    private(set) var stateEntries: [StateSlot: StateStore.Entry] = [:]
+    /// Estado automático del juego abierto (las ranuras manuales pasan a momentos en N6).
     private(set) var stateStore: StateStore?
-    /// Confirmaciones de la pantalla de estados.
-    var pendingStateLoad: StateSlot?
-    var pendingStateReplace: StateSlot?
+    /// N6 · momentos del juego abierto (nil con el cable o sin juego).
+    private(set) var momentStore: MomentStore?
+    /// Cambia con cada escritura de momentos: las vistas recargan su lista.
+    private(set) var momentsRevision = 0
+    /// N6 · exclusión por huella: la sesión abierta (o aparcada, o aún guardando) es dueña de su partida.
+    let ownership = FingerprintOwnership()
+    @ObservationIgnored private var sessionLeases: [FingerprintOwnership.Lease] = []
+    /// N6 · progreso por juego (tiempo, hitos, porcentaje) y su contador de tiempo de juego.
+    let progress = ProgressLibrary()
+    @ObservationIgnored private var playClock: PlayTimeTracker?
+    @ObservationIgnored private var playCheckpoint: Task<Void, Never>?
+    /// Opciones de emulación con las que se abrió el juego (configuración de un momento).
+    @ObservationIgnored private var sessionEmulation: EmulationOptions?
+    /// N6 · resultado o error de una acción de momentos: lo muestra la pantalla de Momentos (también sobre la pausa).
+    var momentNotice: MomentNotice?
+    /// N6 · cargar un momento al abrir el juego desde el detalle (se carga en pausa).
+    @ObservationIgnored private var momentAfterOpen: (fingerprint: String, id: String)?
     /// Aviso breve sobre el juego ("Estado guardado").
     private(set) var gameToast: String?
     /// Juego cuyos ajustes se están editando (sheet).
     var gameSettingsEntry: RomEntry?
+    /// Pantalla con la que se abre el centro de ajustes del juego (N6: «Momentos» o «Progreso» desde el detalle).
+    var gameCenterStart: [GameCenterRoute] = []
     /// Juego cuyo alias visual se está editando (sheet).
     var renamingEntry: RomEntry?
     /// Juego pendiente de confirmar "Ocultar de PocketGB".
@@ -157,7 +185,9 @@ final class AppState {
     /// Alerta de continuación: algún juego tiene estado automático válido que el cable no carga.
     var linkContinueRequest: LinkRequest?
     /// Pausa por ciclo de vida: se sale solo con "Continuar" (docs/04 §Ciclo de vida).
-    private(set) var paused = false
+    private(set) var paused = false {
+        didSet { updatePlayClock() }
+    }
     /// Abriendo un juego (lectura coordinada, quizá esperando a iCloud).
     private(set) var opening = false
     var alertTitle: String?
@@ -511,7 +541,8 @@ final class AppState {
             gamepad.target = link.session.padButtons
             gameSpeed = 1
             stateStore = nil   // sin estados con el cable (M9 §1.6)
-            stateEntries = [:]
+            momentStore = nil
+            sessionLeases = link.infos.map { ownership.takeForSession($0.fingerprint) }
             paused = false
             var notices = link.notice.map { [$0] } ?? []
             if let i = sharedMirrors.firstIndex(of: true), link.infos[i].hasBattery {
@@ -608,6 +639,8 @@ final class AppState {
                 library.learnFingerprint(session.info.fingerprint, forPath: entryID)
                 libraryPrefs.recordPlayed(id: entryID, fingerprint: session.info.fingerprint, at: Date())
             }
+            sessionLeases = [ownership.takeForSession(session.info.fingerprint)]
+            sessionEmulation = emulation
             self.session = session
             gamepad.target = session.padButtons
             gameSpeed = 1
@@ -615,8 +648,10 @@ final class AppState {
             #if DEBUG
             if let demo = DebugScreenRouter.demoStateStore() { stateStore = demo }
             #endif
-            reloadStates()
+            openMoments(for: session, romData: romData)
             paused = false
+            startPlayClock(fingerprint: session.info.fingerprint)
+            loadMomentAfterOpening(session)
             if let forced = session.gameSettingsWarning {
                 showAlert(forced.title, forced.message)
             } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
@@ -711,6 +746,7 @@ final class AppState {
             session.stop()
             saveArtwork(link)
             for info in link.infos { didRestoreSave(fingerprint: info.fingerprint) }
+            releaseLeases(after: session)
             self.link = nil
         } else if let session {
             // Estado automático al salir (SPEC §12). La pausa hace antes el flush síncrono
@@ -719,9 +755,12 @@ final class AppState {
             saveAutomaticState(of: session)
             session.stop()
             saveArtwork(session)
+            releaseLeases(after: session)
         }
+        stopPlayClock()
         stateStore = nil
-        stateEntries = [:]
+        momentStore = nil
+        sessionEmulation = nil
         gamepad.target = nil
         gameSpeed = 1
         pausePath = []
@@ -851,6 +890,7 @@ final class AppState {
     var storageDirectories: (saves: URL?, states: URL?, artwork: [URL]) {
         #if DEBUG
         if let demo = DebugScreenRouter.demoStorage { return (demo.saves, demo.states, [demo.artwork].compactMap { $0 }) }
+        if let saves = DebugScreenRouter.demoN6Saves { return (saves, nil, []) }
         #endif
         return (try? SaveStore.defaultDirectory(), try? StateStore.defaultRoot(), covers.directories)
     }
@@ -884,47 +924,168 @@ final class AppState {
         paused = true
     }
 
-    // MARK: - Save states (D5)
+    // MARK: - Momentos (N6)
 
-    func reloadStates() {
-        stateEntries = stateStore?.entries() ?? [:]
-    }
-
-    /// Guarda en una ranura (con la sesión en pausa). Reemplazar ya se confirmó antes.
-    func saveState(to slot: StateSlot) {
-        guard let session, let stateStore else { return }
+    /// Al abrir un juego: momentos de su huella (temporales e índice al día y ranuras 1–4 migradas sin pérdida) y la
+    /// cabecera del ROM para el lector de progreso.
+    private func openMoments(for session: EmulatorSession, romData: Data) {
+        let fingerprint = session.info.fingerprint
+        progress.recordHeader(Data(romData.prefix(Int(ProgressLibrary.headerBytes))), for: fingerprint)
+        guard let store = momentStoreFor(fingerprint) else { momentStore = nil; return }
         do {
-            let saved = try session.saveState()
-            try stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: slot)
-            showGameToast("Estado guardado en \(slot.title.lowercased())")
+            try store.recoverOrphans()
+            if let stateStore { try store.migrateSlots(from: stateStore) }
         } catch {
-            showAlert("No se pudo guardar el estado", Self.describe(error))
+            momentNotice = MomentNotice("Momentos", "No se pudieron poner al día los momentos de este juego (\(error.localizedDescription)). No se ha borrado nada.")
         }
-        reloadStates()
+        momentStore = store
+        momentsRevision += 1
     }
 
-    /// Carga una ranura. Con `saveCurrentFirst`, antes guarda la partida actual en la
-    /// ranura automática para poder volver a ella.
-    func loadState(from slot: StateSlot, saveCurrentFirst: Bool) {
-        guard let session, let stateStore else { return }
+    /// La carpeta de momentos de una huella (en DEBUG, la de demostración si la hay).
+    func momentStoreFor(_ fingerprint: String) -> MomentStore? {
+        #if DEBUG
+        if let demo = DebugScreenRouter.demoMomentStore(fingerprint: fingerprint) { return demo }
+        #endif
+        return (try? MomentStore.defaultRoot()).map { MomentStore(root: $0, fingerprint: fingerprint) }
+    }
+
+    private func saveStoreFor(_ fingerprint: String) -> SaveStore? {
+        (storageDirectories.saves ?? (try? SaveStore.defaultDirectory())).map { SaveStore(directory: $0, fingerprint: fingerprint) }
+    }
+
+    /// Configuración actual del juego abierto (para guardarla en un momento y avisar al cargar).
+    var currentMomentConfig: [String: String] {
+        guard let session, let sessionEmulation else { return [:] }
+        return MomentConfig.make(sessionEmulation, console: session.info.console)
+    }
+
+    /// Configuración con la que se abriría un juego ahora (detalle, sin sesión).
+    func momentConfig(for entry: RomEntry, fingerprint: String) -> [String: String] {
+        MomentConfig.make(gameplay.data.emulation(with: libraryPrefs.overrides(fingerprint: fingerprint, path: entry.id)),
+                          console: entry.console)
+    }
+
+    func suggestedMomentName() -> String {
+        let count = (try? momentStore?.snapshot().moments.count) ?? nil
+        return "Momento \((count ?? 0) + 1)"
+    }
+
+    /// Crea un momento con la sesión en pausa. No cambia la partida ni el estado automático.
+    func createMoment(name: String) {
+        guard let session, let momentStore, let saves = saveStoreFor(session.info.fingerprint) else { return }
         do {
-            if saveCurrentFirst && slot != .auto {
-                let current = try session.saveState()
-                try stateStore.save(current.state, thumbnail: Self.thumbnail(current.pixels), to: .auto)
+            try MomentActions(moments: momentStore, saves: saves)
+                .create(from: session, name: name, config: currentMomentConfig, playTime: playClock?.total)
+            showGameToast("Momento guardado")
+        } catch {
+            momentNotice = MomentNotice("No se pudo guardar el momento", Self.describe(error))
+        }
+        momentsRevision += 1
+    }
+
+    /// Carga un momento (o recupera una entrada de «Antes de cargar») en la sesión en pausa. Ya se confirmó.
+    func loadMoment(_ kind: MomentStore.Kind, _ moment: MomentStore.Moment) {
+        guard let session, let momentStore, let saves = saveStoreFor(session.info.fingerprint) else { return }
+        do {
+            try MomentActions(moments: momentStore, saves: saves)
+                .load(kind, moment, into: session, config: currentMomentConfig, playTime: playClock?.total)
+            showGameToast(kind == .moment ? "Momento cargado: \(moment.name)" : "Recuperado lo de antes de cargar")
+        } catch {
+            var text = Self.describe(error) + " La partida actual no ha cambiado."
+            if kind == .moment && moment.hasSRAM {
+                text += " Si el momento ya no carga, puedes recuperar su partida desde el detalle del juego › Momentos."
             }
-            let data = try stateStore.load(slot)
-            try session.loadState(data)
-            showGameToast("Estado cargado: \(slot.title.lowercased())")
-        } catch {
-            showAlert("No se pudo cargar el estado",
-                      Self.describe(error) + " La partida actual no ha cambiado.")
+            momentNotice = MomentNotice(kind == .moment ? "No se pudo cargar el momento" : "No se pudo recuperar", text)
         }
-        reloadStates()
+        momentsRevision += 1
     }
 
-    func deleteState(_ slot: StateSlot) {
-        try? stateStore?.delete(slot)
-        reloadStates()
+    func updateMoment(_ store: MomentStore, _ id: String, name: String, tags: [String], collection: String?, note: String) {
+        do { try store.update(id, name: name, tags: tags, collection: collection, note: note) } catch {
+            momentNotice = MomentNotice("No se pudo guardar el cambio", error.localizedDescription)
+        }
+        momentsRevision += 1
+    }
+
+    func deleteMoment(_ store: MomentStore, _ kind: MomentStore.Kind, _ id: String) {
+        do { try store.delete(kind, id) } catch {
+            momentNotice = MomentNotice("No se pudo borrar", error.localizedDescription)
+        }
+        momentsRevision += 1
+    }
+
+    /// Detalle (sin sesión): instala la partida de un momento o de «Antes de cargar». Lo actual queda en «Antes de
+    /// cargar» y en las copias. Se rechaza con el juego abierto o aún guardando (exclusión por huella).
+    func installMomentSave(fingerprint: String, _ kind: MomentStore.Kind, _ moment: MomentStore.Moment) {
+        guard let store = momentStoreFor(fingerprint), let saves = saveStoreFor(fingerprint) else { return }
+        do {
+            try MomentActions(moments: store, saves: saves).installSRAM(kind, moment, ownership: ownership)
+            didRestoreSave(fingerprint: fingerprint)
+            momentNotice = MomentNotice("Partida recuperada", "Se ha instalado la partida de «\(moment.name)». La de antes quedó en «Antes de cargar» y en las copias de seguridad.")
+        } catch {
+            momentNotice = MomentNotice("No se pudo recuperar la partida", error.localizedDescription)
+        }
+        momentsRevision += 1
+    }
+
+    /// Detalle o menú: el centro de ajustes del juego abierto directamente en Momentos o Progreso.
+    func showGameCenter(_ entry: RomEntry, at route: GameCenterRoute) {
+        gameCenterStart = [route]
+        gameSettingsEntry = entry
+    }
+
+    /// Detalle: abre el juego y, ya en pausa, carga el momento (confirmado en el detalle).
+    func openAndLoadMoment(_ entry: RomEntry, fingerprint: String, momentID: String) {
+        gameSettingsEntry = nil
+        momentAfterOpen = (fingerprint, momentID)
+        open(entry: entry, mode: .fresh)
+    }
+
+    private func loadMomentAfterOpening(_ session: EmulatorSession) {
+        guard let pending = momentAfterOpen else { return }
+        momentAfterOpen = nil
+        guard pending.fingerprint == session.info.fingerprint,
+              let moment = try? momentStore?.snapshot().find(.moment, pending.id) else { return }
+        pauseGame()
+        pausePath = [.moments]
+        loadMoment(.moment, moment)
+    }
+
+    /// Suelta la partida cuando la sesión ya paró y terminó de escribir el espejo.
+    private func releaseLeases(after session: EmulatorSession) {
+        let leases = sessionLeases
+        sessionLeases = []
+        session.whenMirrorIdle { for lease in leases { lease.release() } }
+    }
+
+    // MARK: - Tiempo de juego (N6)
+
+    private func startPlayClock(fingerprint: String) {
+        guard let store = progress.store else { return }
+        playClock = PlayTimeTracker(store: store, fingerprint: fingerprint)
+        updatePlayClock()
+        playCheckpoint?.cancel()
+        playCheckpoint = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(PlayTimeTracker.checkpointSeconds))
+                self?.playClock?.checkpoint()
+            }
+        }
+    }
+
+    /// Solo cuenta con el juego corriendo: ni en pausa, ni en el editor, ni en segundo plano (que pausa).
+    private func updatePlayClock() {
+        playClock?.setRunning(session != nil && link == nil && !paused && !editingControls)
+    }
+
+    private func stopPlayClock() {
+        playCheckpoint?.cancel()
+        playCheckpoint = nil
+        guard let clock = playClock else { return }
+        clock.setRunning(false)
+        playClock = nil
+        progress.reload()
     }
 
     private func showGameToast(_ text: String) {
