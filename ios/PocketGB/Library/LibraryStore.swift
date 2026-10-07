@@ -50,6 +50,8 @@ final class LibraryStore {
     /// Huellas recién conocidas (ruta → huella), por lotes: la app une ahí los metadatos
     /// provisionales por ruta (`LibraryPreferences.adopt`).
     @ObservationIgnored var onFingerprintsResolved: (([String: String]) -> Void)?
+    /// N5: escaneo completo (sin tope) terminado, con sus juegos.
+    @ObservationIgnored var onScanCompleted: (([RomEntry]) -> Void)?
 
     private let storage: BookmarkStorage
     private var folderURL: URL?
@@ -206,6 +208,8 @@ final class LibraryStore {
         let resolved = LibraryIdentity.resolve(result, cache: cache)
         entries = resolved.entries
         limitReached = found.limitReached
+        // N5A-2: con el escaneo completo, las copias de portadas de la carpeta que ya no se usan se purgan.
+        if !found.limitReached { onScanCompleted?(entries) }
         scanProgress = nil
         persistCache()
         // Solo lo confirmado: una huella provisional (archivo cambiado o sin descargar) no

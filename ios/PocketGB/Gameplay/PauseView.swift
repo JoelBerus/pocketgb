@@ -5,6 +5,8 @@ import SwiftUI
 /// sin vidrio propio en el fondo.
 struct PauseView: View {
     @Environment(AppState.self) private var state
+    /// N5: resultado de «Usar como portada» (nil = sin tocar).
+    @State private var pinned: Bool?
 
     private var pauseTitle: String {
         if let link = state.link { return link.activeTitle }
@@ -64,8 +66,18 @@ struct PauseView: View {
                             state.editingControls = true
                             state.resumeKeepingEditorPaused()
                         }
+                        // N5: fija la escena en pantalla como portada (no toca la partida).
+                        Button(pinned == true ? "Portada fijada" : "Usar como portada",
+                               systemImage: pinned == true ? "checkmark.circle" : "photo.badge.checkmark") {
+                            pinned = state.pinCurrentFrameAsCover()
+                        }
+                        .accessibilityIdentifier("pause-use-as-cover")
                     } footer: {
-                        Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras.")
+                        if pinned == false {
+                            Text("Esta escena es de un solo color y no sirve como portada. Prueba con otra.")
+                        } else {
+                            Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras. «Usar como portada» fija la escena actual como portada del juego.")
+                        }
                     }
                     Section {
                         Button("Salir del juego", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {

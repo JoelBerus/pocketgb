@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 /// Pantallas del catálogo que la app sabe abrir directamente (SPEC §9). Cada hito
 /// de diseño añade aquí las suyas y sus líneas en ios/PocketGBUITests/screens.txt.
@@ -146,6 +147,25 @@ enum DebugScreen: String, CaseIterable {
     case n4LandscapeCategories = "n4-landscape-categories"
     case n4SettingsHome = "n4-settings-home"
     case n4SettingsHomeAX5 = "n4-settings-home-ax5"
+    // N5 (iOS): portadas (`-demoLibrary n5`; imágenes pintadas en código, ver `applyN5`)
+    case n5Library = "n5-library"
+    case n5LibraryList = "n5-library-list"
+    case n5LibraryPreferCaptures = "n5-library-prefer-captures"
+    case n5LibraryAX5 = "n5-library-ax5"
+    case n5LibraryLandscape = "n5-library-landscape"
+    case n5DetailsImported = "n5-details-imported"
+    case n5DetailsFolder = "n5-details-folder"
+    case n5DetailsCapture = "n5-details-capture"
+    case n5DetailsGenerated = "n5-details-generated"
+    case n5DetailsGBA = "n5-details-gba"
+    case n5GameCenter = "n5-game-center"
+    case n5Cover = "n5-cover"
+    case n5CoverCapture = "n5-cover-capture"
+    case n5CoverFailed = "n5-cover-failed"
+    case n5CoverAX5 = "n5-cover-ax5"
+    case n5Pause = "n5-pause"
+    case n5SettingsLibrary = "n5-settings-library"
+    case n5SettingsStorage = "n5-settings-storage"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -272,7 +292,7 @@ enum DebugScreenRouter {
                let second = standard.first(where: { $0.id == demoFavorite }) {
                 state.linkContinueRequest = LinkRequest(first: first, second: second)
             }
-        case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
+        case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm, .n5Pause:
             break   // se aplican al abrir el juego (`afterGameOpened`)
         case .libraryFolders:
             // Filtro GB: sin el carril «Continuar», las dos copias duplicadas quedan arriba.
@@ -296,6 +316,7 @@ enum DebugScreenRouter {
         }
         applyAdaptive(screen, to: state)
         applyN4(screen, to: state)
+        applyN5(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -741,6 +762,168 @@ extension DebugScreenRouter {
         state.libraryPrefs.applyDemo(prefs)
         state.artwork.applyDemo(fingerprint: "demo-dmg-acid2")
         state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
+    }
+}
+// MARK: - N5 (iOS): portadas
+
+extension DebugScreenRouter {
+    nonisolated private static let n5Imported = "Acid/dmg-acid2.gb"
+    nonisolated private static let n5Capture = "Acid/cgb-acid2.gbc"
+    nonisolated private static let n5Folder = "Reloj/rtc3test.gb"
+    nonisolated private static let n5None = "Pruebas/cpu_instrs.gb"
+    nonisolated private static let n5Chosen = "Pruebas/instr_timing.gb"
+    nonisolated private static let n5GBA = "Game Boy Advance/arm.gba"
+
+    /// `-demoLibrary n5`: juegos libres de las ROMs de prueba con cada fuente de portada. Las imágenes se
+    /// pintan en código (nada con copyright y ningún binario en el repo):
+    /// - dmg-acid2: imagen importada vertical (3:4) y elección «Imagen»; jugado.
+    /// - cgb-acid2: captura (y, en `n5-cover-capture`, fijada); jugado.
+    /// - rtc3test: imagen de la carpeta apaisada (2:1), único juego de `Reloj/`.
+    /// - cpu_instrs: sin ninguna fuente; jugado y reanudable: sale en «Continuar jugando» con la generada
+    ///   (decisión de Joel 2026-10-07, sustituye a K10).
+    /// - instr_timing: tiene imagen de la carpeta pero eligió «Generada».
+    /// - arm.gba: imagen de la carpeta y captura de 240×160 en «Automática» (con «Preferir capturas» se ve
+    ///   la captura); jugado.
+    static func applyN5(_ screen: DebugScreen, to state: AppState) {
+        guard DebugArguments.demoLibrary == "n5" else { return }
+        func make(_ path: String, _ title: String, color: Bool, fingerprint: String, cover: String? = nil,
+                  saved: Bool = false) -> RomEntry {
+            let file = (path as NSString).lastPathComponent
+            var e = RomEntry(id: path, url: URL(fileURLWithPath: "/demo/\(path)"), fileName: file, title: title,
+                             isColor: color, sizeBytes: 32_768, headerChecksumOK: true, cloud: .current, problem: nil,
+                             mirrorSaveDate: saved ? Date(timeIntervalSince1970: 1_790_000_000) : nil)
+            e.fingerprint = fingerprint
+            e.fingerprintVerified = true
+            if let cover {
+                e.coverURL = URL(fileURLWithPath: "/demo/\(cover)")
+                e.coverStamp = "\(cover)|1|0"
+            }
+            return e
+        }
+        let entries = [
+            make(n5Imported, "DMG-ACID2", color: false, fingerprint: "demo-dmg-acid2", saved: true),
+            make(n5Capture, "CGB-ACID2", color: true, fingerprint: "demo-cgb-acid2"),
+            make(n5Folder, "RTC3TEST", color: false, fingerprint: "demo-rtc", cover: "Reloj/portada.png"),
+            make(n5None, "CPU_INSTRS", color: false, fingerprint: "demo-cpu"),
+            make(n5Chosen, "INSTR_TIMING", color: false, fingerprint: "demo-instr", cover: "Pruebas/instr_timing.jpg"),
+            make(n5GBA, "jsmolka ARM", color: false, fingerprint: "demo-arm", cover: "Game Boy Advance/arm.webp"),
+            make("homebrew-con-un-titulo-muy-largo.gbc", "Un homebrew con un título muy largo para probar el truncado",
+                 color: true, fingerprint: "demo-homebrew"),
+        ]
+        state.library.applyDemo(phase: .ready(folderName: "Juegos Game Boy"), entries: entries)
+        var prefs = LibraryPreferencesData()
+        func played(_ time: TimeInterval, _ path: String, favorite: Bool = false) -> GameMetadata {
+            var m = GameMetadata()
+            m.lastPlayed = Date(timeIntervalSince1970: time)
+            m.lastPlayedPath = path
+            m.favorite = favorite
+            return m
+        }
+        var favorite = GameMetadata()
+        favorite.favorite = true
+        prefs.games = [
+            "demo-dmg-acid2": played(1_790_500_000, n5Imported, favorite: true),
+            "demo-cgb-acid2": played(1_790_400_000, n5Capture, favorite: true),
+            "demo-cpu": played(1_790_300_000, n5None, favorite: true),
+            "demo-arm": played(1_790_200_000, n5GBA),
+            "demo-instr": favorite,
+            "demo-rtc": favorite,
+        ]
+        prefs.layout = screen == .n5LibraryList ? .list : .grid
+        if screen == .n5LibraryList { prefs.home.showFavorites = false }
+        state.libraryPrefs.applyDemo(prefs)
+        if screen == .n5LibraryList { state.libraryFilter = .favorites }
+
+        let covers = state.covers
+        covers.applyDemo(imported: demoPoster(), fingerprint: "demo-dmg-acid2")
+        state.artwork.applyDemo(fingerprint: "demo-cgb-acid2")
+        state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
+        for entry in entries where entry.coverURL != nil {
+            covers.applyDemo(folder: demoLandscape(seed: entry.id == n5GBA ? 1 : 0), entry: entry)
+        }
+        var settings = CoverSettings()
+        settings = settings.with(.image, for: "demo-dmg-acid2").with(.generated, for: "demo-instr")
+        if screen == .n5LibraryPreferCaptures { settings.preference = .captures }
+        if screen == .n5CoverCapture {
+            state.covers.pinned.applyDemo(fingerprint: "demo-cgb-acid2", pixels: GameArtworkStore.demoWhitePixels())
+            settings = settings.with(.capture, for: "demo-cgb-acid2")
+        }
+        covers.applyDemo(settings: settings)
+
+        func details(_ id: String) { state.libraryPath = [.details(id: id, source: id)] }
+        switch screen {
+        case .n5DetailsImported: details(n5Imported)
+        case .n5DetailsFolder: details(n5Folder)
+        case .n5DetailsCapture: details(n5Capture)
+        case .n5DetailsGenerated: details(n5None)
+        case .n5DetailsGBA: details(n5GBA)
+        case .n5GameCenter, .n5Cover, .n5CoverFailed, .n5CoverAX5:
+            details(n5Imported)
+            state.gameSettingsEntry = entries.first { $0.id == n5Imported }
+        case .n5CoverCapture:
+            details(n5Capture)
+            state.gameSettingsEntry = entries.first { $0.id == n5Capture }
+        case .n5SettingsLibrary:
+            state.selectedTab = .settings
+            state.settingsPath = [.library]
+        case .n5SettingsStorage:
+            state.selectedTab = .settings
+            state.settingsPath = [.storage]
+        default:
+            break
+        }
+    }
+
+    /// Póster vertical 3:4 pintado en código: degradado, sol y montañas (arte abstracto propio).
+    static func demoPoster() -> UIImage {
+        let size = CGSize(width: 600, height: 800)
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let cg = ctx.cgContext
+            let colors = [UIColor(red: 0.18, green: 0.10, blue: 0.42, alpha: 1).cgColor,
+                          UIColor(red: 0.95, green: 0.42, blue: 0.36, alpha: 1).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                cg.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: size.height), options: [])
+            }
+            UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 1).setFill()
+            cg.fillEllipse(in: CGRect(x: 180, y: 220, width: 240, height: 240))
+            UIColor(red: 0.12, green: 0.08, blue: 0.25, alpha: 1).setFill()
+            let hills = UIBezierPath()
+            hills.move(to: CGPoint(x: 0, y: 800))
+            hills.addLine(to: CGPoint(x: 0, y: 560))
+            hills.addLine(to: CGPoint(x: 160, y: 430))
+            hills.addLine(to: CGPoint(x: 300, y: 580))
+            hills.addLine(to: CGPoint(x: 450, y: 400))
+            hills.addLine(to: CGPoint(x: 600, y: 540))
+            hills.addLine(to: CGPoint(x: 600, y: 800))
+            hills.fill()
+            UIColor.white.withAlphaComponent(0.9).setFill()
+            cg.fill(CGRect(x: 60, y: 60, width: 480, height: 14))
+            cg.fill(CGRect(x: 60, y: 90, width: 300, height: 14))
+        }
+    }
+
+    /// Imagen apaisada 2:1 pintada en código: franjas y círculos (arte abstracto propio).
+    static func demoLandscape(seed: Int) -> UIImage {
+        let size = CGSize(width: 1200, height: 600)
+        let palettes: [[UIColor]] = [
+            [.systemTeal, .systemBlue, .systemIndigo, .systemPurple],
+            [.systemYellow, .systemOrange, .systemRed, .systemPink],
+        ]
+        let palette = palettes[seed % palettes.count]
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let cg = ctx.cgContext
+            for (i, color) in palette.enumerated() {
+                color.setFill()
+                cg.fill(CGRect(x: 0, y: CGFloat(i) * 150, width: size.width, height: 150))
+            }
+            UIColor.white.withAlphaComponent(0.85).setFill()
+            for i in 0..<5 {
+                cg.fillEllipse(in: CGRect(x: 80 + CGFloat(i) * 220, y: 220, width: 160, height: 160))
+            }
+            UIColor.black.withAlphaComponent(0.6).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: 24, height: size.height))
+            cg.fill(CGRect(x: size.width - 24, y: 0, width: 24, height: size.height))
+        }
     }
 }
 #endif

@@ -8,23 +8,41 @@ import UniformTypeIdentifiers
 /// Portadas locales (SPEC §11): el último frame de una sesión válida, guardado en
 /// `Application Support/Artwork/<huella>.png` con reemplazo atómico. Nunca junto al ROM
 /// y nunca desde la red. Codificar y leer PNG se hace en una cola aparte.
+///
+/// N5: la misma clase guarda también las capturas fijadas (`ArtworkPinned/`), las imágenes importadas
+/// (`Covers/Imported/`) y las copias de las imágenes de la carpeta (`Covers/Folder/`). Con `untrusted`,
+/// lo leído se decodifica con `CoverDecoder` (tope, firma, dimensiones y miniatura), nunca con `UIImage(data:)`.
 @MainActor @Observable
 final class GameArtworkStore {
     private(set) var images: [String: UIImage] = [:]
-    @ObservationIgnored private var missing: Set<String> = []
+    /// Claves cuya lectura falló: quien dibuja pasa a la siguiente fuente.
+    private(set) var missing: Set<String> = []
     @ObservationIgnored private var loading: Set<String> = []
+    /// Claves con archivo en disco (se lista una vez al crear; luego se mantiene al guardar y borrar).
+    private(set) var onDisk: Set<String> = []
     private let directory: URL?
+    private let untrusted: Bool
     private let queue = DispatchQueue(label: "PocketGB.artwork", qos: .utility)
 
     /// Con `directory == nil` (tests y capturas DEBUG) solo vive en memoria.
-    init(directory: URL?) {
+    init(directory: URL?, untrusted: Bool = false) {
         self.directory = directory
+        self.untrusted = untrusted
+        if let directory {
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            onDisk = Set(files.filter { $0.hasSuffix(".png") }.map { String($0.dropLast(4)) })
+        }
     }
 
     static func defaultDirectory() -> URL? {
+        supportDirectory("Artwork")
+    }
+
+    /// `Application Support/<ruta>` (no se crea hasta escribir).
+    nonisolated static func supportDirectory(_ path: String) -> URL? {
         guard let base = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                       appropriateFor: nil, create: true) else { return nil }
-        return base.appendingPathComponent("Artwork", isDirectory: true)
+        return base.appendingPathComponent(path, isDirectory: true)
     }
 
     func fileURL(for fingerprint: String) -> URL? {
@@ -35,20 +53,39 @@ final class GameArtworkStore {
         fingerprint.flatMap { images[$0] }
     }
 
+    /// Hay portada con esta clave (en memoria o en disco) y no falló al leerse.
+    func has(_ key: String?) -> Bool {
+        guard let key else { return false }
+        if images[key] != nil { return true }
+        return onDisk.contains(key) && !missing.contains(key)
+    }
+
+    /// Claves guardadas (en disco o, sin carpeta, en memoria).
+    var keys: Set<String> { onDisk.union(images.keys) }
+
     /// Carga la portada del disco si aún no está en memoria (desde `.task` de la vista).
     func load(_ fingerprint: String) {
         guard images[fingerprint] == nil, !missing.contains(fingerprint), !loading.contains(fingerprint),
               let url = fileURL(for: fingerprint) else { return }
         loading.insert(fingerprint)
+        let untrusted = untrusted
         queue.async {
-            let data = try? Data(contentsOf: url)
-            Task { @MainActor [weak self] in self?.finishLoad(fingerprint, data: data) }
+            let image = Self.readImage(url, untrusted: untrusted)
+            Task { @MainActor [weak self] in self?.finishLoad(fingerprint, image: image) }
         }
     }
 
-    private func finishLoad(_ fingerprint: String, data: Data?) {
+    nonisolated private static func readImage(_ url: URL, untrusted: Bool) -> UIImage? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        if untrusted {
+            return CoverDecoder.decode(data).map { UIImage(cgImage: $0) }
+        }
+        return UIImage(data: data)
+    }
+
+    private func finishLoad(_ fingerprint: String, image: UIImage?) {
         loading.remove(fingerprint)
-        if let data, let image = UIImage(data: data) {
+        if let image {
             images[fingerprint] = image
         } else {
             missing.insert(fingerprint)
@@ -64,6 +101,7 @@ final class GameArtworkStore {
         images[fingerprint] = UIImage(cgImage: cg)
         missing.remove(fingerprint)
         guard let url = fileURL(for: fingerprint) else { return true }
+        onDisk.insert(fingerprint)
         queue.async {
             guard let image = Self.makeImage(pixels), let png = Self.pngData(image) else { return }
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
@@ -73,10 +111,59 @@ final class GameArtworkStore {
         return true
     }
 
+    /// N5: guarda una copia ya reducida (PNG de `CoverDecoder.reduce`) con su imagen decodificada.
+    /// Escritura atómica en la cola; `false` si no se pudo escribir.
+    @discardableResult
+    func saveEncoded(_ key: String, png: Data, image: UIImage) -> Bool {
+        if let url = fileURL(for: key) {
+            let ok = queue.sync { () -> Bool in
+                do {
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                            withIntermediateDirectories: true)
+                    try png.write(to: url, options: .atomic)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            guard ok else { return false }
+            onDisk.insert(key)
+        }
+        images[key] = image
+        missing.remove(key)
+        return true
+    }
+
+    /// N5: borra la portada de `key` (si la hay).
+    func remove(_ key: String) {
+        images[key] = nil
+        missing.remove(key)
+        onDisk.remove(key)
+        guard let url = fileURL(for: key) else { return }
+        queue.async { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// N5A-2: borra las copias cuya clave no esté en `keep` (y temporales). Devuelve cuántas.
+    @discardableResult
+    func retainOnly(_ keep: Set<String>) -> Int {
+        let stale = keys.subtracting(keep)
+        for key in stale { remove(key) }
+        if let directory {
+            queue.async {
+                let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+                for file in files where !file.hasSuffix(".png") || !keep.contains(String(file.dropLast(4))) {
+                    try? FileManager.default.removeItem(at: directory.appendingPathComponent(file))
+                }
+            }
+        }
+        return stale.count
+    }
+
     /// Borra todas las portadas (Ajustes › Almacenamiento). Se regeneran al jugar.
     func removeAll() {
         images.removeAll()
         missing.removeAll()
+        onDisk.removeAll()
         guard let directory else { return }
         queue.async {
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []

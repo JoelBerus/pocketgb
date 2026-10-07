@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Ajustes › Biblioteca (SPEC §9, `settings-library`): carpeta, vista, orden, escaneo y
-/// juegos ocultos. Sin portadas por red.
+/// juegos ocultos y, N5, la preferencia de portadas. Sin portadas por red.
 struct LibrarySettingsView: View {
     @Environment(AppState.self) private var state
 
@@ -63,6 +63,18 @@ struct LibrarySettingsView: View {
                 Picker("Ordenar por", selection: Binding(get: { prefs.data.sort }, set: { prefs.setSort($0) })) {
                     ForEach(LibrarySort.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
+            }
+            // N5: qué gana en «Automática» cuando un juego tiene imagen y captura.
+            Section {
+                Picker("Portadas", selection: Binding(get: { state.covers.settings.preference },
+                                                      set: { state.covers.setPreference($0) })) {
+                    ForEach(CoverPreference.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("settings-library-covers")
+            } header: {
+                Text("Portadas")
+            } footer: {
+                Text("Cuando un juego tiene una imagen tuya y una captura, cuál se ve si su portada está en Automática. Cada juego puede elegir otra en sus ajustes. PocketGB nunca descarga portadas.")
             }
             Section {
                 if hidden.isEmpty {
