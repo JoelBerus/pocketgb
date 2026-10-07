@@ -9,7 +9,7 @@ import Testing
 struct AdaptiveLibraryTests {
     // MARK: Disposición del detalle
 
-    /// Áreas seguras medidas en los simuladores (iOS 26.5) con la tab bar: vertical y horizontal.
+    /// Áreas útiles aproximadas del detalle (ventana menos barras y área segura) en vertical y horizontal.
     static let sizes: [(name: String, portrait: CGSize, landscape: CGSize)] = [
         ("iPhone SE (3.ª gen)", CGSize(width: 375, height: 559), CGSize(width: 667, height: 291)),
         ("iPhone 17 Pro", CGSize(width: 402, height: 726), CGSize(width: 750, height: 322)),
@@ -259,9 +259,10 @@ struct AdaptiveLibraryTests {
         #expect(P.minimized(true, old: 80, new: 80))          // sin cambio: igual
         // iPhone 17 Pro horizontal (medido): ventana hasta 402; burbuja con el centro en 359 y
         // barra desplegada desde 337. Encogida: el grupo (48 pt) centrado con la burbuja.
-        #expect(402 - P.bottomGap(minimized: true) - P.groupHeight / 2 == 359)
+        let window: CGFloat = 402, bubbleCenter: CGFloat = 359, barTop: CGFloat = 337
+        #expect(window - P.bottomGap(minimized: true) - P.groupHeight / 2 == bubbleCenter)
         // Desplegada: el grupo acaba 8 pt por encima de la barra.
-        #expect(402 - P.bottomGap(minimized: false) == 337 - 8)
+        #expect(window - P.bottomGap(minimized: false) == barTop - 8)
     }
 
     @Test func continueRowUsesTheGridColumnWidthInLandscape() {
@@ -280,11 +281,13 @@ struct AdaptiveLibraryTests {
         // Título a la izquierda y panel a la derecha (no se solapan): el panel llega a la barra.
         let free = P.panelMaxHeight(groupTop: 335, visibleTop: 52,
                                     titleFrame: CGRect(x: 78, y: 150, width: 130, height: 22), panelMinX: 380)
-        #expect(free == 335 - 52 - 28)
+        let expectedFree: CGFloat = 335 - 52 - 28
+        #expect(free == expectedFree)
         // Título largo que pasa por debajo del panel: el panel se queda por debajo del título.
         let under = P.panelMaxHeight(groupTop: 335, visibleTop: 52,
                                      titleFrame: CGRect(x: 16, y: 150, width: 400, height: 22), panelMinX: 380)
-        #expect(under == 335 - 172 - 28)
+        let expectedUnder: CGFloat = 335 - 172 - 28
+        #expect(under == expectedUnder)
         // Sin sitio: dos filas como mínimo (se desplaza por dentro); sin medir: 220.
         #expect(P.panelMaxHeight(groupTop: 120, visibleTop: 52, titleFrame: .zero, panelMinX: 0) == 88)
         #expect(P.panelMaxHeight(groupTop: 0, visibleTop: 0, titleFrame: .zero, panelMinX: 0) == 220)

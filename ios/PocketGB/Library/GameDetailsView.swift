@@ -100,6 +100,7 @@ struct GameDetailsView: View {
                 }
                 .padding(.top, PocketSpacing.xs)
                 .padding(.bottom, PocketSpacing.xl)
+                .padding(.trailing, PocketSpacing.xs)   // el indicador de scroll no pisa los valores
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .scrollIndicators(.automatic)
@@ -326,14 +327,18 @@ struct GameDetailsView: View {
         .accessibilityIdentifier("game-details-also-in")
     }
 
-    /// Última vez jugado, partida junto al ROM y tamaño, en tres columnas.
+    /// Última vez jugado, partida junto al ROM y tamaño, en tres columnas (en una sola columna con
+    /// tamaños de accesibilidad, como Android con fuente grande: N3a).
     private func stats(_ entry: RomEntry) -> some View {
         let lastPlayed = state.libraryPrefs.lastPlayed(entry)
-        return HStack(alignment: .top, spacing: 0) {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: PocketSpacing.xs))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+        return layout {
             stat("Jugado", lastPlayed.map(GameStatus.relative) ?? "Nunca")
-            Divider()
+            if !typeSize.isAccessibilitySize { Divider() }
             stat("Partida", entry.mirrorSaveDate.map(GameStatus.relative) ?? "—")
-            Divider()
+            if !typeSize.isAccessibilitySize { Divider() }
             stat("Tamaño", ByteCountFormatter.string(fromByteCount: Int64(entry.sizeBytes), countStyle: .file))
         }
         .padding(.vertical, PocketSpacing.sm)
