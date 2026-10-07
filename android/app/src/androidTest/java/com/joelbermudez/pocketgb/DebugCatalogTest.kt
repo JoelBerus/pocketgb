@@ -77,10 +77,10 @@ class DebugCatalogTest {
             compose.onNodeWithTag("pause-exit").assertIsDisplayed()
         }
         launch("pause-dialog").use { compose.onNodeWithTag("pause-continue").assertIsDisplayed() }
+        // N6: los ids antiguos de estados muestran la hoja «Momentos».
         launch("states-sheet").use {
-            compose.onNodeWithTag("state-row-auto").assertIsDisplayed()
-            compose.onNodeWithTag("state-save-slot1").assertIsDisplayed()
-            compose.onNodeWithText("Dañado").assertExists()
+            compose.onNodeWithTag("moments-new").assertIsDisplayed()
+            compose.onNodeWithTag("moments-ring").assertExists()
         }
         launch("exit-save-failed").use {
             compose.onNodeWithText("No se pudo guardar la partida en este teléfono").assertIsDisplayed()
@@ -104,9 +104,8 @@ class DebugCatalogTest {
             compose.onNodeWithText("Guardado pendiente", substring = true).assertExists()
         }
         launch("states-rescue").use {
-            compose.onNodeWithTag("state-row-rescue").assertExists()
-            compose.onNodeWithTag("state-load-rescue").assertExists()
-            compose.onNodeWithText("estado de rescate", substring = true).assertExists()
+            compose.onNodeWithTag("moment-r1").assertExists()
+            compose.onNodeWithText("momento «Rescate»", substring = true).assertExists()
         }
         launch("open-error").use { compose.onNodeWithTag("open-error-ok").assertIsDisplayed() }
     }

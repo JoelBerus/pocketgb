@@ -666,14 +666,14 @@ class LibraryUiTest {
     }
 
     @Test
-    fun contextMenuOffersEveryActionAndStatesAreDisabled() {
+    fun contextMenuOffersEveryActionIncludingMoments() {
         playFromRecent = true
         compose.setContent { LibraryHarness(LibraryState.Ready(listOf(red), "Juegos")) }
         compose.onNodeWithTag("game-card").performTouchInput { longClick() }
         compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithText("Ver detalle").assertIsDisplayed()
         compose.onNodeWithText("Añadir a favoritos").assertIsDisplayed()
-        compose.onNodeWithText("Estados (próximamente)").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithTag("menu-moments").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Ajustes del juego").assertIsDisplayed()
         compose.onNodeWithText("Ocultar de PocketGB").assertIsDisplayed()
         compose.onNodeWithText("Jugar").performClick()

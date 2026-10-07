@@ -18,6 +18,8 @@ internal class LibraryRouteDeps(
     val gameplaySettings: GameplaySettingsRepository?,
     /** Ajustes › Partidas de una huella (necesita la partida abierta: lo pinta la app). */
     val saves: @Composable (fingerprint: String, onBack: () -> Unit) -> Unit,
+    /** N6: «Momentos» de un juego; `null` = el botón deshabilitado de antes. */
+    val moments: (@Composable (gameId: String, onBack: () -> Unit) -> Unit)? = null,
 )
 
 /**
@@ -29,6 +31,7 @@ internal fun LibraryRouteContent(route: LibraryRoute, navigation: AppNavigationS
     val openCategory: (LibraryCategory) -> Unit = { navigation.push(LibraryRoute.Category(it.path)) }
     val openDetails: (String) -> Unit = { navigation.push(LibraryRoute.Details(it)) }
     val openSaves: (String) -> Unit = { navigation.push(LibraryRoute.GameSaves(it)) }
+    val openMoments: ((String) -> Unit)? = deps.moments?.let { { id: String -> navigation.push(LibraryRoute.Moments(id)) } }
     when (route) {
         LibraryRoute.Root -> LibraryScreen(
             viewModel = deps.library,
@@ -40,6 +43,7 @@ internal fun LibraryRouteContent(route: LibraryRoute, navigation: AppNavigationS
             onOpenCategory = openCategory,
             onOpenFavorites = { navigation.select(TopLevelDestination.FAVORITES) },
             onOpenSaves = openSaves,
+            onOpenMoments = openMoments,
         )
         is LibraryRoute.Category -> CategoryScreen(
             viewModel = deps.library,
@@ -56,6 +60,7 @@ internal fun LibraryRouteContent(route: LibraryRoute, navigation: AppNavigationS
             onPlayFromStart = deps.playFromStart,
             resumable = deps.resumable,
             onOpenSaves = openSaves,
+            onOpenMoments = openMoments,
         )
         is LibraryRoute.Details -> GameDetailsScreen(
             deps.library, route.gameId, onPlay = deps.play, onBack = { navigation.pop() },
@@ -63,7 +68,9 @@ internal fun LibraryRouteContent(route: LibraryRoute, navigation: AppNavigationS
             onPlayFromStart = deps.playFromStart,
             resumable = deps.resumable,
             onOpenSaves = openSaves,
+            onOpenMoments = openMoments,
         )
         is LibraryRoute.GameSaves -> deps.saves(route.fingerprint) { navigation.pop() }
+        is LibraryRoute.Moments -> deps.moments?.invoke(route.gameId) { navigation.pop() }
     }
 }

@@ -111,6 +111,8 @@ fun GameDetailsScreen(
     resumable: Set<String> = emptySet(),
     /** N4: «Partida» del centro de ajustes del juego (Ajustes › Partidas de esa huella). */
     onOpenSaves: ((String) -> Unit)? = null,
+    /** N6: «Momentos» del juego (con su id). `null` = el botón deshabilitado de antes. */
+    onOpenMoments: ((String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
@@ -156,6 +158,12 @@ fun GameDetailsScreen(
         onBack = onBack,
         fingerprint = fingerprint,
         onOpenSettings = { showSettings = true },
+        onOpenMoments = onOpenMoments?.let { open -> { open(entry.id) } },
+        progress = if (fingerprint != null && prefs.hasConfirmedFingerprint(entry)) {
+            { com.joelbermudez.pocketgb.ui.progress.ProgressHost(fingerprint, editable = false) }
+        } else {
+            null
+        },
     )
     RenameGameHost(
         entry = entry.takeIf { renaming },
@@ -220,6 +228,10 @@ fun GameDetailsContent(
     initialMenuOpen: Boolean = false,
     /** Solo el catálogo de capturas: la información arranca desplazada estos px (se limita al final). */
     initialInfoScroll: Int = 0,
+    /** N6: abre «Momentos»; `null` = botón deshabilitado («Próximamente», catálogos anteriores). */
+    onOpenMoments: (() -> Unit)? = null,
+    /** N6: panel de progreso (tiempo, hitos, lector Pokémon) bajo las estadísticas; `null` = sin panel. */
+    progress: (@Composable () -> Unit)? = null,
 ) {
     var confirmHide by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(initialMenuOpen) }
@@ -289,6 +301,8 @@ fun GameDetailsContent(
                     canResume = canResume,
                     onPlayFromStart = onPlayFromStart,
                     onHide = { confirmHide = true },
+                    onOpenMoments = onOpenMoments,
+                    progress = progress,
                     // «Jugar» siempre justo bajo el título (H3): con un nombre o una ruta largos, la ruta y «También en» lo
                     // empujaban fuera de la pantalla (en dos columnas y también en vertical). En dos columnas el título
                     // ocupa como mucho 2 líneas (completo en la barra superior y en «Renombrar»).
@@ -355,6 +369,8 @@ private fun DetailsInfo(
     onHide: () -> Unit,
     playFirst: Boolean = false,
     titleMaxLines: Int = Int.MAX_VALUE,
+    onOpenMoments: (() -> Unit)? = null,
+    progress: (@Composable () -> Unit)? = null,
 ) {
     val title: @Composable () -> Unit = {
         Text(
@@ -406,7 +422,8 @@ private fun DetailsInfo(
     if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
 
     Stats(entry, lastPlayedAt)
-    SecondaryActions(favorite, onToggleFavorite, onOpenSettings)
+    SecondaryActions(favorite, onToggleFavorite, onOpenSettings, onOpenMoments)
+    progress?.invoke()
     TechnicalInfo(entry, load)
 
     OutlinedButton(
@@ -585,13 +602,18 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
  * «Favori», «Estad», «Ajust»); con fuente grande (R9), apilados a todo el ancho.
  */
 @Composable
-private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, onOpenSettings: () -> Unit) {
+private fun SecondaryActions(
+    favorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMoments: (() -> Unit)? = null,
+) {
     val favoriteLabel = stringResource(if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add)
     val soon = stringResource(R.string.details_states_soon)
     val settingsDescription = stringResource(R.string.details_settings_button)
     val labels = listOf(
         stringResource(R.string.game_favorite),
-        stringResource(R.string.details_states),
+        stringResource(if (onOpenMoments != null) R.string.n6_details_moments else R.string.details_states),
         stringResource(R.string.details_settings),
     )
     val measurer = rememberTextMeasurer()
@@ -640,7 +662,11 @@ private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, on
                 modifier, labels[0], if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder, true, "game-details-favorite",
                 { contentDescription = favoriteLabel }, onToggleFavorite,
             )
-            button(modifier, labels[1], Icons.Outlined.ViewAgenda, false, "game-details-states", { stateDescription = soon }, {})
+            if (onOpenMoments != null) {
+                button(modifier, labels[1], Icons.Outlined.ViewAgenda, true, "game-details-states", {}, onOpenMoments)
+            } else {
+                button(modifier, labels[1], Icons.Outlined.ViewAgenda, false, "game-details-states", { stateDescription = soon }, {})
+            }
             button(
                 modifier, labels[2], Icons.Outlined.Tune, true, "game-details-settings",
                 { contentDescription = settingsDescription }, onOpenSettings,

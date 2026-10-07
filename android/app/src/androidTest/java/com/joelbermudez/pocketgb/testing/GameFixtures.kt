@@ -110,6 +110,8 @@ fun openGame(
     shutdownCoordinator: ((com.joelbermudez.pocketgb.saves.SaveCoordinator, Long, Long) -> com.joelbermudez.pocketgb.saves.CloseResult)? = null,
     repairSubmit: ((com.joelbermudez.pocketgb.saves.SaveCoordinator, () -> Unit) -> java.util.concurrent.Future<Unit>)? = null,
     repairThreadFactory: ((Runnable, String) -> Thread)? = null,
+    /** N6: con momentos en `root/moments` (y configuración GB de prueba). */
+    withMoments: Boolean = false,
 ): OpenedGame {
     val info = session.load(rom, 1_700_000_000)
     val fingerprint = info.fingerprintHex
@@ -134,6 +136,8 @@ fun openGame(
         shutdownCoordinator = shutdownCoordinator ?: { c, grace, kill -> c.shutdown(grace, kill) },
         repairSubmit = repairSubmit ?: { c, block -> c.submitOnSaveThread(block) },
         repairThreadFactory = repairThreadFactory ?: { body, name -> Thread(body, name).apply { isDaemon = true } },
+        moments = if (withMoments) com.joelbermudez.pocketgb.saves.MomentStore(File(root, "moments"), fingerprint, ops) else null,
+        momentConfig = if (withMoments) mapOf("console" to "GB", "model" to "AUTO", "palette" to "0") else emptyMap(),
     )
     return OpenedGame(game, store, states, root)
 }

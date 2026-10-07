@@ -219,4 +219,8 @@ internal object NativeLibrary {
 
     @JvmStatic
     external fun nativeGbaCopyFrame(handle: Long, destination: IntArray): Int
+
+    /** N6: lector de progreso Pokémon (`pgb_progress_read`); `null` = sin datos. Formato en `pocketgb_jni.c`. */
+    @JvmStatic
+    external fun nativeProgressRead(header: ByteArray, sram: ByteArray): IntArray?
 }

@@ -88,7 +88,7 @@ fun GameplayHost(
     val menu by viewModel.menu.collectAsStateWithLifecycle()
     val dialog by viewModel.dialog.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
-    val states by viewModel.states.collectAsStateWithLifecycle()
+    val moments by viewModel.moments.collectAsStateWithLifecycle()
     val sessionState by game.state.collectAsStateWithLifecycle()
     val saveProblem by game.saveProblem.collectAsStateWithLifecycle()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -205,14 +205,13 @@ fun GameplayHost(
                 onExit = { viewModel.exit(force = false) },
                 onUseAsCover = viewModel::useFrameAsCover,
             )
-            GameMenu.States -> StatesSheet(
+            GameMenu.States -> com.joelbermudez.pocketgb.ui.moments.MomentsSheet(
                 landscape = landscape,
-                ui = states,
+                ui = moments,
                 snackbar = snackbar,
+                actions = gameMomentActions(viewModel),
+                currentConfig = game.momentConfig,
                 onBack = viewModel::closeStates,
-                onSave = viewModel::saveState,
-                onLoad = { slot, saveCurrent -> viewModel.loadState(slot, saveCurrent) },
-                onDelete = viewModel::deleteState,
             )
         }
     }
@@ -234,3 +233,12 @@ private fun rememberGamepadConnection(injected: GamepadConnection?): GamepadConn
     }
     return monitor
 }
+
+/** N6: acciones de la hoja «Momentos» de la pausa (todas pasan por el ViewModel, con la sesión dueña de la huella). */
+internal fun gameMomentActions(viewModel: GameplayViewModel) = com.joelbermudez.pocketgb.ui.moments.MomentActions(
+    onCreate = viewModel::createMoment,
+    onLoad = { viewModel.loadMoment(com.joelbermudez.pocketgb.saves.MomentStore.Kind.MOMENT, it.id, it.name) },
+    onRecover = { viewModel.loadMoment(com.joelbermudez.pocketgb.saves.MomentStore.Kind.BEFORE_LOAD, it.id, it.name) },
+    onEdit = { m, name, tags, collection, note -> viewModel.updateMoment(m.id, name, tags, collection, note) },
+    onDelete = { kind, m -> viewModel.deleteMoment(kind, m.id) },
+)

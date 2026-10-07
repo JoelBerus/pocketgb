@@ -49,6 +49,7 @@ add_library(
     "${CORE_ROOT}/src/link.c"
     "${CORE_ROOT}/src/mmu.c"
     "${CORE_ROOT}/src/ppu.c"
+    "${CORE_ROOT}/src/progress_pokemon.c"
     "${CORE_ROOT}/src/rtc.c"
     "${CORE_ROOT}/src/serial.c"
     "${CORE_ROOT}/src/sha256.c"

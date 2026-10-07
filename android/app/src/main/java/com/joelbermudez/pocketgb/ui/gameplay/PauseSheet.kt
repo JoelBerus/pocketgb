@@ -138,7 +138,7 @@ fun PauseMenuContent(
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-states"),
         ) {
             Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(stringResource(R.string.gameplay_pause_states), modifier = Modifier.padding(start = 8.dp))
+            Text(stringResource(R.string.n6_pause_moments), modifier = Modifier.padding(start = 8.dp))
         }
         OutlinedButton(
             onClick = onCustomize,
@@ -159,7 +159,7 @@ fun PauseMenuContent(
             }
         }
         Text(
-            stringResource(R.string.gameplay_pause_states_footer),
+            stringResource(R.string.n6_pause_footer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

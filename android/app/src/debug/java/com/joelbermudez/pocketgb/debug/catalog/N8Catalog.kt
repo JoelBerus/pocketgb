@@ -3,7 +3,6 @@ package com.joelbermudez.pocketgb.debug.catalog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -19,7 +18,6 @@ import com.joelbermudez.pocketgb.debug.DebugIntent
 import com.joelbermudez.pocketgb.emulator.GbaBiosStatus
 import com.joelbermudez.pocketgb.emulator.GbaRtc
 import com.joelbermudez.pocketgb.emulator.GbaSaveType
-import com.joelbermudez.pocketgb.game.StatesUi
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.library.DetailsLoad
 import com.joelbermudez.pocketgb.library.GameDetails
@@ -32,8 +30,6 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.saves.FramePng
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
-import com.joelbermudez.pocketgb.saves.StateSlot
-import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.settings.GameOverrides
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.ui.components.LocalArtworkStore
@@ -42,7 +38,6 @@ import com.joelbermudez.pocketgb.ui.details.GameDetailsContent
 import com.joelbermudez.pocketgb.ui.details.GameSettingsSheet
 import com.joelbermudez.pocketgb.ui.details.GbaSettingsInfo
 import com.joelbermudez.pocketgb.ui.gameplay.SaveLoadWarningDialog
-import com.joelbermudez.pocketgb.ui.gameplay.StatesSheet
 import com.joelbermudez.pocketgb.ui.library.GameActions
 import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LibraryPanel
@@ -236,18 +231,13 @@ private fun N8Center(overrides: GameOverrides = GameOverrides(), scrolled: Boole
 
 @Composable
 private fun N8States() {
-    val states = remember {
+    // N6: la hoja «Momentos» con capturas de GBA (3:2).
+    val ui = remember {
         fun thumb(seed: Int) = FramePng.encode(N8Data.gbaPixels(seed))
-        StatesUi(
-            entries = mapOf(
-                StateSlot.AUTO to StateStore.Entry(StateSlot.AUTO, 1_759_700_000_000, thumb(1), false),
-                StateSlot.MANUAL1 to StateStore.Entry(StateSlot.MANUAL1, 1_759_650_000_000, thumb(4), false),
-            ),
-        )
+        val base = N6Data.ui()
+        base.copy(thumbnails = base.thumbnails.mapNotNull { (k, _) -> thumb(k.hashCode() and 7)?.let { k to it } }.toMap())
     }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        StatesSheet(false, states, remember { SnackbarHostState() }, {}, {}, { _, _ -> }, {})
-    }
+    Box(Modifier.fillMaxSize().background(Color.Black)) { MomentsCatalogSheet(false, ui) }
 }
 
 /** Pantallas nuevas de N8 (Android, GBA). La orientación, la fuente y el tema los fija el manifiesto. */

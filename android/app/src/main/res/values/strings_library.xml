@@ -61,7 +61,6 @@
     <string name="menu_details">Ver detalle</string>
     <string name="menu_favorite_add">Añadir a favoritos</string>
     <string name="menu_favorite_remove">Quitar de favoritos</string>
-    <string name="menu_states_soon">Estados (próximamente)</string>
     <string name="menu_game_settings">Ajustes del juego</string>
     <string name="menu_hide">Ocultar de PocketGB</string>
 
