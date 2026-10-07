@@ -178,17 +178,18 @@ static void base_init(void)
 static const char GOLDEN_META[] = "{\"formato\":1,\"juego\":\"Pok\xC3\xA9" "mon Rojo \xE2\x80\x93 prueba\",\"ms\":1234567}";
 enum { GOLDEN_META_LEN = sizeof GOLDEN_META - 1, GOLDEN_SAV = 8192, GOLDEN_STATE = 1500, GOLDEN_THUMB = 32 };
 
-static const char G1_SHA[] = "617c82a522e01eddddba5606df1f383356d9f4ef93c0768d9d7e893dcf146cd7";
-static const char G2_SHA[] = "ea86e10010169eae94e57719e10230a15e1cbaf607fdeb650dc6eb0b352dcf75";
-static const char G3_SHA[] = "eba7c40e531741db94fc000ec90ed36774707357e9b181d05c8f40780d32f6a2";
-enum { G1_LEN = 9857, G2_LEN = 64, G3_LEN = 77 };
-static const uint32_t G1_CRC = 0xe477060fu, G2_CRC = 0xc42da47du, G3_CRC = 0x587f15d4u;
+static const char G1_SHA[] = "a71baa2e1c81ba3e9ed0058571237f232cf5fdd3da13d8d4f61449dfcd30f3c6";
+static const char G2_SHA[] = "5548b8cac9de16d52d17aec2907fd61832443bdebb4dc747499f726da9ef41c9";
+static const char G3_SHA[] = "b6b3f3e96df34995d4bdf171e368acae20f5b72bb512b824fae509d3979a4a53";
+enum { G1_LEN = 9873, G2_LEN = 80, G3_LEN = 93 };
+static const uint32_t G1_CRC = 0xa46a6d04u, G2_CRC = 0xfe827d35u, G3_CRC = 0x03717a59u;
 
 static const uint8_t G2_BYTES[G2_LEN] = {
-    0x50, 0x47, 0x42, 0x4d, 0x01, 0x00, 0x02, 0x00, 0x40, 0x00, 0x00, 0x00, 0x52, 0x4f, 0x4d, 0x46,
-    0x10, 0x00, 0x00, 0x00, 0x10, 0x35, 0x5a, 0x7f, 0xa4, 0xc9, 0xee, 0x13, 0x38, 0x5d, 0x82, 0xa7,
-    0xcc, 0xf1, 0x16, 0x3b, 0x53, 0x41, 0x56, 0x45, 0x10, 0x00, 0x00, 0x00, 0x21, 0x46, 0x6b, 0x90,
-    0xb5, 0xda, 0xff, 0x24, 0x49, 0x6e, 0x93, 0xb8, 0xdd, 0x02, 0x27, 0x4c, 0x7d, 0xa4, 0x2d, 0xc4
+    0x50, 0x47, 0x42, 0x4d, 0x01, 0x00, 0x02, 0x00, 0x50, 0x00, 0x00, 0x00, 0x52, 0x4f, 0x4d, 0x46,
+    0x20, 0x00, 0x00, 0x00, 0x10, 0x35, 0x5a, 0x7f, 0xa4, 0xc9, 0xee, 0x13, 0x38, 0x5d, 0x82, 0xa7,
+    0xcc, 0xf1, 0x16, 0x3b, 0x60, 0x85, 0xaa, 0xcf, 0xf4, 0x19, 0x3e, 0x63, 0x88, 0xad, 0xd2, 0xf7,
+    0x1c, 0x41, 0x66, 0x8b, 0x53, 0x41, 0x56, 0x45, 0x10, 0x00, 0x00, 0x00, 0x21, 0x46, 0x6b, 0x90,
+    0xb5, 0xda, 0xff, 0x24, 0x49, 0x6e, 0x93, 0xb8, 0xdd, 0x02, 0x27, 0x4c, 0x35, 0x7d, 0x82, 0xfe
 };
 
 /* which: 0 = G1 completo, 1 = G2 mínimo, 2 = G3 con una sección desconocida. Devuelve la longitud. */
@@ -456,8 +457,8 @@ static void test_header_errors(struct ut *t)
     /* Longitud total de la cabecera. */
     static const struct { uint32_t total; pgbm_result want; } totals[] = {
         { 0, PGBM_ERR_BOUNDS }, { 15, PGBM_ERR_BOUNDS }, { 16, PGBM_ERR_BOUNDS },
-        { 9856, PGBM_ERR_BOUNDS },                              /* menor que el archivo */
-        { 9858, PGBM_ERR_TRUNCATED }, { 100000, PGBM_ERR_TRUNCATED },
+        { G1_LEN - 1, PGBM_ERR_BOUNDS },                        /* menor que el archivo */
+        { G1_LEN + 1, PGBM_ERR_TRUNCATED }, { 100000, PGBM_ERR_TRUNCATED },
         { PGBM_MAX_TOTAL, PGBM_ERR_TRUNCATED },
         { PGBM_MAX_TOTAL + 1, PGBM_ERR_TOO_LARGE }, { 0xFFFFFFFFu, PGBM_ERR_TOO_LARGE },
     };
@@ -603,9 +604,9 @@ static void test_structure(struct ut *t)
         }
     }
 
-    /* ROMF de longitud distinta de 16; opcionales vacías; SAVE vacía sí vale. */
+    /* ROMF de longitud distinta de 32 (16 era la del primer diseño); opcionales vacías; SAVE vacía sí vale. */
     {
-        static const unsigned romf_lens[] = { 0, 1, 15, 17, 32 };
+        static const unsigned romf_lens[] = { 0, 1, 15, 16, 31, 33, 64 };
         for (size_t i = 0; i < sizeof romf_lens / sizeof romf_lens[0]; i++) {
             struct rsec s[2] = { RS("ROMF", big, romf_lens[i]), sav };
             size_t n = raw_build(buf, 1, -1, -1, s, 2, false);
@@ -736,7 +737,7 @@ static void test_structure(struct ut *t)
         if (c) {
             uint8_t *re = malloc(n);
             size_t w = 0;
-            CHECK(t, re && pgbm_encode(&v, re, n, &w) == PGBM_OK && w == 64);
+            CHECK(t, re && pgbm_encode(&v, re, n, &w) == PGBM_OK && w == G2_LEN);
             pgbm_view v2;
             CHECK(t, re && pgbm_parse(re, w, &v2) == PGBM_OK && span_is(v2.sav, g_sav16, 16));
             free(re);
@@ -913,7 +914,7 @@ static void test_encode(struct ut *t)
     v.meta = (pgbm_span){ (const uint8_t *)"{}", 2 };
     v.thumb = (pgbm_span){ png, sizeof png };
     size_t size = pgbm_encoded_size(&v);
-    CHECK(t, size == HDR + CRCB + (SHDR + 16) + (SHDR + 16) + (SHDR + 2) + (SHDR + sizeof png));
+    CHECK(t, size == HDR + CRCB + (SHDR + ROMF_LEN) + (SHDR + 16) + (SHDR + 2) + (SHDR + sizeof png));
     size_t w = 99;
 
     /* Argumentos. */
@@ -1083,9 +1084,10 @@ size_t ut_pgbm_seed(unsigned which, uint8_t *out, size_t cap)
             return 0;
         if (which == 3)
             pkg[n - 1] ^= 0x5A;
-    } else {                                        /* modo codificador: [huella 16][longitudes meta, thumb, state, sav][datos] */
+    } else {                                        /* modo codificador: [huella 32][longitudes meta, thumb, state, sav][datos] */
         static const uint8_t ascii[] = {
-            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',   /* huella */
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',   /* huella (32) */
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
             8, 8, 4, 6,                                                                        /* meta, thumb, state, sav */
             '{', '"', 'k', '"', ':', '1', '}', ' ',
             0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
@@ -1094,6 +1096,7 @@ size_t ut_pgbm_seed(unsigned which, uint8_t *out, size_t cap)
         };
         static const uint8_t utf8[] = {                 /* META con secuencias de 1, 2, 3 y 4 bytes, firma PNG forzada por el indicador */
             'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
             15, 12, 0, 3,
             'a', 0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80, 'b', 0xF4, 0x8F, 0xBF, 0xBF,   /* 15 bytes de META */
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,                                                 /* 12 de THMB */

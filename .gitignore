@@ -6,6 +6,7 @@
 *.agb
 *.srl
 *.sav
+*.pgbm
 *.rtc
 *.state
 *.ss[0-9]

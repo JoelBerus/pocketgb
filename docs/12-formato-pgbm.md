@@ -41,7 +41,7 @@ El CRC-32 es el estándar IEEE 802.3 (polinomio reflejado `0xEDB88320`, valor in
 ### Secciones conocidas
 | Tipo | Contenido | Longitud | ¿Obligatoria? | Comprobación del C |
 |---|---|---|---|---|
-| `ROMF` | Huella del ROM: los **16 primeros bytes** del SHA-256 del ROM (contrato con las apps; el C no la interpreta) | exactamente 16 | **Sí** | solo la longitud |
+| `ROMF` | Huella del ROM: el **SHA-256 completo** del ROM (32 bytes, el `fingerprint[32]` de `gb_rom_info` / `gba_rom_info`). El C no la interpreta: cada app la compara en su forma (iOS usa los 16 primeros bytes como clave interna; Android, los 32) | exactamente 32 | **Sí** | solo la longitud |
 | `META` | JSON UTF-8 con los metadatos (alias, etiquetas, hitos, tiempo, equipo de origen, versión del núcleo, configuración…). Lo generan y lo interpretan las apps (N7b) | 1 – 65 536 (64 KiB) | No | UTF-8 estricto (RFC 3629: sin sobrelargos, sin sustitutos U+D800–DFFF, hasta U+10FFFF) y **sin NUL**. No se comprueba que sea JSON |
 | `THMB` | Miniatura PNG | 8 – 262 144 (256 KiB) | No | solo la firma PNG `89 50 4E 47 0D 0A 1A 0A`. No se decodifica |
 | `SAVE` | La partida: el `.sav` crudo. GB: hasta 128 KiB + el bloque RTC (48 B); GBA: hasta 128 KiB + 16 B de RTC | 0 – 131 136 (128 KiB + 64 B) | **Sí** (puede ir vacía, ver abajo) | solo el tope |
@@ -61,18 +61,18 @@ El CRC-32 es el estándar IEEE 802.3 (polinomio reflejado `0xEDB88320`, valor in
 | `SAVE` | 128 KiB + 64 B |
 | `STAT` | 1 MiB |
 | `THMB` | 256 KiB |
-| `ROMF` | 16 B exactos |
+| `ROMF` | 32 B exactos |
 | Secciones por archivo | 64 |
 | Sección desconocida | solo lo que quede en el archivo (≤ 4 MiB) |
 
-Un paquete con todo al tope ocupa 1 507 464 B (≈ 1,4 MiB); los 4 MiB dejan sitio de sobra para secciones futuras que un lector v1 todavía no entiende.
+Un paquete con todo al tope ocupa 1 507 480 B (≈ 1,4 MiB); los 4 MiB dejan sitio de sobra para secciones futuras que un lector v1 todavía no entiende.
 
 ## Orden de las comprobaciones de `pgbm_parse`
 1. **Mágico** (los bytes presentes; un prefijo propio del mágico es «truncado») → `PGBM_ERR_MAGIC`.
 2. **Versión** (si hay 6 bytes) ≠ 1 → `PGBM_ERR_VERSION`. Se rechaza sin mirar nada más: otra versión puede tener otra cabecera.
 3. **Longitud:** menos de 12 bytes → `TRUNCATED`; total < 16 → `BOUNDS`; total > 4 MiB → `TOO_LARGE`; archivo más corto que el total → `TRUNCATED`; más largo (bytes sobrantes) → `BOUNDS`.
 4. **CRC-32** de todo lo anterior al CRC → `PGBM_ERR_CRC`. Una corrupción en tránsito de cualquier byte acaba aquí (salvo en el mágico, la versión y la longitud, que fallan antes con su propio código).
-5. **Secciones**, en el orden del archivo: más de 64 → `TOO_LARGE`; cabecera de sección que no cabe, tipo no ASCII, longitud que se sale del contenedor, `ROMF` ≠ 16 B, opcional vacía, bytes que ninguna sección reclama o cuenta de secciones que no coincide → `BOUNDS`; tipo conocido repetido → `DUPLICATE`; sección sobre su tope → `TOO_LARGE`.
+5. **Secciones**, en el orden del archivo: más de 64 → `TOO_LARGE`; cabecera de sección que no cabe, tipo no ASCII, longitud que se sale del contenedor, `ROMF` ≠ 32 B, opcional vacía, bytes que ninguna sección reclama o cuenta de secciones que no coincide → `BOUNDS`; tipo conocido repetido → `DUPLICATE`; sección sobre su tope → `TOO_LARGE`.
 6. **Obligatorias:** falta `ROMF` o `SAVE` → `PGBM_ERR_MISSING`.
 7. **Contenido:** `META` no UTF-8 o con NUL → `PGBM_ERR_UTF8`; `THMB` sin firma PNG → `PGBM_ERR_PNG`.
 
@@ -106,7 +106,7 @@ Los valores son estables (las apps los mapean). `pgbm_result_name()` da el nombr
 
 ## Lo que debe hacer el importador (N7b)
 El C solo garantiza que el contenedor es coherente. Antes de instalar nada, la app:
-1. Comprueba que `ROMF` coincide con la huella del juego (o elige el juego por ella) y que **no hay sesión abierta o aparcada de esa huella** (exclusión por huella, N-README §3.3).
+1. Comprueba que `ROMF` coincide con la huella del juego (o elige el juego por ella), cada app en su forma: Android compara los 32 bytes; iOS, los 16 primeros que usa como clave interna (si el juego ya está en la biblioteca, conviene comprobar también los 32) y que **no hay sesión abierta o aparcada de esa huella** (exclusión por huella, N-README §3.3).
 2. Comprueba que el tamaño de `SAVE` es el que corresponde al cartucho (incluido 0 solo si no tiene batería), **siempre con copia de seguridad** y escritura atómica de la partida (regla 6).
 3. Pasa `STAT` a `gb_state_load` / `gba_state_load`, que validan huella, CRC y rangos; un estado rechazado no impide recuperar la partida.
 4. Interpreta `META` con un analizador de JSON con límites (el C solo garantiza UTF-8) y decodifica `THMB` con el decodificador del sistema (ImageIO / `BitmapFactory`), con tope de dimensiones: el C solo comprobó la firma.
@@ -119,9 +119,9 @@ Los tres se generan **en el test** (`core/tests/unit_pgbm.c`, `build_golden`) co
 
 | Vector | Contenido | Longitud | CRC-32 | SHA-256 del archivo |
 |---|---|---|---|---|
-| **G1** completo | `ROMF` = `pat(0x10, 16)` · `META` = el JSON de abajo (61 B) · `THMB` = firma PNG + `pat(0x63, 24)` (32 B) · `SAVE` = `pat(0x21, 8192)` · `STAT` = `pat(0x42, 1500)`; en el orden canónico | 9857 | `e477060f` | `617c82a522e01eddddba5606df1f383356d9f4ef93c0768d9d7e893dcf146cd7` |
-| **G2** mínimo | `ROMF` = `pat(0x10, 16)` · `SAVE` = `pat(0x21, 16)` | 64 | `c42da47d` | `ea86e10010169eae94e57719e10230a15e1cbaf607fdeb650dc6eb0b352dcf75` |
-| **G3** con tipo desconocido (solo lectura; el codificador no lo puede producir) | `ROMF` · `XTRA` = «hola!» (5 B) · `SAVE` = `pat(0x21, 16)`, en ese orden | 77 | `587f15d4` | `eba7c40e531741db94fc000ec90ed36774707357e9b181d05c8f40780d32f6a2` |
+| **G1** completo | `ROMF` = `pat(0x10, 32)` · `META` = el JSON de abajo (61 B) · `THMB` = firma PNG + `pat(0x63, 24)` (32 B) · `SAVE` = `pat(0x21, 8192)` · `STAT` = `pat(0x42, 1500)`; en el orden canónico | 9873 | `a46a6d04` | `a71baa2e1c81ba3e9ed0058571237f232cf5fdd3da13d8d4f61449dfcd30f3c6` |
+| **G2** mínimo | `ROMF` = `pat(0x10, 32)` · `SAVE` = `pat(0x21, 16)` | 80 | `fe827d35` | `5548b8cac9de16d52d17aec2907fd61832443bdebb4dc747499f726da9ef41c9` |
+| **G3** con tipo desconocido (solo lectura; el codificador no lo puede producir) | `ROMF` · `XTRA` = «hola!» (5 B) · `SAVE` = `pat(0x21, 16)`, en ese orden (`ROMF` = `pat(0x10, 32)`) | 93 | `03717a59` | `b6b3f3e96df34995d4bdf171e368acae20f5b72bb512b824fae509d3979a4a53` |
 
 `META` de G1 (UTF-8, 61 bytes; la «é» es `C3 A9` y el guion largo «–» es `E2 80 93`):
 ```
@@ -134,14 +134,15 @@ G3 lleva el número de secciones = 3. Al leerlo, `pgbm_parse` devuelve `SAVE` y 
 0000: 50 47 42 4d              mágico «PGBM»
 0004: 01 00                    versión 1
 0006: 02 00                    2 secciones
-0008: 40 00 00 00              longitud total = 64
+0008: 50 00 00 00              longitud total = 80
 000c: 52 4f 4d 46              «ROMF»
-0010: 10 00 00 00              longitud 16
-0014: 10 35 5a 7f a4 c9 ee 13 38 5d 82 a7 cc f1 16 3b      huella = pat(0x10, 16)
-0024: 53 41 56 45              «SAVE»
-0028: 10 00 00 00              longitud 16
-002c: 21 46 6b 90 b5 da ff 24 49 6e 93 b8 dd 02 27 4c      partida = pat(0x21, 16)
-003c: 7d a4 2d c4              CRC-32 = 0xc42da47d (little-endian)
+0010: 20 00 00 00              longitud 32
+0014: 10 35 5a 7f a4 c9 ee 13 38 5d 82 a7 cc f1 16 3b      huella = pat(0x10, 32), bytes 0–15
+0024: 60 85 aa cf f4 19 3e 63 88 ad d2 f7 1c 41 66 8b                          bytes 16–31
+0034: 53 41 56 45              «SAVE»
+0038: 10 00 00 00              longitud 16
+003c: 21 46 6b 90 b5 da ff 24 49 6e 93 b8 dd 02 27 4c      partida = pat(0x21, 16)
+004c: 35 7d 82 fe              CRC-32 = 0xfe827d35 (little-endian)
 ```
 Comprobación independiente: `hashlib.sha256` del bloque anterior da el valor de G2.
 
@@ -154,7 +155,7 @@ def pgbm(secs):                       # secs: [(tipo de 4 bytes, datos)], en el 
     body = b"".join(t + struct.pack("<I", len(d)) + d for t, d in secs)
     pre = b"PGBM" + struct.pack("<HHI", 1, len(secs), 12 + len(body) + 4) + body
     return pre + struct.pack("<I", zlib.crc32(pre) & 0xFFFFFFFF)
-ROM = pat(0x10, 16)
+ROM = pat(0x10, 32)
 META = '{"formato":1,"juego":"Pokémon Rojo – prueba","ms":1234567}'.encode("utf-8")
 PNG = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) + pat(0x63, 24)
 g1 = pgbm([(b"ROMF", ROM), (b"META", META), (b"THMB", PNG), (b"SAVE", pat(0x21, 8192)), (b"STAT", pat(0x42, 1500))])
@@ -172,6 +173,7 @@ for g in (g1, g2, g3): print(len(g), hashlib.sha256(g).hexdigest())
 | Hook | `.githooks/pre-commit` | `*.pgbm` y cualquier archivo que empiece por «PGBM» quedan bloqueados |
 
 ## Decisiones respecto a la propuesta inicial
+- **`ROMF` lleva el SHA-256 completo (32 bytes)**, no una huella truncada: el núcleo la expone entera (`fingerprint[32]`) y así sirve a las dos apps (cada una la compara en su forma). El primer diseño usaba 16 bytes; un lector que espere 16 rechaza estos paquetes con `BOUNDS`.
 - **Tipo `SAVE`** en lugar de «SAV» (4 bytes exactos).
 - **`SAVE` puede ir vacía** (juegos sin batería); la falta de la sección sigue siendo `MISSING`. Si se prefiere exigir ≥ 1 byte, basta un `if` en `walk_sections` y otro en `pgbm_encoded_size`.
 - **Dos códigos nuevos**, `PGBM_ERR_ARG` y `PGBM_ERR_NOSPACE`, para no confundir fallos del llamador con fallos del archivo.

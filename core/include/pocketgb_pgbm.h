@@ -4,7 +4,7 @@
  *
  * Un `.pgbm` agrupa secciones opacas para el C: META (JSON UTF-8 de las apps), SAVE (la partida,
  * `.sav` crudo), STAT (un save state del núcleo, opcional), THMB (miniatura PNG, opcional) y
- * ROMF (huella truncada del ROM, 16 bytes). Esta API solo empaqueta, valida y desempaqueta:
+ * ROMF (huella del ROM: el SHA-256 completo, 32 bytes). Esta API solo empaqueta, valida y desempaqueta:
  * no interpreta el JSON, no abre el `.sav` ni el estado, no toca el disco.
  *
  * Reglas del núcleo (AGENTS.md): C11, sin I/O, sin malloc, sin estado global, determinista
@@ -34,7 +34,7 @@ extern "C" {
 #define PGBM_MAX_SAV      131136u    /* 128 KiB + 64 B: .sav hasta 128 KiB + RTC (GB 48 B, GBA 16 B) */
 #define PGBM_MAX_STATE    1048576u   /* 1 MiB: estado del núcleo (el de GBA ocupa ≈ 666 KiB) */
 #define PGBM_MAX_THUMB    262144u    /* 256 KiB: miniatura PNG */
-#define PGBM_ROMF_BYTES   16u        /* longitud exacta de la huella del ROM */
+#define PGBM_ROMF_BYTES   32u        /* longitud exacta de la huella del ROM: el SHA-256 completo (gb/gba_rom_info.fingerprint) */
 #define PGBM_MAX_SECTIONS 64u        /* secciones del archivo, las desconocidas incluidas */
 
 /* Un trozo de bytes. «Presente» = len > 0 (SAV es la excepción: ver pgbm_view.sav). */
@@ -51,7 +51,8 @@ typedef struct pgbm_span {
  *         encaja con el cartucho antes de tocar nada.
  *   state estado del núcleo, ≤ PGBM_MAX_STATE. len 0 = ausente.
  *   thumb PNG (solo se comprueba la firma), ≤ PGBM_MAX_THUMB. len 0 = ausente.
- *   rom_fp huella del ROM (16 bytes); siempre presente.
+ *   rom_fp huella del ROM (SHA-256 completo, 32 bytes); siempre presente. Cada app la compara en su
+ *          forma (iOS usa los 16 primeros como clave interna; Android, los 32).
  *   version  al leer: la versión del archivo (siempre PGBM_VERSION si hay éxito). Al escribir:
  *            0 o PGBM_VERSION; otro valor → PGBM_ERR_VERSION.
  * Al leer, los spans ausentes quedan {NULL, 0}.
@@ -68,7 +69,7 @@ typedef enum pgbm_result {
     PGBM_ERR_VERSION,    /* versión de formato desconocida (0 o mayor que PGBM_VERSION) */
     PGBM_ERR_TRUNCATED,  /* el buffer es más corto que la longitud que declara la cabecera */
     PGBM_ERR_BOUNDS,     /* estructura imposible: sección que se sale, bytes sobrantes, longitud
-                            no permitida (ROMF ≠ 16, sección opcional vacía), tipo no ASCII */
+                            no permitida (ROMF ≠ 32, sección opcional vacía), tipo no ASCII */
     PGBM_ERR_CRC,        /* el CRC-32 no coincide: el archivo se corrompió */
     PGBM_ERR_DUPLICATE,  /* una sección conocida aparece dos veces */
     PGBM_ERR_MISSING,    /* falta SAVE o ROMF */

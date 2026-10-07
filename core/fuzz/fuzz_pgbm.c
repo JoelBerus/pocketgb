@@ -8,7 +8,7 @@
  *     longitud real; bit 2 = recalcular el CRC-32 (con una tabla propia, independiente de
  *     state.c); bit 3 = poner el nº de secciones = las cabeceras de sección que caben.
  *     Combinándolos se llega a cada rechazo de estructura y a la rama de éxito.
- *   Modo codificador (bit 7 = 1): [huella: 16][longitudes de meta, thumb, state, sav: 4 bytes][datos].
+ *   Modo codificador (bit 7 = 1): [huella: 32][longitudes de meta, thumb, state, sav: 4 bytes][datos].
  *     Los datos se reparten en ese orden (lo que falte se recorta). bit 6 = forzar la firma PNG
  *     al principio de THMB; bit 5 = corregir META a UTF-8 válido; bit 4 = pedir la versión 2.
  * Cada fragmento va a su propio bloque del montón de tamaño EXACTO, para que ASan detecte
@@ -409,7 +409,21 @@ int main(int argc, char **argv)
         memcpy(work, seed[s], n);
         unsigned ops = 1 + rnd() % 6;
         for (unsigned k = 0; k < ops; k++) {
-            switch (rnd() % 11) {
+            switch (rnd() % 12) {
+            case 11: {                                                       /* secuencias UTF-8 en el borde de la validez (como el diccionario de libFuzzer) */
+                static const struct { uint8_t b[4]; uint8_t n; } seq[] = {
+                    { { 0xED, 0xA0, 0x80 }, 3 }, { { 0xED, 0xBF, 0xBF }, 3 }, { { 0xED, 0x9F, 0xBF }, 3 },
+                    { { 0xF4, 0x90, 0x80, 0x80 }, 4 }, { { 0xF4, 0x8F, 0xBF, 0xBF }, 4 }, { { 0xC0, 0x80 }, 2 },
+                    { { 0xC1, 0xBF }, 2 }, { { 0xE0, 0x80, 0x80 }, 3 }, { { 0xE0, 0xA0, 0x80 }, 3 },
+                    { { 0xF0, 0x80, 0x80, 0x80 }, 4 }, { { 0xF0, 0x90, 0x80, 0x80 }, 4 }, { { 0xF5, 0x80, 0x80, 0x80 }, 4 },
+                    { { 0xEF, 0xBF, 0xBF }, 3 }, { { 0xC2, 0x80 }, 2 }, { { 0xE2, 0x82, 0xAC }, 3 }, { { 0x00 }, 1 },
+                    { { 0x89, 'P', 'N', 'G' }, 4 }, { { 0x0D, 0x0A, 0x1A, 0x0A }, 4 },
+                };
+                size_t k = rnd() % (sizeof seq / sizeof seq[0]);
+                if (n > seq[k].n)
+                    memcpy(work + rnd() % (n - seq[k].n), seq[k].b, seq[k].n);
+                break;
+            }
             case 0: work[rnd() % n] ^= (uint8_t)(1u << (rnd() % 8)); break;
             case 1: work[rnd() % n] = (uint8_t)rnd(); break;
             case 10: {                                                       /* bytes que deciden la validez de UTF-8 y de la firma PNG */
