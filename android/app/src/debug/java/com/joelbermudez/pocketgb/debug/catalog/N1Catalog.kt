@@ -105,7 +105,6 @@ private fun N1Library(layout: LibraryLayout, preferencesReadOnly: Boolean = fals
         onChooseFolder = {},
         onRescan = {},
         actions = n1Actions,
-        artworkFingerprints = CatalogData.coveredFingerprints,
     )
 }
 

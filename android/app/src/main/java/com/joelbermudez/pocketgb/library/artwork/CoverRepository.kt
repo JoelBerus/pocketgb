@@ -163,10 +163,6 @@ class CoverRepository(
         settings?.setPreference(preference) ?: run { defaultSettings.value = defaultSettings.value.copy(preference = preference) }
     }
 
-    /** Huellas con una portada que no es la generada (carril «Continuar jugando», K10). */
-    fun fingerprintsWithCover(): Set<String> =
-        captures.fingerprints() + pinned?.fingerprints().orEmpty() + imported?.fingerprints().orEmpty()
-
     /** Bytes de todas las portadas (Ajustes › Almacenamiento). */
     fun sizeBytes(): Long = listOfNotNull(captures, pinned, imported, folderCache).sumOf { it.sizeBytes() }
 

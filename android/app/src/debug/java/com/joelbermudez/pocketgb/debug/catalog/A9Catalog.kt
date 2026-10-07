@@ -71,7 +71,6 @@ private fun A9Library(prefs: LibraryPreferencesData, menuFor: String? = null) {
             onChooseFolder = {},
             onRescan = {},
             actions = a9Actions,
-            artworkFingerprints = CatalogData.coveredFingerprints,
         )
     }
 }

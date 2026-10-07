@@ -53,6 +53,7 @@ En **Ajustes › Biblioteca › Portadas** decides qué gana en «Automática» 
 
 ## Cómo se ve
 
+- «Continuar jugando» muestra los juegos que puedes retomar **aunque no tengan portada** (decisión de Joel 2026-10-07): sin imagen ni captura, su tarjeta lleva la portada generada.
 - En la **cuadrícula, la lista y «Continuar jugando»** la tarjeta mantiene su forma y la imagen la rellena centrada: si la imagen es más alta o más ancha, se recorta por los bordes.
 - En el **detalle** la imagen se ve **entera**, dentro del marco con la forma de la pantalla de la consola, con bandas a los lados o arriba y abajo si hace falta.
 - Las capturas se dibujan sin suavizar (pixel art); las imágenes, suavizadas.

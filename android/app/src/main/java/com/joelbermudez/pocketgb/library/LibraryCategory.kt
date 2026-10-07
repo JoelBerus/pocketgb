@@ -129,16 +129,15 @@ fun LibraryQuery.tagOptions(entries: List<RomEntry>, prefs: LibraryPreferencesDa
 
 /**
  * Carril «Continuar jugando» (N3a, ND15 como iOS A9-5): los jugados recientemente que se pueden **continuar** (estado
- * automático vigente, [isResumable]) y con portada capturada ([hasArtwork], K10: nunca una portada inventada), del más
- * reciente al más antiguo, hasta [LibraryQuery.CONTINUE_LIMIT]. Un juego que solo tiene partida no sale: se abre con
- * «Jugar» desde su tarjeta.
+ * automático vigente, [isResumable]) y con ROM jugable, del más reciente al más antiguo, hasta [LibraryQuery.CONTINUE_LIMIT]. Un juego que solo tiene partida no sale: se abre con
+ * «Jugar» desde su tarjeta. No depende de la portada (decisión de Joel 2026-10-07, sustituye a K10): sin portada propia
+ * la tarjeta muestra la generada.
  */
 fun LibraryQuery.continueRail(
     entries: List<RomEntry>,
     prefs: LibraryPreferencesData,
     isResumable: (RomEntry) -> Boolean,
-    hasArtwork: (String) -> Boolean,
 ): List<RomEntry> =
-    recent(entries, prefs, limit = Int.MAX_VALUE, hasArtwork = hasArtwork)
-        .filter(isResumable)
+    recent(entries, prefs, limit = Int.MAX_VALUE)
+        .filter { it.isPlayable && isResumable(it) }
         .take(LibraryQuery.CONTINUE_LIMIT)

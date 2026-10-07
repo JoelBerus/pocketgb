@@ -376,20 +376,16 @@ object LibraryQuery {
     const val CONTINUE_LIMIT = 5
 
     /**
-     * Jugados recientemente (no ocultos), del más reciente al más antiguo. Con [hasArtwork] solo quedan los
-     * jugables cuya huella tiene portada capturada (carril «Continuar jugando», K10): nunca una portada inventada.
-     * Un juego con varias copias (N1a) sale una sola vez (la primera por ruta).
+     * Jugados recientemente (no ocultos), del más reciente al más antiguo. Un juego con varias copias (N1a) sale una sola vez (la primera por ruta).
      */
     fun recent(
         entries: List<RomEntry>,
         prefs: LibraryPreferencesData,
         limit: Int = CONTINUE_LIMIT,
-        hasArtwork: ((String) -> Boolean)? = null,
     ): List<RomEntry> {
         val copies = copies(entries, prefs)
         return entries.filter {
-            !prefs.isHidden(it) && prefs.lastPlayedAt(it) != null &&
-                (hasArtwork == null || it.isPlayable && prefs.fingerprints[it.id]?.let(hasArtwork) == true)
+            !prefs.isHidden(it) && prefs.lastPlayedAt(it) != null
         }
             .sortedWith(compareByDescending<RomEntry> { prefs.lastPlayedAt(it) }.thenBy { it.id })
             .distinctBy { prefs.fingerprints[it.id] ?: "ruta:${it.id}" }

@@ -110,7 +110,6 @@ class AdaptiveLibraryUiTest {
     private fun Library(
         initial: LibraryPreferencesData = LibraryPreferencesData(),
         resumable: Set<String> = emptySet(),
-        artwork: Set<String> = games.map(::fingerprintOf).toSet(),
         preset: LibraryToolsPreset = LibraryToolsPreset(),
     ) {
         // N4: sin estanterías del inicio (estas pruebas son de N3: herramientas, paneles y carril; las del inicio, en
@@ -137,7 +136,6 @@ class AdaptiveLibraryUiTest {
                     onPlay = {},
                     canResume = { it.id in resumable },
                 ),
-                artworkFingerprints = artwork,
                 onOpenCategory = { openedCategory = it },
             )
         }
