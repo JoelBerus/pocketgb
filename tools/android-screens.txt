@@ -262,7 +262,7 @@ n4-move-category portrait light
 n4-move-category portrait dark
 n4-move-category-scrolled portrait light swipe=up
 n4-move-category-ax5 portrait light fontScale=2.0
-n4-settings-library portrait light
+n4-settings-library portrait light swipe=up
 n4-settings-home portrait light
 n4-settings-home portrait dark
 n4-settings-home-ax5 portrait light fontScale=2.0

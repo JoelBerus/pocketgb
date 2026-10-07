@@ -49,6 +49,17 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | N1-5 | Dejar dos copias del mismo juego en carpetas distintas y abrir el detalle de ambas | «Duplicado» en las dos tarjetas y «También en: …» en el detalle |
 | N1-6 | Con dos copias cuyos `.sav` son distintos, abrir la copia con el `.sav` más nuevo | Se juega esa partida; en Ajustes › Partidas › «Apartadas» queda la otra y «Restaurar» la recupera |
 
+### Android N4 · categorías, etiquetas e inicio ([guía](guia/categorias-android.md))
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| N4-1 | Con `Roms/Pokémon/1ª generación/…` y otras carpetas en Drive, abrir la biblioteca | Inicio con «Continuar jugando», Favoritos y una estantería por carpeta de primer nivel; «Ver todo» abre la categoría con sus migas y subcategorías |
+| N4-2 | En una categoría, cambiar a lista; salir y volver a entrar; girar el teléfono | Esa categoría sigue en lista (las demás no); al girar sigue en la misma pantalla |
+| N4-3 | Ajustes del juego de Rojo › Categoría › Cambiar › escribir `Favoritas` › Mostrar aquí | Estantería «Favoritas» con Rojo e insignia «Movido en la app»; en Drive el archivo sigue en su carpeta; «Volver a su carpeta» lo deshace |
+| N4-4 | Añadir las etiquetas `rpg` y `pendiente` a dos juegos; Filtros › Etiquetas › rpg; buscar «pend» | Solo salen los etiquetados; la búsqueda los encuentra |
+| N4-5 | Ajustes › Biblioteca › Inicio: fijar una categoría, ocultar otra y quitar la fila de Favoritos | El inicio cambia al momento; la oculta sigue en «Todos los juegos» y en Categorías |
+| N4-6 | Mover en Drive un juego que estaba en una categoría virtual y con etiquetas; volver a la app y abrir su detalle | Sigue en su categoría virtual y con sus etiquetas |
+
 ## iPhone
 
 | # | Prueba | Resultado esperado |

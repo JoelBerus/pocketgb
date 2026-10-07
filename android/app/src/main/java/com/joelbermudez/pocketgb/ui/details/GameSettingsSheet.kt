@@ -241,7 +241,8 @@ fun GameSettingsSheet(
                     stringResource(R.string.game_settings_title, title),
                     modifier = Modifier.weight(1f).semantics { heading() },
                     style = MaterialTheme.typography.titleLarge,
-                    maxLines = 2,
+                    // N4: con fuente grande, el nombre entero (A7 R9).
+                    maxLines = if (com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont.current) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("game-settings-done")) {

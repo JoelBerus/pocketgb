@@ -56,6 +56,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.CategoryPaths
 import com.joelbermudez.pocketgb.library.Tags
+import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 
 /** Superficie común de los diálogos del centro de ajustes: título, contenido desplazable y botones abajo. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -193,7 +194,12 @@ fun CategoryPickerDialog(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Column(Modifier.weight(1f)) {
-                    Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     if (notes.isNotEmpty()) {
                         Text(
                             notes.joinToString(" · "),
