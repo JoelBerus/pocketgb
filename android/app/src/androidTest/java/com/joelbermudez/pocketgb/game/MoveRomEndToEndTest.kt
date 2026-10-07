@@ -237,4 +237,44 @@ class MoveRomEndToEndTest {
         assertTrue("se crea el .sav en la carpeta nueva", waitUntil(15_000) { fixtures.read("$newDir/Contador.sav")?.contentEquals(local) == true })
         assertArrayEquals("el .sav viejo no se toca", local, fixtures.read("$oldDir/Contador.sav"))
     }
+
+    @Test
+    fun aDuplicateWithItsOwnNewerSaveWinsButTheSharedLocalSaveIsSetAsideForGood() {
+        // Copia A en su carpeta, jugada: partida local (por huella) y su espejo.
+        val vm = viewModel()
+        val a = vm.scanNow().entries.single { it.fileName == "Contador.gb" }
+        val fingerprint = playAndExit(a).game.fingerprint
+        val store = SaveStore(File(root, "saves"), fingerprint)
+        val local = store.load()!!
+        assertTrue(waitUntil(15_000) { fixtures.read("$oldDir/Contador.sav")?.contentEquals(local) == true })
+
+        // Copia B del mismo ROM en otra carpeta, con su propio `.sav`, distinto y más nuevo (de otro equipo).
+        val other = ByteArray(local.size) { 0x55 }
+        fixtures.put("Copias/Contador.gb", SyntheticRom.sramCounter(), mtimeMs = romMtime)
+        fixtures.put("Copias/Contador.sav", other, mtimeMs = System.currentTimeMillis() + 120_000)
+        val entries = vm.scanNow().entries
+        val b = entries.single { it.id == "Copias/Contador.gb" }
+        await { vm.loadDetails(b.id) }
+        await { vm.loadDetails(a.id) }
+        val copies = com.joelbermudez.pocketgb.library.LibraryQuery.visible(
+            entries, vm.prefs.value, com.joelbermudez.pocketgb.library.LibraryFilter.ALL, "",
+        ).filter { it.fileName == "Contador.gb" }
+        assertTrue("las dos copias se marcan como duplicado", copies.size == 2 && copies.all { it.isDuplicate })
+
+        val opened = launcher.openBlocking(b) as OpenResult.Opened
+        this.opened += opened.game
+        assertArrayEquals("gana el .sav más nuevo, como siempre", other, opened.game.session.copySram())
+        val aside = store.setAside().single()
+        assertArrayEquals(
+            "la partida local compartida queda apartada fuera de la rotación",
+            local,
+            File(store.backupsDirectory, aside.name).readBytes(),
+        )
+        assertEquals(ExitResult.Clean, opened.game.exit())
+        // Cinco guardados más no la borran (la rotación es de 5).
+        repeat(5) { n -> store.save(ByteArray(local.size) { (n + 1).toByte() }) }
+        assertTrue(store.backups().none { store.backupFile(it.index).readBytes().contentEquals(local) })
+        assertArrayEquals(local, File(store.backupsDirectory, aside.name).readBytes())
+        assertArrayEquals("el .sav de la copia A no se toca", local, fixtures.read("$oldDir/Contador.sav"))
+    }
 }

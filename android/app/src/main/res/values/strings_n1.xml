@@ -12,4 +12,9 @@
     <string name="n1_also_in_footer">Las copias comparten partida, estados, ajustes y portada. Cada una tiene su .sav junto al ROM, que se pone al día al abrir esa copia.</string>
     <!-- TalkBack: la ruta del juego en el detalle. -->
     <string name="n1_location_description">Ubicación: %1$s</string>
+    <!-- Ajustes › Partidas: partidas apartadas fuera de la rotación de copias (perdedoras frente a un .sav ajeno). -->
+    <string name="n1_saves_set_aside">Apartadas (no se borran solas)</string>
+    <string name="n1_saves_set_aside_item">Apartada · %1$s</string>
+    <string name="n1_saves_set_aside_footer">Partidas que perdieron frente a otro .sav junto al juego: una copia repetida del juego o un .sav de otro juego con el mismo nombre. No cuentan entre las 5 copias.</string>
+    <string name="n1_saves_restore_set_aside_title">¿Restaurar la partida apartada?</string>
 </resources>

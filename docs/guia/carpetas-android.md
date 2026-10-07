@@ -48,8 +48,9 @@ Puedes reorganizar la carpeta cuando quieras. Al volver a la app, PocketGB recon
 Si el mismo juego está dos veces (aunque se llame distinto), en cuanto PocketGB lo sabe verás **«Duplicado»** en su tarjeta y, en el detalle, **«También en: …»** con las otras ubicaciones.
 
 - Las copias **comparten** la partida del teléfono, los estados, los ajustes, la portada, el favorito y el nombre que le pusiste: para PocketGB son el mismo juego.
-- Cada copia tiene su propio `.sav` al lado. Se pone al día cuando abres **esa** copia. Si al abrir una copia su `.sav` es más nuevo que la partida del teléfono (por ejemplo, porque llegó de otro equipo), se usa ese y la del teléfono queda como copia de respaldo en Ajustes › Partidas.
-- Lo más sencillo es dejar una sola copia y apartar las demás en `_Revisar/`.
+- Cada copia tiene su propio `.sav` al lado, pero en el teléfono **la partida es una sola**. Si las dos copias tienen partidas distintas, al abrir una se usa la más nueva de las dos (la del teléfono o la de junto a esa copia) y la otra **se aparta**: queda en Ajustes › Partidas › «Apartadas», no cuenta entre las 5 copias de seguridad y no se borra sola. Desde ahí puedes restaurarla.
+- Lo mismo pasa si junto a un juego hay un `.sav` de **otro juego** con el mismo nombre: la partida que pierde queda apartada.
+- Lo mejor es dejar una sola copia de cada juego y mover las demás (con su `.sav`) a `_Revisar/`.
 
 ## Google Drive
 

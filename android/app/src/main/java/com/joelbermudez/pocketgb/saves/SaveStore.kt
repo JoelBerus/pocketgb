@@ -120,6 +120,63 @@ class SaveStore(
         ops.syncDirectory(backupsDirectory)
     }
 
+    /** Una partida apartada fuera de la rotación ([setAsideMirrorLoser]): nombre del archivo en `backups/` y fecha. */
+    class SetAsideInfo(val name: String, val dateMs: Long?)
+
+    private fun isSetAsideName(name: String) = name.startsWith("$fingerprint.mirror-") && name.endsWith(".sav")
+
+    /**
+     * N1 · aparta [data] **fuera de la rotación** de backups: `backups/<huella>.mirror-<unix>-<rand8>.sav`. Es el perdedor
+     * de una resolución entre la local y un espejo que no es una escritura propia (un duplicado con su propio `.sav`, un
+     * `.sav` de otro juego con el mismo nombre…): en la rotación desaparecería tras cinco guardados. Nunca se pisa (nombre
+     * único) ni se borra; si ese mismo contenido ya está apartado no se repite. Temporal + `fsync` + rename.
+     */
+    fun setAsideMirrorLoser(
+        data: ByteArray,
+        unixSeconds: Long = System.currentTimeMillis() / 1000,
+        rand8: () -> String = { UUID.randomUUID().toString().replace("-", "").take(8) },
+    ) = lock.withLock {
+        for (name in ops.list(backupsDirectory)) {
+            if (!isSetAsideName(name)) continue
+            val same = try {
+                ops.readBytes(File(backupsDirectory, name), MAX_SAVE_BYTES).contentEquals(data)
+            } catch (_: IOException) {
+                false
+            }
+            if (same) return@withLock
+        }
+        if (!ops.exists(backupsDirectory)) ops.mkdirs(backupsDirectory)
+        var target: File
+        do {
+            target = File(backupsDirectory, "$fingerprint.mirror-$unixSeconds-${rand8()}.sav")
+        } while (ops.exists(target))
+        val tmp = File(target.path + ".tmp")
+        ops.writeSynced(tmp, data)
+        ops.atomicReplace(tmp, target)
+        ops.syncDirectory(backupsDirectory)
+    }
+
+    /** Partidas apartadas por [setAsideMirrorLoser], la más reciente primero. */
+    fun setAside(): List<SetAsideInfo> =
+        ops.list(backupsDirectory).filter(::isSetAsideName)
+            .map { SetAsideInfo(it, ops.lastModified(File(backupsDirectory, it))) }
+            .sortedWith(compareByDescending<SetAsideInfo> { it.dateMs ?: Long.MIN_VALUE }.thenByDescending { it.name })
+
+    /**
+     * Restaura una partida apartada como [restore]: la actual pasa antes a `.1`. La apartada no se borra (sigue
+     * restaurable). Rechaza nombres que no sean de esta huella y tamaños que el cartucho no acepta.
+     */
+    fun restoreSetAside(name: String, validSizes: Set<Int>? = null): Unit = lock.withLock {
+        require(isSetAsideName(name) && '/' !in name) { "No es una partida apartada de este juego: $name" }
+        val data = ops.readBytes(File(backupsDirectory, name), MAX_SAVE_BYTES)
+        if (validSizes != null) {
+            if (data.size !in validSizes) throw InvalidBackupException(data.size, validSizes)
+            knownSizes = validSizes
+        }
+        save(data)
+        Unit
+    }
+
     /**
      * Aparta la partida actual (tamaño incorrecto) fuera de la rotación de backups:
      * `backups/<huella>.wrong-size-<unix>-<rand8>.sav`. Nunca se rota ni se borra. El sufijo único evita que
@@ -159,8 +216,8 @@ class SaveStore(
     /**
      * Paso 6 de SPEC §5.2: un `.sav.tmp` huérfano se instala si no hay `.sav` y su tamaño es uno de
      * [validSizes]; si no, se borra. Se borran también todos los temporales huérfanos de esta partida:
-     * `.1.tmp` (formato antiguo) y `.1.<rand>.tmp` de los backups, `wrong-size-*.sav.tmp` de la cuarentena y el
-     * temporal del historial. Fija [validSizes] como los tamaños conocidos de esta partida.
+     * `.1.tmp` (formato antiguo) y `.1.<rand>.tmp` de los backups, `wrong-size-*.sav.tmp` de la cuarentena,
+     * `mirror-*.sav.tmp` de las apartadas (N1) y el temporal del historial. Fija [validSizes] como los tamaños conocidos de esta partida.
      */
     fun recoverOrphans(validSizes: Set<Int>) = lock.withLock {
         knownSizes = validSizes
@@ -177,7 +234,8 @@ class SaveStore(
         for (name in ops.list(backupsDirectory)) {
             val orphanBackup = name.startsWith("$fingerprint.1.") && name.endsWith(".tmp")
             val orphanQuarantine = name.startsWith("$fingerprint.wrong-size-") && name.endsWith(".sav.tmp")
-            if (orphanBackup || orphanQuarantine) ops.delete(File(backupsDirectory, name))
+            val orphanSetAside = name.startsWith("$fingerprint.mirror-") && name.endsWith(".sav.tmp")
+            if (orphanBackup || orphanQuarantine || orphanSetAside) ops.delete(File(backupsDirectory, name))
         }
         ops.delete(File(mirrorHistoryFile.path + ".tmp"))
     }
