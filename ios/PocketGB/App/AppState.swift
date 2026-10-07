@@ -399,6 +399,7 @@ final class AppState {
                                snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode,
                                console: Console, bios: (data: Data?, status: BIOSFile.Status)) {
         opening = false
+        if case .failure = result { momentAfterOpen = nil }   // H4
         if console == .gameBoyAdvance { gbaBIOSStatus = bios.status }
         switch result {
         case .success(let payload):
@@ -616,7 +617,10 @@ final class AppState {
                        restoring automaticState: Data? = nil,
                        resumeFallback: RomEntry? = nil, extraWarning: SaveLoadWarning? = nil,
                        console: Console = .gameBoy, bios: Data? = nil) {
+        // H4: el momento pendiente es de esta apertura; closeGame lo limpia y cualquier fallo lo descarta.
+        let pendingMoment = momentAfterOpen
         closeGame()
+        defer { momentAfterOpen = nil }
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let emulation = gameplay.data.emulation(with: overrides)
@@ -651,7 +655,7 @@ final class AppState {
             openMoments(for: session, romData: romData)
             paused = false
             startPlayClock(fingerprint: session.info.fingerprint)
-            loadMomentAfterOpening(session)
+            loadMomentAfterOpening(session, pendingMoment)
             if let forced = session.gameSettingsWarning {
                 showAlert(forced.title, forced.message)
             } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
@@ -759,6 +763,7 @@ final class AppState {
         }
         stopPlayClock()
         stateStore = nil
+        momentAfterOpen = nil
         momentStore = nil
         sessionEmulation = nil
         gamepad.target = nil
@@ -1019,6 +1024,11 @@ final class AppState {
     /// cargar» y en las copias. Se rechaza con el juego abierto o aún guardando (exclusión por huella).
     func installMomentSave(fingerprint: String, _ kind: MomentStore.Kind, _ moment: MomentStore.Moment) {
         guard let store = momentStoreFor(fingerprint), let saves = saveStoreFor(fingerprint) else { return }
+        // H5: mientras se abre un juego aún no se sabe su huella ni tiene dueño: no se toca ninguna partida.
+        guard !opening else {
+            momentNotice = MomentNotice("No se pudo recuperar la partida", FingerprintOwnership.Busy(owner: "apertura").localizedDescription)
+            return
+        }
         do {
             try MomentActions(moments: store, saves: saves).installSRAM(kind, moment, ownership: ownership)
             didRestoreSave(fingerprint: fingerprint)
@@ -1042,9 +1052,8 @@ final class AppState {
         open(entry: entry, mode: .fresh)
     }
 
-    private func loadMomentAfterOpening(_ session: EmulatorSession) {
-        guard let pending = momentAfterOpen else { return }
-        momentAfterOpen = nil
+    private func loadMomentAfterOpening(_ session: EmulatorSession, _ pending: (fingerprint: String, id: String)?) {
+        guard let pending else { return }
         guard pending.fingerprint == session.info.fingerprint,
               let moment = try? momentStore?.snapshot().find(.moment, pending.id) else { return }
         pauseGame()

@@ -33,8 +33,10 @@ struct MomentActions {
         guard moment.hasState else { throw MomentStore.StoreError.missing }
         let data = try moments.loadState(kind, moment.id)
         let label = kind == .moment ? "Antes de cargar «\(moment.name)»" : "Antes de recuperar"
-        try moments.pushBeforeLoad(Self.capture(session), label: label, config: config, playTime: playTime)
+        let saved = try moments.appendBeforeLoad(Self.capture(session), label: label, config: config, playTime: playTime)
         try session.loadState(data)
+        // Solo con la carga confirmada se recorta el anillo; la entrada recuperada no se expulsa (H1).
+        try? moments.trimRing(keeping: [saved.id, moment.id])
     }
 
     /// Instala en el `.sav` la RAM del cartucho guardada en un momento o en el anillo, sin sesión (detalle). Se rechaza
@@ -44,11 +46,13 @@ struct MomentActions {
             let data = try moments.loadSRAM(kind, moment.id)
             let current = try saves.load()
             if let current, current.count != data.count { throw InstallError.sizeMismatch }
+            var keep: Set<String> = [moment.id]
             if let current {
                 let label = kind == .moment ? "Antes de recuperar «\(moment.name)»" : "Antes de recuperar"
-                try moments.pushBeforeLoad(.init(state: nil, sram: current, thumbnail: nil), label: label)
+                keep.insert(try moments.appendBeforeLoad(.init(state: nil, sram: current, thumbnail: nil), label: label).id)
             }
             try saves.save(data)
+            try? moments.trimRing(keeping: keep)
         }
     }
 

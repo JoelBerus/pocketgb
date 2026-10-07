@@ -191,6 +191,17 @@ struct MomentStore: Sendable {
     @discardableResult
     func pushBeforeLoad(_ capture: Capture, label: String, config: [String: String] = [:],
                         playTime: TimeInterval? = nil) throws -> Moment {
+        let entry = try appendBeforeLoad(capture, label: label, config: config, playTime: playTime)
+        try trimRing(keeping: [entry.id])
+        return entry
+    }
+
+    /// Auditoría N6 iOS, H1: añade al anillo **sin expulsar** (puede quedar con 4 entradas un instante). Quien recupera
+    /// una entrada llama a `trimRing(keeping:)` solo cuando la carga o la instalación se confirmaron, así la entrada que
+    /// se está recuperando nunca se expulsa ni se borra antes de tiempo.
+    @discardableResult
+    func appendBeforeLoad(_ capture: Capture, label: String, config: [String: String] = [:],
+                          playTime: TimeInterval? = nil) throws -> Moment {
         guard capture.state != nil || capture.sram != nil else { throw StoreError.nothingToSave }
         lock.lock(); defer { lock.unlock() }
         var index = try indexForWriting()
@@ -199,13 +210,26 @@ struct MomentStore: Sendable {
         let entry = Self.normalized(Moment(id: id, name: label, created: now(), playTime: playTime, config: config,
                                            hasState: capture.state != nil, hasSRAM: capture.sram != nil,
                                            hasThumbnail: capture.thumbnail != nil))
-        // Por orden de inserción (no por fecha: el reloj puede retroceder): la recién escrita nunca se expulsa.
-        let ring = index.beforeLoad + [entry]
-        index.beforeLoad = Array(ring.suffix(Self.ringSize))
+        index.beforeLoad.append(entry)
+        try writeIndex(index)
+        return entry
+    }
+
+    /// Deja el anillo en 3 por orden de inserción (no por fecha: el reloj puede retroceder), sin expulsar nunca las
+    /// de `keeping` (la recién escrita y la que se acaba de recuperar). Los archivos se borran tras confirmar el índice.
+    func trimRing(keeping: Set<String>) throws {
+        lock.lock(); defer { lock.unlock() }
+        var index = try indexForWriting()
+        var ring = index.beforeLoad
+        var evicted: [Moment] = []
+        while ring.count > Self.ringSize, let i = ring.firstIndex(where: { !keeping.contains($0.id) }) {
+            evicted.append(ring.remove(at: i))
+        }
+        guard !evicted.isEmpty else { return }
+        index.beforeLoad = ring
         try writeIndex(index)
         try crashPoint?("evict")
-        for old in ring.dropLast(Self.ringSize) { deleteFiles(.beforeLoad, old.id) }
-        return entry
+        for old in evicted { deleteFiles(.beforeLoad, old.id) }
     }
 
     /// Renombra o edita etiquetas, colección y nota.
@@ -249,10 +273,19 @@ struct MomentStore: Sendable {
         }
         let index = try indexForWriting()
         let known = Set(index.moments.map { Kind.moment.rawValue + $0.id } + index.beforeLoad.map { Kind.beforeLoad.rawValue + $0.id })
+        // Auditoría N6 iOS, H3: un archivo sin entrada no se borra (el índice podría estar desfasado, p. ej. restaurado
+        // de una copia): se aparta en `orphans/`, fuera de la lista. Solo los temporales se borran.
+        let orphans = directory.appendingPathComponent("orphans", isDirectory: true)
         for name in try fm.contentsOfDirectory(atPath: directory.path) {
             guard let stem = Self.stem(of: name), !known.contains(stem) else { continue }
-            try? fm.removeItem(at: directory.appendingPathComponent(name))
+            try fm.createDirectory(at: orphans, withIntermediateDirectories: true)
+            var target = orphans.appendingPathComponent(name)
+            if fm.fileExists(atPath: target.path) {
+                target = orphans.appendingPathComponent("\(Int(now().timeIntervalSince1970))-\(newID().prefix(6))-\(name)")
+            }
+            try AtomicFile.rename(directory.appendingPathComponent(name), target)
         }
+        if fm.fileExists(atPath: orphans.path) { try? AtomicFile.syncDirectory(orphans) }
     }
 
     /// Migra las ranuras 1–4 de `states` a momentos sin pérdida: se copia el estado (y su captura), se confirma el
@@ -330,6 +363,7 @@ struct MomentStore: Sendable {
     private func writeFiles(_ kind: Kind, _ id: String, _ capture: Capture) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let state = capture.state { try Self.writeAtomic(state, to: stateURL(kind, id)) }
+        try crashPoint?("between")
         if let sram = capture.sram { try Self.writeAtomic(sram, to: sramURL(kind, id)) }
         if let thumb = capture.thumbnail { try? Self.writeAtomic(thumb, to: thumbnailURL(kind, id)) }
         try AtomicFile.syncDirectory(directory)

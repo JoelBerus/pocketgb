@@ -263,7 +263,7 @@ struct MomentsTests {
 
         // Muere tras guardar lo actual en el anillo y antes de escribir el .sav: la partida no cambia.
         var crashing = actions.moments
-        crashing.crashPoint = { if $0 == "evict" { throw Crash() } }
+        crashing.crashPoint = { if $0 == "index" { throw Crash() } }
         let killed = MomentActions(moments: crashing, saves: saveStore)
         #expect(throws: Crash.self) { try killed.installSRAM(.moment, moment, ownership: ownership) }
         #expect(try saveStore.load() == y)
@@ -280,7 +280,7 @@ struct MomentsTests {
         let x = try #require(try saveStore.load())
         let moment = try actions.create(from: session, name: "m", config: [:], playTime: nil)
         let y = try StateSRAMTests.playUntilSaveChanges(session, store: saveStore, from: x)
-        for point in ["files", "index", "evict"] {
+        for point in ["files", "between", "index"] {
             var crashing = actions.moments
             crashing.crashPoint = { if $0 == point { throw Crash() } }
             #expect(throws: Crash.self) {
@@ -289,11 +289,65 @@ struct MomentsTests {
             #expect(try saveStore.load() == y)
             try actions.moments.recoverOrphans()
         }
-        // Tras «evict», lo de ahora (Y) ya está a salvo en el anillo.
-        let ring = try actions.moments.snapshot().beforeLoad
-        #expect(try ring.contains { try actions.moments.loadSRAM(.beforeLoad, $0.id) == y })
         try actions.load(.moment, moment, into: session, config: [:], playTime: nil)
         #expect(try saveStore.load() == x)
+    }
+
+    /// Auditoría H1: anillo lleno, recuperar la más antigua y que falle el núcleo o el guardado → la entrada sigue.
+    @Test func recoveringTheOldestNeverEvictsItWhenTheOperationFails() throws {
+        let (session, saveStore, actions) = try openSession()
+        let x = try #require(try saveStore.load())
+        let store = actions.moments
+        try store.pushBeforeLoad(try MomentActions.capture(session), label: "más antigua")
+        for _ in 0..<2 { try store.pushBeforeLoad(.init(state: Data("PGBS-x".utf8), sram: x, thumbnail: nil), label: "otra") }
+        let oldest = try #require(try store.snapshot().beforeLoad.last)
+        #expect(oldest.name == "más antigua")
+        // 1) El núcleo rechaza el estado (dañado).
+        var bad = try store.loadState(.beforeLoad, oldest.id)
+        let good = bad
+        bad[bad.count / 2] ^= 0xFF
+        try AtomicFile.writeSynced(bad, to: store.stateURL(.beforeLoad, oldest.id))
+        #expect(throws: CoreError.self) { try actions.load(.beforeLoad, oldest, into: session, config: [:], playTime: nil) }
+        #expect(try store.snapshot().beforeLoad.contains { $0.id == oldest.id })
+        #expect(FileManager.default.fileExists(atPath: store.sramURL(.beforeLoad, oldest.id).path))
+        try AtomicFile.writeSynced(good, to: store.stateURL(.beforeLoad, oldest.id))
+        // 2) El guardado de la partida falla (carpeta de solo lectura).
+        _ = try StateSRAMTests.playUntilSaveChanges(session, store: saveStore, from: x)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: saves.path)
+        #expect(throws: (any Error).self) { try actions.load(.beforeLoad, oldest, into: session, config: [:], playTime: nil) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: saves.path)
+        #expect(try store.snapshot().beforeLoad.contains { $0.id == oldest.id })
+        session.stop()
+        // 3) Sin sesión: instalar con el guardado fallando tampoco la expulsa.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: saves.path)
+        #expect(throws: (any Error).self) { try actions.installSRAM(.beforeLoad, oldest, ownership: FingerprintOwnership()) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: saves.path)
+        #expect(try store.snapshot().beforeLoad.contains { $0.id == oldest.id })
+        // Y al confirmar, sí se recorta a 3 conservándola.
+        try actions.installSRAM(.beforeLoad, oldest, ownership: FingerprintOwnership())
+        let ring = try store.snapshot().beforeLoad
+        #expect(ring.count == 3 && ring.contains { $0.id == oldest.id })
+        #expect(try saveStore.load() == x)
+    }
+
+    /// Auditoría H2/H3: un .tmp a medias y un m-<id>.state sin .sav ni índice (muerte entre los dos renames): el
+    /// temporal se borra y el huérfano se aparta en orphans/, nunca se borra.
+    @Test func halfWrittenMomentIsSetAsideNotDeleted() throws {
+        var s = store()
+        try s.create(capture(1), name: "bueno")
+        s.newID = { "medias" }
+        s.crashPoint = { if $0 == "between" { throw Crash() } }
+        #expect(throws: Crash.self) { try s.create(capture(2), name: "a medias") }
+        s.crashPoint = nil
+        #expect(FileManager.default.fileExists(atPath: s.stateURL(.moment, "medias").path))
+        #expect(!FileManager.default.fileExists(atPath: s.sramURL(.moment, "medias").path))
+        try Data([1, 2]).write(to: s.directory.appendingPathComponent("m-medias.sav.tmp"))
+        try s.recoverOrphans()
+        let names = try FileManager.default.contentsOfDirectory(atPath: s.directory.path)
+        #expect(!names.contains { $0.hasSuffix(".tmp") || $0.hasPrefix("m-medias") })
+        let orphans = try FileManager.default.contentsOfDirectory(atPath: s.directory.appendingPathComponent("orphans").path)
+        #expect(orphans.contains("m-medias.state"))
+        #expect(try s.snapshot().moments.map(\.name) == ["bueno"])
     }
 
     @Test func installRefusesASaveOfAnotherSize() throws {
