@@ -69,6 +69,12 @@ struct RomEntry: Identifiable, Hashable, Sendable {
 
     var isDuplicate: Bool { !duplicatePaths.isEmpty }
 
+    /// N5: imagen junto al ROM (`<nombre>.png|jpg|jpeg|webp`, o `portada.*`/`cover.*` si es el único juego
+    /// de su carpeta). El escaneo solo la ve en el listado: nunca la lee ni la descarga.
+    var coverURL: URL?
+    /// Sello de esa imagen (nombre, tamaño y fecha): si cambia, se vuelve a leer.
+    var coverStamp: String?
+
     /// Carpetas desde la raíz hasta el archivo, sin el archivo (N1b). `[]` = en la raíz (sin
     /// categoría); el primer nivel es la categoría y los siguientes, subcategorías.
     var folderPath: [String] { Self.folders(of: id) }

@@ -341,12 +341,10 @@ struct LibraryView: View {
             .animation(reduced ? nil : .easeOut(duration: 0.18), value: progress)
     }
 
-    /// Juegos jugados con captura local: "Continuar" nunca muestra una portada inventada.
+    /// Juegos reanudables (ND15). Decisión de Joel 2026-10-07, sustituye a K10: no depende de ninguna
+    /// fuente de portada; un juego sin imagen ni captura sale con la generada.
     private var continueCandidates: [RomEntry]? {
-        let recent = prefs.recent(library.entries, limit: 5).filter {
-            $0.isPlayable && state.canResume($0)
-                && state.artwork.image(for: prefs.fingerprint(of: $0)) != nil
-        }
+        let recent = LibraryQuery.continuePlaying(library.entries, prefs: prefs.data, canResume: state.canResume)
         return recent.isEmpty ? nil : recent
     }
 

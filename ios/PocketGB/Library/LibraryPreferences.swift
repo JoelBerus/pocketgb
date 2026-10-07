@@ -873,6 +873,13 @@ enum LibraryQuery {
         }
         return result
     }
+
+    /// Carril «Continuar jugando»: los recientes jugables con estado automático vigente (ND15). No mira
+    /// la portada (decisión de Joel 2026-10-07, sustituye a K10).
+    static func continuePlaying(_ entries: [RomEntry], prefs: LibraryPreferencesData, limit: Int = 5,
+                                canResume: (RomEntry) -> Bool) -> [RomEntry] {
+        recent(entries, prefs: prefs, limit: limit).filter { $0.isPlayable && canResume($0) }
+    }
 }
 
 extension LibraryPreferences {

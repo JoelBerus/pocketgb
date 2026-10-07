@@ -36,6 +36,9 @@ enum LibraryScanner {
     struct ScanResult: Sendable {
         var entries: [RomEntry]
         var limitReached: Bool
+        /// N5iA-4: la carpeta se leyó entera (accesible, sin carpetas ilegibles ni ROMs ilegibles y sin tope).
+        /// Solo entonces se purgan las copias de portadas que ya no se usan.
+        var complete = false
     }
 
     /// - Parameter progress: se llama con (procesados, total) al avanzar.
@@ -49,12 +52,18 @@ enum LibraryScanner {
         var entries: [RomEntry] = []
         entries.reserveCapacity(found.candidates.count)
         for (i, candidate) in found.candidates.enumerated() {
-            entries.append(entry(for: candidate.url, relativePath: candidate.relative,
-                                 placeholder: candidate.placeholder))
+            var e = entry(for: candidate.url, relativePath: candidate.relative, placeholder: candidate.placeholder)
+            if let cover = candidate.cover {
+                e.coverURL = cover.url
+                e.coverStamp = SidecarCover.stamp(cover)
+            }
+            entries.append(e)
             progress(i + 1, found.candidates.count)
         }
         entries.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-        return ScanResult(entries: entries, limitReached: found.limitReached)
+        let complete = found.rootReadable && found.unreadableFolders == 0 && !found.limitReached
+            && !entries.contains { $0.problem == .unreadable }
+        return ScanResult(entries: entries, limitReached: found.limitReached, complete: complete)
     }
 
     struct Candidate: Equatable, Sendable {
@@ -63,6 +72,8 @@ enum LibraryScanner {
         let relative: String
         /// Era un placeholder `.Nombre.gb.icloud` (iCloud sin descargar).
         let placeholder: Bool
+        /// N5: imagen de portada junto al ROM, vista solo en el listado.
+        var cover: SidecarCover.Sibling? = nil
     }
 
     struct Listing: Sendable {
@@ -70,6 +81,9 @@ enum LibraryScanner {
         var limitReached = false
         /// Elementos recorridos (para el tope `maxVisitedItems`).
         var visited = 0
+        /// N5iA-4: la carpeta raíz se pudo listar; carpetas que no.
+        var rootReadable = false
+        var unreadableFolders = 0
     }
 
     /// Archivos candidatos: la carpeta y sus subcarpetas hasta `maxFolderDepth` niveles.
@@ -92,12 +106,19 @@ enum LibraryScanner {
 
     private static func walk(_ directory: URL, folders: [String], limit: Int, visitLimit: Int,
                              into listing: inout Listing) {
-        guard !listing.limitReached,
-              let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)
-        else { return }
+        guard !listing.limitReached else { return }
+        guard let items = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else {
+            listing.unreadableFolders += 1
+            return
+        }
+        if folders.isEmpty { listing.rootReadable = true }
         // Orden estable: con el tope, siempre quedan fuera los mismos.
         let sorted = items.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .literal) == .orderedAscending }
         let prefix = folders.isEmpty ? "" : folders.joined(separator: "/") + "/"
+        // N5: ROMs e imágenes de esta carpeta, para la portada junto al ROM (sin leer ninguna imagen).
+        var here: [Int] = []
+        var images: [SidecarCover.Sibling] = []
+        defer { attachCovers(&listing, indices: here, images: images) }
         for item in sorted {
             listing.visited += 1
             guard listing.visited <= visitLimit else {
@@ -115,8 +136,37 @@ enum LibraryScanner {
                     listing.limitReached = true
                     return
                 }
+                here.append(listing.candidates.count)
                 listing.candidates.append(c)
+            } else if values?.isDirectory != true, let image = imageSibling(item) {
+                images.append(image)
             }
+        }
+    }
+
+    /// Una imagen candidata a portada (por la extensión; el contenido se valida al verse). Incluye el
+    /// placeholder antiguo de iCloud (`.Nombre.png.icloud`) sin descargarlo.
+    private static func imageSibling(_ url: URL) -> SidecarCover.Sibling? {
+        var name = url.lastPathComponent
+        var real = url
+        if name.hasPrefix("."), name.hasSuffix(".icloud") {
+            name = String(name.dropFirst().dropLast(".icloud".count))
+            real = url.deletingLastPathComponent().appendingPathComponent(name)
+        } else if name.hasPrefix(".") {
+            return nil
+        }
+        guard SidecarCover.extensions.contains((name as NSString).pathExtension.lowercased()) else { return nil }
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let isPlaceholder = real != url
+        return SidecarCover.Sibling(name: name, url: real, size: isPlaceholder ? nil : values?.fileSize,
+                                    modified: values?.contentModificationDate)
+    }
+
+    private static func attachCovers(_ listing: inout Listing, indices: [Int], images: [SidecarCover.Sibling]) {
+        guard !images.isEmpty else { return }
+        for i in indices {
+            let name = listing.candidates[i].url.lastPathComponent
+            listing.candidates[i].cover = SidecarCover.find(romName: name, siblings: images, romsInFolder: indices.count)
         }
     }
 

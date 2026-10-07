@@ -7,13 +7,15 @@ enum GameCenterRoute: Hashable {
     case tags
     /// Ajustes › Partidas de este juego (copias y apartadas), por su huella.
     case saves(fingerprint: String)
+    /// N5 · Portada (por la huella confirmada).
+    case cover(fingerprint: String)
 }
 
 /// N4 · centro de ajustes del juego (sustituye a la hoja de ajustes por juego): todo lo que la app
 /// recuerda de un juego, sin tocar sus archivos. Desde el detalle («Ajustes») y el menú contextual
 /// («Ajustes del juego»); la pausa sigue sin él (decisión de N4 Android).
 /// - Nombre (alias), Categoría (virtual, ND3: «Cambiar» y «Volver a su carpeta»), Etiquetas.
-/// - Portada (N5) y Progreso y momentos (N6): deshabilitadas, «Próximamente».
+/// - Portada (N5): qué se elige y qué se ve, con «Cambiar». Progreso y momentos (N6): «Próximamente».
 /// - Partida: las copias de este juego (lo mismo que Ajustes › Partidas).
 /// - Color y paleta (GB) o tipo de partida, reloj y BIOS (GBA), como antes.
 /// - Ocultar, con confirmación.
@@ -53,6 +55,9 @@ struct GameCenterView: View {
         case "category": return [.category]
         case "tags": return [.tags]
         case "rename": return [.rename]
+        case "cover":
+            if let fingerprint = entry.fingerprint { return [.cover(fingerprint: fingerprint)] }
+            return []
         default: return []
         }
         #else
@@ -68,6 +73,7 @@ struct GameCenterView: View {
             Form {
                 identitySection(entry)
                 organizationSection(entry)
+                coverSection(entry)
                 comingSoonSection
                 saveSection(entry)
                 GameEmulationSections(entry: entry)
@@ -96,6 +102,7 @@ struct GameCenterView: View {
                 case .category: CategoryPickerView(entryID: entry.id)
                 case .tags: TagEditorView(entryID: entry.id)
                 case .saves(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
+                case .cover(let fingerprint): CoverCenterView(entryID: entry.id, fingerprint: fingerprint)
                 }
             }
             .alert("¿Ocultar “\(prefs.displayTitle(entry))”?", isPresented: $confirmingHide) {
@@ -296,9 +303,41 @@ struct GameCenterView: View {
         }
     }
 
+    /// N5 · «Portada · Automática · se ve: Imagen de la carpeta» con «Cambiar».
+    @ViewBuilder private func coverSection(_ entry: RomEntry) -> some View {
+        let fingerprint = prefs.confirmedFingerprint(of: entry)
+        let covers = state.covers
+        Section {
+            if let fingerprint {
+                NavigationLink(value: GameCenterRoute.cover(fingerprint: fingerprint)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Portada", systemImage: "photo")
+                        Text("\(covers.choice(for: fingerprint).title) · se ve: \(covers.resolve(entry, fingerprint: fingerprint).title)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint("Cambiar")
+                }
+                .accessibilityIdentifier("game-center-cover")
+            } else {
+                LabeledContent {
+                    Text(confirmation == .unavailable ? "No disponible" : "Leyendo el juego…")
+                } label: {
+                    Label("Portada", systemImage: "photo")
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("game-center-cover")
+            }
+        } footer: {
+            Text("Una imagen tuya, una captura del juego o la generada. Solo en este iPhone.")
+        }
+    }
+
     private var comingSoonSection: some View {
         Section {
-            comingSoon("Portada", systemImage: "photo")
             comingSoon("Progreso y momentos", systemImage: "flag.checkered")
         } header: {
             Text("Próximamente")

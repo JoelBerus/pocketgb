@@ -61,7 +61,7 @@ struct SettingsTests {
         try Data(count: 1_000).write(to: saves.appendingPathComponent("a.sav"))
         try Data(count: 500).write(to: saves.appendingPathComponent("backups/a.1.sav"))
         try Data(count: 2_000).write(to: states.appendingPathComponent("s.state"))
-        let usage = StorageUsage.measure(saves: saves, states: states, artwork: root.appendingPathComponent("nada"))
+        let usage = StorageUsage.measure(saves: saves, states: states, artwork: [root.appendingPathComponent("nada")])
         #expect(usage == StorageUsage(saves: 1_500, states: 2_000, artwork: 0))
     }
 

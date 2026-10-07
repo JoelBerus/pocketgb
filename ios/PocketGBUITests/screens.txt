@@ -247,3 +247,30 @@ n4-landscape-categories     landscape dark  -screen n4-landscape-categories -dem
 n4-settings-home            portrait  light -screen n4-settings-home -demoLibrary n4
 n4-settings-home            portrait  dark  -screen n4-settings-home -demoLibrary n4
 n4-settings-home-ax5        portrait  light -screen n4-settings-home-ax5 -demoLibrary n4 -contentSizeCategory accessibility5 -uiDrag 0.5,0.8,0.5,0.2 -uiDragTimes 2
+
+# ---- N5 · Portadas (iOS). `-demoLibrary n5`: juegos libres con cada fuente (imagen importada vertical,
+# imagen de la carpeta apaisada, captura, generada); las imágenes se pintan en código (DebugScreenRouter.applyN5).
+# cpu_instrs no tiene portada y sale en «Continuar jugando» con la generada (decisión de Joel 2026-10-07).
+n5-library                  portrait  light -screen n5-library -demoLibrary n5
+n5-library                  portrait  dark  -screen n5-library -demoLibrary n5
+n5-library-list             portrait  light -screen n5-library-list -demoLibrary n5
+n5-library-prefer-captures  portrait  light -screen n5-library-prefer-captures -demoLibrary n5
+n5-library-ax5              portrait  light -screen n5-library-ax5 -demoLibrary n5 -contentSizeCategory accessibility5
+n5-library-landscape        landscape dark  -screen n5-library-landscape -demoLibrary n5
+n5-details-imported         portrait  light -screen n5-details-imported -demoLibrary n5
+n5-details-imported         portrait  dark  -screen n5-details-imported -demoLibrary n5
+n5-details-imported         landscape light -screen n5-details-imported -demoLibrary n5
+n5-details-folder           portrait  light -screen n5-details-folder -demoLibrary n5
+n5-details-capture          portrait  light -screen n5-details-capture -demoLibrary n5
+n5-details-generated        portrait  dark  -screen n5-details-generated -demoLibrary n5
+n5-details-gba              portrait  light -screen n5-details-gba -demoLibrary n5
+n5-game-center              portrait  light -screen n5-game-center -demoLibrary n5 -uiDrag 0.5,0.8,0.5,0.45
+n5-cover                    portrait  light -screen n5-cover -demoLibrary n5 -centerRoute cover
+n5-cover                    portrait  dark  -screen n5-cover -demoLibrary n5 -centerRoute cover -uiSwipeUp
+n5-cover-capture            portrait  light -screen n5-cover-capture -demoLibrary n5 -centerRoute cover -uiSwipeUp
+n5-cover-failed             portrait  light -screen n5-cover-failed -demoLibrary n5 -centerRoute cover -coverImportFailed
+n5-cover-ax5                portrait  light -screen n5-cover-ax5 -demoLibrary n5 -centerRoute cover -contentSizeCategory accessibility5 -uiDrag 0.5,0.8,0.5,0.2 -uiDragTimes 2
+n5-pause                    portrait  light -screen n5-pause -rom $FIXTURES/dmg-acid2.gb -paused
+n5-pause                    portrait  dark  -screen n5-pause -rom $FIXTURES/dmg-acid2.gb -paused -uiTap pause-use-as-cover
+n5-settings-library         portrait  light -screen n5-settings-library -demoLibrary n5 -uiSwipeUp
+n5-settings-storage         portrait  light -screen n5-settings-storage -demoLibrary n5 -demoSaveState slots

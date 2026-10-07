@@ -91,6 +91,8 @@ final class AppState {
     let libraryPrefs: LibraryPreferences
     /// Portadas locales: el último frame de cada juego (SPEC §11).
     let artwork: GameArtworkStore
+    /// N5: todas las fuentes de portada (importada, de la carpeta, captura fijada) y la elección.
+    let covers: CoverStore
     var libraryPath: [LibraryRoute] = []
     var favoritesPath: [LibraryRoute] = []
     var libraryFilter: LibraryFilter = .all
@@ -179,6 +181,7 @@ final class AppState {
         library = LibraryStore(cacheURL: inMemory ? nil : FingerprintCacheData.defaultURL())
         libraryPrefs = LibraryPreferences(fileURL: inMemory ? nil : LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: inMemory ? nil : GameArtworkStore.defaultDirectory())
+        covers = CoverStore.standard(captures: artwork, inMemory: inMemory)
         // Con argumentos de controles o `-screen`, ajustes solo en memoria (no persistentes).
         let fixedControls = inMemory || DebugArguments.value("-controlOpacity") != nil
             || DebugArguments.value("-controlsVisibility") != nil
@@ -195,12 +198,14 @@ final class AppState {
         library = LibraryStore()
         libraryPrefs = LibraryPreferences(fileURL: LibraryPreferences.defaultFileURL())
         artwork = GameArtworkStore(directory: GameArtworkStore.defaultDirectory())
+        covers = CoverStore.standard(captures: artwork, inMemory: false)
         gameplay = GameplaySettings(defaults: .standard)
         // N1a: los ajustes por juego antiguos (por ruta, en UserDefaults) pasan a la huella.
         libraryPrefs.importLegacyGameSettings(gameplay.data.perGame)
         gamepad = GamepadInput()
         #endif
         wireLibraryIdentity()
+        library.onScanCompleted = { [weak self] entries in self?.covers.pruneFolderCache(entries) }
         #if DEBUG
         DebugScreenRouter.apply(to: self)
         if debugUnknownScreen == nil && !DebugScreenRouter.overridesLibrary {
@@ -843,11 +848,20 @@ final class AppState {
     }
 
     /// Carpetas que mide Ajustes › Almacenamiento (en DEBUG con demo, temporales).
-    var storageDirectories: (saves: URL?, states: URL?, artwork: URL?) {
+    var storageDirectories: (saves: URL?, states: URL?, artwork: [URL]) {
         #if DEBUG
-        if let demo = DebugScreenRouter.demoStorage { return demo }
+        if let demo = DebugScreenRouter.demoStorage { return (demo.saves, demo.states, [demo.artwork].compactMap { $0 }) }
         #endif
-        return (try? SaveStore.defaultDirectory(), try? StateStore.defaultRoot(), artwork.directoryURL)
+        return (try? SaveStore.defaultDirectory(), try? StateStore.defaultRoot(), covers.directories)
+    }
+
+    /// N5 · «Usar como portada» desde la pausa: el fotograma en pantalla (la sesión está parada) queda fijado
+    /// y el juego pasa a «Captura». No toca la partida ni los estados. `false` si la escena no vale (lisa).
+    func pinCurrentFrameAsCover() -> Bool {
+        guard let session, link == nil else { return false }
+        let frame = session.frames.latest()
+        let pixels = Array(UnsafeBufferPointer(start: frame, count: session.frames.size.pixelCount))
+        return covers.pinCapture(fingerprint: session.info.fingerprint, pixels: pixels)
     }
 
     var audioPreferences: AudioPreferences {
