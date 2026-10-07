@@ -48,7 +48,7 @@ SIM_DEVICE="iPhone 17 Pro" tools/ios-screenshots.sh → testScreenCatalog passed
 Bloque n4- en SE: testScreenCatalog passed (413.801 s); en 17 Pro Max: passed (367.978 s); 32 PNG cada uno.
 xcodebuild -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build → ** BUILD SUCCEEDED **
 ```
-254 → 275 tests Swift: `LibraryOrganizationTests` (13) y `LibraryFormatV3Tests` (7) nuevos, ajustes en `LibraryIdentityTests` (versión futura = 4; v1 se escribe como 3). UI: `CategoriesUITests` (4) nuevo; `AdaptiveLibraryUITests` (categoría → pantalla), `ShellLibraryTests` y `ShellAccessibilityTests` con `-demoHome off`.
+254 → 275 tests Swift: `LibraryOrganizationTests` (14) y `LibraryFormatV3Tests` (7) nuevos, ajustes en `LibraryIdentityTests` (versión futura = 4; v1 se escribe como 3). UI: `CategoriesUITests` (4) nuevo; `AdaptiveLibraryUITests` (categoría → pantalla), `ShellLibraryTests` y `ShellAccessibilityTests` con `-demoHome off`.
 
 ### Mutaciones (todas detectadas)
 | Mutación | Test que falla |
