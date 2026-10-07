@@ -18,7 +18,8 @@ enum class ResumeFailure {
 
     /**
      * El juego guardó la partida después del estado (SRAM más nueva por fecha) o la partida del estado ya no es la
-     * vigente (otro contenido): cargarlo devolvería una partida vieja. El estado se retira (iOS D81V2-H2).
+     * vigente (otro contenido): cargarlo devolvería una partida vieja. El estado se retira como iOS D81V2-H2, pero se
+     * aparta en vez de borrarse ([StateStore.setAsideAuto]).
      */
     NOT_CURRENT,
 
@@ -95,7 +96,7 @@ object ExactContinuation {
     /**
      * Paso completo de la apertura con «Continuar»: lee el estado automático de [states] (fecha y firma primero, como
      * la biblioteca), comprueba que no es anterior a la partida local ([saveDateMs]) y lo aplica con [apply]. Un estado
-     * obsoleto ([ResumeFailure.NOT_CURRENT]) se retira para que «Continuar» deje de ofrecerse; la partida no se toca.
+     * obsoleto ([ResumeFailure.NOT_CURRENT]) se aparta para que «Continuar» deje de ofrecerse; la partida no se toca.
      * Debe llamarse con la propiedad exclusiva de la huella ya adquirida y la sesión sin arrancar.
      */
     fun resume(core: ResumableCore, states: StateStore, saveDateMs: Long?): Outcome {
@@ -117,7 +118,7 @@ object ExactContinuation {
             }
         }
         if (outcome is Outcome.Rejected && discardsTheState(outcome.reason)) {
-            try { states.delete(StateSlot.AUTO) } catch (_: java.io.IOException) {}
+            try { states.setAsideAuto() } catch (_: java.io.IOException) {}
         }
         return outcome
     }
@@ -129,6 +130,6 @@ object ExactContinuation {
         else -> ResumeFailure.UNREADABLE
     }
 
-    /** Solo un estado obsoleto se retira: uno de otro modelo o dañado se conserva (puede volver a servir o revisarse). */
+    /** Solo un estado obsoleto se retira (apartado): uno de otro modelo o dañado se queda donde está. */
     fun discardsTheState(reason: ResumeFailure): Boolean = reason == ResumeFailure.NOT_CURRENT
 }

@@ -122,7 +122,7 @@ class ExactContinuationTest {
 
     @Test
     fun aNewerSaveInvalidatesTheStateByDateAndFallsBackWithoutLoss() {
-        writeAuto(atMs = 1_000_000L)
+        val auto = writeAuto(atMs = 1_000_000L)
         writeSave(atMs = 5_000_000L) // el juego guardó después del AUTO
         val before = savesOnDisk()
         val core = FakeCore(position = 7)
@@ -133,6 +133,8 @@ class ExactContinuationTest {
         assertEquals("la partida queda intacta", before, savesOnDisk())
         assertFalse("el AUTO obsoleto se retira (iOS D81V2-H2)", states.stateFile(StateSlot.AUTO).exists())
         assertFalse(states.thumbnailFile(StateSlot.AUTO).exists())
+        assertArrayEquals("pero se aparta, no se borra", auto, states.obsoleteAutoFile.readBytes())
+        assertNull("y ya no se ofrece «Continuar»", states.automaticEntry(saves.modificationDateMs))
     }
 
     @Test
@@ -140,7 +142,7 @@ class ExactContinuationTest {
         // Fechas en regla pero otro contenido (p. ej. un espejo más nuevo instalado al abrir con la misma hora, o un
         // reloj atrasado): cargarlo devolvería una partida vieja.
         writeSave(atMs = 1_000_000L)
-        writeAuto(ramOfState = ByteArray(8) { 0x22 }, atMs = 2_000_000L)
+        val stale = writeAuto(ramOfState = ByteArray(8) { 0x22 }, atMs = 2_000_000L)
         val before = savesOnDisk()
         val core = FakeCore(position = 7)
         val previous = core.captureState()
@@ -150,6 +152,18 @@ class ExactContinuationTest {
         assertEquals(0, core.clockSyncs)
         assertEquals(before, savesOnDisk())
         assertFalse(states.stateFile(StateSlot.AUTO).exists())
+        assertArrayEquals(stale, states.obsoleteAutoFile.readBytes())
+    }
+
+    @Test
+    fun aSecondObsoleteStateReplacesTheFirstSetAside() {
+        writeSave(atMs = 1_000_000L)
+        writeAuto(ramOfState = ByteArray(8) { 0x22 }, atMs = 2_000_000L)
+        resume(FakeCore())
+        val second = writeAuto(ramOfState = ByteArray(8) { 0x33 }, atMs = 3_000_000L)
+        assertEquals(ExactContinuation.Outcome.Rejected(ResumeFailure.NOT_CURRENT), resume(FakeCore()))
+        assertArrayEquals(second, states.obsoleteAutoFile.readBytes())
+        assertEquals("los estados normales no lo ven", emptySet<StateSlot>(), states.entries().keys)
     }
 
     @Test

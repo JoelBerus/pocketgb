@@ -113,6 +113,22 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
         save(state, thumbnail, StateSlot.RESCUE)
     }
 
+    /** Dónde queda el último estado automático obsoleto que se apartó ([setAsideAuto]). */
+    val obsoleteAutoFile: File get() = File(directory, "auto.obsolete.state")
+
+    /**
+     * A9: retira el estado automático obsoleto para que «Continuar» deje de ofrecerse, pero SIN borrarlo: se aparta
+     * como [obsoleteAutoFile] (uno por juego; el siguiente lo sustituye). Puede llevar la única copia de una partida que
+     * no se pudo guardar (p. ej. una sesión sin destino por un `.sav` de tamaño incorrecto, J10). La miniatura sí se borra.
+     */
+    fun setAsideAuto() {
+        val current = stateFile(StateSlot.AUTO)
+        if (!ops.exists(current)) return
+        ops.atomicReplace(current, obsoleteAutoFile)
+        ops.syncDirectory(directory)
+        try { ops.delete(thumbnailFile(StateSlot.AUTO)) } catch (_: IOException) {}
+    }
+
     /** Borra los temporales huérfanos (`*.state.tmp`, `*.png.tmp`) de una escritura interrumpida. */
     fun recoverOrphans() {
         for (name in ops.list(directory)) {
