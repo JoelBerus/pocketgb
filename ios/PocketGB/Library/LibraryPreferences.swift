@@ -45,9 +45,20 @@ struct GameMetadata: Codable, Equatable, Sendable {
     var alias: String?
     /// Ajustes del juego (color, paleta, partida GBA…); vacío = los globales.
     var overrides = GameOverrides()
+    /// N4 · etiquetas libres (normalizadas, sin repetidas, en orden natural; `Tags`). Solo por huella
+    /// confirmada: nunca en `pendingByPath`.
+    var tags: [String] = []
+    /// N4 · categoría virtual (ND3): dónde se ve el juego en vez de en su carpeta. nil = su carpeta;
+    /// `[]` = «Sin categoría». Solo por huella confirmada; nunca toca archivos.
+    var virtualFolder: [String]?
 
     var isEmpty: Bool {
-        !favorite && lastPlayed == nil && !hidden && alias == nil && overrides.isEmpty
+        !favorite && lastPlayed == nil && !hidden && alias == nil && overrides.isEmpty && tags.isEmpty
+            && virtualFolder == nil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case favorite, lastPlayed, lastPlayedPath, hidden, alias, overrides, tags, virtualFolder
     }
 
     init() {}
@@ -63,6 +74,22 @@ struct GameMetadata: Codable, Equatable, Sendable {
         let rawAlias = (try? c.decodeIfPresent(String.self, forKey: .alias)) ?? nil
         alias = rawAlias.map { String($0.prefix(80)) }
         overrides = (try? c.decodeIfPresent(GameOverrides.self, forKey: .overrides)) ?? GameOverrides()
+        tags = Tags.sanitized((try? c.decodeIfPresent([String].self, forKey: .tags)) ?? [])
+        let virtual = (try? c.decodeIfPresent([String].self, forKey: .virtualFolder)) ?? nil
+        virtualFolder = virtual.flatMap { CategoryPaths.isValid($0) ? $0 : nil }
+    }
+
+    /// Lo vacío no se escribe: un juego sin etiquetas ni categoría virtual queda como en el formato 2.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if favorite { try c.encode(favorite, forKey: .favorite) }
+        try c.encodeIfPresent(lastPlayed, forKey: .lastPlayed)
+        try c.encodeIfPresent(lastPlayedPath, forKey: .lastPlayedPath)
+        if hidden { try c.encode(hidden, forKey: .hidden) }
+        try c.encodeIfPresent(alias, forKey: .alias)
+        if !overrides.isEmpty { try c.encode(overrides, forKey: .overrides) }
+        if !tags.isEmpty { try c.encode(tags, forKey: .tags) }
+        try c.encodeIfPresent(virtualFolder, forKey: .virtualFolder)
     }
 
     /// Une lo provisional (por ruta) con lo de la huella: lo marcado en cualquiera de los dos se
@@ -77,6 +104,9 @@ struct GameMetadata: Codable, Equatable, Sendable {
         }
         merged.alias = alias ?? other.alias
         merged.overrides = overrides.filling(other.overrides)
+        // N4: etiquetas y categoría virtual solo existen por huella; por si acaso, gana la huella.
+        merged.tags = tags.isEmpty ? other.tags : tags
+        merged.virtualFolder = virtualFolder ?? other.virtualFolder
         return merged
     }
 }
@@ -92,14 +122,20 @@ extension GameOverrides {
     }
 }
 
-/// Preferencias de la biblioteca, formato 2 (N1a): todo por **huella** y, mientras un juego
+/// Preferencias de la biblioteca, formato 3 (N4): todo por **huella** y, mientras un juego
 /// no tiene huella conocida, por su ruta relativa como clave provisional. Al conocer la huella
 /// (caché, cálculo en segundo plano o apertura), lo provisional se une a la huella.
 ///
-/// El formato 1 (hasta N0: favoritos, recientes y alias por ruta, ocultos por huella o ruta)
-/// se migra al leerlo, sin perder nada (`migrating(_:)`).
+/// - Formato 3 (N4): además etiquetas y categoría virtual por huella (en `games`), los ajustes del
+///   inicio (`home`) y la vista de cada categoría (`categoryLayouts`). Todo es nuevo y opcional.
+/// - Formato 2 (N1a) se lee tal cual (lo nuevo vacío) y se reescribe como 3, con una copia exacta
+///   previa (`preferences.v2.json`).
+/// - El formato 1 (hasta N0: favoritos, recientes y alias por ruta, ocultos por huella o ruta)
+///   se migra al leerlo, sin perder nada (`migrating(_:)`).
 struct LibraryPreferencesData: Codable, Equatable, Sendable {
-    static let currentVersion = 2
+    static let currentVersion = 3
+    /// La versión más antigua con `version` que se lee tal cual (el formato 1 no tiene la clave).
+    static let oldestVersionedFormat = 2
 
     var version = currentVersion
     /// Metadatos por huella: la fuente de verdad.
@@ -114,9 +150,14 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
     /// Ya se importaron los ajustes por juego de `UserDefaults` (`gameplaySettings.perGame`,
     /// por ruta, hasta N0). Esa copia antigua no se borra: queda como respaldo.
     var importedLegacyGameSettings = false
+    /// N4 · ajustes del inicio (por dispositivo, ND12).
+    var home = HomeSettings()
+    /// N4 · vista de cada categoría (`CategoryPaths.key` → cuadrícula o lista); sin entrada = `layout`.
+    var categoryLayouts: [String: LibraryLayout] = [:]
 
     enum CodingKeys: String, CodingKey {
         case version, games, pendingByPath, fingerprints, layout, sort, importedLegacyGameSettings
+        case home, categoryLayouts
     }
 
     init() {}
@@ -130,11 +171,13 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
             return
         }
         let stored = try c.decode(Int.self, forKey: .version)
-        guard stored >= Self.currentVersion else {
+        guard stored >= Self.oldestVersionedFormat else {
             throw DecodingError.dataCorruptedError(forKey: .version, in: c,
                                                    debugDescription: "Versión \(stored) no válida")
         }
-        version = stored
+        // Un formato 2 leído se escribe ya como el actual; una versión futura no se escribe nunca
+        // (`LibraryPreferences` bloquea las escrituras), pero se conserva el número leído.
+        version = max(stored, Self.currentVersion)
         // Las colecciones se leen estrictas: si una no se entiende, todo el archivo se aparta
         // (cuarentena) en lugar de perderla en silencio. Cada juego tolera campos dañados.
         games = try c.decodeIfPresent([String: GameMetadata].self, forKey: .games) ?? [:]
@@ -143,6 +186,10 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
         layout = (try? c.decodeIfPresent(LibraryLayout.self, forKey: .layout)) ?? .grid
         sort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .sort)) ?? .title
         importedLegacyGameSettings = (try? c.decodeIfPresent(Bool.self, forKey: .importedLegacyGameSettings)) ?? false
+        // N4: ajustes de este dispositivo; uno dañado vuelve a su valor por defecto (no aparta el archivo).
+        home = (try? c.decodeIfPresent(HomeSettings.self, forKey: .home)) ?? HomeSettings()
+        let layouts = (try? c.decodeIfPresent([String: LibraryLayout].self, forKey: .categoryLayouts)) ?? [:]
+        categoryLayouts = layouts.count <= HomeSettings.maxKeys ? layouts : [:]
     }
 
     /// Formato 1 tal como lo escribía la versión anterior (`LibraryPreferences.swift` hasta N0).
@@ -249,7 +296,8 @@ struct LibraryPreferencesData: Codable, Equatable, Sendable {
 /// - Un error de E/S al leer bloquea las escrituras de la sesión: nunca se pisa un archivo que
 ///   no se pudo leer. Igual con un archivo de una versión más nueva.
 /// - Las escrituras son atómicas (temporal + fsync + rename) y sus errores se avisan.
-/// - Al migrar del formato 1, el archivo original se copia antes a `preferences.v1.json`.
+/// - Al migrar del formato 1 (o del 2, N4), el archivo original se copia antes, verificado, a
+///   `preferences.v1.json` (o `preferences.v2.json`).
 @MainActor @Observable
 final class LibraryPreferences {
     /// Problema con el archivo de preferencias, con su texto para Joel.
@@ -358,20 +406,22 @@ final class LibraryPreferences {
     /// Copia exacta del archivo del formato 1 antes de migrarlo: `preferences.v1.json` o, si ya
     /// existe con otro contenido (p. ej. una copia a medias), `preferences.v1-<fecha>[-n].json`.
     /// Nunca pisa nada y comprueba lo escrito; si falla, lanza y no se migra en disco (H10).
-    nonisolated static func backupLegacy(_ raw: Data, beside fileURL: URL, now: Date) throws -> URL {
+    /// N4: lo mismo antes de pasar un formato 2 al 3 (`version: 2` → `preferences.v2.json`).
+    nonisolated static func backupLegacy(_ raw: Data, beside fileURL: URL, now: Date, version: Int = 1) throws -> URL {
         let fm = FileManager.default
         let dir = fileURL.deletingLastPathComponent()
-        var target = dir.appendingPathComponent("preferences.v1.json")
+        let base = "preferences.v\(version)"
+        var target = dir.appendingPathComponent("\(base).json")
         if fm.fileExists(atPath: target.path) {
             if (try? Data(contentsOf: target)) == raw { return target }
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "yyyyMMdd-HHmmss"
             let stamp = formatter.string(from: now)
-            target = dir.appendingPathComponent("preferences.v1-\(stamp).json")
+            target = dir.appendingPathComponent("\(base)-\(stamp).json")
             var n = 2
             while fm.fileExists(atPath: target.path) {
-                target = dir.appendingPathComponent("preferences.v1-\(stamp)-\(n).json")
+                target = dir.appendingPathComponent("\(base)-\(stamp)-\(n).json")
                 n += 1
             }
         }
@@ -432,11 +482,16 @@ final class LibraryPreferences {
         }
         do {
             let decoded = try decoder.decode(LibraryPreferencesData.self, from: raw)
-            guard format == .legacy else { return Loaded(data: decoded) }
-            // Formato 1: copia exacta del original antes de escribir el 2; si no se puede, no
-            // se migra en disco (se usa en memoria, sin escribir) y se avisa (H10).
+            let previous: Int
+            switch format {
+            case .legacy: previous = 1
+            case .version(let v) where v < LibraryPreferencesData.currentVersion: previous = v
+            default: return Loaded(data: decoded)
+            }
+            // Formato 1 o 2 (N4): copia exacta del original antes de escribir el actual; si no se
+            // puede, no se migra en disco (se usa en memoria, sin escribir) y se avisa (H10).
             do {
-                _ = try backupLegacy(raw, beside: fileURL, now: now)
+                _ = try backupLegacy(raw, beside: fileURL, now: now, version: previous)
             } catch {
                 return Loaded(data: decoded, issue: .migrationBackupFailed(error.localizedDescription), blocked: true)
             }
@@ -571,6 +626,105 @@ final class LibraryPreferences {
         persist()
     }
 
+    // MARK: N4 · categorías, etiquetas e inicio
+
+    /// Huella con la que se escriben las etiquetas y la categoría virtual: la del escaneo confirmada por
+    /// la caché (mismo tamaño y fechas) o calculada de los bytes, o la del núcleo al abrir el juego.
+    /// **Nunca** la pista de la ruta (`fingerprints`) ni una de caché obsoleta: podría ser de otro
+    /// juego que estuvo en esa ruta (como Android `confirmedFingerprint`, auditoría N1-H1).
+    func confirmedFingerprint(of entry: RomEntry) -> String? {
+        entry.fingerprintVerified ? entry.fingerprint : nil
+    }
+
+    func virtualFolder(_ entry: RomEntry) -> [String]? { data.virtualFolder(entry) }
+    func categoryPath(_ entry: RomEntry) -> [String] { data.categoryPath(entry) }
+    func isMovedInApp(_ entry: RomEntry) -> Bool { data.isMovedInApp(entry) }
+    func tags(_ entry: RomEntry) -> [String] { data.tags(entry) }
+
+    /// Resultado de añadir una etiqueta.
+    enum TagResult: Equatable, Sendable {
+        case added
+        case empty
+        case duplicate
+        case full
+        /// Sin huella confirmada no se escribe nada: la UI la confirma leyendo el ROM.
+        case unconfirmed
+
+        var message: String? {
+            switch self {
+            case .added: nil
+            case .empty: "Escribe una etiqueta."
+            case .duplicate: "El juego ya tiene esa etiqueta."
+            case .full: "Como mucho \(Tags.maxPerGame) etiquetas por juego."
+            case .unconfirmed: "PocketGB aún no ha reconocido este juego. Vuelve a intentarlo en un momento."
+            }
+        }
+    }
+
+    /// Cambia los metadatos de la huella **confirmada** del juego (lo provisional de su ruta se une
+    /// antes). Sin huella confirmada no escribe nada y devuelve false.
+    private func editConfirmed(_ entry: RomEntry, _ change: (inout GameMetadata) -> Void) -> Bool {
+        guard let fp = confirmedFingerprint(of: entry) else { return false }
+        var m = data.games[fp] ?? GameMetadata()
+        if let pending = data.pendingByPath.removeValue(forKey: entry.id) { m = m.merging(pending) }
+        change(&m)
+        data.games[fp] = m.isEmpty ? nil : m
+        persist()
+        return true
+    }
+
+    @discardableResult
+    func addTag(_ raw: String, to entry: RomEntry) -> TagResult {
+        guard confirmedFingerprint(of: entry) != nil else { return .unconfirmed }
+        switch Tags.adding(raw, to: tags(entry)) {
+        case .empty: return .empty
+        case .duplicate: return .duplicate
+        case .full: return .full
+        case .added(let updated):
+            return editConfirmed(entry) { $0.tags = updated } ? .added : .unconfirmed
+        }
+    }
+
+    @discardableResult
+    func removeTag(_ tag: String, from entry: RomEntry) -> Bool {
+        let updated = Tags.removing(tag, from: tags(entry))
+        return editConfirmed(entry) { $0.tags = updated }
+    }
+
+    /// «Mostrar en categoría…» (ND3): el juego (y sus copias, que comparten huella; N4A-5) se ve en
+    /// `path` sin tocar ningún archivo. Elegir su propia carpeta es lo mismo que volver a ella; `[]` es
+    /// «Sin categoría». Una ruta que no cumpla las reglas de las carpetas no se guarda.
+    @discardableResult
+    func moveToCategory(_ path: [String], entry: RomEntry) -> Bool {
+        guard CategoryPaths.isValid(path) else { return false }
+        if path == entry.folderPath { return returnToFolder(entry) }
+        return editConfirmed(entry) { $0.virtualFolder = path }
+    }
+
+    /// «Volver a su carpeta»: quita la categoría virtual de la huella (todas sus copias vuelven a la suya).
+    @discardableResult
+    func returnToFolder(_ entry: RomEntry) -> Bool {
+        editConfirmed(entry) { $0.virtualFolder = nil }
+    }
+
+    /// Vista de la pantalla de una categoría (por dispositivo): cada categoría recuerda la suya; sin
+    /// elegir, la de la biblioteca.
+    func setCategoryLayout(_ layout: LibraryLayout, for path: [String]) {
+        let key = CategoryPaths.key(path)
+        guard data.categoryLayouts[key] != layout else { return }
+        data.categoryLayouts[key] = layout
+        persist()
+    }
+
+    /// Ajustes del inicio (Ajustes › Biblioteca › Inicio, por dispositivo).
+    func updateHome(_ change: (inout HomeSettings) -> Void) {
+        var home = data.home
+        change(&home)
+        guard home != data.home else { return }
+        data.home = home
+        persist()
+    }
+
     // MARK: Escritura
 
     /// Resultado de la última escritura, compartido con la cola de escritura.
@@ -673,9 +827,10 @@ enum LibraryQuery {
 
     static func visible(_ entries: [RomEntry], prefs: LibraryPreferencesData, filter: LibraryFilter,
                         query: String) -> [RomEntry] {
+        // N4: la búsqueda mira también la categoría en la que se ve el juego y sus etiquetas.
         let shown = entries.filter {
             !prefs.isHidden($0) && matches($0, filter: filter, isFavorite: prefs.isFavorite($0))
-                && matches($0, displayTitle: prefs.displayTitle($0), query: query)
+                && matches($0, prefs: prefs, query: query)
         }
         switch prefs.sort {
         case .title:

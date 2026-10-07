@@ -29,7 +29,8 @@ final class ShellAccessibilityTests: XCTestCase {
     @MainActor
     func testLibraryLabelsAndTouchTargets() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard"]
+        // N4: sin estanterías (`-demoHome off`): se miden las tarjetas de «Todos los juegos».
+        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard", "-demoHome", "off"]
         app.launch()
         let card = app.buttons["game-card-dmg-acid2.gb"]
         XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -52,7 +53,7 @@ final class ShellAccessibilityTests: XCTestCase {
         // horizontal): en horizontal caben varias columnas incluso con AX5.
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard",
+        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard", "-demoHome", "off",
                                "-contentSizeCategory", "accessibility5"]
         app.launch()
         let first = app.buttons["game-card-cgb-acid2.gbc"]

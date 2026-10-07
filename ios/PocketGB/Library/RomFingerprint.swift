@@ -210,12 +210,14 @@ enum LibraryIdentity {
             switch lookup {
             case .verified(let fp):
                 result[i].fingerprint = fp
+                result[i].fingerprintVerified = true
                 verified[entry.id] = fp
                 continue
             case .stale(let fp):
                 result[i].fingerprint = fp
+                result[i].fingerprintVerified = false
             case .missing:
-                break
+                result[i].fingerprintVerified = false
             }
             if entry.isPlayable {
                 jobs.append(Job(path: entry.id, url: entry.url, console: entry.console,

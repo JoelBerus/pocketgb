@@ -7,13 +7,16 @@ struct GameCard: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let entry: RomEntry
     let zoom: Namespace.ID
+    /// Origen del zoom al detalle; nil = el id del juego (cuadrícula). N4: las estanterías y la
+    /// pantalla de categoría usan el suyo (el mismo juego puede estar dos veces en pantalla).
+    var sourceID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.xs) {
             GameArtworkView(entry: entry)
                 .opacity(entry.problem == nil ? 1 : 0.45)
                 .overlay(alignment: .topTrailing) { statusBadge }
-                .matchedTransitionSource(id: entry.id, in: zoom)
+                .matchedTransitionSource(id: sourceID ?? entry.id, in: zoom)
             Text(state.libraryPrefs.displayTitle(entry))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(entry.problem == nil ? .primary : .secondary)
@@ -74,6 +77,8 @@ struct GameMetaLine: View {
                     .foregroundStyle(PocketColor.accent)
             }
             if entry.isDuplicate { DuplicateBadge() }
+            // N4: insignia discreta (solo el símbolo; el texto va en la etiqueta de VoiceOver).
+            if state.libraryPrefs.isMovedInApp(entry) { MovedBadge(compact: true) }
             Text(GameStatus.detail(entry, lastPlayed: state.libraryPrefs.lastPlayed(entry)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -153,6 +158,7 @@ enum GameAccessibility {
         if prefs.isFavorite(entry) { parts.append("Favorito") }
         if entry.isNew { parts.append("Nuevo") }
         if entry.isDuplicate { parts.append("Duplicado") }
+        if prefs.isMovedInApp(entry) { parts.append("Movido en la app") }
         if let problem = entry.problem {
             parts.append(problem.message)
         } else {

@@ -72,11 +72,12 @@ enum ArtworkStyle: Sendable {
     }
 }
 
-/// Categoría de la biblioteca (N3b): la carpeta de primer nivel de `folderPath` (plan §3.2).
-/// N4 añadirá subcategorías y categorías virtuales.
+/// Categoría de primer nivel de la biblioteca (N3b; N4): la carpeta de primer nivel de la categoría
+/// **en la que se ve** el juego (la virtual si se movió en la app, ND3, o la de su carpeta; plan §3.2).
+/// Las subcategorías y la pantalla de cada categoría son de N4 (`LibraryTree`, `CategoryView`).
 enum LibraryCategory: Hashable, Sendable, Identifiable {
     case all
-    /// Juegos en la raíz de la carpeta.
+    /// Juegos en la raíz de la carpeta (o movidos ahí en la app).
     case uncategorized
     case folder(String)
 
@@ -104,11 +105,17 @@ enum LibraryCategory: Hashable, Sendable, Identifiable {
         }
     }
 
+    /// Por la carpeta real del archivo (sin preferencias).
     func contains(_ entry: RomEntry) -> Bool {
+        contains(path: entry.folderPath)
+    }
+
+    /// Por una ruta de categoría (la carpeta o la categoría virtual).
+    func contains(path: [String]) -> Bool {
         switch self {
         case .all: true
-        case .uncategorized: entry.folderPath.isEmpty
-        case .folder(let name): entry.folderPath.first == name
+        case .uncategorized: path.isEmpty
+        case .folder(let name): path.first == name
         }
     }
 
@@ -134,11 +141,13 @@ enum LibraryCategory: Hashable, Sendable, Identifiable {
 }
 
 extension LibraryQuery {
-    /// Como `visible(_:prefs:filter:query:)`, solo con los juegos de una categoría (N3b).
+    /// Como `visible(_:prefs:filter:query:)`, solo con los juegos de una categoría de primer nivel,
+    /// contando la categoría en la que se ve cada juego (N4: la virtual si está movido).
     static func visible(_ entries: [RomEntry], prefs: LibraryPreferencesData, filter: LibraryFilter,
                         query: String, category: LibraryCategory) -> [RomEntry] {
-        let inCategory = category == .all ? entries : entries.filter(category.contains)
-        return visible(inCategory, prefs: prefs, filter: filter, query: query)
+        let shown = visible(entries, prefs: prefs, filter: filter, query: query)
+        guard category != .all else { return shown }
+        return shown.filter { category.contains(path: prefs.categoryPath($0)) }
     }
 }
 
@@ -148,8 +157,13 @@ extension LibraryPreferences {
         LibraryQuery.visible(entries, prefs: data, filter: filter, query: query, category: category)
     }
 
-    /// Categorías con juegos visibles (sin ocultos), para el filtro «Categorías» (N3b).
+    func visible(_ entries: [RomEntry], filter: LibraryFilter, query: String, tag: String?) -> [RomEntry] {
+        LibraryQuery.visible(entries, prefs: data, filter: filter, query: query, tag: tag)
+    }
+
+    /// Categorías de primer nivel con juegos visibles (sin ocultos), contando la categoría en la que se
+    /// ve cada juego (N4).
     func categories(_ entries: [RomEntry]) -> [LibraryCategory] {
-        LibraryCategory.available(in: entries.filter { !data.isHidden($0) })
+        LibraryCategory.options(entries, prefs: data).map(\.category)
     }
 }

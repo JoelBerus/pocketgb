@@ -43,6 +43,8 @@ struct FavoritesView: View {
                 case .details(let id, let source):
                     GameDetailsView(entryID: id)
                         .modifier(ZoomNavigation(sourceID: source, namespace: zoom))
+                case .category(let path):
+                    CategoryView(path: path, zoom: zoom)
                 }
             }
         }

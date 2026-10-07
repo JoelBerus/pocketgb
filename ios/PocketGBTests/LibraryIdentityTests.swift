@@ -68,10 +68,10 @@ struct LibraryIdentityTests {
         #expect(prefs.data.games["fp-rojo"]?.lastPlayedPath == "Rojo/rojo.gb")
         #expect(prefs.data.pendingByPath.keys.sorted() == ["nunca.gb", "sin-abrir.gb"])
 
-        // En disco: formato 2, y el original intacto en preferences.v1.json.
+        // En disco: el formato actual (3 desde N4), y el original intacto en preferences.v1.json.
         let backup = prefsURL.deletingLastPathComponent().appendingPathComponent("preferences.v1.json")
         #expect(try Data(contentsOf: backup) == original)
-        #expect(LibraryPreferences.fileVersion(try Data(contentsOf: prefsURL)) == 2)
+        #expect(LibraryPreferences.fileVersion(try Data(contentsOf: prefsURL)) == LibraryPreferencesData.currentVersion)
         let reopened = LibraryPreferences(fileURL: prefsURL)
         #expect(reopened.data == prefs.data && reopened.issue == nil)
     }
@@ -191,10 +191,11 @@ struct LibraryIdentityTests {
     }
 
     @Test func newerVersionIsReadButNotOverwritten() throws {
-        try writePrefs(#"{"version":3,"games":{"fp":{"favorite":true}},"futuro":{"x":1}}"#)
+        // N4: la versión futura pasa a ser la 4 (la 3 es la actual).
+        try writePrefs(#"{"version":4,"games":{"fp":{"favorite":true}},"futuro":{"x":1}}"#)
         let bytes = try Data(contentsOf: prefsURL)
         let prefs = LibraryPreferences(fileURL: prefsURL)
-        #expect(prefs.issue == .newerVersion(3))
+        #expect(prefs.issue == .newerVersion(4))
         #expect(prefs.isFavorite(Self.entry("a.gb", fingerprint: "fp")))
         prefs.toggleFavorite(Self.entry("b.gb"))
         prefs.waitForPendingWrites()
@@ -203,10 +204,10 @@ struct LibraryIdentityTests {
 
     /// H2: un archivo de una versión futura que esta no sabe decodificar no se aparta ni se pisa.
     @Test func undecodableNewerVersionIsBlockedNotQuarantined() throws {
-        try writePrefs(#"{"version":3,"games":[1,2],"otra":"cosa"}"#)
+        try writePrefs(#"{"version":4,"games":[1,2],"otra":"cosa"}"#)
         let bytes = try Data(contentsOf: prefsURL)
         let prefs = LibraryPreferences(fileURL: prefsURL)
-        #expect(prefs.issue == .newerVersion(3))
+        #expect(prefs.issue == .newerVersion(4))
         #expect(prefs.data.games.isEmpty)
         prefs.toggleFavorite(Self.entry("a.gb"))
         prefs.waitForPendingWrites()
@@ -252,7 +253,7 @@ struct LibraryIdentityTests {
             .filter { $0.hasPrefix("preferences.v1-") && $0.hasSuffix(".json") }
         #expect(copies.count == 1)
         #expect(try Data(contentsOf: folder.appendingPathComponent(copies[0])) == original)
-        #expect(LibraryPreferences.fileVersion(try Data(contentsOf: prefsURL)) == 2)
+        #expect(LibraryPreferences.fileVersion(try Data(contentsOf: prefsURL)) == LibraryPreferencesData.currentVersion)
     }
 
     /// H10: si la copia del formato 1 no se puede escribir, no se migra en disco: el original queda

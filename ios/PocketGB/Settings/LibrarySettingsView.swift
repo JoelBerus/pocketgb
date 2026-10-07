@@ -42,6 +42,19 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("PocketGB lee los ROMs de esta carpeta y de sus subcarpetas (hasta 5 niveles) sin copiarlos ni modificarlos. Las carpetas que empiezan por “_” o “.” y la carpeta “PocketGB” no se leen.")
             }
+            // N4: estanterías del inicio (orden, fijadas, ocultas) y fila de Favoritos, por dispositivo.
+            Section {
+                NavigationLink(value: SettingsRoute.libraryHome) {
+                    LabeledContent {
+                        Text(homeSummary)
+                    } label: {
+                        Label("Inicio", systemImage: "rectangle.stack")
+                    }
+                }
+                .accessibilityIdentifier("settings-library-home")
+            } footer: {
+                Text("Qué categorías salen en el inicio de la biblioteca y en qué orden. Solo en este iPhone.")
+            }
             Section("Presentación") {
                 Picker("Vista", selection: Binding(get: { prefs.data.layout }, set: { prefs.setLayout($0) })) {
                     ForEach(LibraryLayout.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -83,6 +96,13 @@ struct LibrarySettingsView: View {
         .scrollContentBackground(.hidden)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
         .navigationTitle("Biblioteca")
+    }
+
+    private var homeSummary: String {
+        let home = prefs.data.home
+        let hidden = LibraryHome.arrangement(state.library.entries, prefs: prefs.data).filter(\.hidden).count
+        if home.isDefault { return "Todas" }
+        return hidden == 0 ? "Personalizado" : (hidden == 1 ? "1 oculta" : "\(hidden) ocultas")
     }
 
     private var folderName: String? {
