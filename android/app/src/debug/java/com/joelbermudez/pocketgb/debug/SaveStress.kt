@@ -22,6 +22,7 @@ import com.joelbermudez.pocketgb.saves.SaveSizes
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.SramFlushPolicy
 import com.joelbermudez.pocketgb.saves.StateSlot
+import com.joelbermudez.pocketgb.saves.MomentStore
 import com.joelbermudez.pocketgb.saves.StateStore
 import java.io.File
 import java.util.Random
@@ -95,6 +96,7 @@ object SaveStress {
 
     private fun savesDir(context: Context) = File(context.filesDir, "saves")
     private fun statesRoot(context: Context) = File(context.filesDir, "states")
+    private fun momentsRoot(context: Context) = File(context.filesDir, "moments")
 
     /** Último contador confirmado en disco por un vaciado correcto (lo escribe `stress`, lo exige `verify`). */
     private fun confirmedFile(context: Context, profile: Profile) = File(context.filesDir, profile.confirmedName)
@@ -129,6 +131,7 @@ object SaveStress {
             statesRoot = statesRoot(context),
             policy = { SramFlushPolicy({ System.nanoTime() / 1_000_000 }, debounceMs = 20, safetyNetMs = 60_000) },
             gbaOptionsFor = { profile.gbaOptions },
+            momentsRoot = momentsRoot(context),
         )
         val resume = launcher.openBlocking(entry, mode = LaunchMode.RESUME)
         val opened = resume as? OpenResult.Opened
@@ -155,6 +158,23 @@ object SaveStress {
                 }
             }
             if (rounds % 3 == 0) runCatching { game.saveState(StateSlot.MANUAL1) }
+            // N6: crear momentos y cargarlos (con el anillo «Antes de cargar») a mitad de partida. Cargar un momento hace
+            // retroceder la partida a propósito: el listón «confirmado» se baja ANTES al contador del momento.
+            if (rounds % 5 == 2) runCatching {
+                game.createMoment("S$rounds", null)
+                game.moments().moments.drop(6).forEach { game.deleteMoment(MomentStore.Kind.MOMENT, it.id) }
+            }
+            if (rounds % 5 == 4) runCatching {
+                val moments = MomentStore(momentsRoot(context), fp)
+                val pick = game.moments().moments.filter { it.hasSram }.randomOrNull() ?: return@runCatching
+                val momentCounter = moments.loadSram(MomentStore.Kind.MOMENT, pick.id)?.let(::counterOf) ?: return@runCatching
+                val bar = confirmedFile(context, profile).takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
+                if (bar == null || ((bar - momentCounter) and 0xFFFF) < 0x8000) {
+                    confirmedFile(context, profile).writeText(momentCounter.toString())
+                }
+                Log.i(TAG, "SAVE-STRESS LOAD-MOMENT $momentCounter")
+                game.loadMoment(MomentStore.Kind.MOMENT, pick.id, pick.name, null)
+            }
             // A9: el AUTO de segundo plano (`ON_STOP`): con la sesión aparcada y tras el vaciado.
             if (rounds % 4 == 1) runCatching { game.saveAutoStateIfParked() }
             Thread.sleep(random.nextInt(15).toLong())
@@ -190,6 +210,26 @@ object SaveStress {
             }
         }
 
+        // N6: momentos como en la apertura (temporales y archivos sin confirmar fuera); el índice debe leerse.
+        val moments = MomentStore(momentsRoot(context), fp)
+        var momentStates: List<File> = emptyList()
+        try {
+            moments.recoverOrphans()
+            val snap = moments.snapshot()
+            if (snap.beforeLoad.size > MomentStore.RING_SIZE) problems += "anillo con ${snap.beforeLoad.size} entradas"
+            for (m in snap.moments + snap.beforeLoad) {
+                val kind = if (m in snap.moments) MomentStore.Kind.MOMENT else MomentStore.Kind.BEFORE_LOAD
+                val ram = moments.loadSram(kind, m.id)
+                if (m.hasSram && (ram == null || ram.size !in valid)) problems += "momento ${m.id} sin partida válida"
+            }
+            momentStates = snap.moments.filter { it.hasState }.map { moments.stateFile(MomentStore.Kind.MOMENT, it.id) } +
+                snap.beforeLoad.filter { it.hasState }.map { moments.stateFile(MomentStore.Kind.BEFORE_LOAD, it.id) }
+        } catch (error: Exception) {
+            problems += "momentos ilegibles: ${error.message}"
+        }
+        val momentTmps = moments.directory.walkTopDown().filter { it.isFile && it.name.endsWith(".tmp") }.map { it.name }.toList()
+        if (momentTmps.isNotEmpty()) problems += "temporales de momentos: $momentTmps"
+
         val tmps = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".tmp") }.map { it.name }.toList()
         if (tmps.isNotEmpty()) problems += "temporales tras recoverOrphans: $tmps"
 
@@ -211,7 +251,7 @@ object SaveStress {
                     // Un estado a medias nunca debe ser visible: o está completo o no existe (también el AUTO y el AUTO
                     // obsoleto apartado de A9).
                     val states = StateStore(statesRoot(context), fp)
-                    val files = (listOf(states.stateFile(StateSlot.MANUAL1), states.stateFile(StateSlot.AUTO)) + states.obsoleteAutoFiles())
+                    val files = (listOf(states.stateFile(StateSlot.MANUAL1), states.stateFile(StateSlot.AUTO)) + states.obsoleteAutoFiles() + momentStates)
                         .filter { it.exists() }
                     if (files.isNotEmpty()) {
                         session.start()
@@ -230,7 +270,7 @@ object SaveStress {
         val stateTmps = statesDir.walkTopDown().count { it.name.endsWith(".tmp") }
         val confirmedNow = confirmedFile(context, profile).takeIf { it.exists() }?.readText()?.trim()
         val summary = "bytes=${data?.size} counter=${data?.takeIf { it.size >= 2 }?.let(::counterOf)} confirmed=$confirmedNow " +
-            "backups=${backups.size} stateTmpFound=$stateTmpFound stateTmpOrphans=$stateTmps"
+            "backups=${backups.size} stateTmpFound=$stateTmpFound stateTmpOrphans=$stateTmps moments=${momentStates.size}"
         return if (problems.isEmpty()) "OK $summary" else "FAIL ${problems.joinToString("; ")} | $summary"
     }
 }
