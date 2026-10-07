@@ -349,7 +349,7 @@ class LibraryUiTest {
     )
 
     @Composable
-    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long? = null) {
+    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long? = null, canResume: Boolean = false) {
         var favorite by remember { mutableStateOf(false) }
         var hidden by remember { mutableStateOf(false) }
         PocketGBTheme {
@@ -363,6 +363,8 @@ class LibraryUiTest {
                     onToggleFavorite = { favorite = !favorite },
                     onHide = { hidden = true },
                     onBack = {},
+                    canResume = canResume,
+                    onPlayFromStart = { played += "inicio:${entry.id}" },
                 )
                 if (hidden) Text("oculto")
             }
@@ -389,10 +391,22 @@ class LibraryUiTest {
     }
 
     @Test
-    fun playedGamesOfferContinue() {
-        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L) }
+    fun gamesWithAValidAutomaticStateOfferContinueAndPlayFromStart() {
+        // A9 (cambia J8, ND6): «Continuar» = estado automático exacto; «Jugar desde el inicio» = solo la partida.
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L, canResume = true) }
         compose.onNodeWithText("Continuar").assertIsDisplayed()
-        compose.onNodeWithTag("game-details-play").assertIsEnabled()
+        compose.onNodeWithTag("game-details-play").assertIsEnabled().performClick()
+        compose.onNodeWithTag("game-details-play-from-start").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("game-details-resume-hint").performScrollTo().assertIsDisplayed()
+        assertEquals(listOf("Red.gb", "inicio:Red.gb"), played)
+    }
+
+    @Test
+    fun aPlayedGameWithoutAValidAutomaticStateOffersOnlyPlay() {
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L, canResume = false) }
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
+        compose.onAllNodesWithTag("game-details-play-from-start").assertCountEquals(0)
+        compose.onAllNodesWithText("Continuar").assertCountEquals(0)
     }
 
     @Test
@@ -775,7 +789,8 @@ class LibraryUiTest {
     @Test
     fun detailsShowStatsContinueFromTheSaveAndOpenGameSettings() {
         var settings = 0
-        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 2 * 3_600_000)
+        // Minutos y no horas: «hace 2 h» pasa a «ayer» entre las 00:00 y las 02:00 (fallo de frontera de fecha).
+        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 5 * 60_000)
         compose.setContent {
             PocketGBTheme {
                 GameDetailsContent(
@@ -791,9 +806,10 @@ class LibraryUiTest {
                 )
             }
         }
-        compose.onNodeWithText("Continuar").assertIsDisplayed() // hay partida junto al ROM aunque no se haya jugado aquí
+        // A9 (cambia J8): sin estado automático la acción es «Jugar», que abre la partida junto al ROM igualmente.
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithTag("game-details-stats").assertIsDisplayed()
-        compose.onNodeWithText("hace 2 h").assertIsDisplayed()
+        compose.onNodeWithText("hace 5 min").assertIsDisplayed()
         compose.onNodeWithText("Nunca").assertIsDisplayed()
         compose.onNodeWithTag("game-details-states").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("game-details-settings").performScrollTo().performClick()

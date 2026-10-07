@@ -100,5 +100,8 @@ int native_session_state_save(native_session *session, uint8_t *out, size_t capa
 int native_session_state_load(native_session *session, const uint8_t *data, size_t length);
 /* GB_SCREEN_W * GB_SCREEN_H píxeles RGBA8888. */
 int native_session_copy_framebuffer(native_session *session, uint32_t *out, size_t pixel_capacity);
+/* A9: adelanta el reloj del MBC3 a `unix_time` (nunca lo retrasa; sin RTC no hace nada). Solo aparcada
+ * (READY sin arrancar, PAUSED o STOPPED): tras retomar el estado automático, que trae la hora en que se guardó. */
+int native_session_set_rtc_time(native_session *session, int64_t unix_time);
 
 #endif

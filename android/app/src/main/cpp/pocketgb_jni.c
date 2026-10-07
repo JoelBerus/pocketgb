@@ -671,6 +671,22 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionStateLoad(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionSetRtcTime(
+    JNIEnv *env,
+    jclass clazz,
+    jlong handle,
+    jlong unix_time
+) {
+    (void)env;
+    (void)clazz;
+    native_session *session = session_from_handle(handle);
+    if (session == NULL) {
+        return GB_ERR_NULL_ARG;
+    }
+    return native_session_set_rtc_time(session, (int64_t)unix_time);
+}
+
+JNIEXPORT jint JNICALL
 Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeSessionCopyFrame(
     JNIEnv *env,
     jclass clazz,

@@ -772,6 +772,18 @@ int native_session_state_load(native_session *session, const uint8_t *data, size
     return result;
 }
 
+int native_session_set_rtc_time(native_session *session, int64_t unix_time) {
+    if (session == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        gb_rtc_set_time(session->core, unix_time);
+        result = NS_OK;
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
 int native_session_copy_framebuffer(native_session *session, uint32_t *out, size_t pixel_capacity) {
     if (session == NULL || out == NULL) return GB_ERR_NULL_ARG;
     if (pixel_capacity < (size_t)GB_SCREEN_W * (size_t)GB_SCREEN_H) return GB_ERR_BUFFER_TOO_SMALL;

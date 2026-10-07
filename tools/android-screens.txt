@@ -135,3 +135,18 @@ library-wide-rail landscape light window=wide
 library-wide-rail landscape dark window=wide
 library-list-detail landscape light window=wide
 gameplay-cutout-landscape landscape dark cutout=tall
+# A9 · renombrar y continuación exacta («Continuar» / «Jugar desde el inicio»)
+details-resume-exact portrait light
+details-resume-exact portrait dark
+details-rename portrait light
+details-rename portrait dark
+details-more-menu portrait light
+details-more-menu portrait dark
+game-context-menu-resume portrait light
+game-context-menu-resume portrait dark
+library-renamed portrait light
+library-renamed portrait dark
+game-settings-rename portrait light
+game-settings-rename portrait dark
+resume-failed portrait light
+resume-failed portrait dark
