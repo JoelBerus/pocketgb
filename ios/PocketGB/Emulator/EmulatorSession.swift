@@ -131,6 +131,12 @@ final class EmulatorSession: @unchecked Sendable {
         return info.hasRTC ? [info.sramBytes, info.sramBytes + 48, info.sramBytes + 44] : [info.sramBytes]
     }
 
+    /// Botones que recibe el núcleo cada frame: táctiles OR mando, sin direcciones opuestas
+    /// (el núcleo no las filtra; N2-H3).
+    static func combinedButtons(touch: UInt16, pad: UInt16) -> UInt16 {
+        DpadDirection.withoutOpposites(touch | pad)
+    }
+
     @MainActor
     func start() {
         startThreadAndAudio()
@@ -468,7 +474,7 @@ final class EmulatorSession: @unchecked Sendable {
             }
 
             let frameStarted = mach_absolute_time()
-            core.setButtons(buttons.value | padButtons.value)
+            core.setButtons(Self.combinedButtons(touch: buttons.value, pad: padButtons.value))
             let speed = speedFactor.load(ordering: .relaxed)
             core.runFrame()
             drainAudio(discard: speed > 1)

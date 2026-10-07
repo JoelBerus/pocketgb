@@ -161,4 +161,7 @@ gameplay-gba-arrows-up      landscape dark   -screen gameplay-gba-arrows-up -rom
 customize-controls-dpad     portrait  dark   -screen customize-controls-dpad -rom $FIXTURES/dmg-acid2.gb
 customize-controls-arrows   portrait  dark   -screen customize-controls-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
 customize-controls-arrows   landscape dark   -screen customize-controls-arrows -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated
-settings-controls-ax5       portrait  light  -screen settings-controls-ax5 -contentSizeCategory accessibility5 -uiSwipeUp
+settings-controls-ax5       portrait  light  -screen settings-controls-ax5 -contentSizeCategory accessibility5 -scrollTo settings-dpad-diagonals -uiAssertHittable settings-dpad-diagonals
+# N2-H6: ↑ pulsado con Reduce Transparency también en vertical.
+gameplay-dpad-up-reduce-transparency portrait dark -screen gameplay-dpad-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -reduceTransparency -uiPressedDpad up
+gameplay-arrows-up-reduce-transparency portrait dark -screen gameplay-arrows-up-reduce-transparency -rom $FIXTURES/dmg-acid2.gb -dpadStyle separated -reduceTransparency -uiPressedDpad up

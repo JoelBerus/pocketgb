@@ -10,7 +10,9 @@ Puedes elegir entre dos estilos en **Ajustes › Controles › Cruceta**:
 
 Los dos funcionan igual: lo que cuenta es hacia dónde apunta tu dedo desde el centro, no el dibujo. Puedes rodar el pulgar sin levantarlo y la dirección cambia sola.
 
-Al pulsar, **solo se marca la dirección que estás pulsando**: en la cruz, ese brazo se hunde (se vuelve gris); en las flechas separadas, esa flecha se ilumina. Si pulsas una diagonal se marcan las dos. El resto de la cruceta no se mueve.
+Al pulsar, **solo se marca la dirección que estás pulsando**: en la cruz, ese brazo se hunde (se vuelve gris oscuro y su flecha, blanca); en las flechas separadas, esa flecha se vuelve blanca con el triángulo oscuro. Si pulsas una diagonal se marcan las dos. El resto de la cruceta no se mueve.
+
+Con las flechas separadas, tocar **cualquier parte de una flecha** pulsa solo esa dirección, también su borde. Las diagonales salen al tocar el hueco entre dos flechas.
 
 Notarás una vibración suave cada vez que **cambias** de dirección (si tienes la háptica activada en Ajustes › Controles). Si el dedo tiembla un poco sobre la misma dirección, no vibra.
 

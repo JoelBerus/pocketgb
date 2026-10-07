@@ -125,6 +125,8 @@ enum ControlHit: Hashable, Sendable {
 struct ControlsGeometry: Equatable, Sendable {
     let frames: [ControlID: CGRect]
     let abFrame: CGRect
+    /// Separación de las flechas si la cruceta usa el estilo «Flechas separadas» (nil: la cruz).
+    let dpadArrowSpacing: CGFloat?
 
     /// Resuelve un layout dentro de `area` (bounds menos safe area). Cada control se clama
     /// para quedar entero dentro del área: nunca bajo la Dynamic Island ni el Home Indicator.
@@ -133,6 +135,7 @@ struct ControlsGeometry: Equatable, Sendable {
     init(layout: ControlsLayout, orientation: ControlsOrientation, area: CGRect, metrics: ControlMetrics,
          shoulders: Bool = false, dpadStyle: DpadStyle = .cross) {
         var frames: [ControlID: CGRect] = [:]
+        dpadArrowSpacing = dpadStyle == .separated ? layout.spacing : nil
         for id in ControlID.allCases where shoulders || !id.isShoulder {
             let base = metrics.size(id)
             var k = layout.scale(id)
@@ -194,22 +197,37 @@ struct ControlsGeometry: Equatable, Sendable {
 
     /// Cruceta: dirección del punto `p` según el modo de diagonales y la dirección que ya
     /// tenía ese dedo (histéresis). Funciona fuera del radio (el dedo queda capturado).
+    /// Con flechas separadas (N2-H2), todo el disco de cada flecha pulsa su dirección (también
+    /// sus bordes interior y laterales, sin diagonal) y la zona muerta no pasa del borde
+    /// interior de las flechas; entre flechas y fuera de ellas decide el ángulo.
     func dpadMask(at p: CGPoint, diagonals: DpadDiagonals, previous: UInt8 = 0) -> UInt8 {
         guard let r = frames[.dpad] else { return 0 }
+        var maxDeadZone = CGFloat.infinity
+        if let spacing = dpadArrowSpacing {
+            let arrows = DpadArrows.rects(in: r, spacing: spacing)
+            for (disc, direction) in zip(arrows, DpadDirection.arms) {
+                // El dedo que ya pulsa esta flecha la mantiene hasta salir un margen más allá.
+                let hold = previous == direction ? DpadTuning.arrowHoldMargin : 0
+                if hypot(p.x - disc.midX, p.y - disc.midY) <= disc.width / 2 + hold { return direction }
+            }
+            maxDeadZone = DpadArrows.innerEdge(in: r, spacing: spacing) - DpadTuning.arrowInnerMargin
+        }
         return Self.dpadMask(dx: p.x - r.midX, dy: p.y - r.midY, radius: r.width / 2,
-                             diagonals: diagonals, previous: previous)
+                             diagonals: diagonals, previous: previous, maxDeadZone: maxDeadZone)
     }
 
-    /// Cruceta (N2): zona muerta del 30 % del radio; diagonal solo a ±`diagonals.halfAngle` de
-    /// 45°, 135°…; nunca direcciones opuestas. Con `previous` distinto de cero hay histéresis:
-    /// se suelta por debajo del 24 % del radio y la dirección actual se mantiene hasta que el
-    /// dedo pasa `hysteresisDegrees` más allá del borde de su sector, así un temblor del dedo
-    /// en la frontera no hace parpadear entre direcciones. `radius == 0`: sin zona muerta (mando).
+    /// Cruceta (N2): zona muerta del 30 % del radio (como mucho `maxDeadZone` pt); diagonal solo
+    /// a ±`diagonals.halfAngle` de 45°, 135°…; nunca direcciones opuestas. Con `previous`
+    /// distinto de cero hay histéresis: se suelta por debajo del 24 % del radio y la dirección
+    /// actual se mantiene hasta que el dedo pasa `hysteresisDegrees` más allá del borde de su
+    /// sector, así un temblor del dedo en la frontera no hace parpadear entre direcciones.
+    /// `radius == 0`: sin zona muerta (mando).
     static func dpadMask(dx: CGFloat, dy: CGFloat, radius: CGFloat, diagonals: DpadDiagonals,
-                         previous: UInt8 = 0) -> UInt8 {
+                         previous: UInt8 = 0, maxDeadZone: CGFloat = .infinity) -> UInt8 {
         let distance = hypot(dx, dy)
-        let zone = previous == 0 ? DpadTuning.deadZone : DpadTuning.releaseZone
-        guard distance > 0, distance >= radius * zone else { return 0 }
+        let fraction = previous == 0 ? DpadTuning.deadZone : DpadTuning.releaseZone
+        let limit = previous == 0 ? maxDeadZone : maxDeadZone * DpadTuning.releaseZone / DpadTuning.deadZone
+        guard distance > 0, distance >= min(radius * fraction, max(limit, 0)) else { return 0 }
         var angle = atan2(-dy, dx) * 180 / .pi   // 0 = derecha, antihorario (y de pantalla hacia abajo)
         if angle < 0 { angle += 360 }
         if previous != 0, let center = DpadDirection.angle(of: previous) {
@@ -228,6 +246,10 @@ enum DpadTuning {
     static let releaseZone: CGFloat = 0.24
     /// Grados que el dedo debe pasar del borde de su sector para cambiar de dirección.
     static let hysteresisDegrees: CGFloat = 8
+    /// Flechas separadas: la zona muerta acaba este margen (pt) antes del borde interior.
+    static let arrowInnerMargin: CGFloat = 2
+    /// Flechas separadas: el dedo mantiene su flecha hasta salir este margen (pt) del disco.
+    static let arrowHoldMargin: CGFloat = 4
 }
 
 /// Cuánto ángulo ocupan las diagonales de la cruceta táctil (Ajustes › Controles).
@@ -271,6 +293,16 @@ enum DpadDirection {
     }
 
     static func isDiagonal(_ mask: UInt8) -> Bool { mask.nonzeroBitCount == 2 }
+
+    /// Quita las direcciones opuestas (arriba+abajo, izquierda+derecha) de una máscara de botones:
+    /// dos dedos en la cruceta, o dedo y mando a la vez, nunca llegan así al núcleo (N2-H3).
+    static func withoutOpposites(_ mask: UInt16) -> UInt16 {
+        let vertical = UInt16(up | down), horizontal = UInt16(left | right)
+        var mask = mask
+        if mask & vertical == vertical { mask &= ~vertical }
+        if mask & horizontal == horizontal { mask &= ~horizontal }
+        return mask
+    }
 
     /// Distancia angular entre dos ángulos en grados (0…180).
     static func separation(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
@@ -320,6 +352,12 @@ enum DpadArrows {
     /// Lado del marco de la cruceta respecto al ancho normal (1 con separación 1).
     static func extentFactor(spacing: CGFloat) -> CGFloat {
         2 * offsetRatio * spacing + diameterRatio(spacing: spacing)
+    }
+
+    /// Distancia del centro de la cruceta al borde interior de las flechas.
+    static func innerEdge(in rect: CGRect, spacing: CGFloat) -> CGFloat {
+        let base = rect.width / extentFactor(spacing: spacing)
+        return base * (offsetRatio * spacing - diameterRatio(spacing: spacing) / 2)
     }
 
     /// Círculos de arriba, derecha, abajo e izquierda dentro del marco `rect` de la cruceta.
@@ -403,9 +441,9 @@ struct ControlsInputEngine: Sendable {
         dpadDirections.removeAll()
     }
 
-    /// Direcciones de la cruceta pulsadas ahora (OR de sus dedos; nunca opuestas en un dedo).
+    /// Direcciones de la cruceta pulsadas ahora: OR de sus dedos sin direcciones opuestas.
     var dpadMask: UInt8 {
-        dpadDirections.values.reduce(0, |)
+        UInt8(DpadDirection.withoutOpposites(UInt16(dpadDirections.values.reduce(0, |))))
     }
 
     /// Hay al menos un dedo que empezó en la cruceta (aunque esté en la zona muerta).

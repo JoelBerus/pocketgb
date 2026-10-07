@@ -107,19 +107,23 @@ struct DpadInputTests {
         mutating func unit() -> CGFloat { CGFloat(Double(next() >> 11) / Double(1 << 53)) * 2 - 1 }
     }
 
-    /// Fracción de muestras que dan solo UP: el dedo se apoya en el centro del brazo ↑ y tiembla
-    /// hasta ±8 pt en cada eje (un cuadrado de 16 pt), como una traza continua de un solo dedo.
-    static func upRatio(_ geometry: ControlsGeometry, style: DpadStyle, diagonals: DpadDiagonals,
-                        amplitude: CGFloat = 8, separateTaps: Bool = false, samples: Int = 10_000,
+    /// Fracción de muestras que dan solo UP: el dedo se apoya en el centro del brazo ↑ (o de la
+    /// flecha ↑ si la geometría es de flechas separadas), girado `offAxis` grados hacia la derecha,
+    /// y tiembla hasta ±`amplitude` pt en cada eje, como una traza continua de un solo dedo (o
+    /// toques sueltos). La primera muestra es el punto de apoyo exacto.
+    static func upRatio(_ geometry: ControlsGeometry, diagonals: DpadDiagonals, amplitude: CGFloat = 8,
+                        offAxis: CGFloat = 0, separateTaps: Bool = false, samples: Int = 10_000,
                         seed: UInt64 = 0x5EED_0002) -> Double {
         let frame = geometry.frames[.dpad]!
-        let target = style == .cross ? DpadCross.armCenters(in: frame)[0]
-            : { let r = DpadArrows.rects(in: frame, spacing: 1)[0]; return CGPoint(x: r.midX, y: r.midY) }()
+        let up = geometry.dpadArrowSpacing.map { DpadArrows.rects(in: frame, spacing: $0)[0] }
+            .map { CGPoint(x: $0.midX, y: $0.midY) } ?? DpadCross.armCenters(in: frame)[0]
+        let distance = hypot(up.x - frame.midX, up.y - frame.midY), angle = (90 - offAxis) * .pi / 180
+        let target = CGPoint(x: frame.midX + distance * cos(angle), y: frame.midY - distance * sin(angle))
         var engine = ControlsInputEngine(geometry: geometry, diagonals: diagonals)
         var rng = SplitMix64(state: seed)
         var onlyUp = 0
         for i in 0..<samples {
-            let p = CGPoint(x: target.x + amplitude * rng.unit(), y: target.y + amplitude * rng.unit())
+            let p = i == 0 ? target : CGPoint(x: target.x + amplitude * rng.unit(), y: target.y + amplitude * rng.unit())
             if i == 0 || separateTaps {
                 engine.cancelAll()
                 _ = engine.began(1, at: p)
@@ -134,26 +138,37 @@ struct DpadInputTests {
     @Test func jitterOf8PointsAroundTheUpArmGivesOnlyUp() {
         let area = CGRect(x: 60, y: 0, width: 752, height: 381)
         // Cruceta normal (140 pt) en las cuatro disposiciones y la más pequeña (60 %, GBA horizontal).
-        var geometries: [(String, ControlsGeometry)] = []
+        // Las cuatro disposiciones (la cruceta de GBA horizontal es la más pequeña, al 60 %) y
+        // los dos estilos, cada uno con su geometría real (`dpadStyle`).
         for orientation in ControlsOrientation.allCases {
             for shoulders in [false, true] {
-                geometries.append(("\(orientation) \(shoulders ? "GBA" : "GB")",
-                                   ControlsGeometry(layout: .defaults(orientation, shoulders: shoulders),
-                                                    orientation: orientation, area: area, metrics: ControlMetrics(),
-                                                    shoulders: shoulders)))
-            }
-        }
-        for (name, g) in geometries {
-            for style in DpadStyle.allCases {
-                let ratio = Self.upRatio(g, style: style, diagonals: .reduced)
-                #expect(ratio >= 0.99, "\(name) \(style): solo UP en \(ratio * 100) %")
+                for style in DpadStyle.allCases {
+                    let g = ControlsGeometry(layout: .defaults(orientation, shoulders: shoulders), orientation: orientation,
+                                             area: area, metrics: ControlMetrics(), shoulders: shoulders, dpadStyle: style)
+                    #expect(g.dpadArrowSpacing == (style == .separated ? 1 : nil))
+                    let ratio = Self.upRatio(g, diagonals: .reduced)
+                    #expect(ratio >= 0.99, "\(orientation) \(shoulders ? "GBA" : "GB") \(style): solo UP en \(ratio * 100) %")
+                }
             }
         }
         // Margen sin histéresis (cada muestra es un toque nuevo, cruz de 140 pt, ±13 pt): con
         // «Reducidas» sigue siendo solo UP; con los sectores de 45° de antes de N2 ya hay diagonales.
-        let gb = geometries[0].1
-        #expect(Self.upRatio(gb, style: .cross, diagonals: .reduced, amplitude: 13, separateTaps: true) >= 0.99)
-        #expect(Self.upRatio(gb, style: .cross, diagonals: .normal, amplitude: 13, separateTaps: true) < 0.98)
+        let gb = ControlsGeometry(layout: .defaults(.landscape), orientation: .landscape, area: area,
+                                  metrics: ControlMetrics())
+        #expect(Self.upRatio(gb, diagonals: .reduced, amplitude: 13, separateTaps: true) >= 0.99)
+        #expect(Self.upRatio(gb, diagonals: .normal, amplitude: 13, separateTaps: true) < 0.98)
+    }
+
+    /// Traza continua que distingue «Reducidas» de «Normales» (nota de la auditoría): el pulgar
+    /// se apoya en el brazo ↑ girado 26° hacia la derecha (64°) y tiembla ±4 pt. Con «Reducidas»
+    /// eso es arriba (rectas de 60°) y la histéresis lo mantiene; con «Normales» es diagonal.
+    @Test func restingOffAxisDiscriminatesReducedFromNormal() {
+        let g = ControlsGeometry(layout: .defaults(.portrait), orientation: .portrait,
+                                 area: CGRect(x: 0, y: 0, width: 402, height: 420), metrics: ControlMetrics())
+        let reduced = Self.upRatio(g, diagonals: .reduced, amplitude: 4, offAxis: 26)
+        let normal = Self.upRatio(g, diagonals: .normal, amplitude: 4, offAxis: 26)
+        #expect(reduced >= 0.99, "Reducidas: \(reduced)")
+        #expect(normal <= 0.05, "Normales: \(normal)")
     }
 
     // MARK: - Motor y háptica
@@ -264,26 +279,103 @@ struct DpadInputTests {
         #expect(abs((g.frames[.dpad]?.width ?? 0) - 140) < 0.01)
     }
 
-    @Test func touchZoneFollowsEachArrow() throws {
-        let expected: [UInt8] = [Self.up, Self.right, Self.down, Self.left]
+    /// N2-H2: todo el disco de cada flecha (centro, borde interior, bordes laterales y exterior)
+    /// pulsa su dirección y solo esa, con cualquier separación, tamaño y modo de diagonales; la
+    /// zona muerta acaba antes del borde interior de las flechas.
+    @Test func wholeDiscOfEachArrowPressesItsDirection() throws {
         for spacing in [CGFloat(0.7), 1, 1.5] {
             for scale in [CGFloat(0.6), 1, 1.6] {
                 let g = Self.arrowsGeometry(spacing: spacing, scale: scale)
                 let frame = try #require(g.frames[.dpad])
-                for (r, direction) in zip(DpadArrows.rects(in: frame, spacing: spacing), expected) {
-                    // El centro y el borde exterior de cada flecha caen en la zona de la cruceta…
-                    let outer = CGPoint(x: r.midX + (r.midX - frame.midX) / max(hypot(r.midX - frame.midX, r.midY - frame.midY), 1) * r.width / 2 * 0.95,
-                                        y: r.midY + (r.midY - frame.midY) / max(hypot(r.midX - frame.midX, r.midY - frame.midY), 1) * r.width / 2 * 0.95)
-                    for p in [CGPoint(x: r.midX, y: r.midY), outer] {
-                        #expect(g.hit(at: p) == .control(.dpad), "separación \(spacing), tamaño \(scale)")
-                        var engine = ControlsInputEngine(geometry: g)
-                        _ = engine.began(1, at: p)
-                        // …y pulsan su dirección.
-                        #expect(engine.dpadMask == direction, "separación \(spacing), tamaño \(scale)")
+                let discs = DpadArrows.rects(in: frame, spacing: spacing)
+                for diagonals in DpadDiagonals.allCases {
+                    var failures = 0
+                    for (disc, direction) in zip(discs, DpadDirection.arms) {
+                        for step in 0...20 {
+                            let rf = min(CGFloat(step) / 20, 0.999) * disc.width / 2
+                            for degrees in stride(from: 0, to: 360, by: 10) {
+                                let a = CGFloat(degrees) * .pi / 180
+                                let p = CGPoint(x: disc.midX + rf * cos(a), y: disc.midY - rf * sin(a))
+                                var engine = ControlsInputEngine(geometry: g, diagonals: diagonals)
+                                _ = engine.began(1, at: p)
+                                if g.hit(at: p) != .control(.dpad) || engine.dpadMask != direction { failures += 1 }
+                            }
+                        }
                     }
+                    #expect(failures == 0, "separación \(spacing), tamaño \(scale), \(diagonals): \(failures) puntos")
                 }
+                // Zona muerta: el centro no pulsa nada y acaba 2 pt antes del borde interior.
+                let inner = DpadArrows.innerEdge(in: frame, spacing: spacing)
+                let deadZone = min(frame.width / 2 * DpadTuning.deadZone, inner - DpadTuning.arrowInnerMargin)
+                #expect(deadZone > 0 && deadZone <= inner - 2)
+                var engine = ControlsInputEngine(geometry: g)
+                _ = engine.began(1, at: CGPoint(x: frame.midX, y: frame.midY))
+                #expect(engine.dpadMask == 0)
+                engine.moved(1, to: CGPoint(x: frame.midX, y: frame.midY - (deadZone - 0.5)))
+                #expect(engine.dpadMask == 0)
+                engine.cancelAll()
+                _ = engine.began(1, at: CGPoint(x: frame.midX, y: frame.midY - (inner - 0.5)))
+                #expect(engine.dpadMask == Self.up, "hueco junto al borde interior de ↑")
             }
         }
+    }
+
+    /// Un dedo que tiembla ±2 pt sobre el borde lateral de la flecha ↑ (separación 0,7, donde el
+    /// disco llega a 49° y la diagonal empieza a 60°) no parpadea entre ↑ y la diagonal.
+    @Test func tremblingOnTheSideOfAnArrowDoesNotFlicker() throws {
+        let g = Self.arrowsGeometry(spacing: 0.7)
+        let frame = try #require(g.frames[.dpad])
+        let disc = DpadArrows.rects(in: frame, spacing: 0.7)[0]
+        let edge = CGPoint(x: disc.maxX, y: disc.midY)
+        var engine = ControlsInputEngine(geometry: g)
+        _ = engine.began(1, at: CGPoint(x: disc.midX, y: disc.midY))
+        var rng = SplitMix64(state: 7)
+        for i in 0..<2000 {
+            engine.moved(1, to: CGPoint(x: edge.x + 2 * rng.unit(), y: edge.y + 2 * rng.unit()))
+            #expect(engine.dpadMask == Self.up, "muestra \(i)")
+        }
+    }
+
+    // MARK: - Direcciones opuestas (N2-H3)
+
+    @Test func twoFingersOnOppositeArmsNeverSendOpposites() throws {
+        let g = ControlsLayoutTests.geometry()
+        let d = try #require(g.frames[.dpad])
+        let arms = DpadCross.armCenters(in: d)
+        var engine = ControlsInputEngine(geometry: g)
+        _ = engine.began(1, at: arms[0])                        // ↑
+        _ = engine.began(2, at: arms[2])                        // ↓
+        #expect(engine.dpadMask == 0 && engine.mask == 0)
+        _ = engine.began(3, at: arms[1])                        // → además
+        #expect(engine.dpadMask == Self.right)
+        #expect(engine.pressed == [.dpad])
+        engine.ended(2)
+        #expect(engine.dpadMask == Self.up | Self.right)
+        for mask in 0...UInt16(0x3FF) {
+            let clean = DpadDirection.withoutOpposites(mask)
+            #expect(clean & 0xC0 != 0xC0 && clean & 0x30 != 0x30)
+            #expect(clean & ~UInt16(0xF0) == mask & ~UInt16(0xF0), "no toca los demás botones")
+        }
+    }
+
+    @MainActor
+    @Test func sessionNeverSendsOppositeDirectionsToTheCore() async throws {
+        let up = UInt16(Self.up), down = UInt16(Self.down), left = UInt16(Self.left), right = UInt16(Self.right)
+        let a = UInt16(GB_BTN_A)
+        #expect(EmulatorSession.combinedButtons(touch: up | a, pad: down | left) == a | left)
+        #expect(EmulatorSession.combinedButtons(touch: left, pad: right | up) == up)
+        #expect(EmulatorSession.combinedButtons(touch: up | right, pad: 0) == up | right)
+        // Extremo a extremo: lo que llega al núcleo en cada frame.
+        let core = FakeCore()
+        let session = EmulatorSession(core: core, info: EmulatorSessionContractTests.info, persisters: [],
+                                      loadWarning: nil, onAudioInterrupted: {})
+        session.buttons.set(up | a)
+        session.padButtons.set(down | left)
+        session.start()
+        let deadline = Date().addingTimeInterval(5)
+        while core.lastButtons == nil && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        session.stop()
+        #expect(core.lastButtons == a | left)
     }
 
     @MainActor

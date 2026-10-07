@@ -486,13 +486,13 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 50 | `link-partner-picker-ax5` | Selector con AX5 | portrait | light | Filas y pie con reflow, títulos completos | Texto recortado |
 | 51 | `link-open-refused` | Cable rechazado | portrait | ambos | Alerta con el motivo («Elige otro juego…») | Abrir igualmente o error genérico |
 | 52 | `link-continue-warning` | Aviso de continuación | portrait | light | Alerta «¿Conectar sin continuar?» con «Conectar igualmente» y «Cancelar» | Perder el punto de continuación sin avisar |
-| 53 | `gameplay-dpad-up` | Cruz con ↑ pulsado (N2) | ambas | ambos | Solo el brazo ↑ hundido (gris); el resto de la cruz, el círculo y los botones sin cambios; un solo borde fino | Toda la cruceta iluminada o encogida; doble anillo |
+| 53 | `gameplay-dpad-up` | Cruz con ↑ pulsado (N2) | ambas | ambos | Solo el brazo ↑ hundido (gris oscuro, triángulo blanco, ≥ 3:1 frente a la cruz); el resto de la cruz, el círculo y los botones sin cambios; un solo borde fino | Toda la cruceta iluminada o encogida; doble anillo; brazo pulsado tenue |
 | 54 | `gameplay-dpad-upright` | Cruz en diagonal | portrait | dark | Brazos ↑ y → hundidos | Toda la cruz o un solo brazo |
 | 55 | `gameplay-dpad-up-clear` | Cruz ↑ al 30 % | landscape | dark | Start/Select y cruz legibles sobre el blanco del juego, sin anillo oscuro exterior | Etiquetas perdidas o scrim desplazado |
-| 56 | `gameplay-dpad-up-reduce-transparency` | Cruz ↑ sin transparencia | landscape | dark | Superficies sólidas, borde de 1,5 pt, solo ↑ marcado | Vidrio persistente |
-| 57 | `gameplay-arrows-up` | Flechas con ↑ pulsado | ambas | ambos | Solo el círculo ↑ iluminado; flechas `arrowtriangle` proporcionales | Las cuatro flechas iluminadas |
+| 56 | `gameplay-dpad-up-reduce-transparency` | Cruz ↑ sin transparencia | ambas | dark | Superficies sólidas, borde de 1,5 pt, solo ↑ marcado | Vidrio persistente |
+| 57 | `gameplay-arrows-up` | Flechas con ↑ pulsado | ambas | ambos | Solo el disco ↑ casi blanco con el triángulo oscuro (≥ 3:1); flechas `arrowtriangle` proporcionales | Las cuatro flechas iluminadas |
 | 58 | `gameplay-arrows-upright` | Flechas en diagonal | portrait | dark | Círculos ↑ y → iluminados | — |
-| 59 | `gameplay-arrows-up-reduce-transparency` | Flechas sin transparencia | landscape | dark | Cuatro círculos sólidos, ↑ más claro | Vidrio persistente |
+| 59 | `gameplay-arrows-up-reduce-transparency` | Flechas sin transparencia | ambas | dark | Cuatro círculos sólidos, ↑ casi blanco | Vidrio persistente |
 | 60 | `gameplay-arrows-spacing-70` / `-150` | Separación 0,7 y 1,5 | portrait (y landscape en 1,5) | dark | Flechas más juntas (encogen para no tocarse) o más separadas, dentro del área segura | Flechas que se solapan o se salen |
 | 61 | `gameplay-gba-dpad-up` / `gameplay-gba-arrows-up` | GBA horizontal, cruceta al 60 % | landscape | dark | Flechas visibles a tamaño pequeño, solo ↑ marcado | Flechas de tamaño fijo desbordadas |
 | 62 | `customize-controls-dpad` / `customize-controls-arrows` | Editor con la cruceta elegida | ambas | dark | Tamaño − / +; con flechas, además «Separación» − / + | Separación con la cruz o sin restablecer |
@@ -546,7 +546,7 @@ Reglas:
 - Cambia el alpha del vidrio, del velo y de la sombra, no el alpha de `ControlsOverlayView`.
 - El label no baja de 70 %.
 - En pressed, A/B/Start/Select/L/R aclaran su superficie y hacen scale 0.90; el hit frame no cambia.
-- La cruceta nunca se escala ni se ilumina entera: el motor le pasa su máscara de direcciones y solo se hunde el brazo de la cruz (gris) o se ilumina la flecha separada pulsada (dos en diagonal).
+- La cruceta nunca se escala ni se ilumina entera: el motor le pasa su máscara de direcciones y solo se marca el brazo de la cruz o la flecha separada pulsada (dos en diagonal). Brazo pulsado: gris oscuro opaco (`ControlPalette.crossPressed`, sin atenuar por la opacidad) con el triángulo blanco; flecha pulsada: disco blanco al 90 % con el triángulo oscuro. Contraste pulsado/neutro ≥ 3:1 en vertical, en horizontal (30–100 %) y con Reduce Transparency, calculado en `DpadContrastTests` y medido en las capturas (N2-H1).
 - Flechas: `arrowtriangle.{up,right,down,left}.fill` con tamaño proporcional al control (0,42 × el grosor del brazo en la cruz; 0,36 × el diámetro de cada flecha separada). La cruz conserva su forma Game Boy con un hundido central sutil.
 - A y B se distinguen por label, posición y anillo cálido/frío.
 - Reduce Transparency reemplaza el vidrio por relleno sólido oscuro ≥90 %, borde de 1.5 pt y texto al 100 %.
@@ -566,8 +566,8 @@ Reglas:
 - Zona muerta del 30 % del radio; un dedo que ya pulsa se suelta por debajo del 24 % (histéresis radial).
 - Diagonales según Ajustes › Controles (N2): «Normales» (ocho sectores de 45°), «Reducidas» (por defecto: diagonal solo a ±15° de 45°, rectas de 60°) o «Desactivadas» (cuatro rectas).
 - Histéresis angular: la dirección de un dedo se mantiene hasta 8° más allá del borde de su sector.
-- Prohibición de direcciones opuestas.
-- Flechas separadas: separación 0,7–1,5 por disposición; el marco y la zona táctil crecen o encogen con ella.
+- Prohibición de direcciones opuestas: también con dos dedos en la cruceta (se quitan en la máscara táctil) y con dedo y mando a la vez (se quitan tras el OR, `EmulatorSession.combinedButtons`).
+- Flechas separadas: separación 0,7–1,5 por disposición; el marco y la zona táctil crecen o encogen con ella. Todo el disco de cada flecha pulsa su dirección (sin diagonal; el dedo la mantiene hasta 4 pt fuera del disco) y la zona muerta acaba 2 pt antes del borde interior de las flechas; entre flechas decide el ángulo.
 - Máscara táctil combinada por OR con la del mando físico.
 
 El efecto visual nunca decide qué control está pulsado; solo representa el estado calculado por el motor de input.

@@ -474,8 +474,14 @@ final class ControlVisualView: UIView {
                 let frame = arrowsMode ? arrows[i] : arms[i]
                 let side = arrowsMode ? frame.width : min(frame.width, frame.height)
                 icon.frame = frame
-                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-                    pointSize: max(6, side * (arrowsMode ? 0.36 : 0.42)), weight: .regular)
+                let config = UIImage.SymbolConfiguration(pointSize: max(6, side * (arrowsMode ? 0.36 : 0.42)),
+                                                         weight: .regular)
+                icon.preferredSymbolConfiguration = config
+                let glyphSize = icon.image?.applyingSymbolConfiguration(config)?.size ?? .zero
+                icon.layer.shadowPath = Self.triangle(in: CGRect(x: (frame.width - glyphSize.width) / 2,
+                                                                 y: (frame.height - glyphSize.height) / 2,
+                                                                 width: glyphSize.width, height: glyphSize.height),
+                                                      pointing: i).cgPath
             }
         }
         let size: CGFloat = switch id {
@@ -498,6 +504,7 @@ final class ControlVisualView: UIView {
         ring.path = shapePath(rect, inset: 1.25).cgPath
         guard id == .dpad else { return }
         glyph.path = arrowsMode ? nil : Self.cross(in: rect).cgPath
+        glyph.shadowPath = glyph.path
         let t = rect.width * DpadCross.thicknessRatio
         let d = t * 0.5
         dimple.path = arrowsMode ? nil
@@ -525,6 +532,22 @@ final class ControlVisualView: UIView {
         return path
     }
 
+    /// Triángulo que ocupa `rect` apuntando arriba (0), a la derecha (1), abajo (2) o a la
+    /// izquierda (3): la sombra de cada flecha sin render fuera de pantalla.
+    private static func triangle(in rect: CGRect, pointing index: Int) -> UIBezierPath {
+        let corners: [CGPoint] = switch index {
+        case 0: [CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)]
+        case 1: [CGPoint(x: rect.maxX, y: rect.midY), CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.minY)]
+        case 2: [CGPoint(x: rect.midX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY)]
+        default: [CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.maxY)]
+        }
+        let path = UIBezierPath()
+        path.move(to: corners[0])
+        corners.dropFirst().forEach { path.addLine(to: $0) }
+        path.close()
+        return path
+    }
+
     /// Un brazo de la cruz con la punta redondeada como la cruz y el lado del centro recto.
     private static func arm(_ rect: CGRect, index: Int, thickness: CGFloat) -> UIBezierPath {
         let corners: UIRectCorner = [[.topLeft, .topRight], [.topRight, .bottomRight],
@@ -548,42 +571,20 @@ final class ControlVisualView: UIView {
         CATransaction.setAnimationDuration(pressed ? 0.07 : 0.09)
         // La cruceta nunca se ve pulsada entera: solo su brazo o flecha (`pressedPart`).
         let wholePressed = pressed && id != .dpad
-        let surfaceAlpha: CGFloat
-        let labelAlpha: CGFloat
-        let border: UIColor
-        if reduceTransparency {
-            // Superficie sólida oscura ≥ 90 %, borde de 1,5 pt y texto al 100 %.
-            surfaceAlpha = 1
-            labelAlpha = 1
-            borderWidth = 1.5
-            surface.fillColor = UIColor(white: wholePressed ? 0.24 : 0.1, alpha: 0.94).cgColor
-            border = UIColor.white.withAlphaComponent(0.85)
-            shadowLayer.shadowOpacity = 0.35
-            shadowLayer.shadowRadius = 4
-        } else if style == .solidGlass {
-            // Vertical: fondo uniforme bajo el juego; vidrio regular a opacidad completa.
-            surfaceAlpha = 1
-            labelAlpha = 1
-            borderWidth = 1
-            surface.fillColor = UIColor.white.withAlphaComponent(wholePressed ? 0.22 : 0.04).cgColor
-            border = UIColor.white.withAlphaComponent(0.2)
-            shadowLayer.shadowOpacity = 0.35
-            shadowLayer.shadowRadius = 5
-        } else {
-            // Horizontal sobre el juego: vidrio claro, un velo oscuro con la forma exacta encima
-            // del vidrio (contraste sobre escenas claras sin que el vidrio lo refracte en un
-            // segundo borde) y una sombra suave centrada que lo separa del juego.
-            // La opacidad elegida cambia velo, sombra y vidrio; la etiqueta nunca baja del 70 %.
-            surfaceAlpha = max(opacity, 0.3)
-            labelAlpha = max(0.7, opacity)
-            borderWidth = 1
-            surface.fillColor = wholePressed ? UIColor.white.withAlphaComponent(0.25).cgColor
-                : UIColor.black.withAlphaComponent(0.2 + 0.2 * opacity).cgColor
-            border = UIColor.white.withAlphaComponent(0.3 + 0.35 * opacity)
-            shadowLayer.shadowOpacity = Float(0.3 + 0.3 * opacity)
-            shadowLayer.shadowRadius = 4
-        }
-        for v in glassViews { v.alpha = reduceTransparency ? 0 : surfaceAlpha }
+        // Colores y alfas en ControlPalette (los mismos que mide DpadContrastTests, N2-H1).
+        // Vertical: fondo uniforme bajo el juego, vidrio regular a opacidad completa. Horizontal:
+        // vidrio claro, un velo oscuro con la forma exacta encima del vidrio (contraste sobre
+        // escenas claras sin que el vidrio lo refracte en un segundo borde) y una sombra suave
+        // centrada. La opacidad elegida cambia velo, sombra y vidrio; la etiqueta nunca baja
+        // del 70 %. Reduce Transparency: sólido ≥ 90 %, borde de 1,5 pt y texto al 100 %.
+        let palette = ControlPalette(surface: style == .clearGlass ? .clearGlass : .solidGlass,
+                                     opacity: opacity, reduceTransparency: reduceTransparency)
+        let labelAlpha = palette.labelAlpha
+        borderWidth = palette.borderWidth
+        surface.fillColor = palette.fill(pressed: wholePressed).cgColor
+        shadowLayer.shadowOpacity = Float(palette.shadowOpacity)
+        shadowLayer.shadowRadius = palette.shadowRadius
+        for v in glassViews { v.alpha = palette.glassAlpha }
         // A y B: anillo cálido/frío además de la letra y la posición (SPEC §13). Es su único
         // borde (antes había un trazo blanco y el anillo: dos bordes concéntricos).
         if id == .a || id == .b {
@@ -592,28 +593,33 @@ final class ControlVisualView: UIView {
             surface.strokeColor = UIColor.clear.cgColor
         } else {
             ring.strokeColor = UIColor.clear.cgColor
-            surface.strokeColor = border.cgColor
+            surface.strokeColor = palette.border.cgColor
         }
         if id == .dpad {
             self.dpadMask = editing ? 0 : dpadMask
             glyph.fillColor = UIColor.white.cgColor
             glyph.strokeColor = UIColor.clear.cgColor
             glyph.opacity = Float(labelAlpha)
-            dimple.fillColor = UIColor.black.withAlphaComponent(0.06).cgColor
-            dimple.strokeColor = UIColor.black.withAlphaComponent(0.1).cgColor
+            dimple.fillColor = ControlPalette.dimpleFill.cgColor
+            dimple.strokeColor = ControlPalette.dimpleStroke.cgColor
             dimple.lineWidth = 1
             dimple.opacity = Float(labelAlpha)
-            // Cruz: el brazo pulsado se hunde (gris). Flechas: el círculo pulsado se ilumina.
-            pressedPart.fillColor = arrowsMode ? UIColor.white.withAlphaComponent(reduceTransparency ? 0.3 : 0.28).cgColor
-                : UIColor.black.withAlphaComponent(0.34).cgColor
-            pressedPart.opacity = arrowsMode ? 1 : Float(labelAlpha)
-            for icon in arrowIcons {
-                icon.tintColor = arrowsMode ? .white : UIColor(white: 0.1, alpha: 0.45)
-                icon.alpha = labelAlpha
+            // Cruz: el brazo pulsado se hunde (gris oscuro opaco). Flechas: el disco pulsado se
+            // vuelve casi blanco. En los dos casos el triángulo se invierte. Contraste ≥ 3:1.
+            pressedPart.fillColor = (arrowsMode ? ControlPalette.arrowPressed : ControlPalette.crossPressed).cgColor
+            pressedPart.opacity = 1
+            for (i, icon) in arrowIcons.enumerated() {
+                let down = self.dpadMask & DpadDirection.arms[i] != 0
+                let color = arrowsMode ? (down ? ControlPalette.arrowPressedIcon : ControlPalette.arrowIcon)
+                    : (down ? ControlPalette.crossPressedIcon : palette.crossIcon)
+                icon.tintColor = UIColor(color)
+                icon.alpha = down ? 1 : labelAlpha
                 icon.layer.shadowColor = UIColor.black.cgColor
                 icon.layer.shadowOffset = .zero
                 icon.layer.shadowRadius = 1.5
-                icon.layer.shadowOpacity = arrowsMode ? 0.6 : 0
+                // Sombra solo en los triángulos blancos de las flechas en reposo, con su
+                // `shadowPath` (sin render fuera de pantalla).
+                icon.layer.shadowOpacity = arrowsMode && !down ? 0.6 : 0
             }
             updatePaths()
         } else {
@@ -702,5 +708,15 @@ struct ControlsOverlay: UIViewRepresentable {
         view.onMove = onMove
         view.onSelect = onSelect
         view.selectedControl = selected
+    }
+}
+
+extension PaletteColor {
+    var cgColor: CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
+}
+
+extension UIColor {
+    convenience init(_ color: PaletteColor) {
+        self.init(red: color.r, green: color.g, blue: color.b, alpha: color.a)
     }
 }

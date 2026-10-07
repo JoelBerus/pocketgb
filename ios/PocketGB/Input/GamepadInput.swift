@@ -33,10 +33,7 @@ enum GamepadMapping {
         mask |= UInt16(directions(x: s.dpadX, y: s.dpadY))
         mask |= UInt16(directions(x: s.stickX, y: s.stickY))
         // Cruceta y stick a la vez en sentidos contrarios: nunca direcciones opuestas.
-        let up = UInt16(GB_BTN_UP), down = UInt16(GB_BTN_DOWN), left = UInt16(GB_BTN_LEFT), right = UInt16(GB_BTN_RIGHT)
-        if mask & (up | down) == (up | down) { mask &= ~(up | down) }
-        if mask & (left | right) == (left | right) { mask &= ~(left | right) }
-        return mask
+        return DpadDirection.withoutOpposites(mask)
     }
 
     /// 8 sectores de 45° con zona muerta propia (el mando no usa el ajuste de diagonales táctil).

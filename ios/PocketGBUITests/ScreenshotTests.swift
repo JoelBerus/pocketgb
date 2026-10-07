@@ -48,6 +48,12 @@ final class ScreenshotTests: XCTestCase {
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 0.5)
             }
+            // `-uiAssertHittable <id>`: el elemento debe verse en la captura (no tapado ni fuera).
+            if let i = args.firstIndex(of: "-uiAssertHittable"), i + 1 < args.count {
+                let target = app.descendants(matching: .any).matching(identifier: args[i + 1]).firstMatch
+                XCTAssertTrue(target.waitForExistence(timeout: 5), "No existe \(args[i + 1]) en \(name)")
+                XCTAssertTrue(target.isHittable, "\(args[i + 1]) no se ve en \(name)")
+            }
             // Una app caída deja capturas de la pantalla de inicio: eso es un fallo, no una captura.
             XCTAssertEqual(app.state, .runningForeground, "La app no sigue en primer plano en \(name)")
             // Un `-screen` que el router DEBUG no conoce es un error del catálogo.
