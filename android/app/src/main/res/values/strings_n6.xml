@@ -97,4 +97,10 @@
     <string name="n6_minutes">%1$d min</string>
     <string name="n6_moments_count_a11y">Momentos de %1$s</string>
     <string name="n6_close">Cerrar</string>
+    <string name="n6_config_model">modelo</string>
+    <string name="n6_config_palette">paleta</string>
+    <string name="n6_config_save_type">tipo de partida</string>
+    <string name="n6_config_rtc">reloj</string>
+    <string name="n6_config_bios">BIOS</string>
+    <string name="n6_config_console">consola</string>
 </resources>

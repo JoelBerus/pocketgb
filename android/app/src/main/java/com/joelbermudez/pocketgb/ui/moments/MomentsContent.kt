@@ -190,7 +190,15 @@ fun MomentsList(
             onDismiss = { pending = null },
         )
         is Pending.Load -> {
-            val mismatch = currentConfig?.let { configDifference(p.moment.config, it) }
+            val labels = mapOf(
+                "model" to stringResource(R.string.n6_config_model),
+                "palette" to stringResource(R.string.n6_config_palette),
+                "gbaSaveType" to stringResource(R.string.n6_config_save_type),
+                "gbaRtc" to stringResource(R.string.n6_config_rtc),
+                "gbaBios" to stringResource(R.string.n6_config_bios),
+                "console" to stringResource(R.string.n6_config_console),
+            )
+            val mismatch = currentConfig?.let { configDifference(p.moment.config, it, labels) }
             val body = stringResource(R.string.n6_load_body)
             val configText = mismatch?.let { stringResource(R.string.n6_load_config, it) }
             val detailsText = stringResource(R.string.n6_load_from_details).takeIf { place == MomentsPlace.DETAILS }
@@ -240,12 +248,12 @@ fun MomentsList(
 }
 
 /** Qué cambia entre la configuración del momento y la de la sesión (`modelo DMG → CGB`), o `null` si nada relevante. */
-internal fun configDifference(moment: Map<String, String>, current: Map<String, String>): String? {
+internal fun configDifference(moment: Map<String, String>, current: Map<String, String>, labels: Map<String, String> = emptyMap()): String? {
     if (moment.isEmpty() || current.isEmpty()) return null
     val diffs = (moment.keys + current.keys).sorted().mapNotNull { key ->
         val a = moment[key]
         val b = current[key]
-        if (a != null && b != null && a != b) "$key $a → $b" else null
+        if (a != null && b != null && a != b) "${labels[key] ?: key}: $a → $b" else null
     }
     return diffs.takeIf { it.isNotEmpty() }?.joinToString(", ")
 }
@@ -269,27 +277,34 @@ private fun RingSection(
                 modifier = Modifier.semantics { heading() },
             )
             ring.forEachIndexed { index, entry ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MomentThumbnail(thumbnails["b-${entry.id}"], entry.name, Modifier.width(64.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.n6_ring_entry, entry.name), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(formatMomentDate(entry.createdMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Miniatura y textos arriba; «Recuperar» debajo, a la derecha: con fuente grande el nombre no se estruja.
+                Column(Modifier.fillMaxWidth().testTag("moments-ring-$index"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MomentThumbnail(thumbnails["b-${entry.id}"], entry.name, Modifier.width(64.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.n6_ring_entry, entry.name), style = MaterialTheme.typography.bodyMedium)
+                            Text(formatMomentDate(entry.createdMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     val canRecover = if (place == MomentsPlace.GAME) entry.hasState else entry.hasSram
                     if (canRecover) {
-                        val button: @Composable () -> Unit = { Text(stringResource(R.string.n6_recover)) }
-                        if (index == 0) {
-                            FilledTonalButton(
-                                onClick = { onRecover(entry) },
-                                enabled = !busy,
-                                modifier = Modifier.heightIn(min = 48.dp).testTag("moments-recover-$index"),
-                            ) { Icon(Icons.Outlined.Restore, null); button() }
-                        } else {
-                            TextButton(
-                                onClick = { onRecover(entry) },
-                                enabled = !busy,
-                                modifier = Modifier.heightIn(min = 48.dp).testTag("moments-recover-$index"),
-                            ) { button() }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            if (index == 0) {
+                                FilledTonalButton(
+                                    onClick = { onRecover(entry) },
+                                    enabled = !busy,
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("moments-recover-$index"),
+                                ) {
+                                    Icon(Icons.Outlined.Restore, contentDescription = null)
+                                    Text(stringResource(R.string.n6_recover), modifier = Modifier.padding(start = 6.dp))
+                                }
+                            } else {
+                                TextButton(
+                                    onClick = { onRecover(entry) },
+                                    enabled = !busy,
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("moments-recover-$index"),
+                                ) { Text(stringResource(R.string.n6_recover)) }
+                            }
                         }
                     }
                 }
@@ -397,7 +412,11 @@ private fun ConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(body, modifier = Modifier.testTag("moments-dialog-body")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(body, modifier = Modifier.testTag("moments-dialog-body"))
+            }
+        },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,

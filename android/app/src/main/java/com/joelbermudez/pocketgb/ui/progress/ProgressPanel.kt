@@ -181,7 +181,7 @@ private fun PokemonPanel(pokemon: PokemonProgress, suggestion: List<String>, act
                 Stat(stringResource(R.string.n6_reader_badges), "${pokemon.badges}/${pokemon.game.maxBadges}", "pokemon-badges")
                 Stat(stringResource(R.string.n6_reader_pokedex), stringResource(R.string.n6_reader_pokedex_value, pokemon.pokedexOwned, pokemon.pokedexSeen), "pokemon-dex")
                 Stat(stringResource(R.string.n6_reader_time), "%d:%02d".format(pokemon.hours, pokemon.minutes), "pokemon-time")
-                Stat(stringResource(R.string.n6_reader_money), "₽${pokemon.money}", "pokemon-money")
+                Stat(stringResource(R.string.n6_reader_money), "₽" + java.text.NumberFormat.getIntegerInstance().format(pokemon.money), "pokemon-money")
             }
             if (suggestion.isNotEmpty()) {
                 FilledTonalButton(

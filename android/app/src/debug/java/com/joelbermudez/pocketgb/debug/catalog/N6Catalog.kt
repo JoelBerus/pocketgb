@@ -105,7 +105,7 @@ private fun N6Moments(preview: MomentsPreview? = null, empty: Boolean = false) {
     AppScaffold(navigation) {
         MomentsScreen(
             title = "AVENTURA RPG",
-            fingerprint = null,
+            fingerprint = CatalogData.fingerprint("n6/aventura"),
             library = library,
             openFingerprint = null,
             onPlayMoment = {},
@@ -157,7 +157,7 @@ private fun N6DetailsBody() {
             canResume = true,
             onOpenMoments = {},
             progress = { ProgressPanel(N6Data.progress, N6Data.noProgressActions, editable = false) },
-            initialInfoScroll = 1_400,
+            initialInfoScroll = 1_000,
         )
     }
 }
