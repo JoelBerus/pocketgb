@@ -94,6 +94,13 @@ data class RomEntry(
      * `null` = la de su carpeta. Vacía = «Sin categoría». Nunca mueve el archivo.
      */
     val virtualFolderPath: List<String>? = null,
+    /**
+     * N5: URI SAF de la imagen junto al ROM (`<nombre>.png|jpg|jpeg|webp`, o `portada.*`/`cover.*` si la carpeta tiene
+     * un solo juego). El escáner solo la localiza: se lee (con tope y validación) al dibujar la portada.
+     */
+    val coverUri: String? = null,
+    /** N5: sello de esa imagen (documento, tamaño, fecha): si cambia, se vuelve a leer. */
+    val coverStamp: String? = null,
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String

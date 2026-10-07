@@ -31,6 +31,10 @@ class ArtworkStore(
     private val ops: PreferencesFileOps = DefaultPreferencesFileOps,
     private val encoder: (IntArray) -> ByteArray? = FramePng::encode,
     private val executor: ExecutorService? = defaultExecutor(),
+    /** N5: tope de lectura (las imágenes importadas o de la carpeta pueden ser mayores que una captura). */
+    private val maxReadBytes: Int = MAX_READ_BYTES,
+    /** N5: decodificador de lo leído; por defecto `BitmapFactory` directo (capturas propias). */
+    private val decoder: (ByteArray) -> ImageBitmap? = { decodePlain(it) },
 ) {
     private val _version = MutableStateFlow(0L)
 
@@ -74,6 +78,12 @@ class ArtworkStore(
         } catch (error: RuntimeException) {
             null
         } ?: return false
+        return saveEncoded(fingerprint, bytes)
+    }
+
+    /** N5: guarda una imagen ya codificada (PNG) con la misma escritura atómica. `false` si falla o no cabe. */
+    fun saveEncoded(fingerprint: String, bytes: ByteArray): Boolean {
+        if (!isValidFingerprint(fingerprint) || bytes.isEmpty() || bytes.size > maxReadBytes) return false
         val target = fileFor(fingerprint)
         val temp = File(directory, "$fingerprint.png.tmp")
         try {
@@ -99,7 +109,7 @@ class ArtworkStore(
         if (!isValidFingerprint(fingerprint)) return null
         val file = fileFor(fingerprint)
         return try {
-            if (!file.isFile || file.length() > MAX_READ_BYTES) null else file.readBytes()
+            if (!file.isFile || file.length() > maxReadBytes) null else file.readBytes()
         } catch (_: IOException) {
             null
         }
@@ -110,12 +120,23 @@ class ArtworkStore(
         synchronized(cache) { cache[fingerprint] }?.let { return it }
         val bytes = readBytes(fingerprint) ?: return null
         val image = try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            decoder(bytes)
         } catch (_: RuntimeException) {
+            null
+        } catch (_: OutOfMemoryError) {
             null
         } ?: return null
         synchronized(cache) { cache[fingerprint] = image }
         return image
+    }
+
+    /** N5: borra la portada de [fingerprint] (si la hay). */
+    fun remove(fingerprint: String): Boolean {
+        if (!isValidFingerprint(fingerprint)) return false
+        val removed = fileFor(fingerprint).delete()
+        synchronized(cache) { cache.remove(fingerprint) }
+        if (removed) _version.value += 1
+        return removed
     }
 
     fun has(fingerprint: String): Boolean = isValidFingerprint(fingerprint) && fileFor(fingerprint).isFile
@@ -157,6 +178,9 @@ class ArtworkStore(
         private const val TAG = "ArtworkStore"
         const val MAX_READ_BYTES = 512 * 1024
         private const val CACHE_ENTRIES = 48
+
+        /** Decodificación directa de una captura propia (PNG pequeño escrito por la app). */
+        fun decodePlain(bytes: ByteArray): ImageBitmap? = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
         private fun defaultExecutor(): ExecutorService = Executors.newSingleThreadExecutor { task ->
             Thread(task, "pocketgb-artwork").apply {

@@ -131,6 +131,8 @@ fun noticeText(context: Context, notice: GameNotice): String {
         GameNotice.SavePending -> context.getString(R.string.notice_save_pending)
         GameNotice.RescueStateExists -> context.getString(R.string.notice_rescue_state)
         GameNotice.HeaderDamaged -> context.getString(R.string.notice_header_damaged)
+        GameNotice.CoverPinned -> context.getString(R.string.n5_notice_cover_pinned)
+        GameNotice.CoverPinFailed -> context.getString(R.string.n5_notice_cover_failed)
     }
 }
 

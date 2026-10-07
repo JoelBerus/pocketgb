@@ -31,7 +31,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.library.ByteFormat
-import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.settings.StorageUsage
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
@@ -56,7 +55,7 @@ fun StorageSettingsScreen(onBack: () -> Unit) {
         onClearArtwork = {
             scope.launch {
                 // A6-H5: el almacén compartido invalida la caché y la versión: Favoritos y Detalle sueltan las portadas borradas.
-                withContext(Dispatchers.IO) { ArtworkStore.shared(context).removeAll() }
+                withContext(Dispatchers.IO) { com.joelbermudez.pocketgb.library.artwork.CoverRepository.shared(context).removeAll() }
                 refresh++
                 snackbar.showSnackbar(resources.getString(R.string.storage_cleared))
             }
@@ -87,7 +86,7 @@ fun StorageSettingsContent(
             SizeRow(stringResource(R.string.storage_artwork), usage?.artwork, formatSize, "storage-artwork")
         }
         val canClear = (usage?.artwork ?: 0L) > 0L
-        SettingsGroup(footer = stringResource(R.string.storage_clear_footer)) {
+        SettingsGroup(footer = stringResource(R.string.n5_storage_clear_footer)) {
             val color = if (canClear) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             ListItem(
                 headlineContent = { Text(stringResource(R.string.storage_clear_artwork)) },
@@ -104,7 +103,7 @@ fun StorageSettingsContent(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text(stringResource(R.string.storage_clear_title)) },
-            text = { Text(stringResource(R.string.storage_clear_body)) },
+            text = { Text(stringResource(R.string.n5_storage_clear_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
