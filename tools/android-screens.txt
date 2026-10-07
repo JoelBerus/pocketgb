@@ -287,3 +287,20 @@ n8-editor-landscape landscape dark
 n8-states portrait dark
 n8-settings-warning portrait dark
 n8-details-technical portrait light
+n5-library portrait light
+n5-library portrait dark
+n5-library-list portrait light
+n5-library-prefer-captures portrait light
+n5-details-imported portrait light
+n5-details-imported portrait dark
+n5-details-folder portrait light
+n5-details-capture portrait light
+n5-details-generated portrait light
+n5-details-landscape landscape light
+n5-game-center portrait light
+n5-cover-dialog portrait light
+n5-cover-dialog portrait dark
+n5-cover-dialog-failed portrait light
+n5-pause portrait dark
+n5-settings-library portrait light swipe=up
+n5-cover-dialog-actions portrait light swipe=up

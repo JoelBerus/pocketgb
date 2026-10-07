@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
@@ -87,6 +88,8 @@ fun PauseSheet(
     onStates: () -> Unit,
     onCustomize: () -> Unit,
     onExit: () -> Unit,
+    /** N5: «Usar como portada»; `null` la oculta. */
+    onUseAsCover: (() -> Unit)? = null,
 ) {
     SheetOrDialog(landscape = landscape, onDismiss = onContinue, modifier = Modifier.testTag("pause-sheet")) {
         PauseMenuContent(
@@ -96,6 +99,7 @@ fun PauseSheet(
             onStates = onStates,
             onCustomize = onCustomize,
             onExit = onExit,
+            onUseAsCover = onUseAsCover,
         )
     }
 }
@@ -108,6 +112,7 @@ fun PauseMenuContent(
     onStates: () -> Unit,
     onCustomize: () -> Unit,
     onExit: () -> Unit,
+    onUseAsCover: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
@@ -142,6 +147,16 @@ fun PauseMenuContent(
         ) {
             Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(stringResource(R.string.gameplay_pause_customize), modifier = Modifier.padding(start = 8.dp))
+        }
+        if (onUseAsCover != null) {
+            OutlinedButton(
+                onClick = onUseAsCover,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pause-use-as-cover"),
+            ) {
+                Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(stringResource(R.string.n5_pause_use_as_cover), modifier = Modifier.padding(start = 8.dp))
+            }
         }
         Text(
             stringResource(R.string.gameplay_pause_states_footer),

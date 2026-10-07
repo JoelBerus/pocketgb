@@ -203,6 +203,8 @@ object LibraryScanner {
         val folderId: String?,
         val saveDate: Long?,
         val folderPath: List<String>,
+        /** N5: imagen junto al ROM ([com.joelbermudez.pocketgb.library.artwork.SidecarCover]), sin leerla. */
+        val cover: TreeNode? = null,
     )
 
     private class Folder(val id: String?, val path: List<String>)
@@ -236,6 +238,7 @@ object LibraryScanner {
             }
             val depth = folder.path.size
             val folderDocumentId = folder.id ?: tree.rootId
+            val romsHere = children.count { !it.isDirectory && isRom(it.name) }
             // Orden estable por nombre: con el tope, qué se queda fuera no depende del orden del proveedor.
             for (item in children.sortedWith(compareBy<TreeNode>({ it.name }, { it.id }))) {
                 if (stats.documentsSeen >= MAX_SCAN_ENTRIES) {
@@ -258,6 +261,7 @@ object LibraryScanner {
                         folderId = folderDocumentId,
                         saveDate = saveDateOf(children, item.name),
                         folderPath = folder.path,
+                        cover = com.joelbermudez.pocketgb.library.artwork.SidecarCover.find(item.name, children, romsHere),
                     )
                 }
             }
@@ -330,6 +334,8 @@ object LibraryScanner {
             lastModified = node.lastModified,
             documentId = node.id,
             headerKey = headerKey,
+            coverUri = candidate.cover?.let(tree::uriOf),
+            coverStamp = candidate.cover?.let(com.joelbermudez.pocketgb.library.artwork.SidecarCover::stamp),
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)

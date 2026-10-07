@@ -72,6 +72,10 @@ sealed interface GameNotice {
 
     /** Hay un estado de rescate de una salida anterior con fallo de guardado (J6). */
     data object RescueStateExists : GameNotice
+
+    /** N5: «Usar como portada» fijó la escena actual (o no pudo). */
+    data object CoverPinned : GameNotice
+    data object CoverPinFailed : GameNotice
 }
 
 /**
@@ -518,6 +522,30 @@ class GameplayViewModel(
         coverSink = sink
     }
 
+    private var coverPin: ((String, IntArray) -> Boolean)? = null
+
+    /** N5: quién fija la portada desde la pausa (huella, fotograma) → `true` si quedó guardada. */
+    fun setCoverPinSink(sink: ((fingerprint: String, pixels: IntArray) -> Boolean)?) {
+        coverPin = sink
+    }
+
+    /** N5: «Usar como portada» (pausa): fija la escena actual como portada del juego. No toca la partida. */
+    fun useFrameAsCover() {
+        val game = _game.value ?: return
+        val pin = coverPin ?: return
+        scope.launch {
+            operations.withLock {
+                if (_game.value !== game) return@withLock
+                val ok = try {
+                    withContext(io) { game.pausedFrame()?.let { pin(game.fingerprint, it) } ?: false }
+                } catch (_: Exception) {
+                    false
+                }
+                _notices.tryEmit(if (ok) GameNotice.CoverPinned else GameNotice.CoverPinFailed)
+            }
+        }
+    }
+
     private fun attachCover(game: GameSession) {
         game.parkedFrameCallback = { pixels -> onClosed(game.fingerprint, pixels) }
     }
@@ -553,6 +581,10 @@ class GameplayViewModelFactory(
         return GameplayViewModel(
             launcher = launcher,
             recordPlayed = { entry, fingerprint, at -> library.recordPlayed(entry, fingerprint, at) },
-        ).also { it.setCoverSink { fingerprint, pixels -> artwork.saveAsync(fingerprint, pixels) } } as T
+        ).also {
+            it.setCoverSink { fingerprint, pixels -> artwork.saveAsync(fingerprint, pixels) }
+            val covers = com.joelbermudez.pocketgb.library.artwork.CoverRepository.shared(appContext)
+            it.setCoverPinSink { fingerprint, pixels -> covers.pinCapture(fingerprint, pixels) }
+        } as T
     }
 }

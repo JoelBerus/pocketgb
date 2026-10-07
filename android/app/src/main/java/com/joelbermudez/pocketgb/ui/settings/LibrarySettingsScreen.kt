@@ -49,6 +49,9 @@ import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.library.rememberFolderPicker
 import com.joelbermudez.pocketgb.ui.settings.components.ChoiceRow
+import com.joelbermudez.pocketgb.library.artwork.CoverPreference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.joelbermudez.pocketgb.ui.settings.components.DropdownRow
 import com.joelbermudez.pocketgb.ui.settings.components.SettingsGroup
 
@@ -58,6 +61,8 @@ fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit, onOpe
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val folderName by viewModel.folderName.collectAsStateWithLifecycle()
     val chooseFolder = rememberFolderPicker(viewModel::chooseFolder)
+    val covers = com.joelbermudez.pocketgb.ui.components.rememberCoverRepository()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val entries = when (val current = state) {
         is LibraryState.Ready -> current.entries
         is LibraryState.Scanning -> current.previous
@@ -77,6 +82,8 @@ fun LibrarySettingsScreen(viewModel: LibraryViewModel, onBack: () -> Unit, onOpe
         onLayout = viewModel::setLayout,
         onSort = viewModel::setSort,
         onOpenHome = onOpenHome,
+        coverPreference = covers.settingsState.collectAsStateWithLifecycle().value.preference,
+        onCoverPreference = { preference -> scope.launch(Dispatchers.IO) { covers.setPreference(preference) } },
     )
 }
 
@@ -116,6 +123,9 @@ fun LibrarySettingsContent(
     onSort: (LibrarySort) -> Unit = {},
     /** N4: Ajustes › Biblioteca › Inicio; `null` no muestra la fila. */
     onOpenHome: (() -> Unit)? = null,
+    /** N5: preferencia global de portadas; `null` no muestra la fila. */
+    coverPreference: CoverPreference? = null,
+    onCoverPreference: (CoverPreference) -> Unit = {},
 ) {
     var confirmForget by remember { mutableStateOf(false) }
     val hasFolder = state != LibraryState.NoFolder && state != LibraryState.Loading
@@ -204,6 +214,24 @@ fun LibrarySettingsContent(
                         onSelect = onSort,
                         tag = "library-sort",
                     )
+                    if (coverPreference != null) {
+                        ChoiceRow(
+                            title = stringResource(R.string.n5_settings_covers),
+                            options = listOf(
+                                CoverPreference.IMAGES to stringResource(R.string.n5_settings_covers_images),
+                                CoverPreference.CAPTURES to stringResource(R.string.n5_settings_covers_captures),
+                            ),
+                            selected = coverPreference,
+                            onSelect = onCoverPreference,
+                            tag = "library-covers",
+                        )
+                        Text(
+                            stringResource(R.string.n5_settings_covers_footer),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        )
+                    }
                     if (onOpenHome != null) {
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.n4_settings_home)) },

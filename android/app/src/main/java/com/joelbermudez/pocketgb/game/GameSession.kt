@@ -711,6 +711,11 @@ class GameSession(
         return result
     }
 
+    /** N5: el fotograma actual si la sesión está en pausa («Usar como portada»); `null` si no. Nunca lanza. */
+    fun pausedFrame(): IntArray? = runCatching {
+        if (session.state.value == SessionState.Paused) session.copyFrame() else null
+    }.getOrNull()
+
     /** K9: entrega el último fotograma a [parkedFrameCallback]. Envuelto en `runCatching`: nunca cambia el cierre. */
     private fun captureParkedFrame() {
         val callback = parkedFrameCallback ?: return

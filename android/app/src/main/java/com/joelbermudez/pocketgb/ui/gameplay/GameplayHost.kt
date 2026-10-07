@@ -203,6 +203,7 @@ fun GameplayHost(
                 onStates = viewModel::openStates,
                 onCustomize = viewModel::openControlsEditor,
                 onExit = { viewModel.exit(force = false) },
+                onUseAsCover = viewModel::useFrameAsCover,
             )
             GameMenu.States -> StatesSheet(
                 landscape = landscape,

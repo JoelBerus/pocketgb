@@ -132,6 +132,8 @@ fun GameSettingsHost(
         },
         onHide = { confirmHide = true },
         saveFailed = saveFailed,
+        cover = rememberCoverCenter(entry, fingerprint?.takeIf { confirmed }),
+        title = shown.displayTitle,
     )
     val gbaInfo = if (entry.isGba) rememberGbaSettingsInfo(fingerprint?.takeIf { confirmed }) else GbaSettingsInfo()
     GameSettingsSheet(
@@ -217,6 +219,10 @@ class GameCenterState(
     val onHide: () -> Unit,
     /** H15: el último cambio no se pudo guardar (no se pudo confirmar la huella). */
     val saveFailed: Boolean = false,
+    /** N5: «Portada»; `null` = la fila «próximamente» de antes (catálogos de N4/N8). */
+    val cover: CoverCenterState? = null,
+    /** N5: nombre del juego (título del diálogo de portada). */
+    val title: String = "",
 )
 
 /**

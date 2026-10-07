@@ -274,6 +274,7 @@ fun GameDetailsContent(
                     artworkModifier.width(layout.artworkWidthDp.dp).testTag("game-details-artwork"),
                     shape = MaterialTheme.shapes.large,
                     aspectRatio = ratio,
+                    fit = true,
                 )
             }
             val info: @Composable () -> Unit = {

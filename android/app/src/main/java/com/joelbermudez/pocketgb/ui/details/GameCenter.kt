@@ -91,12 +91,17 @@ internal fun CenterSectionHeader(text: String) {
     }
 }
 
-/** Categoría, etiquetas, portada y progreso (próximamente) y partida. */
+/** Categoría, etiquetas, portada (N5), progreso (próximamente) y partida. */
 @Composable
 internal fun GameCenterRows(center: GameCenterState) {
     CategoryRow(center)
     TagsRow(center)
-    SoonRow(Icons.Outlined.Image, stringResource(R.string.n4_center_cover), stringResource(R.string.n4_center_cover_soon), "game-center-cover")
+    val cover = center.cover
+    if (cover != null) {
+        CoverRow(cover, center.enabled, center.title)
+    } else {
+        SoonRow(Icons.Outlined.Image, stringResource(R.string.n4_center_cover), stringResource(R.string.n4_center_cover_soon), "game-center-cover")
+    }
     SoonRow(Icons.Outlined.Insights, stringResource(R.string.n4_center_progress), stringResource(R.string.n4_center_progress_soon), "game-center-progress")
     val openSaves = center.onOpenSaves
     if (openSaves != null) {

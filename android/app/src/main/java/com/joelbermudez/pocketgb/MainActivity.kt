@@ -20,7 +20,6 @@ import com.joelbermudez.pocketgb.game.GameplayViewModel
 import com.joelbermudez.pocketgb.game.GameplayViewModelFactory
 import com.joelbermudez.pocketgb.library.LibraryViewModel
 import com.joelbermudez.pocketgb.library.LibraryViewModelFactory
-import com.joelbermudez.pocketgb.library.artwork.ArtworkStore
 import com.joelbermudez.pocketgb.app.PocketGBApp
 import com.joelbermudez.pocketgb.settings.AppearanceRepository
 import com.joelbermudez.pocketgb.settings.AppearanceState
@@ -89,14 +88,14 @@ class MainActivity : ComponentActivity() {
     // en primer plano solo se libera la caché de portadas. Nunca toca la ruta de guardado.
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) ArtworkStore.shared(applicationContext).trimMemory()
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) com.joelbermudez.pocketgb.library.artwork.CoverRepository.shared(applicationContext).trimMemory()
         gameplay.onTrimMemory(level)
     }
 
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onLowMemory() {
         super.onLowMemory()
-        ArtworkStore.shared(applicationContext).trimMemory()
+        com.joelbermudez.pocketgb.library.artwork.CoverRepository.shared(applicationContext).trimMemory()
         gameplay.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
     }
 }

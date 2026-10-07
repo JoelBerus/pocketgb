@@ -51,6 +51,13 @@ fun LibraryScreen(
         artwork.refresh()
         onPauseOrDispose {}
     }
+    // N5A-2: al terminar un escaneo se purgan las copias de imágenes de la carpeta que ya no corresponden a nada.
+    val covers = com.joelbermudez.pocketgb.ui.components.rememberCoverRepository()
+    val ready = state as? com.joelbermudez.pocketgb.library.LibraryState.Ready
+    androidx.compose.runtime.LaunchedEffect(ready?.entries) {
+        val entries = ready?.entries ?: return@LaunchedEffect
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { covers.pruneFolderCache(entries) }
+    }
     // Se lee en la composición del menú (State): cambia sin recrear las acciones ni cerrar un menú abierto.
     val canResume by rememberUpdatedState { entry: RomEntry ->
         entry.isPlayable && prefs.fingerprints[entry.id]?.let { it in resumable } == true
