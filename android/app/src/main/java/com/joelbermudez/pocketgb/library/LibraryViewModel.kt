@@ -302,6 +302,9 @@ class LibraryViewModel(
 
     fun setSort(sort: LibrarySort) = mutate { it.copy(sort = sort) }
 
+    /** Renombrar (A9): solo cambia el nombre visible; el ROM, su `.sav` y sus estados no se tocan. Vacío = cabecera. */
+    fun setAlias(entry: RomEntry, value: String) = mutate { it.setAlias(entry, value) }
+
     /** Registra que se abrió [entry] (para "Continuar jugando" y la huella). */
     fun recordPlayed(entry: RomEntry, fingerprint: String, at: Long) {
         mutate { it.recordPlayed(entry.id, fingerprint, at).acknowledge(setOf(entry.id)) }

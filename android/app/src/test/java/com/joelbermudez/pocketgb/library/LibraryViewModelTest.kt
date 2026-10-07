@@ -612,4 +612,33 @@ class LibraryViewModelTest {
         val ready = await { vm.state.first { it is LibraryState.Ready && it.entries.any { e -> e.title == "ZETA" } } } as LibraryState.Ready
         assertTrue("el primer escaneo de otra carpeta no marca nada", ready.entries.none { it.isNew })
     }
+
+    // ---- A9: renombrar ----
+
+    @Test
+    fun aliasIsPersistedAndMigratesToTheFingerprintWhenTheGameIsOpened() {
+        val (vm, entry) = readyVm()
+        vm.setAlias(entry, "  Mi partida  ")
+        await { vm.flushPreferences() }
+        assertEquals(mapOf(entry.id to "Mi partida"), prefsFile.load().aliasesByPath)
+        vm.recordPlayed(entry, "%064x".format(9), at = 10)
+        await { vm.flushPreferences() }
+        val saved = prefsFile.load()
+        assertEquals(mapOf("%064x".format(9) to "Mi partida"), saved.aliasesByFingerprint)
+        assertTrue(saved.aliasesByPath.isEmpty())
+        assertEquals("Mi partida", vm.prefs.value.displayTitle(entry))
+        vm.setAlias(entry, "")
+        await { vm.flushPreferences() }
+        assertTrue(prefsFile.load().aliasesByFingerprint.isEmpty())
+        assertEquals(entry.title, vm.prefs.value.displayTitle(entry))
+    }
+
+    @Test
+    fun openingTheDetailsMigratesAProvisionalAlias() {
+        val (vm, entry) = readyVm()
+        vm.setAlias(entry, "Alfa")
+        await { vm.loadDetails(entry.id) }
+        await { vm.flushPreferences() }
+        assertEquals(mapOf("07".repeat(32) to "Alfa"), prefsFile.load().aliasesByFingerprint)
+    }
 }
