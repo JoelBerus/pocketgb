@@ -27,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,7 +74,7 @@ fun MomentsScreen(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val resources = androidx.compose.ui.platform.LocalResources.current
     var generation by remember { mutableIntStateOf(0) }
     var busy by remember { androidx.compose.runtime.mutableStateOf(false) }
     val ui by produceState(initial ?: MomentsUi(), fingerprint, generation) {
@@ -88,17 +87,17 @@ fun MomentsScreen(
         scope.launch {
             val message = withContext(Dispatchers.IO) {
                 try {
-                    block(fp)?.let { context.getString(it) }
+                    block(fp)?.let { resources.getString(it) }
                 } catch (_: SavePendingException) {
-                    context.getString(R.string.n6_busy_game)
+                    resources.getString(R.string.n6_busy_game)
                 } catch (_: IllegalStateException) {
-                    context.getString(R.string.n6_busy_game)
+                    resources.getString(R.string.n6_busy_game)
                 } catch (_: MomentLibrary.NoSramException) {
-                    context.getString(R.string.n6_no_sram)
+                    resources.getString(R.string.n6_no_sram)
                 } catch (_: SaveStore.InvalidBackupException) {
-                    context.getString(R.string.n6_wrong_size)
+                    resources.getString(R.string.n6_wrong_size)
                 } catch (error: Exception) {
-                    context.getString(R.string.n6_failed, error.message ?: error.javaClass.simpleName)
+                    resources.getString(R.string.n6_failed, error.message ?: error.javaClass.simpleName)
                 }
             }
             busy = false

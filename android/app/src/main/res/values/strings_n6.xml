@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- N6 · momentos y progreso. Solo se añaden líneas al final. -->
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="Typos">
     <string name="n6_migrated_slot">Ranura %1$d</string>
     <string name="n6_migrated_rescue">Rescate</string>
     <string name="n6_migrated_rescue_dated">Rescate (%1$s)</string>
@@ -84,11 +84,11 @@
     <string name="n6_reader_player">Jugador</string>
     <string name="n6_reader_badges">Medallas</string>
     <string name="n6_reader_pokedex">Pokédex</string>
-    <string name="n6_reader_pokedex_value">%1$d capturados · %2$d vistos</string>
+    <string name="n6_reader_pokedex_value">Capturados: %1$d · vistos: %2$d</string>
     <string name="n6_reader_time">Tiempo en el juego</string>
     <string name="n6_reader_money">Dinero</string>
     <string name="n6_reader_footer">Solo lectura: se lee la partida guardada del cartucho, no se cambia nada.</string>
-    <string name="n6_reader_suggest">Marcar %1$d medallas</string>
+    <string name="n6_reader_suggest">Marcar las medallas leídas (%1$d)</string>
     <string name="n6_hours_minutes">%1$d h %2$d min</string>
     <string name="n6_minutes">%1$d min</string>
     <string name="n6_close">Cerrar</string>

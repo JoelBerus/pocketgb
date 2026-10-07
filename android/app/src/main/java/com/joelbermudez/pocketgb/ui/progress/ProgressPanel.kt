@@ -196,7 +196,7 @@ private fun PokemonPanel(pokemon: PokemonProgress, suggestion: List<String>, act
 
 /** Panel de progreso conectado al almacén: lee, aplica cambios y se refresca. `null` en [fingerprint] = nada que mostrar. */
 @Composable
-fun ProgressHost(fingerprint: String?, editable: Boolean, service: ProgressService? = null, modifier: Modifier = Modifier) {
+fun ProgressHost(fingerprint: String?, editable: Boolean, modifier: Modifier = Modifier, service: ProgressService? = null) {
     if (fingerprint == null) return
     val context = LocalContext.current
     val progress = service ?: remember(context) { ProgressService.shared(context) }
