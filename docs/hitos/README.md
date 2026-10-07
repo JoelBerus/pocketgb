@@ -52,13 +52,13 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 
 | Hito | Estado |
 |---|---|
-| A9 · Paridad Android (renombrar, continuación exacta) | ⏳ ola 1 |
-| N1 · Identidad y carpetas | pendiente |
-| N2 · Controles | ⏳ ola 1 |
-| N3 · Biblioteca y detalle adaptables | pendiente |
+| A9 · Paridad Android (renombrar, continuación exacta) | ✅ fusionado en `siguiente-nivel` (Opus APROBAR CON CAMBIOS, respondida) |
+| N1 · Identidad y carpetas | ✅ iOS y Android fusionados (Opus: 2 vueltas cada uno, respondidas) |
+| N2 · Controles | ✅ iOS y Android fusionados (Opus APROBAR CON CAMBIOS, respondidas; reglas comunes) |
+| N3 · Biblioteca y detalle adaptables | ⏳ en implementación (iOS y Android) |
 | N4 · Categorías, etiquetas e inicio | pendiente |
 | N5 · Portadas | pendiente |
-| N6 · Momentos y progreso | ⏳ ola 1 (lector Pokémon en C) |
+| N6 · Momentos y progreso | parcial: lector Pokémon en C fusionado (Opus, respondida); app pendiente |
 | N7 · Partidas que viajan | pendiente |
-| N8 · GBA en Android | pendiente |
+| N8 · GBA en Android | parcial: capa nativa fusionada (Opus, respondida); Kotlin pendiente (tras N4 Android) |
 | N9 · Carpetas de Joel, guía y cierre | pendiente |
