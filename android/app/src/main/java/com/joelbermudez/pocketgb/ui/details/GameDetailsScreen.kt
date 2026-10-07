@@ -255,11 +255,10 @@ fun GameDetailsContent(
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ConsoleChip(entry.isColor)
-                    // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera en varias líneas.
-                    val location = locationText(entry.location, inRoot = null)
-                    val locationDescription = stringResource(R.string.n1_location_description, location)
+                // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera y bajo el chip.
+                val location = locationText(entry.location, inRoot = null)
+                val locationDescription = stringResource(R.string.n1_location_description, location)
+                val locationText: @Composable () -> Unit = {
                     Text(
                         location,
                         style = MaterialTheme.typography.bodyMedium,
@@ -268,6 +267,17 @@ fun GameDetailsContent(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.testTag("game-details-location").semantics { contentDescription = locationDescription },
                     )
+                }
+                if (LocalLargeFont.current) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ConsoleChip(entry.isColor)
+                        locationText()
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ConsoleChip(entry.isColor)
+                        locationText()
+                    }
                 }
                 if (entry.isDuplicate) AlsoIn(entry.alsoAt)
             }

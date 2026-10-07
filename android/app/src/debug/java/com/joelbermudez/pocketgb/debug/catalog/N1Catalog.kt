@@ -44,11 +44,13 @@ private object N1Data {
 
     val entries: List<RomEntry> = CatalogData.games + redCopy + redBackup + deep
 
-    fun prefs(layout: LibraryLayout = LibraryLayout.GRID): LibraryPreferencesData {
+    /** [rail] = false quita «Continuar jugando» para que las tarjetas con «Duplicado» se vean arriba en la captura. */
+    fun prefs(layout: LibraryLayout = LibraryLayout.GRID, rail: Boolean = true): LibraryPreferencesData {
         val base = CatalogData.prefs()
         val red = CatalogData.fingerprint(CatalogData.games[0].id)
         return base.copy(
             layout = layout,
+            lastPlayed = if (rail) base.lastPlayed else emptyMap(),
             fingerprints = base.fingerprints + mapOf(
                 redCopy.id to red,
                 redBackup.id to red,
@@ -84,7 +86,7 @@ private val n1Actions = GameActions(
 private fun N1Library(layout: LibraryLayout) {
     LibraryContent(
         state = LibraryState.Ready(N1Data.entries, "Roms"),
-        prefs = remember(layout) { N1Data.prefs(layout) },
+        prefs = remember(layout) { N1Data.prefs(layout, rail = false) },
         query = "",
         filter = LibraryFilter.ALL,
         onQueryChange = {},
@@ -142,7 +144,8 @@ internal val n1CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("details-deep-path-ax5") { N1Details(N1Data.deep.id, favorite = false) }
     // Detalle de una copia: insignia «Duplicado» y «También en» con la carpeta principal y la otra subcarpeta.
     put("details-duplicate") { N1Details(N1Data.redCopy.id, favorite = true) }
-    // Biblioteca con tres copias de «POKÉMON RED»: insignia «Duplicado» discreta en cada tarjeta; el carril lo muestra una vez.
+    // Biblioteca con tres copias de «POKÉMON RED»: insignia «Duplicado» discreta en cada tarjeta (sin el carril, para que
+    // se vean arriba; que el carril muestre cada juego una vez lo prueba LibraryDuplicatesTest).
     put("library-duplicates") { N1Library(LibraryLayout.GRID) }
     put("library-duplicates-list") { N1Library(LibraryLayout.LIST) }
     // Ajustes › Partidas: «Apartadas (no se borran solas)» con su botón Restaurar.

@@ -9,7 +9,7 @@
     <string name="n1_location">%1$s · %2$s</string>
     <!-- Una copia que está en la carpeta elegida, sin subcarpeta. -->
     <string name="n1_root_folder">Carpeta principal</string>
-    <string name="n1_also_in_footer">Las copias comparten partida, estados, ajustes y portada. Cada una tiene su .sav junto al ROM, que se pone al día al abrir esa copia.</string>
+    <string name="n1_also_in_footer">Las copias comparten la partida del teléfono, los estados, los ajustes y la portada. Cada una tiene su .sav junto al ROM: se pone al día al abrir esa copia y, si no coincide, el que pierde queda en Ajustes › Partidas › Apartadas.</string>
     <!-- TalkBack: la ruta del juego en el detalle. -->
     <string name="n1_location_description">Ubicación: %1$s</string>
     <!-- Ajustes › Partidas: partidas apartadas fuera de la rotación de copias (perdedoras frente a un .sav ajeno). -->
