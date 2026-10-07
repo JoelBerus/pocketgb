@@ -35,6 +35,7 @@ final class ControlsOverlayView: UIView {
     var settings = GameplaySettingsData() {
         didSet {
             haptics.enabled = settings.haptics
+            engine.diagonals = settings.dpadDiagonals
             if settings != oldValue { setNeedsLayout() }
         }
     }
@@ -55,7 +56,9 @@ final class ControlsOverlayView: UIView {
     private var lastSize: CGSize = .zero
     private let haptics = ControlsHaptics()
     private var lastPressed: Set<ControlID> = []
+    /// Dirección que dibuja la cruceta (solo el brazo o la flecha pulsada, N2).
     private var lastDpadMask: UInt8 = 0
+    private var dpadHaptics = DpadHapticGate()
     /// Editor: dedo → control arrastrado y desfase respecto a su centro.
     private var drags: [Int: (id: ControlID, offset: CGPoint)] = [:]
     private let guides = CAShapeLayer()
@@ -115,8 +118,9 @@ final class ControlsOverlayView: UIView {
         area = bounds.inset(by: safeAreaInsets)
         backgroundColor = orientation == .portrait ? UIColor(named: "GameplayBackground") : .clear
         let metrics = ControlMetrics(scale: settings.sizeScale)
-        let geometry = ControlsGeometry(layout: settings.layout(orientation, shoulders: showsShoulders), orientation: orientation,
-                                        area: area, metrics: metrics, shoulders: showsShoulders)
+        let layout = settings.layout(orientation, shoulders: showsShoulders)
+        let geometry = ControlsGeometry(layout: layout, orientation: orientation, area: area, metrics: metrics,
+                                        shoulders: showsShoulders, dpadStyle: settings.dpadStyle)
         engine.geometry = geometry
         for (id, visual) in visuals where drags.values.first(where: { $0.id == id }) == nil {
             guard let frame = geometry.frames[id] else { continue }
@@ -124,6 +128,7 @@ final class ControlsOverlayView: UIView {
             visual.center = CGPoint(x: frame.midX, y: frame.midY)
             visual.scale = metrics.scale
             visual.separatedArrows = settings.dpadStyle == .separated
+            visual.arrowSpacing = layout.spacing
         }
         guides.frame = bounds
         guides.path = UIBezierPath(roundedRect: area, cornerRadius: 12).cgPath
@@ -135,17 +140,39 @@ final class ControlsOverlayView: UIView {
         updateAppearance(animated: false)
         if settings.visibility == .hidden && !editing { flashHint() }
         scheduleFade()
+        #if DEBUG
+        applyDebugPress()
+        #endif
     }
+
+    #if DEBUG
+    /// `-uiPressedDpad up|down|left|right|upright|…`: un dedo simulado en el centro del brazo (o
+    /// de la flecha) de esa dirección, por el motor real, para las capturas de N2.
+    private func applyDebugPress() {
+        let angles: [String: CGFloat] = ["right": 0, "upright": 45, "up": 90, "upleft": 135,
+                                         "left": 180, "downleft": 225, "down": 270, "downright": 315]
+        guard let raw = DebugArguments.value("-uiPressedDpad"), let angle = angles[raw], !editing,
+              let frame = engine.geometry?.frames[.dpad] else { return }
+        let spacing = settings.layout(orientation, shoulders: showsShoulders).spacing
+        let arrow = DpadArrows.rects(in: frame, spacing: spacing)[0]
+        let target = settings.dpadStyle == .cross ? DpadCross.armCenters(in: frame)[0] : CGPoint(x: arrow.midX, y: arrow.midY)
+        let distance = hypot(target.x - frame.midX, target.y - frame.midY)
+        let radians = angle * .pi / 180
+        _ = engine.began(-1, at: CGPoint(x: frame.midX + distance * cos(radians), y: frame.midY - distance * sin(radians)))
+        publish()
+    }
+    #endif
 
     private func updateAppearance(animated: Bool) {
         let style: ControlVisualView.Style = orientation == .portrait ? .solidGlass : .clearGlass
-        let pressed = engine.pressed
+        let pressed: Set<ControlID> = editing ? [] : engine.pressed
+        let dpad: UInt8 = editing ? 0 : engine.dpadMask
         for (id, visual) in visuals {
             // El menú lo dibuja el HUD de SwiftUI (GameplayHUD) en el mismo sitio.
             let hidden = id == .menu || (id.isShoulder && !showsShoulders) || (!editing && (settings.visibility == .hidden || controllerConnected))
             visual.configure(style: style, opacity: CGFloat(settings.opacity) / 100,
                              reduceTransparency: reduceTransparency, pressed: pressed.contains(id),
-                             editing: editing, animated: animated)
+                             dpadMask: id == .dpad ? dpad : 0, editing: editing, animated: animated)
             visual.setSelected(editing && selectedControl == id)
             visual.isHidden = hidden
         }
@@ -265,14 +292,14 @@ final class ControlsOverlayView: UIView {
         let mask = editing ? 0 : engine.mask
         buttons?.set(mask)
         let pressed: Set<ControlID> = editing ? [] : engine.pressed
-        // Háptica solo al entrar en pulsado o al cambiar de sector del D-pad.
+        // Háptica solo al entrar en pulsado o, en la cruceta, al cambiar de dirección (N2).
         let newlyPressed = pressed.subtracting(lastPressed).subtracting([.dpad])
         if !newlyPressed.isEmpty { haptics.buttonDown() }
-        let dpad = UInt8(truncatingIfNeeded: mask) & UInt8(GB_BTN_UP | GB_BTN_DOWN | GB_BTN_LEFT | GB_BTN_RIGHT)
-        if dpad != lastDpadMask && dpad != 0 { haptics.dpadChanged() }
-        lastDpadMask = dpad
-        if pressed != lastPressed {
+        let dpad: UInt8 = editing ? 0 : engine.dpadMask
+        if dpadHaptics.shouldFire(mask: dpad, fingerDown: !editing && engine.dpadFingerDown) { haptics.dpadChanged() }
+        if pressed != lastPressed || dpad != lastDpadMask {
             lastPressed = pressed
+            lastDpadMask = dpad
             updateAppearance(animated: true)
         }
     }
@@ -308,8 +335,13 @@ final class ControlsOverlayView: UIView {
     }
 }
 
-/// Dibujo de un control (SPEC §10.3): scrim oscuro localizado, vidrio `UIGlassEffect`
-/// y etiqueta. Con Reduce Transparency, relleno sólido ≥ 90 % y borde de 1,5 pt.
+/// Dibujo de un control (SPEC §10.3, N2): una sola capa de vidrio `UIGlassEffect` con la forma
+/// del control (`cornerConfiguration`, sin recortar su borde), encima un velo oscuro con la
+/// forma exacta (en horizontal) y un trazo fino y uniforme, y debajo una sombra suave centrada
+/// que lo separa del juego. Sin scrim inflado bajo el vidrio: el vidrio lo refractaba en su
+/// borde y se veía un doble anillo desplazado. Con Reduce Transparency, relleno sólido ≥ 90 %
+/// y borde de 1,5 pt.
+/// La cruceta no se escala al pulsar: solo se marca el brazo o la flecha de `dpadMask`.
 /// No recibe toques.
 final class ControlVisualView: UIView {
     enum Style { case solidGlass, clearGlass }
@@ -320,45 +352,57 @@ final class ControlVisualView: UIView {
     var separatedArrows = false {
         didSet { if separatedArrows != oldValue { currentStyle = nil; setNeedsLayout() } }
     }
+    /// Separación de las flechas (0,7…1,5): la misma que usa la geometría táctil.
+    var arrowSpacing: CGFloat = 1 { didSet { if arrowSpacing != oldValue { setNeedsLayout() } } }
 
-    private let scrim = CAShapeLayer()
+    private let shadowLayer = CALayer()
     private let effectView = UIVisualEffectView(effect: nil)
     /// Vidrio de cada flecha en el estilo separado (arriba, derecha, abajo, izquierda).
-    private let arrowViews = (0..<4).map { _ in UIVisualEffectView(effect: nil) }
-    private let arrowSymbols = ["chevron.up", "chevron.right", "chevron.down", "chevron.left"]
-        .map { UIImageView(image: UIImage(systemName: $0)) }
-    private let solid = CAShapeLayer()
+    private let arrowGlass = (0..<4).map { _ in UIVisualEffectView(effect: nil) }
+    /// Relleno (pulsado o Reduce Transparency) y trazo fino del borde.
+    private let surface = CAShapeLayer()
+    /// A y B: el anillo de color es su borde.
     private let ring = CAShapeLayer()
     private let glyph = CAShapeLayer()
+    /// Hundido sutil en el centro de la cruz.
+    private let dimple = CAShapeLayer()
+    /// Solo el brazo o la flecha pulsada.
+    private let pressedPart = CAShapeLayer()
+    /// Flechas de la cruceta (arriba, derecha, abajo, izquierda): dentro de cada brazo o flecha.
+    private let arrowIcons = ["arrowtriangle.up.fill", "arrowtriangle.right.fill", "arrowtriangle.down.fill",
+                              "arrowtriangle.left.fill"].map { UIImageView(image: UIImage(systemName: $0)) }
     private let label = UILabel()
     private let symbol = UIImageView()
     private var currentStyle: Style?
     private var currentReduce: Bool?
     private var editing = false
+    private var dpadMask: UInt8 = 0
+    private var borderWidth: CGFloat = 1
 
     init(id: ControlID) {
         self.id = id
         super.init(frame: .zero)
         isUserInteractionEnabled = false
-        layer.addSublayer(scrim)
-        addSubview(effectView)
-        effectView.isUserInteractionEnabled = false
-        for (v, arrow) in zip(arrowViews, arrowSymbols) {
+        shadowLayer.shadowColor = UIColor.black.cgColor
+        shadowLayer.shadowOffset = .zero
+        layer.addSublayer(shadowLayer)
+        // Las cuatro vistas de vidrio de las flechas solo existen en la cruceta.
+        for v in glassViews {
             v.isUserInteractionEnabled = false
-            v.clipsToBounds = true
-            v.isHidden = true
-            arrow.tintColor = .white
-            arrow.contentMode = .center
-            arrow.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
-            v.contentView.addSubview(arrow)
+            v.cornerConfiguration = .capsule()
             addSubview(v)
         }
-        layer.addSublayer(solid)
-        layer.addSublayer(ring)
-        layer.addSublayer(glyph)
-        for l in [scrim, solid, ring, glyph] as [CALayer] { l.actions = ["path": NSNull(), "bounds": NSNull()] }
-        glyph.fillColor = UIColor.clear.cgColor
-        glyph.strokeColor = UIColor.white.cgColor
+        for l in [surface, ring, glyph, pressedPart, dimple] {
+            layer.addSublayer(l)
+        }
+        for l in [shadowLayer, surface, ring, glyph, pressedPart, dimple] as [CALayer] {
+            l.actions = ["path": NSNull(), "bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull()]
+        }
+        for icon in arrowIcons {
+            icon.contentMode = .center
+            icon.isHidden = id != .dpad
+            addSubview(icon)
+        }
         glyph.lineCap = .round
         glyph.lineJoin = .round
         ring.fillColor = UIColor.clear.cgColor
@@ -393,53 +437,46 @@ final class ControlVisualView: UIView {
 
     private var arrowsMode: Bool { id == .dpad && separatedArrows }
 
-    private func shapePath(_ rect: CGRect) -> UIBezierPath {
+    private var glassViews: [UIVisualEffectView] { id == .dpad ? [effectView] + arrowGlass : [effectView] }
+
+    /// Forma del control metida `inset` puntos hacia dentro (para trazar bordes sin salirse).
+    private func shapePath(_ rect: CGRect, inset: CGFloat = 0) -> UIBezierPath {
         if arrowsMode {
             let path = UIBezierPath()
-            for r in Self.arrowRects(in: rect) { path.append(UIBezierPath(ovalIn: r)) }
+            for r in DpadArrows.rects(in: rect, spacing: arrowSpacing) {
+                path.append(UIBezierPath(ovalIn: r.insetBy(dx: inset, dy: inset)))
+            }
             return path
         }
-        return isCapsule ? UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2) : UIBezierPath(ovalIn: rect)
-    }
-
-    /// Cuatro círculos separados (arriba, derecha, abajo, izquierda) dentro de `rect`.
-    private static func arrowRects(in rect: CGRect) -> [CGRect] {
-        let d = rect.width * 0.36
-        let offset = (rect.width - d) / 2
-        let c = CGPoint(x: rect.midX, y: rect.midY)
-        return [CGPoint(x: 0, y: -offset), CGPoint(x: offset, y: 0), CGPoint(x: 0, y: offset), CGPoint(x: -offset, y: 0)]
-            .map { CGRect(x: c.x + $0.x - d / 2, y: c.y + $0.y - d / 2, width: d, height: d) }
+        let r = rect.insetBy(dx: inset, dy: inset)
+        return isCapsule ? UIBezierPath(roundedRect: r, cornerRadius: r.height / 2) : UIBezierPath(ovalIn: r)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let rect = bounds
-        scrim.frame = rect
-        scrim.path = shapePath(rect.insetBy(dx: -3, dy: -3)).cgPath
+        shadowLayer.frame = rect
+        shadowLayer.shadowPath = shapePath(rect).cgPath
         effectView.frame = rect
-        effectView.layer.cornerRadius = min(rect.width, rect.height) / 2
-        effectView.layer.cornerCurve = .continuous
-        effectView.clipsToBounds = true
         effectView.isHidden = arrowsMode
-        for (v, r) in zip(arrowViews, Self.arrowRects(in: rect)) {
+        let arrows = DpadArrows.rects(in: rect, spacing: arrowSpacing)
+        for (v, r) in zip(arrowGlass, arrows) {
             v.frame = r
-            v.layer.cornerRadius = r.width / 2
             v.isHidden = !arrowsMode
         }
-        for (view, arrow) in zip(arrowViews, arrowSymbols) {
-            arrow.frame = view.bounds
-            arrow.isHidden = !arrowsMode
-        }
-        solid.frame = rect
-        solid.path = shapePath(rect.insetBy(dx: 0.75, dy: 0.75)).cgPath
-        ring.frame = rect
-        ring.path = shapePath(rect.insetBy(dx: 2, dy: 2)).cgPath
-        glyph.frame = rect
+        for l in [surface, ring, glyph, pressedPart, dimple] { l.frame = rect }
+        updatePaths()
         if id == .dpad {
-            glyph.path = arrowsMode ? nil : Self.cross(in: rect).cgPath
-            glyph.lineWidth = max(2, rect.width * 0.02)
-            glyph.fillColor = arrowsMode ? UIColor.clear.cgColor : UIColor.white.cgColor
-            glyph.strokeColor = UIColor.clear.cgColor
+            // Flechas proporcionales al control (no 16 pt fijos): en la cruz, oscuras dentro de
+            // cada brazo blanco; en las flechas separadas, blancas en el centro de cada círculo.
+            let arms = DpadCross.arms(in: rect)
+            for (i, icon) in arrowIcons.enumerated() {
+                let frame = arrowsMode ? arrows[i] : arms[i]
+                let side = arrowsMode ? frame.width : min(frame.width, frame.height)
+                icon.frame = frame
+                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+                    pointSize: max(6, side * (arrowsMode ? 0.36 : 0.42)), weight: .regular)
+            }
         }
         let size: CGFloat = switch id {
         case .a, .b: 24
@@ -453,11 +490,31 @@ final class ControlVisualView: UIView {
         symbol.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
     }
 
+    private func updatePaths() {
+        let rect = bounds
+        surface.lineWidth = borderWidth
+        surface.path = shapePath(rect, inset: borderWidth / 2).cgPath
+        ring.lineWidth = 2.5
+        ring.path = shapePath(rect, inset: 1.25).cgPath
+        guard id == .dpad else { return }
+        glyph.path = arrowsMode ? nil : Self.cross(in: rect).cgPath
+        let t = rect.width * DpadCross.thicknessRatio
+        let d = t * 0.5
+        dimple.path = arrowsMode ? nil
+            : UIBezierPath(ovalIn: CGRect(x: rect.midX - d / 2, y: rect.midY - d / 2, width: d, height: d)).cgPath
+        let pressed = UIBezierPath()
+        let parts = arrowsMode ? DpadArrows.rects(in: rect, spacing: arrowSpacing) : DpadCross.arms(in: rect)
+        for (i, part) in parts.enumerated() where dpadMask & DpadDirection.arms[i] != 0 {
+            pressed.append(arrowsMode ? UIBezierPath(ovalIn: part) : Self.arm(part, index: i, thickness: t))
+        }
+        pressedPart.path = pressed.cgPath
+    }
+
     /// Cruz continua y rellena; la unión de dos rectángulos redondeados elimina
     /// los vértices agresivos sin cambiar el área táctil ni las diagonales.
     private static func cross(in rect: CGRect) -> UIBezierPath {
-        let length = rect.width * 0.76
-        let thickness = rect.width * 0.29
+        let length = rect.width * DpadCross.lengthRatio
+        let thickness = rect.width * DpadCross.thicknessRatio
         let radius = thickness * 0.3
         let horizontal = CGRect(x: rect.midX - length / 2, y: rect.midY - thickness / 2,
                                 width: length, height: thickness)
@@ -468,65 +525,107 @@ final class ControlVisualView: UIView {
         return path
     }
 
-    func configure(style: Style, opacity: CGFloat, reduceTransparency: Bool, pressed: Bool, editing: Bool,
-                   animated: Bool) {
+    /// Un brazo de la cruz con la punta redondeada como la cruz y el lado del centro recto.
+    private static func arm(_ rect: CGRect, index: Int, thickness: CGFloat) -> UIBezierPath {
+        let corners: UIRectCorner = [[.topLeft, .topRight], [.topRight, .bottomRight],
+                                     [.bottomLeft, .bottomRight], [.topLeft, .bottomLeft]][index]
+        let r = thickness * 0.3
+        return UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: r, height: r))
+    }
+
+    func configure(style: Style, opacity: CGFloat, reduceTransparency: Bool, pressed: Bool, dpadMask: UInt8 = 0,
+                   editing: Bool, animated: Bool) {
         self.editing = editing
         if style != currentStyle || reduceTransparency != currentReduce {
             currentStyle = style
             currentReduce = reduceTransparency
-            for v in [effectView] + arrowViews {
+            for v in glassViews {
                 v.effect = reduceTransparency ? nil : UIGlassEffect(style: style == .clearGlass ? .clear : .regular)
             }
         }
         CATransaction.begin()
         CATransaction.setDisableActions(!animated)
         CATransaction.setAnimationDuration(pressed ? 0.07 : 0.09)
-        let surface: CGFloat
-        let scrimAlpha: CGFloat
+        // La cruceta nunca se ve pulsada entera: solo su brazo o flecha (`pressedPart`).
+        let wholePressed = pressed && id != .dpad
+        let surfaceAlpha: CGFloat
         let labelAlpha: CGFloat
+        let border: UIColor
         if reduceTransparency {
             // Superficie sólida oscura ≥ 90 %, borde de 1,5 pt y texto al 100 %.
-            surface = 1
-            scrimAlpha = 0
+            surfaceAlpha = 1
             labelAlpha = 1
-            solid.fillColor = UIColor(white: pressed ? 0.24 : 0.1, alpha: 0.94).cgColor
-            solid.strokeColor = UIColor.white.withAlphaComponent(0.85).cgColor
-            solid.lineWidth = 1.5
+            borderWidth = 1.5
+            surface.fillColor = UIColor(white: wholePressed ? 0.24 : 0.1, alpha: 0.94).cgColor
+            border = UIColor.white.withAlphaComponent(0.85)
+            shadowLayer.shadowOpacity = 0.35
+            shadowLayer.shadowRadius = 4
         } else if style == .solidGlass {
             // Vertical: fondo uniforme bajo el juego; vidrio regular a opacidad completa.
-            surface = 1
-            scrimAlpha = 0
+            surfaceAlpha = 1
             labelAlpha = 1
-            solid.fillColor = UIColor.white.withAlphaComponent(pressed ? 0.22 : 0.06).cgColor
-            solid.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
-            solid.lineWidth = 1
+            borderWidth = 1
+            surface.fillColor = UIColor.white.withAlphaComponent(wholePressed ? 0.22 : 0.04).cgColor
+            border = UIColor.white.withAlphaComponent(0.2)
+            shadowLayer.shadowOpacity = 0.35
+            shadowLayer.shadowRadius = 5
         } else {
-            // Horizontal sobre el juego: vidrio claro con scrim localizado. La opacidad
-            // elegida cambia el scrim y el vidrio; la etiqueta nunca baja del 70 %.
-            surface = max(opacity, 0.3)
-            scrimAlpha = min(0.32 + 0.3 * opacity + (pressed ? 0.15 : 0), 0.85)
+            // Horizontal sobre el juego: vidrio claro, un velo oscuro con la forma exacta encima
+            // del vidrio (contraste sobre escenas claras sin que el vidrio lo refracte en un
+            // segundo borde) y una sombra suave centrada que lo separa del juego.
+            // La opacidad elegida cambia velo, sombra y vidrio; la etiqueta nunca baja del 70 %.
+            surfaceAlpha = max(opacity, 0.3)
             labelAlpha = max(0.7, opacity)
-            solid.fillColor = UIColor.white.withAlphaComponent(pressed ? 0.25 : 0).cgColor
-            solid.strokeColor = UIColor.white.withAlphaComponent(0.35 + 0.4 * opacity).cgColor
-            solid.lineWidth = 1
+            borderWidth = 1
+            surface.fillColor = wholePressed ? UIColor.white.withAlphaComponent(0.25).cgColor
+                : UIColor.black.withAlphaComponent(0.2 + 0.2 * opacity).cgColor
+            border = UIColor.white.withAlphaComponent(0.3 + 0.35 * opacity)
+            shadowLayer.shadowOpacity = Float(0.3 + 0.3 * opacity)
+            shadowLayer.shadowRadius = 4
         }
-        scrim.fillColor = UIColor.black.withAlphaComponent(scrimAlpha).cgColor
-        for v in [effectView] + arrowViews { v.alpha = reduceTransparency ? 0 : surface }
-        // A y B: anillo cálido/frío además de la letra y la posición (SPEC §13).
+        for v in glassViews { v.alpha = reduceTransparency ? 0 : surfaceAlpha }
+        // A y B: anillo cálido/frío además de la letra y la posición (SPEC §13). Es su único
+        // borde (antes había un trazo blanco y el anillo: dos bordes concéntricos).
         if id == .a || id == .b {
             let color = UIColor(named: id == .a ? "ControlAWarm" : "ControlBCool") ?? .white
             ring.strokeColor = color.withAlphaComponent(labelAlpha).cgColor
-            ring.lineWidth = 2.5
+            surface.strokeColor = UIColor.clear.cgColor
         } else {
             ring.strokeColor = UIColor.clear.cgColor
+            surface.strokeColor = border.cgColor
         }
-        glyph.opacity = Float(labelAlpha)
-        for arrow in arrowSymbols { arrow.alpha = labelAlpha }
+        if id == .dpad {
+            self.dpadMask = editing ? 0 : dpadMask
+            glyph.fillColor = UIColor.white.cgColor
+            glyph.strokeColor = UIColor.clear.cgColor
+            glyph.opacity = Float(labelAlpha)
+            dimple.fillColor = UIColor.black.withAlphaComponent(0.06).cgColor
+            dimple.strokeColor = UIColor.black.withAlphaComponent(0.1).cgColor
+            dimple.lineWidth = 1
+            dimple.opacity = Float(labelAlpha)
+            // Cruz: el brazo pulsado se hunde (gris). Flechas: el círculo pulsado se ilumina.
+            pressedPart.fillColor = arrowsMode ? UIColor.white.withAlphaComponent(reduceTransparency ? 0.3 : 0.28).cgColor
+                : UIColor.black.withAlphaComponent(0.34).cgColor
+            pressedPart.opacity = arrowsMode ? 1 : Float(labelAlpha)
+            for icon in arrowIcons {
+                icon.tintColor = arrowsMode ? .white : UIColor(white: 0.1, alpha: 0.45)
+                icon.alpha = labelAlpha
+                icon.layer.shadowColor = UIColor.black.cgColor
+                icon.layer.shadowOffset = .zero
+                icon.layer.shadowRadius = 1.5
+                icon.layer.shadowOpacity = arrowsMode ? 0.6 : 0
+            }
+            updatePaths()
+        } else {
+            surface.lineWidth = borderWidth
+            surface.path = shapePath(bounds, inset: borderWidth / 2).cgPath
+        }
         CATransaction.commit()
         label.alpha = labelAlpha
         symbol.alpha = labelAlpha
         layer.borderWidth = 0
-        let target = pressed ? CGAffineTransform(scaleX: 0.9, y: 0.9) : .identity
+        // A, B, Start, Select, L y R se encogen al pulsar (SPEC §7.5); la cruceta no.
+        let target = wholePressed ? CGAffineTransform(scaleX: 0.9, y: 0.9) : .identity
         if animated {
             UIView.animate(withDuration: pressed ? 0.07 : 0.09, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
                 self.transform = target

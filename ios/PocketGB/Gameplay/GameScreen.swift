@@ -148,8 +148,11 @@ struct ControlsEditorBar: View {
             }
             if let id = state.editorSelection {
                 SizeStepper(id: id, orientation: orientation, shoulders: shoulders)
+                if id == .dpad && state.gameplay.data.dpadStyle == .separated {
+                    ArrowSpacingStepper(orientation: orientation, shoulders: shoulders)
+                }
             }
-            Text("Arrastra un control para moverlo; tócalo para cambiar su tamaño. Se guarda solo para \(shoulders ? "Game Boy Advance" : "Game Boy") en \(orientation.title.lowercased()).")
+            Text("Arrastra un control para moverlo; tócalo para cambiar su tamaño\(state.gameplay.data.dpadStyle == .separated ? " (en las flechas, también su separación)" : ""). Se guarda solo para \(shoulders ? "Game Boy Advance" : "Game Boy") en \(orientation.title.lowercased()).")
                 .font(.footnote)
                 .foregroundStyle(.white)
                 .padding(.horizontal, PocketSpacing.sm)
@@ -197,6 +200,46 @@ private struct SizeStepper: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.glass)
                 .disabled(scale >= ControlsLayout.scaleRange.upperBound)
+            }
+            .controlSize(.large)
+        }
+    }
+}
+
+/// Flechas separadas (N2, ND10): distancia de las flechas al centro, − / + en pasos del 10 %
+/// (70–150 %). Se guarda por disposición y «Restablecer» la devuelve al 100 %.
+private struct ArrowSpacingStepper: View {
+    @Environment(AppState.self) private var state
+    let orientation: ControlsOrientation
+    let shoulders: Bool
+
+    private var spacing: CGFloat { state.gameplay.data.layout(orientation, shoulders: shoulders).spacing }
+    private var percent: Int { Int((spacing * 100).rounded()) }
+
+    var body: some View {
+        GlassEffectContainer(spacing: PocketSpacing.xs) {
+            HStack(spacing: PocketSpacing.xs) {
+                Button("Flechas más juntas", systemImage: "arrow.down.right.and.arrow.up.left") {
+                    state.gameplay.respaceArrows(by: -0.1, orientation: orientation, shoulders: shoulders)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .disabled(spacing <= ControlsLayout.arrowSpacingRange.lowerBound)
+                .accessibilityIdentifier("editor-arrows-closer")
+                Text("Separación · \(percent) %")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, PocketSpacing.sm)
+                    .frame(minHeight: PocketSpacing.minTouch)
+                    .glassEffect(.regular.tint(PocketColor.controlScrim.opacity(0.6)), in: Capsule())
+                    .accessibilityLabel("Separación de las flechas: \(percent) por ciento")
+                Button("Flechas más separadas", systemImage: "arrow.up.left.and.arrow.down.right") {
+                    state.gameplay.respaceArrows(by: 0.1, orientation: orientation, shoulders: shoulders)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .disabled(spacing >= ControlsLayout.arrowSpacingRange.upperBound)
+                .accessibilityIdentifier("editor-arrows-farther")
             }
             .controlSize(.large)
         }

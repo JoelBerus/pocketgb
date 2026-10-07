@@ -39,10 +39,10 @@ enum GamepadMapping {
         return mask
     }
 
-    /// 8 sectores de 45° con zona muerta, igual que la cruceta táctil.
+    /// 8 sectores de 45° con zona muerta propia (el mando no usa el ajuste de diagonales táctil).
     static func directions(x: Float, y: Float) -> UInt8 {
         guard hypot(x, y) >= threshold else { return 0 }
-        return ControlsGeometry.dpadMask(dx: CGFloat(x), dy: CGFloat(-y), radius: 0)
+        return ControlsGeometry.dpadMask(dx: CGFloat(x), dy: CGFloat(-y), radius: 0, diagonals: .normal)
     }
 }
 

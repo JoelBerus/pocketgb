@@ -75,6 +75,21 @@ enum DebugScreen: String, CaseIterable {
     case linkPartnerPickerAX5 = "link-partner-picker-ax5"
     case linkOpenRefused = "link-open-refused"
     case linkContinueWarning = "link-continue-warning"
+    // N2: cruceta que responde por dirección (abren además `-rom`; `-uiPressedDpad` simula el dedo)
+    case gameplayDpadUp = "gameplay-dpad-up"
+    case gameplayDpadUpright = "gameplay-dpad-upright"
+    case gameplayDpadUpClear = "gameplay-dpad-up-clear"
+    case gameplayDpadUpReduceTransparency = "gameplay-dpad-up-reduce-transparency"
+    case gameplayArrowsUp = "gameplay-arrows-up"
+    case gameplayArrowsUpright = "gameplay-arrows-upright"
+    case gameplayArrowsUpReduceTransparency = "gameplay-arrows-up-reduce-transparency"
+    case gameplayArrowsSpacing70 = "gameplay-arrows-spacing-70"
+    case gameplayArrowsSpacing150 = "gameplay-arrows-spacing-150"
+    case gameplayGBADpadUp = "gameplay-gba-dpad-up"
+    case gameplayGBAArrowsUp = "gameplay-gba-arrows-up"
+    case customizeControlsDpad = "customize-controls-dpad"
+    case customizeControlsArrows = "customize-controls-arrows"
+    case settingsControlsAX5 = "settings-controls-ax5"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -167,6 +182,13 @@ enum DebugScreenRouter {
             state.settingsPath = [.display]
         case .gameplayPortraitArrows, .gameplayLandscapeArrows, .gameplayController, .gameplayFastForward:
             break
+        case .gameplayDpadUp, .gameplayDpadUpright, .gameplayDpadUpClear, .gameplayDpadUpReduceTransparency,
+             .gameplayArrowsUp, .gameplayArrowsUpright, .gameplayArrowsUpReduceTransparency, .gameplayArrowsSpacing70,
+             .gameplayArrowsSpacing150, .gameplayGBADpadUp, .gameplayGBAArrowsUp:
+            break   // los fijan `-dpadStyle`, `-arrowSpacing` y `-uiPressedDpad` (ControlsOverlayView)
+        case .settingsControlsAX5:
+            state.selectedTab = .settings
+            state.settingsPath = [.controls]
         case .gameplayLinkPortrait, .gameplayLinkLandscape, .gameplayLinkSwitched, .gameplayLinkPause,
              .gameplayLinkReduceTransparency:
             break   // se aplican al abrir el cable (`afterGameOpened`)
@@ -191,7 +213,8 @@ enum DebugScreenRouter {
         case .gameplayPause, .saveStates, .loadStateConfirm, .replaceStateConfirm:
             break   // se aplican al abrir el juego (`afterGameOpened`)
         case .customizeControlsPortrait, .customizeControlsLandscape, .customizeControlsSize,
-             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5:
+             .customizeControlsGBAPortrait, .customizeControlsGBALandscape, .customizeControlsGBAPortraitAX5,
+             .customizeControlsDpad, .customizeControlsArrows:
             // El editor se abre cuando `-rom` ya abrió el juego (openFromLaunchArguments).
             state.debugOpensControlsEditor = true
         default:
@@ -213,6 +236,8 @@ enum DebugScreenRouter {
         switch screen {
         case .customizeControlsSize:
             state.editorSelection = .a
+        case .customizeControlsDpad, .customizeControlsArrows:
+            state.editorSelection = .dpad
         case .gameplayFastForward:
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
