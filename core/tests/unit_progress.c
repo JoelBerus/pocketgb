@@ -615,8 +615,8 @@ void unit_progress(struct ut *t)
 
 /* Semillas de fuzz_progress (gbtest --fuzz-seeds): [juego][indicadores][partida de 32 KiB].
  * `which` 0..UT_PROGRESS_SEEDS-1 = Rojo, Azul, Amarillo, Oro, Plata, Cristal con valores no
- * triviales. Indicadores 0x07 = arreglar checksums + datos coherentes + longitud 0x8000
- * (ver fuzz/fuzz_progress.c). Devuelve la longitud escrita, o 0 si no cabe. */
+ * triviales. Indicadores 0xC7 = checksum + validación + rangos + nombre + longitud 0x8000 (ver
+ * fuzz/fuzz_progress.c). Devuelve la longitud escrita, o 0 si no cabe. */
 size_t ut_progress_seed(unsigned which, uint8_t *out, size_t cap)
 {
     static const struct want w = { "SEED", 120, 140, 0x2D, 50, 21, 9, 23456 };
@@ -625,7 +625,7 @@ size_t ut_progress_seed(unsigned which, uint8_t *out, size_t cap)
         return 0;
     build(sav, (int)which, &w);
     out[0] = (uint8_t)which;
-    out[1] = 0x07;
+    out[1] = 0xC7;
     memcpy(out + 2, sav, SAV);
     return 2 + SAV;
 }
