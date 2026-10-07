@@ -27,6 +27,7 @@
 #include <time.h>
 
 #include "pocketgb.h"
+#include "pocketgb_progress.h"
 #include "internal.h"
 #include "unit.h"
 
@@ -170,6 +171,7 @@ static int run_unit(void)
         { "apu", unit_apu },
         { "cgb", unit_cgb },
         { "link", unit_link },
+        { "progress", unit_progress },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
@@ -224,6 +226,17 @@ static int fuzz_seeds(const char *dir)
     static const uint8_t link_seed[] = { 0x00, 0x80, 0x55, 0x81, 0x18, 0xFE, 0x18, 0xFE };
     snprintf(path, sizeof path, "%s/fuzz_link/seed_link.bin", dir);
     rc |= write_file(path, link_seed, sizeof link_seed);
+    /* fuzz_progress: una partida sintética válida por juego (Rojo, Azul, Amarillo, Oro, Plata, Cristal). */
+    {
+        static uint8_t pseed[2 + PGB_PROG_SAVE_BYTES];
+        for (unsigned i = 0; i < UT_PROGRESS_SEEDS; i++) {
+            size_t n = ut_progress_seed(i, pseed, sizeof pseed);
+            if (!n)
+                return 2;
+            snprintf(path, sizeof path, "%s/fuzz_progress/seed_game%u.bin", dir, i);
+            rc |= write_file(path, pseed, n);
+        }
+    }
     /* Semillas largas (auditoría M9, H5): los programas de intercambio de
      * unit_link.c, uno por lado, con el reparto a la mitad (d[1] = 0x80; los dos
      * miden lo mismo). d[0]: modelos por lado y operaciones a mitad. */

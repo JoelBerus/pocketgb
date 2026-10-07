@@ -165,6 +165,7 @@ final class AppState {
         let fixedControls = inMemory || DebugArguments.value("-controlOpacity") != nil
             || DebugArguments.value("-controlsVisibility") != nil
             || DebugArguments.value("-dpadStyle") != nil
+            || DebugArguments.value("-dpadDiagonals") != nil || DebugArguments.value("-arrowSpacing") != nil
         gameplay = GameplaySettings(defaults: fixedControls ? nil : .standard)
         gameplay.applyDebugArguments()
         let catalogRun = DebugArguments.screen != nil || DebugArguments.arguments.contains("-rom")

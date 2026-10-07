@@ -74,6 +74,10 @@ internal object NativeLibrary {
     @JvmStatic
     external fun nativeSessionCopyFrame(handle: Long, out: IntArray): Int
 
+    /** A9: reloj del MBC3 a [unixTime] (segundos), nunca hacia atrás. Solo con la sesión aparcada. */
+    @JvmStatic
+    external fun nativeSessionSetRtcTime(handle: Long, unixTime: Long): Int
+
     @JvmStatic
     external fun nativeSessionStart(handle: Long): Int
 

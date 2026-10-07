@@ -319,15 +319,119 @@ class GbaNativeTest {
             assertEquals(GbaButtonBits.L or GbaButtonBits.R or 0x81, session.requestedButtons)
             session.start()
             waitUntil { session.appliedButtons == (GbaButtonBits.L or GbaButtonBits.R or 0x81) }
+            // Todo pulsado: recortado a 10 bits y, ya combinado, sin opuestos (N2): A, B, Select, Start, R y L.
             session.setTouchButtons(-1)
-            assertEquals(0x3FF, session.requestedButtons)
+            assertEquals(0x30F, session.requestedButtons)
             // El nativo recorta igual aunque Kotlin no lo hiciera.
+            session.setTouchButtons(0)
             session.withNativeHandle { NativeLibrary.nativeSessionSetTouchButtons(it, 0xFFFF) }
-            assertEquals(0x3FF, session.requestedButtons)
+            assertEquals(0x30F, session.requestedButtons)
         }
         EmulatorSession().use { session ->
             session.withNativeHandle { NativeLibrary.nativeSessionSetTouchButtons(it, GbaButtonBits.L or 0x01) }
             assertEquals("en GB, L y R no existen", 0x01, session.requestedButtons)
+        }
+    }
+
+    @Test
+    fun oppositeDirectionsCancelWithTheGbaMaskAndShouldersStay() {
+        val right = 1 shl 4
+        val left = 1 shl 5
+        val up = 1 shl 6
+        val down = 1 shl 7
+        val l = GbaButtonBits.L
+        val r = GbaButtonBits.R
+        EmulatorSession(Console.GBA).use { session ->
+            session.loadGba(SyntheticGbaRom.idle())
+            // Táctil ↑ + L y mando ↓ + R: las direcciones se anulan, los gatillos llegan.
+            session.setTouchButtons(up or l)
+            session.setPhysicalButtons(down or r)
+            assertEquals(l or r, session.requestedButtons)
+            session.setTouchButtons(left or 0x01)
+            session.setPhysicalButtons(right or up)
+            assertEquals(up or 0x01, session.requestedButtons)
+            session.setTouchButtons(up or right or l)
+            session.setPhysicalButtons(0)
+            assertEquals("sin opuestos no cambia nada", up or right or l, session.requestedButtons)
+            // Lo mismo llega al hilo nativo (lo que ve el núcleo).
+            session.setTouchButtons(up or l)
+            session.setPhysicalButtons(down or r or 0x02)
+            session.start()
+            waitUntil { session.appliedButtons == (l or r or 0x02) }
+        }
+    }
+
+    // ---- RTC del GBA (A9 + N8): syncRtc y reanudar ponen la hora local ----
+
+    /** Desplazamientos del estado donde está el entero de 64 bits little-endian [value] (la base del RTC, `rtc_base`). */
+    private fun offsetsOf(state: ByteArray, value: Long): List<Int> = (0..state.size - 8).filter { i ->
+        var v = 0L
+        for (b in 0 until 8) v = v or ((state[i + b].toLong() and 0xFF) shl (8 * b))
+        v == value
+    }
+
+    private fun int64At(state: ByteArray, offset: Int): Long {
+        var v = 0L
+        for (b in 0 until 8) v = v or ((state[offset + b].toLong() and 0xFF) shl (8 * b))
+        return v
+    }
+
+    private fun localSeconds(utc: Long): Long = utc + java.util.TimeZone.getDefault().getOffset(utc * 1000) / 1000
+
+    @Test
+    fun gbaRtcGoesToLocalTimeOnSyncAndOnResume() {
+        val start = 1_700_000_000L
+        EmulatorSession(Console.GBA).use { session ->
+            session.loadGba(SyntheticGbaRom.sramCounter(), unixTimeSeconds = start, options = GbaOptions(rtc = GbaRtc.ON))
+            // El estado guarda la base del RTC: la hora LOCAL de la carga (el puente convierte la UTC).
+            val atLoad = session.saveStateParked()
+            val found = offsetsOf(atLoad, localSeconds(start))
+            assertEquals("la base del RTC aparece una vez en el estado: $found", 1, found.size)
+            val offset = found.single()
+
+            // A9: syncRtc con la sesión sin arrancar la lleva a la hora pedida, en hora local.
+            val synced = start + 86_400
+            session.syncRtc(synced)
+            assertEquals(localSeconds(synced), int64At(session.saveStateParked(), offset))
+
+            // Corriendo no se puede; al reanudar vuelve a la hora real.
+            session.start()
+            waitUntil { session.frameCount >= 3 }
+            assertThrows(SessionError.NotParked::class.java) { session.syncRtc(synced) }
+            session.pause()
+            assertEquals("pausar no toca el reloj", localSeconds(synced), int64At(session.saveState().bytes, offset))
+            val before = System.currentTimeMillis() / 1000
+            session.resume()
+            waitUntil { session.frameCount >= 6 }
+            session.pause()
+            val after = System.currentTimeMillis() / 1000
+            assertTrue(
+                "al reanudar, la base es la hora local actual",
+                int64At(session.saveState().bytes, offset) in localSeconds(before)..localSeconds(after),
+            )
+            // El .sav solo lleva el desplazamiento del juego (0) y el estado, no la hora: el formato de iOS no cambia.
+            assertArrayEquals(ByteArray(8), session.copySram().copyOfRange(32 * 1024, 32 * 1024 + 8))
+        }
+    }
+
+    @Test
+    fun parkedStatesOfA9WorkForGbaBeforeStarting() {
+        EmulatorSession(Console.GBA).use { session ->
+            session.loadGba(SyntheticGbaRom.sramWriter(0x21))
+            val fresh = session.saveStateParked()
+            session.start()
+            waitUntil { session.sramDirtySequence() >= 1 }
+            session.pause()
+            val written = session.saveState().bytes
+            session.stop()
+            EmulatorSession(Console.GBA).use { other ->
+                other.loadGba(SyntheticGbaRom.sramWriter(0x21))
+                other.loadStateParked(written)
+                assertEquals(0x21, other.copySram()[0].toInt())
+                assertFalse(fresh.contentEquals(other.saveStateParked()))
+                other.loadStateParked(fresh)
+                assertArrayEquals(fresh, other.saveStateParked())
+            }
         }
     }
 

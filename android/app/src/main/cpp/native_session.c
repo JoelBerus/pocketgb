@@ -20,6 +20,25 @@ void sha256(const uint8_t *data, size_t len, uint8_t out[32]);
 /* La EEPROM más grande del GBA: una EEPROM sin tamaño confirmado puede pasar de 512 B a 8 KiB. */
 #define GBA_EEPROM_MAX_BYTES 8192u
 
+/*
+ * Botones que ve el núcleo: el OR de los táctiles y los del mando, sin direcciones opuestas (N2). Si arriba y abajo (o
+ * izquierda y derecha) llegan a la vez, por dos dedos o por táctil y mando, ninguna de las dos se pulsa: la SPEC prohíbe
+ * las opuestas y varios juegos se cuelgan con ellas. Máscara común de 16 bits (N8): las direcciones están en los bits 4–7
+ * en las dos consolas y el resto (A, B, Select, Start y, en GBA, R y L) pasa intacto. Las entradas ya llegan recortadas a
+ * la máscara de la consola (native_session_set_*_buttons).
+ */
+_Static_assert(GB_BTN_RIGHT == GBA_BTN_RIGHT && GB_BTN_LEFT == GBA_BTN_LEFT &&
+               GB_BTN_UP == GBA_BTN_UP && GB_BTN_DOWN == GBA_BTN_DOWN,
+    "las direcciones deben ocupar los mismos bits en los dos núcleos");
+static uint16_t combine_buttons(uint16_t touch, uint16_t physical) {
+    uint16_t buttons = (uint16_t)(touch | physical);
+    const uint16_t vertical = (uint16_t)(GB_BTN_UP | GB_BTN_DOWN);
+    const uint16_t horizontal = (uint16_t)(GB_BTN_LEFT | GB_BTN_RIGHT);
+    if ((buttons & vertical) == vertical) buttons = (uint16_t)(buttons & ~vertical);
+    if ((buttons & horizontal) == horizontal) buttons = (uint16_t)(buttons & ~horizontal);
+    return buttons;
+}
+
 struct native_session {
     gb *core;                     /* Game Boy: el núcleo; NULL en una sesión GBA */
     gba *gba_core;                /* Game Boy Advance: el núcleo; NULL en una sesión GB */
@@ -466,7 +485,7 @@ static void *run_session(void *context) {
             return NULL;
         }
         session->state = NATIVE_SESSION_RUNNING;
-        const uint16_t buttons = session->touch_buttons | session->physical_buttons;
+        const uint16_t buttons = combine_buttons(session->touch_buttons, session->physical_buttons);
         const unsigned speed = session->speed;
         const bool timing_reset = session->timing_reset;
         session->timing_reset = false;
@@ -838,7 +857,7 @@ void native_session_set_physical_buttons(native_session *session, uint16_t mask)
 uint16_t native_session_requested_buttons(native_session *session) {
     if (session == NULL) return 0u;
     (void)pthread_mutex_lock(&session->mutex);
-    const uint16_t buttons = session->touch_buttons | session->physical_buttons;
+    const uint16_t buttons = combine_buttons(session->touch_buttons, session->physical_buttons);
     (void)pthread_mutex_unlock(&session->mutex);
     return buttons;
 }
@@ -1109,6 +1128,20 @@ int native_session_state_load(native_session *session, const uint8_t *data, size
         result = core_state_load(session, data, length);
         /* GBA: el estado trae el medio de ese momento, con su tamaño de EEPROM confirmado. */
         if (is_gba(session)) session->sram_size = core_sram_size(session);
+    }
+    (void)pthread_mutex_unlock(&session->mutex);
+    return result;
+}
+
+int native_session_set_rtc_time(native_session *session, int64_t unix_time) {
+    if (session == NULL) return GB_ERR_NULL_ARG;
+    (void)pthread_mutex_lock(&session->mutex);
+    int result = NS_BUSY;
+    if (parked_locked(session)) {
+        /* GB: el MBC3 avanza hasta la hora real (nunca retrocede). GBA: el RTC vuelve a la hora local del dispositivo
+         * más el desplazamiento que fijó el juego (N8, como iOS setRTCTime tras restaurar un estado). */
+        core_rtc_set_time(session, unix_time);
+        result = NS_OK;
     }
     (void)pthread_mutex_unlock(&session->mutex);
     return result;

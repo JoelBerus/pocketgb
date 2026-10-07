@@ -45,6 +45,8 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
     /// Horizontal: solo múltiplos enteros de 160×144 (píxeles idénticos).
     var integerScaleLandscape = true
     var dpadStyle: DpadStyle = .cross
+    /// Cuánto ángulo ocupan las diagonales de la cruceta táctil (N2). El mando no lo usa.
+    var dpadDiagonals: DpadDiagonals = .reduced
     // Audio (D6): volumen del juego y si suena con el interruptor de silencio.
     var volume: Double = 1
     var playsInSilentMode = false
@@ -76,6 +78,7 @@ struct GameplaySettingsData: Codable, Equatable, Sendable {
         integerScaleLandscape = (try? c.decodeIfPresent(Bool.self, forKey: .integerScaleLandscape))
             ?? defaults.integerScaleLandscape
         dpadStyle = (try? c.decodeIfPresent(DpadStyle.self, forKey: .dpadStyle)) ?? defaults.dpadStyle
+        dpadDiagonals = (try? c.decodeIfPresent(DpadDiagonals.self, forKey: .dpadDiagonals)) ?? defaults.dpadDiagonals
         volume = min(max((try? c.decodeIfPresent(Double.self, forKey: .volume)) ?? defaults.volume, 0), 1)
         playsInSilentMode = (try? c.decodeIfPresent(Bool.self, forKey: .playsInSilentMode)) ?? defaults.playsInSilentMode
         colorForGameBoy = (try? c.decodeIfPresent(Bool.self, forKey: .colorForGameBoy)) ?? defaults.colorForGameBoy
@@ -152,6 +155,17 @@ final class GameplaySettings {
         }
     }
 
+    /// Separación de las flechas separadas (pasos del 10 %, 0,7…1,5), solo para esa orientación y consola.
+    func respaceArrows(by delta: CGFloat, orientation: ControlsOrientation, shoulders: Bool = false) {
+        update { data in
+            var layout = data.layout(orientation, shoulders: shoulders)
+            let value = ((layout.spacing + delta) * 10).rounded() / 10
+            layout.arrowSpacing = min(max(value, ControlsLayout.arrowSpacingRange.lowerBound),
+                                      ControlsLayout.arrowSpacingRange.upperBound)
+            data.setLayout(layout, orientation, shoulders: shoulders)
+        }
+    }
+
     /// Ajustes de un juego; al quedar todo en "Global" se borra la entrada.
     func setOverrides(_ overrides: GameOverrides, for gameID: String) {
         update { data in
@@ -164,7 +178,8 @@ final class GameplaySettings {
     }
 
     #if DEBUG
-    /// `-controlOpacity`, `-controlsVisibility`: estado fijo para capturas, sin persistir.
+    /// `-controlOpacity`, `-controlsVisibility`, `-dpadStyle`, `-dpadDiagonals`, `-arrowSpacing`:
+    /// estado fijo para capturas, sin persistir.
     func applyDebugArguments() {
         var copy = data
         if let raw = DebugArguments.value("-controlOpacity"), let value = Int(raw),
@@ -176,6 +191,17 @@ final class GameplaySettings {
         }
         if let raw = DebugArguments.value("-dpadStyle"), let value = DpadStyle(rawValue: raw) {
             copy.dpadStyle = value
+        }
+        if let raw = DebugArguments.value("-dpadDiagonals"), let value = DpadDiagonals(rawValue: raw) {
+            copy.dpadDiagonals = value
+        }
+        // `-arrowSpacing 0.7`: la misma separación en las cuatro disposiciones (capturas N2).
+        if let raw = DebugArguments.value("-arrowSpacing"), let value = Double(raw) {
+            for (orientation, shoulders) in [(ControlsOrientation.portrait, false), (.landscape, false), (.portrait, true), (.landscape, true)] {
+                var layout = copy.layout(orientation, shoulders: shoulders)
+                layout.arrowSpacing = CGFloat(value)
+                copy.setLayout(layout, orientation, shoulders: shoulders)
+            }
         }
         data = copy
     }

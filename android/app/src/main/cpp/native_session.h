@@ -162,5 +162,9 @@ int native_session_state_save(native_session *session, uint8_t *out, size_t capa
 int native_session_state_load(native_session *session, const uint8_t *data, size_t length);
 /* native_session_screen_width × _height píxeles RGBA8888 (160×144 en GB, 240×160 en GBA). */
 int native_session_copy_framebuffer(native_session *session, uint32_t *out, size_t pixel_capacity);
+/* A9: lleva el reloj del cartucho a la hora Unix UTC `unix_time`. GB: adelanta el del MBC3 (nunca lo retrasa; sin RTC
+ * no hace nada). GBA (N8): el RTC vuelve a la hora local del dispositivo más el desplazamiento que fijó el juego. Solo
+ * aparcada (READY sin arrancar, PAUSED o STOPPED): tras retomar el estado automático, que trae la hora en que se guardó. */
+int native_session_set_rtc_time(native_session *session, int64_t unix_time);
 
 #endif

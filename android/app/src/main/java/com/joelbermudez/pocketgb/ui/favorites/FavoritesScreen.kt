@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -46,6 +47,7 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.ui.components.EmptyState
 import com.joelbermudez.pocketgb.ui.components.GameArtwork
+import com.joelbermudez.pocketgb.ui.components.RenameGameHost
 import com.joelbermudez.pocketgb.ui.components.relativeDateText
 import com.joelbermudez.pocketgb.ui.details.GameSettingsHost
 import com.joelbermudez.pocketgb.ui.library.GameActions
@@ -62,17 +64,29 @@ fun FavoritesScreen(
     onOpenDetails: (String) -> Unit,
     onPlay: ((RomEntry) -> Unit)? = null,
     gameplaySettings: GameplaySettingsRepository? = null,
+    /** A9: «Jugar desde el inicio» (solo la partida). */
+    onPlayFromStart: ((RomEntry) -> Unit)? = null,
+    /** A9: huellas con «Continuar» exacto disponible. */
+    resumable: Set<String> = emptySet(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     var settingsFor by remember { mutableStateOf<RomEntry?>(null) }
-    val actions = remember(viewModel, onOpenDetails, onPlay) {
+    var renameFor by remember { mutableStateOf<RomEntry?>(null) }
+    // Se lee en la composición del menú (State): cambia sin recrear las acciones ni cerrar un menú abierto.
+    val canResume by rememberUpdatedState { entry: RomEntry ->
+        entry.isPlayable && prefs.fingerprints[entry.id]?.let { it in resumable } == true
+    }
+    val actions = remember(viewModel, onOpenDetails, onPlay, onPlayFromStart) {
         GameActions(
             onOpenDetails = { onOpenDetails(it.id) },
             onToggleFavorite = viewModel::toggleFavorite,
             onHide = viewModel::hide,
             onPlay = onPlay,
             onGameSettings = { settingsFor = it },
+            onPlayFromStart = onPlayFromStart,
+            onRename = { renameFor = it },
+            canResume = { entry -> canResume(entry) },
         )
     }
     FavoritesContent(state = state, prefs = prefs, actions = actions)
@@ -82,6 +96,7 @@ fun FavoritesScreen(
         repository = gameplaySettings ?: GameplaySettingsRepository.shared(LocalContext.current),
         onDismiss = { settingsFor = null },
     )
+    RenameGameHost(entry = renameFor, prefs = prefs, onSetAlias = viewModel::setAlias, onDismiss = { renameFor = null })
 }
 
 /**
@@ -184,7 +199,7 @@ private fun RecentStrip(
             items(recent, key = { it.id }) { entry ->
                 val lastPlayed = prefs.lastPlayedAt(entry)
                 val label = stringResource(R.string.game_details_action)
-                val description = listOfNotNull(entry.title, lastPlayed?.let { relativeDateText(it) }).joinToString(", ")
+                val description = listOfNotNull(entry.displayTitle, lastPlayed?.let { relativeDateText(it) }).joinToString(", ")
                 Box {
                     Column(
                         Modifier

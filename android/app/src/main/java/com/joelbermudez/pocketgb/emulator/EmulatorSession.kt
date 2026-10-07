@@ -200,6 +200,35 @@ open class EmulatorSession(val console: Console = Console.GB) : AutoCloseable {
         withHandle { checkNative("cargar el estado", NativeLibrary.nativeSessionStateLoad(it, data)) }
     }
 
+    /**
+     * A9 · continuación exacta: estado del núcleo con la sesión aparcada, también SIN arrancar (READY), para retomar el
+     * estado automático antes de crear el hilo. No incluye la captura de pantalla ([saveState] sí).
+     */
+    fun saveStateParked(): ByteArray {
+        requireParkedForSram("guardar el estado")
+        return withHandle { nativeHandle ->
+            val holder = arrayOfNulls<ByteArray>(1)
+            checkNative("guardar el estado", NativeLibrary.nativeSessionStateSave(nativeHandle, holder))
+            holder[0] ?: throw CoreError.StateCorrupt()
+        }
+    }
+
+    /** Como [loadStateRaw] pero también con la sesión sin arrancar (READY). Nunca persiste la SRAM por su cuenta. */
+    fun loadStateParked(data: ByteArray) {
+        requireParkedForSram("cargar el estado")
+        withHandle { checkNative("cargar el estado", NativeLibrary.nativeSessionStateLoad(it, data)) }
+    }
+
+    /**
+     * Lleva el reloj del cartucho a la hora actual [unixSeconds] (UTC). GB: adelanta el del MBC3 (nunca lo retrasa; sin
+     * RTC no hace nada). GBA: el RTC vuelve a la hora local más el desplazamiento que fijó el juego. Tras retomar un
+     * estado, que trae la hora del momento en que se guardó (iOS D81-H5). Sesión sin arrancar o en pausa.
+     */
+    fun syncRtc(unixSeconds: Long) {
+        requireParkedForSram("ajustar el reloj")
+        withHandle { checkNative("ajustar el reloj", NativeLibrary.nativeSessionSetRtcTime(it, unixSeconds)) }
+    }
+
     fun start() {
         requireState("iniciar", SessionState.Ready)
         withHandle { checkNativeControl("iniciar", NativeLibrary.nativeSessionStart(it)) }

@@ -1,7 +1,9 @@
 package com.joelbermudez.pocketgb.ui.components
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.StarBorder
@@ -25,6 +27,8 @@ import com.joelbermudez.pocketgb.library.RomEntry
 /**
  * Acciones de la pulsación larga. Nunca ofrece borrar el ROM. «Estados» queda deshabilitado hasta que existan.
  * [onPlay] `null` (o juego con problema) oculta «Jugar»; [onGameSettings] `null` oculta «Ajustes del juego».
+ * A9: con [canResume] la primera acción es «Continuar» (estado automático exacto) seguida de «Jugar desde el inicio»
+ * ([onPlayFromStart]), como iOS; [onRename] `null` oculta «Renombrar».
  */
 @Composable
 fun GameContextMenu(
@@ -37,14 +41,26 @@ fun GameContextMenu(
     onToggleFavorite: () -> Unit,
     onGameSettings: (() -> Unit)?,
     onHide: () -> Unit,
+    canResume: Boolean = false,
+    onPlayFromStart: (() -> Unit)? = null,
+    onRename: (() -> Unit)? = null,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.testTag("game-context-menu")) {
         if (entry.isPlayable && onPlay != null) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.menu_play)) },
+                text = { Text(stringResource(if (canResume) R.string.a9_continue else R.string.menu_play)) },
                 leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
                 onClick = { onDismiss(); onPlay() },
+                modifier = Modifier.testTag("menu-play"),
             )
+            if (canResume && onPlayFromStart != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.a9_play_from_start)) },
+                    leadingIcon = { Icon(Icons.Filled.Replay, contentDescription = null) },
+                    onClick = { onDismiss(); onPlayFromStart() },
+                    modifier = Modifier.testTag("menu-play-from-start"),
+                )
+            }
         }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.menu_details)) },
@@ -58,6 +74,14 @@ fun GameContextMenu(
             },
             onClick = { onDismiss(); onToggleFavorite() },
         )
+        if (onRename != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.a9_rename)) },
+                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                onClick = { onDismiss(); onRename() },
+                modifier = Modifier.testTag("menu-rename"),
+            )
+        }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.menu_states_soon)) },
             leadingIcon = { Icon(Icons.Outlined.ViewAgenda, contentDescription = null) },

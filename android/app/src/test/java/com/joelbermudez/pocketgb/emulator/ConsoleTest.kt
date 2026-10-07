@@ -84,6 +84,18 @@ class ConsoleTest {
     }
 
     @Test
+    fun withoutOppositesOfN2KeepsTheGbaShoulders() {
+        val up = 1 shl 6
+        val down = 1 shl 7
+        val left = 1 shl 5
+        val right = 1 shl 4
+        val shoulders = GbaButtonBits.L or GbaButtonBits.R
+        assertEquals(shoulders, com.joelbermudez.pocketgb.input.withoutOpposites(shoulders or up or down))
+        assertEquals(shoulders or up, com.joelbermudez.pocketgb.input.withoutOpposites(shoulders or up or left or right))
+        assertEquals(0x30F, com.joelbermudez.pocketgb.input.withoutOpposites(Console.GBA.buttonMask))
+    }
+
+    @Test
     fun biosShaIsTheSameInKotlinCAndIos() {
         assertEquals(64, GbaBios.SHA256.length)
         assertTrue(sessionHeader.contains("#define NATIVE_GBA_BIOS_SHA256 \"${GbaBios.SHA256}\""))

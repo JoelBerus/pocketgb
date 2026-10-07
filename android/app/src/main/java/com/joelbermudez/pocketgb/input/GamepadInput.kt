@@ -3,6 +3,7 @@ package com.joelbermudez.pocketgb.input
 import android.view.InputDevice
 import android.view.KeyEvent
 import com.joelbermudez.pocketgb.settings.ControllerMappingData
+import com.joelbermudez.pocketgb.settings.DiagonalMode
 import kotlin.math.hypot
 
 /** Lo que un botón del mando puede hacer: un botón de Game Boy o una acción de la app. */
@@ -52,8 +53,9 @@ class GamepadState(mapping: ControllerMappingData? = null) {
 
     /** [hatX]/[hatY] del hat (−1, 0, 1) y [x]/[y] del stick izquierdo (−1..1, Y crece hacia abajo). */
     fun onAxes(hatX: Float, hatY: Float, x: Float, y: Float): PadOutput {
-        hat = if (hypot(hatX, hatY) < HAT_THRESHOLD) 0 else ControlGeometry.dpadMask(hatX, hatY, 1f)
-        stick = if (hypot(x, y) < STICK_THRESHOLD) 0 else ControlGeometry.dpadMask(x, y, 1f)
+        // El ajuste «Diagonales» es de la cruceta táctil: un stick físico sigue con ocho sectores de 45° (y su propio umbral).
+        hat = if (hypot(hatX, hatY) < HAT_THRESHOLD) 0 else ControlGeometry.dpadMask(hatX, hatY, 1f, DiagonalMode.NORMAL)
+        stick = if (hypot(x, y) < STICK_THRESHOLD) 0 else ControlGeometry.dpadMask(x, y, 1f, DiagonalMode.NORMAL)
         return output()
     }
 
@@ -77,7 +79,7 @@ class GamepadState(mapping: ControllerMappingData? = null) {
                 else -> Unit
             }
         }
-        return PadOutput(buttons or cancelOpposites(dpadKeys or hat or stick), actions)
+        return PadOutput(buttons or withoutOpposites(dpadKeys or hat or stick), actions)
     }
 
     private val PadAction.isAppAction get() = this == PadAction.MENU || this == PadAction.FAST_FORWARD
@@ -88,15 +90,6 @@ class GamepadState(mapping: ControllerMappingData? = null) {
         KeyEvent.KEYCODE_DPAD_LEFT -> GameBoyButton.LEFT.mask
         KeyEvent.KEYCODE_DPAD_RIGHT -> GameBoyButton.RIGHT.mask
         else -> 0
-    }
-
-    private fun cancelOpposites(mask: Int): Int {
-        var result = mask
-        val vertical = GameBoyButton.UP.mask or GameBoyButton.DOWN.mask
-        val horizontal = GameBoyButton.LEFT.mask or GameBoyButton.RIGHT.mask
-        if (result and vertical == vertical) result = result and vertical.inv()
-        if (result and horizontal == horizontal) result = result and horizontal.inv()
-        return result
     }
 
     private companion object {

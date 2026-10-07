@@ -27,7 +27,8 @@ import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LocalAutoFocusSearch
 import com.joelbermudez.pocketgb.ui.library.LocalInitialMenuFor
 
-private val actions = GameActions({}, {}, {}, onPlay = {}, onGameSettings = {})
+// A9: «Renombrar» está en el menú contextual de la app; el catálogo lo muestra igual.
+private val actions = GameActions({}, {}, {}, onPlay = {}, onGameSettings = {}, onRename = {})
 
 @Composable
 private fun CatalogLibrary(
@@ -152,6 +153,7 @@ internal val libraryCatalogScreens: Map<String, @Composable (DebugIntent) -> Uni
             onBack = {},
             fingerprint = CatalogData.fingerprint(entry.id),
             onOpenSettings = {},
+            onRename = {},
         )
     }
     put("favorites") { FavoritesContent(ready, remember { CatalogData.prefs() }, actions) }

@@ -17,7 +17,10 @@ final class FakeCore: ConsoleCore, @unchecked Sendable {
     func setSRAM(_ data: Data) { lock.lock(); sram = data; lock.unlock() }
 
     func shutdown() { lock.lock(); shutdowns += 1; lock.unlock() }
-    func setButtons(_ mask: UInt16) {}
+    private var buttonsSet: UInt16?
+    /// Última máscara que la sesión pasó al núcleo (N2-H3).
+    var lastButtons: UInt16? { lock.lock(); defer { lock.unlock() }; return buttonsSet }
+    func setButtons(_ mask: UInt16) { lock.lock(); buttonsSet = mask; lock.unlock() }
     func runFrame() { produceFrame() }
     var cpuLocked: Bool { false }
     func copyFramebuffer(to dst: UnsafeMutablePointer<UInt32>) { dst.update(repeating: 0, count: ScreenSize.gameBoy.pixelCount) }

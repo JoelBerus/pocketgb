@@ -17,6 +17,11 @@ class SessionLifecycleObserver(
     private val game: GameSession,
     /** Recibe el resultado de cada vaciado (para avisar si quedó pendiente o falló: SPEC §6). */
     private val onFlushResult: (FlushResult) -> Unit = {},
+    /**
+     * Tras el vaciado de `ON_STOP` (A9): guardar el estado AUTO fuera del hilo principal, para que «Continuar» retome la
+     * posición aunque el sistema mate la app en segundo plano (iOS `enterBackground`).
+     */
+    private val onStopped: () -> Unit = {},
 ) : LifecycleEventObserver {
     override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
         if (event == Lifecycle.Event.ON_RESUME) {
@@ -27,7 +32,9 @@ class SessionLifecycleObserver(
                 onFlushResult(game.pause())
             } catch (_: Exception) {
                 // La sesión pudo cerrarse justo antes (salida en curso): nada que pausar.
+                return
             }
+            if (event == Lifecycle.Event.ON_STOP) onStopped()
         }
     }
 }

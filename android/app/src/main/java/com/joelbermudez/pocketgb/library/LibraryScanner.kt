@@ -161,7 +161,8 @@ object LibraryScanner {
         return make(null, info.title, info.isColor, info.checksumOk)
     }
 
-    val titleOrder: Comparator<RomEntry> = Comparator { a, b -> NaturalOrder.compare(a.title, b.title) }
+    /** Orden por el nombre visible (el alias si lo hay, A9; el título de la cabecera si no). */
+    val titleOrder: Comparator<RomEntry> = Comparator { a, b -> NaturalOrder.compare(a.displayTitle, b.displayTitle) }
 }
 
 /** Orden "natural": ignora mayúsculas y acentos y compara los números por valor ("Juego 2" < "Juego 10"). */
