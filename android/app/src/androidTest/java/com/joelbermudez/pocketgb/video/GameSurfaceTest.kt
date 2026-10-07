@@ -147,6 +147,43 @@ class GameSurfaceTest {
         }
     }
 
+    /** N8: una sesión de GBA (240×160) dibuja en la misma superficie, en los dos modos de escalado y al recrearla. */
+    @Test
+    fun gbaSessionDrawsAndSurvivesSurfaceRecreationInBothScaleModes() {
+        val visible = mutableStateOf(true)
+        val mode = mutableStateOf(ScaleMode.INTEGER)
+        EmulatorSession(com.joelbermudez.pocketgb.emulator.Console.GBA).use { session ->
+            session.loadGba(com.joelbermudez.pocketgb.testing.SyntheticGbaRom.sramCounter())
+            session.start()
+            compose.activityRule.scenario.onActivity { activity ->
+                activity.setContent {
+                    PocketGBTheme {
+                        if (visible.value) {
+                            GameSurface(
+                                session = session,
+                                modifier = Modifier.fillMaxSize().testTag("game-surface"),
+                                scaleMode = mode.value,
+                            )
+                        }
+                    }
+                }
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            repeat(10) {
+                compose.runOnUiThread {
+                    visible.value = !visible.value
+                    if (visible.value) mode.value = if (mode.value == ScaleMode.FILL) ScaleMode.INTEGER else ScaleMode.FILL
+                }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithTag("game-surface").assertIsDisplayed()
+            val before = session.frameCount
+            compose.waitUntil(5_000) { session.frameCount > before + 10 }
+            session.pause()
+            assertEquals(240 * 160, session.copyFrame().size)
+        }
+    }
+
     private fun findSurfaceView(root: android.view.View): android.view.SurfaceView {
         if (root is android.view.SurfaceView) return root
         if (root is android.view.ViewGroup) {
