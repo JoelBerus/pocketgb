@@ -28,6 +28,12 @@ enum class ResumeFailure {
 
     /** Firma, CRC, longitud o versión que esta app no lee (dañado o truncado). Se conserva. */
     CORRUPT,
+
+    /**
+     * La partida no se pudo cargar (`.sav` de tamaño incorrecto o ilegible, J10): sin ella no hay con qué comparar el
+     * estado, así que no se compara ni se aparta; se queda en su ranura (A9-H2).
+     */
+    SAVE_NOT_LOADED,
 }
 
 /**
@@ -97,14 +103,18 @@ object ExactContinuation {
      * Paso completo de la apertura con «Continuar»: lee el estado automático de [states] (fecha y firma primero, como
      * la biblioteca), comprueba que no es anterior a la partida local ([saveDateMs]) y lo aplica con [apply]. Un estado
      * obsoleto ([ResumeFailure.NOT_CURRENT]) se aparta para que «Continuar» deje de ofrecerse; la partida no se toca.
-     * Debe llamarse con la propiedad exclusiva de la huella ya adquirida y la sesión sin arrancar.
+     * Debe llamarse con la propiedad exclusiva de la huella ya adquirida y la sesión sin arrancar. [saveLoaded] `false`
+     * = la apertura no pudo cargar la partida (sesión sin destino de guardado): se rechaza sin comparar ni apartar.
      */
-    fun resume(core: ResumableCore, states: StateStore, saveDateMs: Long?): Outcome {
+    fun resume(core: ResumableCore, states: StateStore, saveDateMs: Long?, saveLoaded: Boolean = true): Outcome {
         val entry = try {
             states.entry(StateSlot.AUTO, withThumbnail = false)
         } catch (_: java.io.IOException) {
             return Outcome.Rejected(ResumeFailure.UNREADABLE)
         } ?: return Outcome.Rejected(ResumeFailure.MISSING)
+        // Sin partida cargada el núcleo tiene la RAM a cero: cualquier estado con progreso «no correspondería» y se
+        // apartaría con un aviso falso. No se toca nada (A9-H2).
+        if (!saveLoaded) return Outcome.Rejected(ResumeFailure.SAVE_NOT_LOADED)
         val outcome = when {
             entry.corrupt -> Outcome.Rejected(ResumeFailure.CORRUPT)
             !isFreshByDate(entry.dateMs, saveDateMs) -> Outcome.Rejected(ResumeFailure.NOT_CURRENT)

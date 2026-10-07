@@ -13,9 +13,14 @@ import com.joelbermudez.pocketgb.saves.ResumeFailure
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
+import com.joelbermudez.pocketgb.emulator.CoreError
+import com.joelbermudez.pocketgb.emulator.EmulatorSession
+import com.joelbermudez.pocketgb.testing.FailableOps
 import com.joelbermudez.pocketgb.testing.SyntheticRom
+import com.joelbermudez.pocketgb.testing.openGame
 import com.joelbermudez.pocketgb.testing.tempDir
 import com.joelbermudez.pocketgb.testing.waitUntil
+import org.junit.Assert.assertThrows
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -133,7 +138,7 @@ class ExactContinuationTest {
         assertEquals("la partida más nueva queda intacta", before, savesOnDisk())
         assertTrue("sin hilo de guardado ni sesión colgada", noSaveThreadAlive())
         assertFalse("el AUTO obsoleto se retira…", states(fingerprint).stateFile(StateSlot.AUTO).exists())
-        assertArrayEquals("…apartado, no borrado", auto, states(fingerprint).obsoleteAutoFile.readBytes())
+        assertArrayEquals("…apartado, no borrado", auto, states(fingerprint).obsoleteAutoFiles().single().readBytes())
 
         // La huella quedó libre: «Jugar desde el inicio» abre con la partida más nueva.
         val fresh = openFresh()
@@ -267,6 +272,8 @@ class ExactContinuationTest {
             vm.refreshContinuations(setOf(fingerprint))
             vm.open(entry, LaunchMode.RESUME)
             assertTrue(waitUntil(10_000) { vm.dialog.value is GameDialog.ResumeFailed })
+            // A9-H5: cuando se ve el aviso, la apertura ya terminó; «Jugar desde el inicio» no se pierde.
+            assertFalse(vm.opening.value)
             assertEquals(ResumeFailure.NOT_CURRENT, (vm.dialog.value as GameDialog.ResumeFailed).reason)
             assertTrue("deja de ofrecerse «Continuar»", waitUntil(5_000) { fingerprint !in vm.resumable.value })
             vm.playFromStartAfterResumeFailure()
@@ -277,6 +284,136 @@ class ExactContinuationTest {
             vm.exit()
             assertTrue(waitUntil(10_000) { vm.game.value == null })
             assertTrue("al salir hay AUTO nuevo y vuelve «Continuar»", waitUntil(5_000) { fingerprint in vm.resumable.value })
+        } finally {
+            vm.game.value?.close()
+        }
+    }
+
+    // ---- Respuesta a la auditoría A9 ----
+
+    /** A9-H2: con un `.sav` de tamaño incorrecto (J10) no hay partida con qué comparar: ni se compara ni se aparta. */
+    @Test
+    fun aWrongSizeSaveRejectsContinueWithAnHonestReasonAndKeepsTheState() {
+        val first = openFresh().game
+        val fingerprint = first.fingerprint
+        playAndExit(first)
+        val auto = states(fingerprint).load(StateSlot.AUTO)
+        val wrong = ByteArray(100) { 7 }
+        saves(fingerprint).saveFile.writeBytes(wrong)
+
+        val result = open(LaunchMode.RESUME)
+        assertEquals(OpenResult.Failed(OpenError.ResumeFailed(ResumeFailure.SAVE_NOT_LOADED, fingerprint)), result)
+        assertArrayEquals("el AUTO sigue en su ranura", auto, states(fingerprint).load(StateSlot.AUTO))
+        assertTrue("no se aparta nada", states(fingerprint).obsoleteAutoFiles().isEmpty())
+        assertArrayEquals("el .sav ajeno no se toca", wrong, saves(fingerprint).saveFile.readBytes())
+        assertTrue(noSaveThreadAlive())
+    }
+
+    /** A9-H2: una sesión que no guarda (J10) aparta, una sola vez, el AUTO que había antes en vez de pisarlo. */
+    @Test
+    fun aSessionThatCannotSaveNeverOverwritesThePreviousAutomaticState() {
+        val first = openFresh().game
+        val fingerprint = first.fingerprint
+        playAndExit(first)
+        val previous = states(fingerprint).load(StateSlot.AUTO)
+        val wrong = ByteArray(100) { 7 }
+        saves(fingerprint).saveFile.writeBytes(wrong)
+
+        val unsaved = openFresh().game
+        assertFalse("J10: esta sesión no guarda", unsaved.persists)
+        unsaved.start()
+        Thread.sleep(200)
+        unsaved.pause()
+        assertTrue(unsaved.saveAutoStateIfParked()) // como ON_STOP
+        assertEquals(ExitResult.Clean, unsaved.exit()) // y al salir, otra vez
+        val kept = states(fingerprint).obsoleteAutoFiles()
+        assertEquals("solo el AUTO anterior a la sesión se aparta", 1, kept.size)
+        assertArrayEquals("con su contenido intacto", previous, kept.single().readBytes())
+        assertTrue(states(fingerprint).stateFile(StateSlot.AUTO).exists())
+        assertArrayEquals(wrong, saves(fingerprint).saveFile.readBytes())
+    }
+
+    /** A9-H3: mientras el AUTO es el «deshacer» de «Guardar actual y cargar», `ON_STOP` no lo pisa; la salida sí. */
+    @Test
+    fun theUndoOfALoadIsNotOverwrittenInTheBackgroundButExitStillWritesTheAutomaticState() {
+        val game = openFresh().game
+        val fingerprint = game.fingerprint
+        game.start()
+        assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+        game.pause()
+        game.saveState(StateSlot.MANUAL1)
+        game.resume()
+        assertTrue(waitUntil { game.session.sramDirtySequence() > 10 })
+        game.pause()
+        assertTrue("sin carga, el AUTO de segundo plano se escribe", game.saveAutoStateIfParked())
+        assertFalse(game.autoHoldsLoadUndo)
+
+        game.loadState(StateSlot.MANUAL1) // «Guardar actual y cargar»: el AUTO pasa a ser el deshacer
+        assertTrue(game.autoHoldsLoadUndo)
+        val undo = states(fingerprint).load(StateSlot.AUTO)
+        assertFalse(game.saveAutoStateIfParked())
+        assertArrayEquals("ON_STOP no pisa el deshacer", undo, states(fingerprint).load(StateSlot.AUTO))
+
+        assertEquals(ExitResult.Clean, game.exit())
+        assertFalse("al salir se guarda el AUTO como antes de A9", undo.contentEquals(states(fingerprint).load(StateSlot.AUTO)))
+    }
+
+    /** Sesión cuyo segundo `loadStateRaw` (el rollback) falla: el núcleo deja de ser de fiar. */
+    private class RollbackFailsSession : EmulatorSession() {
+        @Volatile var loads = 0
+        override fun loadStateRaw(data: ByteArray) {
+            if (++loads == 2) throw CoreError.StateCorrupt()
+            super.loadStateRaw(data)
+        }
+    }
+
+    /** A9-H4: tras un rollback fallido (persistencia desactivada) ni salir ni el rescate escriben un AUTO del núcleo dudoso. */
+    @Test
+    fun anUntrustedCoreNeverWritesTheAutomaticStateOnExitOrRescue() {
+        for (rescue in listOf(false, true)) {
+            val ops = FailableOps()
+            openGame(SyntheticRom.sramCounter(), ops = ops, session = RollbackFailsSession(), autoTick = false).use { g ->
+                val game = g.game
+                game.start()
+                assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+                game.pause()
+                game.saveState(StateSlot.MANUAL1)
+                game.resume()
+                assertTrue(waitUntil { game.session.sramDirtySequence() > 10 })
+                game.pause()
+                ops.failSav = true
+                assertThrows(StateError.RollbackFailed::class.java) { game.loadState(StateSlot.MANUAL1) }
+                ops.failSav = false // la reparación de la partida anterior termina; el núcleo sigue sin ser de fiar
+                assertFalse(game.persists)
+                val undo = g.states.load(StateSlot.AUTO) // el deshacer se escribió antes, con el núcleo aún de fiar
+                assertFalse(game.saveAutoStateIfParked())
+                if (rescue) {
+                    assertEquals(RescueOutcome.Closed, game.rescueExit(attempts = 1, retryDelayMs = 0))
+                } else {
+                    assertEquals(ExitResult.Clean, game.exit())
+                }
+                assertArrayEquals("rescate=$rescue: el AUTO no se reescribe", undo, g.states.load(StateSlot.AUTO))
+            }
+        }
+    }
+
+    /** A9-H6: `onStopped` del ViewModel escribe el AUTO con la partida aparcada y recalcula «Continuar». */
+    @Test
+    fun theViewModelWritesTheBackgroundAutomaticStateAndOffersContinue() {
+        val vm = GameplayViewModel(launcher = launcher)
+        try {
+            vm.refreshContinuations(emptySet())
+            vm.open(entry)
+            assertTrue(waitUntil(10_000) { vm.game.value != null })
+            val game = vm.game.value!!
+            assertTrue(waitUntil { game.session.sramDirtySequence() > 3 })
+            assertFalse(game.fingerprint in vm.resumable.value)
+            vm.onBackground() // ON_PAUSE/ON_STOP: pausa y vaciado en el hilo principal
+            vm.onStopped()
+            assertTrue("AUTO escrito", waitUntil(10_000) { states(game.fingerprint).stateFile(StateSlot.AUTO).exists() })
+            assertTrue("«Continuar» disponible", waitUntil(10_000) { game.fingerprint in vm.resumable.value })
+            val auto = states(game.fingerprint).stateFile(StateSlot.AUTO)
+            assertTrue(auto.lastModified() >= saves(game.fingerprint).saveFile.lastModified())
         } finally {
             vm.game.value?.close()
         }

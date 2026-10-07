@@ -77,6 +77,7 @@ fun resumeFailureText(reason: ResumeFailure): String = stringResource(
         ResumeFailure.NOT_CURRENT -> R.string.a9_resume_failed_not_current
         ResumeFailure.INCOMPATIBLE -> R.string.a9_resume_failed_incompatible
         ResumeFailure.CORRUPT -> R.string.a9_resume_failed_corrupt
+        ResumeFailure.SAVE_NOT_LOADED -> R.string.a9_resume_failed_save_not_loaded
     },
 )
 

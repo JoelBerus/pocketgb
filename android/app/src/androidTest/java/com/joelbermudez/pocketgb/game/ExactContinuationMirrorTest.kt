@@ -96,7 +96,7 @@ class ExactContinuationMirrorTest {
         Thread.sleep(500) // una escritura del espejo encolada por error ya habría empezado
         assertArrayEquals("el espejo no se pisa con la partida vieja del estado", newer, fixtures.read("Contador.sav"))
         assertFalse(states.stateFile(StateSlot.AUTO).exists())
-        assertTrue("el estado se aparta, no se borra", states.obsoleteAutoFile.exists())
+        assertEquals("el estado se aparta, no se borra", 1, states.obsoleteAutoFiles().size)
 
         // «Jugar desde el inicio» abre la partida nueva.
         val fresh = (launcher.openBlocking(entry()) as OpenResult.Opened).also { opened += it.game }

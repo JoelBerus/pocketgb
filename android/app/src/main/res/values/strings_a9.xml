@@ -12,6 +12,7 @@
     <string name="a9_resume_failed_not_current">El estado automático ya no corresponde a tu partida actual: el juego guardó después.</string>
     <string name="a9_resume_failed_incompatible">El estado automático es de otro modelo de consola o de otro juego. Si cambiaste «Color en juegos de Game Boy» (o el «Color» de este juego), vuelve al valor anterior para retomarlo.</string>
     <string name="a9_resume_failed_corrupt">El estado automático está dañado o es de una versión que esta app no lee.</string>
+    <string name="a9_resume_failed_save_not_loaded">Tu partida no se pudo leer o tiene un tamaño que este juego no acepta, así que no se puede comprobar el estado automático. Se conserva tal cual.</string>
     <string name="a9_resume_failed_play">Jugar desde el inicio</string>
 
     <!-- Renombrar -->

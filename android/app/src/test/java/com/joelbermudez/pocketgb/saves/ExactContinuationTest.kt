@@ -133,7 +133,7 @@ class ExactContinuationTest {
         assertEquals("la partida queda intacta", before, savesOnDisk())
         assertFalse("el AUTO obsoleto se retira (iOS D81V2-H2)", states.stateFile(StateSlot.AUTO).exists())
         assertFalse(states.thumbnailFile(StateSlot.AUTO).exists())
-        assertArrayEquals("pero se aparta, no se borra", auto, states.obsoleteAutoFile.readBytes())
+        assertArrayEquals("pero se aparta, no se borra", auto, states.obsoleteAutoFiles().single().readBytes())
         assertNull("y ya no se ofrece «Continuar»", states.automaticEntry(saves.modificationDateMs))
     }
 
@@ -152,18 +152,55 @@ class ExactContinuationTest {
         assertEquals(0, core.clockSyncs)
         assertEquals(before, savesOnDisk())
         assertFalse(states.stateFile(StateSlot.AUTO).exists())
-        assertArrayEquals(stale, states.obsoleteAutoFile.readBytes())
+        assertArrayEquals(stale, states.obsoleteAutoFiles().single().readBytes())
     }
 
     @Test
-    fun aSecondObsoleteStateReplacesTheFirstSetAside() {
+    fun aSecondObsoleteStateNeverReplacesTheFirstSetAside() {
+        // A9-H2: cada AUTO apartado tiene nombre único; uno anterior nunca se pisa.
         writeSave(atMs = 1_000_000L)
-        writeAuto(ramOfState = ByteArray(8) { 0x22 }, atMs = 2_000_000L)
+        val first = writeAuto(ramOfState = ByteArray(8) { 0x22 }, atMs = 2_000_000L)
         resume(FakeCore())
         val second = writeAuto(ramOfState = ByteArray(8) { 0x33 }, atMs = 3_000_000L)
         assertEquals(ExactContinuation.Outcome.Rejected(ResumeFailure.NOT_CURRENT), resume(FakeCore()))
-        assertArrayEquals(second, states.obsoleteAutoFile.readBytes())
-        assertEquals("los estados normales no lo ven", emptySet<StateSlot>(), states.entries().keys)
+        val kept = states.obsoleteAutoFiles().map { it.readBytes().toList() }.toSet()
+        assertEquals(setOf(first.toList(), second.toList()), kept)
+        assertEquals("los estados normales no los ven", emptySet<StateSlot>(), states.entries().keys)
+    }
+
+    @Test
+    fun settingAsideTwiceInTheSameMillisecondStillKeepsBoth() {
+        writeAuto(ramOfState = ByteArray(8) { 0x22 })
+        states.setAsideAuto(nowMs = 42, rand = "abcdef")
+        writeAuto(ramOfState = ByteArray(8) { 0x33 })
+        states.setAsideAuto(nowMs = 42, rand = "abcdef") // misma fecha y mismo sufijo: se elige otro nombre
+        assertEquals(2, states.obsoleteAutoFiles().size)
+        assertTrue(states.obsoleteAutoFiles().all { it.name.startsWith("auto.obsolete-42-") && it.name.endsWith(".state") })
+    }
+
+    @Test
+    fun withTheSaveNotLoadedTheStateIsNeitherComparedNorSetAside() {
+        // A9-H2: un `.sav` de tamaño incorrecto o ilegible (J10) deja el núcleo sin partida: comparar daría un
+        // «ya no corresponde» falso y apartaría un AUTO que puede llevar la única copia del progreso.
+        writeSave()
+        val auto = writeAuto()
+        val core = FakeCore(ram = ByteArray(8))
+        assertEquals(
+            ExactContinuation.Outcome.Rejected(ResumeFailure.SAVE_NOT_LOADED),
+            ExactContinuation.resume(core, states, saves.modificationDateMs, saveLoaded = false),
+        )
+        assertEquals("ni se carga ni se compara", 0, core.restored.size)
+        assertArrayEquals("el AUTO sigue en su ranura", auto, states.load(StateSlot.AUTO))
+        assertTrue(states.obsoleteAutoFiles().isEmpty())
+        assertFalse(ExactContinuation.discardsTheState(ResumeFailure.SAVE_NOT_LOADED))
+    }
+
+    @Test
+    fun withTheSaveNotLoadedAndNoStateTheReasonIsStillMissing() {
+        assertEquals(
+            ExactContinuation.Outcome.Rejected(ResumeFailure.MISSING),
+            ExactContinuation.resume(FakeCore(), states, saveDateMs = null, saveLoaded = false),
+        )
     }
 
     @Test
