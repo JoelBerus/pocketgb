@@ -42,5 +42,5 @@ Detalles:
 - Hasta 80 caracteres. Si dejas el campo vacío, vuelve el nombre del cartucho.
 - El nombre nuevo se ve en la biblioteca, en «Continuar jugando», en Favoritos, en el detalle y en el menú de pausa.
 - El buscador encuentra el juego por su nombre nuevo, por el del cartucho y por el nombre del archivo.
-- **No cambia ningún archivo**: el ROM, su `.sav` y sus estados siguen igual. Si mueves el ROM a otra carpeta, el nombre se conserva en cuanto lo abres.
+- **No cambia ningún archivo**: el ROM, su `.sav` y sus estados siguen igual. Si mueves el ROM a otra carpeta, el nombre se conserva (en Android lo reconoce al volver a la app; si no puede, en cuanto lo abres: ver [Organizar tus juegos en carpetas](carpetas-android.md)).
 - El nombre se guarda en este dispositivo. Si usas otro teléfono, renómbralo también allí.
