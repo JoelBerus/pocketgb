@@ -134,7 +134,8 @@ struct GameCenterView: View {
     }
 
     private var canOrganize: Bool {
-        confirmation == .confirmed && prefs.confirmedFingerprint(of: entry) != nil
+        // Basta con la huella confirmada (también si el cálculo en segundo plano llega después).
+        prefs.confirmedFingerprint(of: entry) != nil
     }
 
     // MARK: Secciones
@@ -180,7 +181,7 @@ struct GameCenterView: View {
         let category = prefs.categoryPath(entry)
         let tags = prefs.tags(entry)
         Section {
-            if confirmation != .confirmed {
+            if !canOrganize {
                 confirmationRow
             }
             VStack(alignment: .leading, spacing: PocketSpacing.xs) {
@@ -251,6 +252,7 @@ struct GameCenterView: View {
             Label("Cambiar", systemImage: "folder")
                 .lineLimit(oneLine ? 1 : nil)
                 .fixedSize(horizontal: oneLine, vertical: !oneLine)
+                .labelStyle(.titleAndIcon)
         }
         .font(.subheadline)
         .pocketGlassButton()
@@ -261,6 +263,7 @@ struct GameCenterView: View {
                 Label("Volver a su carpeta", systemImage: "arrow.uturn.backward")
                     .lineLimit(oneLine ? 1 : nil)
                     .fixedSize(horizontal: oneLine, vertical: !oneLine)
+                    .labelStyle(.titleAndIcon)
             }
             .font(.subheadline)
             .pocketGlassButton()

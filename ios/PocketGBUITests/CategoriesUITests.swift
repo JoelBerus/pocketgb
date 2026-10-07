@@ -28,6 +28,14 @@ final class CategoriesUITests: XCTestCase {
         }
     }
 
+    /// En un `Form` las filas fuera de pantalla no existen todavía (iPhone SE): se desplaza hasta verla.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !(element.exists && element.isHittable) {
+            drag(app, from: 0.7, to: 0.4)
+        }
+    }
+
     @MainActor
     private func back(_ app: XCUIApplication) {
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -137,6 +145,8 @@ final class CategoriesUITests: XCTestCase {
         // Mostrar en otra categoría (escrita con otras mayúsculas: se usa la existente).
         app.buttons["game-center-change-category"].tap()
         let categoryField = app.textFields["category-new-field"]
+        _ = categoryField.waitForExistence(timeout: 3)
+        reveal(categoryField, in: app)
         XCTAssertTrue(categoryField.waitForExistence(timeout: 5))
         categoryField.tap()
         categoryField.typeText("para JUGAR")
@@ -160,6 +170,7 @@ final class CategoriesUITests: XCTestCase {
         app.buttons["game-center-change-category"].tap()
         let option = app.buttons["category-option-Game Boy Advance"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
+        reveal(option, in: app)
         option.tap()
         XCTAssertTrue(category.waitForExistence(timeout: 5))
         XCTAssertTrue(category.label.contains("Game Boy Advance"), category.label)
@@ -232,11 +243,14 @@ final class CategoriesUITests: XCTestCase {
         let inner = shown.switches.firstMatch
         (inner.exists ? inner : shown).tap()
         XCTAssertEqual(shown.value as? String, "0", "Acid sigue marcada «En el inicio»")
+        reveal(app.buttons["home-settings-pin-Pruebas"], in: app)
         XCTAssertTrue(app.buttons["home-settings-pin-Pruebas"].exists)
         app.buttons["home-settings-pin-Pruebas"].tap()
         XCTAssertEqual(app.buttons["home-settings-pin-Pruebas"].label, "Soltar Pruebas")
 
-        tabs.buttons["Biblioteca"].tap()
+        // Tras desplazar, la barra de pestañas puede estar encogida en la burbuja: se despliega antes.
+        if !tabs.buttons["Biblioteca"].exists { tabs.buttons.element(boundBy: 0).tap(); Thread.sleep(forTimeInterval: 1) }
+        if tabs.buttons["Biblioteca"].exists { tabs.buttons["Biblioteca"].tap() }
         let pruebas = app.buttons["home-see-all-Pruebas"]
         XCTAssertTrue(pruebas.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["home-see-all-Acid"].exists, "Acid sigue en el inicio")

@@ -629,7 +629,9 @@ extension DebugScreenRouter {
         } else if DebugArguments.demoLibrary != nil {
             confirmDemoFingerprints(state)
         }
-        if DebugArguments.value("-demoHome") == "off" {
+        // N4: el menú contextual de la captura `game-context-menu` es el de la tarjeta de «Todos los
+        // juegos», que con el inicio queda debajo de las estanterías.
+        if DebugArguments.value("-demoHome") == "off" || screen == .gameContextMenu {
             let keys = LibraryHome.keys(state.library.entries, prefs: state.libraryPrefs.data)
             var prefs = state.libraryPrefs.data
             prefs.home.showFavorites = false
