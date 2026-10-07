@@ -15,13 +15,13 @@ TEST_SRCS := $(wildcard tests/*.c)
 ROMS    := tests/roms
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 
-.PHONY: all lib test asan fuzz fuzz-link oracle check-header check-globals clean
+.PHONY: all lib test asan fuzz fuzz-link fuzz-progress fuzz-progress-smoke oracle check-header check-globals clean
 
 all: lib
 
 lib: $(BUILD)/libpocketgb.a
 
-$(BUILD)/%.o: src/%.c include/pocketgb.h $(wildcard src/*.h src/*.inc)
+$(BUILD)/%.o: src/%.c $(wildcard include/*.h) $(wildcard src/*.h src/*.inc)
 	@mkdir -p $(BUILD)
 	$(CC) $(CSTD) $(CFLAGS) $(INC) -c $< -o $@
 
@@ -30,7 +30,7 @@ $(BUILD)/libpocketgb.a: $(OBJS)
 	@if [ -z "$(OBJS)" ]; then echo "core/src vacío: aún no hay implementación (ver docs/hitos/M1-cpu.md)"; exit 1; fi
 	ar rcs $@ $^
 
-$(BUILD)/gbtest: $(SRCS) $(TEST_SRCS) include/pocketgb.h $(wildcard src/*.h src/*.inc tests/*.h)
+$(BUILD)/gbtest: $(SRCS) $(TEST_SRCS) $(wildcard include/*.h) $(wildcard src/*.h src/*.inc tests/*.h)
 	@mkdir -p $(BUILD)
 	$(CC) $(CSTD) $(CFLAGS) $(EXTRA) -DGB_TEST_HOOKS $(INC) $(SRCS) $(TEST_SRCS) -o $@ -lm
 
@@ -44,7 +44,7 @@ asan: check-roms
 	$(MAKE) BUILD=$(BUILD)/asan EXTRA="$(SAN)" CFLAGS="-O1 -g" test
 
 fuzz: $(BUILD)/gbtest
-	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link fuzz/corpus/fuzz_progress
 	@printf 'int LLVMFuzzerTestOneInput(const unsigned char*d,unsigned long n){(void)d;(void)n;return 0;}' > $(BUILD)/probe.c
 	@$(CC) -fsanitize=fuzzer $(BUILD)/probe.c -o $(BUILD)/probe 2>/dev/null || { \
 	  echo "Este clang no trae libFuzzer (el de Apple no lo incluye)."; \
@@ -55,13 +55,14 @@ fuzz: $(BUILD)/gbtest
 	  $(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) $$f $(SRCS) -o $(BUILD)/$$n || exit 1; \
 	  opts="-max_len=1048576"; \
 	  [ $$n = fuzz_link ] && opts="-max_len=16384 -len_control=0"; \
+	  [ $$n = fuzz_progress ] && opts="-max_len=33000 -len_control=0"; \
 	  $(BUILD)/$$n -max_total_time=$(FUZZ_SECONDS) $$opts fuzz/corpus/$$n || exit 1; \
 	done
 
 # Campaña dedicada de M9: evita gastar FUZZ_SECONDS también en los otros dos
 # fuzzers cuando solo se valida el cable virtual.
 fuzz-link: $(BUILD)/gbtest
-	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link fuzz/corpus/fuzz_progress
 	@printf 'int LLVMFuzzerTestOneInput(const unsigned char*d,unsigned long n){(void)d;(void)n;return 0;}' > $(BUILD)/probe.c
 	@$(CC) -fsanitize=fuzzer $(BUILD)/probe.c -o $(BUILD)/probe 2>/dev/null || { \
 	  echo "Este clang no trae libFuzzer (el de Apple no lo incluye)."; \
@@ -69,6 +70,26 @@ fuzz-link: $(BUILD)/gbtest
 	$(BUILD)/gbtest --fuzz-seeds fuzz/corpus
 	$(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) fuzz/fuzz_link.c $(SRCS) -o $(BUILD)/fuzz_link
 	$(BUILD)/fuzz_link -max_total_time=$(FUZZ_SECONDS) -max_len=16384 -len_control=0 fuzz/corpus/fuzz_link
+
+# Campaña dedicada de N6-C: solo el lector de progreso Pokémon (pgb_progress_read).
+fuzz-progress: $(BUILD)/gbtest
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link fuzz/corpus/fuzz_progress
+	@printf 'int LLVMFuzzerTestOneInput(const unsigned char*d,unsigned long n){(void)d;(void)n;return 0;}' > $(BUILD)/probe.c
+	@$(CC) -fsanitize=fuzzer $(BUILD)/probe.c -o $(BUILD)/probe 2>/dev/null || { \
+	  echo "Este clang no trae libFuzzer (el de Apple no lo incluye)."; \
+	  echo "macOS: brew install llvm && make fuzz-progress CC=\$$(brew --prefix llvm)/bin/clang"; \
+	  echo "Sin libFuzzer: make fuzz-progress-smoke (mutación aleatoria con ASan/UBSan, sin cobertura guiada)."; exit 1; }
+	$(BUILD)/gbtest --fuzz-seeds fuzz/corpus
+	$(CC) -std=c11 -g -O2 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all $(INC) fuzz/fuzz_progress.c $(SRCS) -o $(BUILD)/fuzz_progress
+	$(BUILD)/fuzz_progress -max_total_time=$(FUZZ_SECONDS) -max_len=33000 -len_control=0 fuzz/corpus/fuzz_progress
+
+# Humo sin libFuzzer: el mismo fuzz_progress.c con un conductor propio (FUZZ_STANDALONE) que parte de
+# las semillas, muta al azar durante FUZZ_SECONDS y corre con ASan + UBSan. No guía por cobertura.
+fuzz-progress-smoke: $(BUILD)/gbtest
+	@mkdir -p $(BUILD) fuzz/corpus/fuzz_load_rom fuzz/corpus/fuzz_state_load fuzz/corpus/fuzz_link fuzz/corpus/fuzz_progress
+	$(BUILD)/gbtest --fuzz-seeds fuzz/corpus
+	$(CC) -std=c11 -g -O1 $(SAN) -DFUZZ_STANDALONE $(INC) fuzz/fuzz_progress.c $(SRCS) -o $(BUILD)/fuzz_progress_smoke
+	$(BUILD)/fuzz_progress_smoke $(FUZZ_SECONDS) fuzz/corpus/fuzz_progress
 
 # Oráculo opcional (dev-only, nunca se enlaza en la app). Requiere git, make y rgbds.
 SAMEBOY_TAG ?= v1.0.3
@@ -81,6 +102,9 @@ check-header:
 	@mkdir -p $(BUILD)
 	echo '#include "pocketgb.h"' | $(CC) $(CSTD) -Iinclude -x c -c - -o $(BUILD)/check_header.o
 	@echo "pocketgb.h compila aislado: OK"
+	echo '#include "pocketgb_progress.h"' | $(CC) $(CSTD) -Iinclude -x c -c - -o $(BUILD)/check_header_progress.o
+	echo '#include "pocketgb_progress.h"' | $(CC) -std=c++17 -Wall -Wextra -Werror -Iinclude -x c++ -c - -o $(BUILD)/check_header_progress_cpp.o
+	@echo "pocketgb_progress.h compila aislado (C11 y C++17): OK"
 
 check-globals: lib
 	@out=$$(nm $(BUILD)/libpocketgb.a | grep -E ' [bBdD] ' || true); \
