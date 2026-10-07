@@ -29,9 +29,13 @@ struct LibraryRootView: View {
                 .modifier(DebugDynamicType())   // la sheet no hereda el tipo accesible forzado (captura AX5)
                 #endif
         }
+        // N4: el centro de ajustes del juego (sustituye a la hoja de ajustes por juego).
         .sheet(item: Binding(get: { state.gameSettingsEntry }, set: { state.gameSettingsEntry = $0 })) { entry in
-            GameSettingsView(entry: entry)
+            GameCenterView(entry: entry, initialPath: GameCenterView.initialPath(for: entry))
                 .environment(state)
+                #if DEBUG
+                .modifier(DebugDynamicType())   // la sheet no hereda el tipo accesible forzado (captura AX5)
+                #endif
         }
         .sheet(item: Binding(get: { state.renamingEntry }, set: { state.renamingEntry = $0 })) { entry in
             RenameGameView(entry: entry)

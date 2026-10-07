@@ -64,11 +64,15 @@ final class ScreenshotTests: XCTestCase {
             if let i = args.firstIndex(of: "-uiDrag"), i + 1 < args.count {
                 let v = args[i + 1].split(separator: ",").compactMap { Double($0) }
                 XCTAssertEqual(v.count, 4, "-uiDrag necesita x0,y0,x1,y1 en \(name)")
+                // N4: `-uiDragTimes <n>` repite el arrastre (el inicio con estanterías es largo).
+                let times = args.firstIndex(of: "-uiDragTimes").flatMap { $0 + 1 < args.count ? Int(args[$0 + 1]) : nil } ?? 1
                 if v.count == 4 {
-                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: v[0], dy: v[1]))
-                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: v[2], dy: v[3]))
-                    from.press(forDuration: 0.05, thenDragTo: to)
-                    Thread.sleep(forTimeInterval: 1)
+                    for _ in 0..<max(times, 1) {
+                        let from = app.coordinate(withNormalizedOffset: CGVector(dx: v[0], dy: v[1]))
+                        let to = app.coordinate(withNormalizedOffset: CGVector(dx: v[2], dy: v[3]))
+                        from.press(forDuration: 0.05, thenDragTo: to)
+                        Thread.sleep(forTimeInterval: 1)
+                    }
                 }
             }
             // `-uiTap <id>` (N3): toca un botón (abre un panel o la búsqueda) antes de la captura.

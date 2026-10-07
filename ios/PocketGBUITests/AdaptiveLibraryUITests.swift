@@ -10,7 +10,10 @@ final class AdaptiveLibraryUITests: XCTestCase {
     @MainActor
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiStyle", "light", "-screen", "library-landscape", "-demoLibrary", "adaptive"] + extra
+        // N4: sin Favoritos ni estanterías (`-demoHome off`): estas pruebas miden el carril, los paneles y
+        // «Todos los juegos»; el inicio completo se prueba en `CategoriesUITests` (como N4A-11 en Android).
+        app.launchArguments = ["-uiStyle", "light", "-screen", "library-landscape", "-demoLibrary", "adaptive",
+                               "-demoHome", "off"] + extra
         app.launch()
         return app
     }
@@ -74,17 +77,17 @@ final class AdaptiveLibraryUITests: XCTestCase {
         XCTAssertFalse(app.buttons["game-card-dmg-acid2.gb"].exists)
         XCTAssertEqual(app.buttons["library-bar-filters"].value as? String, "GBA")
 
-        // Filtros › Todos y Categorías › Blargg: solo esa carpeta de primer nivel.
+        // Filtros › Todos y Categorías › Blargg. N4 (N4A-1): la categoría abre su pantalla (con sus
+        // juegos) en lugar de filtrar la biblioteca en el sitio.
         filters.tap()
         app.buttons["library-filter-all"].tap()
         app.buttons["library-bar-categories"].tap()
         let blargg = app.buttons["library-category-folder:Blargg"]
         XCTAssertTrue(blargg.waitForExistence(timeout: 5))
         blargg.tap()
-        XCTAssertTrue(app.buttons["game-card-Blargg/cpu_instrs.gb"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["game-card-Pruebas/arm.gba"].exists)
-        let title = app.descendants(matching: .any)["library-section-title"]
-        XCTAssertTrue(title.label.contains("Blargg"), title.label)
+        XCTAssertTrue(app.buttons["category-card-Blargg/cpu_instrs.gb"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["category-card-Pruebas/arm.gba"].exists)
+        XCTAssertTrue(app.navigationBars["Blargg"].exists)
     }
 
     /// Auditoría N3, H1: en horizontal, cada tarjeta del carril mide lo mismo que una columna.

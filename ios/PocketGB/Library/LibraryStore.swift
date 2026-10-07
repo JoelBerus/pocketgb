@@ -292,7 +292,10 @@ final class LibraryStore {
         for (job, fp) in results {
             cache.items[job.path] = job.cacheItem(fp)
             resolved[job.path] = fp
-            if let i = index[job.path] { updated[i].fingerprint = fp }
+            if let i = index[job.path] {
+                updated[i].fingerprint = fp
+                updated[i].fingerprintVerified = true
+            }
         }
         LibraryIdentity.markDuplicates(&updated)
         entries = updated
@@ -312,15 +315,41 @@ final class LibraryStore {
         let entry = entries[i]
         cache.items[path] = .init(size: entry.sizeBytes, modified: entry.modificationDate,
                                   changed: entry.attributeModificationDate, fingerprint: fingerprint)
-        guard entry.fingerprint != fingerprint else {
+        guard entry.fingerprint != fingerprint || !entry.fingerprintVerified else {
             persistCache()
             return
         }
         var updated = entries
         updated[i].fingerprint = fingerprint
+        updated[i].fingerprintVerified = true
         LibraryIdentity.markDuplicates(&updated)
         entries = updated
         persistCache()
+    }
+
+    /// Resultado de confirmar la huella de un juego antes de escribir sus etiquetas o su categoría.
+    enum FingerprintConfirmation: Equatable, Sendable {
+        case confirmed(String)
+        /// No se puede leer ahora sin descargarlo (iCloud) o el archivo no es un ROM que acepte el núcleo.
+        case unavailable
+    }
+
+    /// N4: confirma la huella de un juego leyéndolo (fuera del hilo principal, lectura coordinada y
+    /// solo si está en el iPhone: nunca fuerza una descarga). La huella pasa a la caché y a la
+    /// biblioteca y, como las del escaneo, se lleva los metadatos provisionales de la ruta.
+    func confirmFingerprint(for path: String) async -> FingerprintConfirmation {
+        guard let entry = entries.first(where: { $0.id == path }) else { return .unavailable }
+        if entry.fingerprintVerified, let fp = entry.fingerprint { return .confirmed(fp) }
+        guard entry.isPlayable else { return .unavailable }
+        let url = entry.url
+        let console = entry.console
+        let computed = await Task.detached(priority: .userInitiated) {
+            try? RomFingerprint.compute(url: url, console: console)
+        }.value
+        guard let fp = computed else { return .unavailable }
+        learnFingerprint(fp, forPath: path)
+        onFingerprintsResolved?([path: fp])
+        return .confirmed(fp)
     }
 
     private func persistCache() {

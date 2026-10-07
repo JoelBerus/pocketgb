@@ -55,6 +55,8 @@ enum PauseRoute: Hashable {
 /// Pantallas empujadas en la pila de Ajustes.
 enum SettingsRoute: Hashable {
     case appearance, about, licenses, saves, library, controls, display, emulation, audio, storage
+    /// N4 · Ajustes › Biblioteca › Inicio.
+    case libraryHome
     case backups(fingerprint: String)
 }
 
@@ -92,8 +94,9 @@ final class AppState {
     var libraryPath: [LibraryRoute] = []
     var favoritesPath: [LibraryRoute] = []
     var libraryFilter: LibraryFilter = .all
-    /// Categoría (carpeta de primer nivel) elegida en la biblioteca (N3b); `.all` no filtra.
-    var libraryCategory: LibraryCategory = .all
+    /// N4 · etiqueta elegida en Filtros (nil = todas). Las categorías ya no filtran en el sitio: abren
+    /// su pantalla (`openCategory`, N4A-1).
+    var libraryTag: String?
     /// Grupo flotante de la biblioteca en horizontal (N3b).
     let libraryTools = LibraryToolsState()
     var librarySearch = ""
@@ -265,6 +268,25 @@ final class AppState {
         }
     }
 
+    /// N4 · abre la pantalla de una categoría en la pestaña Biblioteca (`[]` = «Sin categoría»).
+    func openCategory(_ path: [String]) {
+        selectedTab = .library
+        libraryPath.append(.category(path: path))
+    }
+
+    /// N4 · migas: vuelve a un nivel ya abierto en la pila o, si no está, lo abre. `nil` = la biblioteca.
+    func showCrumb(_ path: [String]?) {
+        guard let path else {
+            libraryPath = []
+            return
+        }
+        if let index = libraryPath.lastIndex(of: .category(path: path)) {
+            libraryPath = Array(libraryPath.prefix(index + 1))
+        } else {
+            libraryPath.append(.category(path: path))
+        }
+    }
+
     /// Oculta el juego (solo preferencias: ROM, partida y copias intactos) y cierra su detalle.
     func hide(_ entry: RomEntry) {
         let entry = current(entry)
@@ -272,8 +294,8 @@ final class AppState {
         hideCandidate = nil
         // Ocultar va por huella: sus duplicados también se ocultan.
         let ids = Set([entry.id] + entry.duplicatePaths)
-        libraryPath.removeAll { ids.contains($0.entryID) }
-        favoritesPath.removeAll { ids.contains($0.entryID) }
+        libraryPath.removeAll { $0.entryID.map(ids.contains) ?? false }
+        favoritesPath.removeAll { $0.entryID.map(ids.contains) ?? false }
     }
 
     func explainProblem(_ entry: RomEntry) {

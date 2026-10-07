@@ -77,7 +77,8 @@ final class ShellLibraryTests: XCTestCase {
         // N3: en horizontal no hay filtro segmentado; el catálogo puede acabar en horizontal.
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard"]
+        // N4: sin estanterías (`-demoHome off`): la tarjeta de «Todos los juegos» queda arriba.
+        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard", "-demoHome", "off"]
         app.launch()
 
         let card = app.buttons["game-card-Pruebas/rtc3test.gb"]

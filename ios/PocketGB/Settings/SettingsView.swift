@@ -52,6 +52,7 @@ struct SettingsView: View {
                 case .licenses: LicensesView()
                 case .saves: SavesSettingsView()
                 case .library: LibrarySettingsView()
+                case .libraryHome: HomeSettingsView()
                 case .controls: ControlsSettingsView()
                 case .display: DisplaySettingsView()
                 case .emulation: EmulationSettingsView()

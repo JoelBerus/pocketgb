@@ -122,6 +122,30 @@ enum DebugScreen: String, CaseIterable {
     case libraryLandscapeBarView = "library-landscape-bar-view"
     case libraryLandscapePanelAX5 = "library-landscape-panel-ax5"
     case libraryLandscapePanelReduceTransparency = "library-landscape-panel-reduce-transparency"
+    // N4 (iOS): inicio con estanterías, categorías anidadas, etiquetas y centro de ajustes (`-demoLibrary n4`)
+    case n4Home = "n4-home"
+    case n4HomeScrolled = "n4-home-scrolled"
+    case n4HomeLandscape = "n4-home-landscape"
+    case n4HomeLandscapeScrolled = "n4-home-landscape-scrolled"
+    case n4HomeAX5 = "n4-home-ax5"
+    case n4HomeCustomized = "n4-home-customized"
+    case n4Category = "n4-category"
+    case n4CategoryNested = "n4-category-nested"
+    case n4CategoryNestedList = "n4-category-nested-list"
+    case n4CategoryVirtual = "n4-category-virtual"
+    case n4CategoryAX5 = "n4-category-ax5"
+    case n4GameCenter = "n4-game-center"
+    case n4GameCenterGBA = "n4-game-center-gba"
+    case n4GameCenterAX5 = "n4-game-center-ax5"
+    case n4TagEditor = "n4-tag-editor"
+    case n4MoveCategory = "n4-move-category"
+    case n4MoveCategoryAX5 = "n4-move-category-ax5"
+    case n4DetailsMoved = "n4-details-moved"
+    case n4FilterTag = "n4-filter-tag"
+    case n4LandscapeFilters = "n4-landscape-filters"
+    case n4LandscapeCategories = "n4-landscape-categories"
+    case n4SettingsHome = "n4-settings-home"
+    case n4SettingsHomeAX5 = "n4-settings-home-ax5"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -136,7 +160,10 @@ enum DebugScreenRouter {
     static func apply(to state: AppState) {
         applyDemoLibrary(to: state.library)
         applyDemoPreferences(to: state)
-        guard let raw = DebugArguments.screen else { return }
+        guard let raw = DebugArguments.screen else {
+            applyN4(nil, to: state)
+            return
+        }
         guard let screen = DebugScreen(rawValue: raw) else {
             state.debugUnknownScreen = raw
             return
@@ -268,6 +295,7 @@ enum DebugScreenRouter {
             state.selectedTab = .library
         }
         applyAdaptive(screen, to: state)
+        applyN4(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -524,7 +552,8 @@ extension DebugScreenRouter {
         state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
         switch screen {
         case .libraryLandscapeCategory:
-            state.libraryCategory = .folder("Blargg")
+            // N4 (N4A-1): una categoría ya no filtra en el sitio; se abre su pantalla.
+            state.libraryPath = [.category(path: ["Blargg"])]
         case .favoritesLandscape:
             state.selectedTab = .favorites
         case .gameDetailsGB, .gameDetailsTechnical, .gameDetailsAX5:
@@ -569,5 +598,149 @@ extension DebugScreenRouter {
             make("Game Boy Advance/memory.gba", "jsmolka MEMORY", color: false),
         ]
     }()
+}
+
+// MARK: - N4 (iOS): categorías, etiquetas, inicio y centro de ajustes
+
+extension DebugScreenRouter {
+    nonisolated private static let n4Moved = "Reloj/rtc3test.gb"
+    nonisolated private static let n4GBA = "Game Boy Advance/arm.gba"
+
+    /// `-demoLibrary n4`: árbol de carpetas de varios niveles con juegos libres de las ROMs de prueba
+    /// (nunca títulos comerciales), huellas confirmadas, etiquetas, tres favoritos, juegos jugados y una
+    /// categoría virtual (ND3):
+    /// ```
+    /// Juegos Game Boy/
+    ///   Acid/{dmg-acid2.gb, cgb-acid2.gbc}
+    ///   Pruebas/Blargg/{cpu_instrs.gb, instr_timing.gb}
+    ///   Pruebas/Blargg/Sonido/dmg_sound.gb
+    ///   Pruebas/Mooneye/{halt_ime1_timing.gb, boot_regs-cgb.gbc}
+    ///   Game Boy Advance/{arm.gba, thumb.gba}
+    ///   Reloj/rtc3test.gb        ← se ve en «Para jugar» (movido en la app)
+    ///   homebrew-con-un-titulo-muy-largo.gbc   ← sin categoría
+    /// ```
+    /// Sin `-demoLibrary n4`: `-demoHome off` quita Favoritos y las estanterías (las pruebas de N3 y de
+    /// la cuadrícula miden «Todos los juegos»; el inicio se prueba aparte, como N4A-11 en Android) y las
+    /// demás bibliotecas de demostración tienen sus huellas conocidas confirmadas (el centro de ajustes
+    /// de `game-settings` no se queda en «Leyendo el juego…»).
+    static func applyN4(_ screen: DebugScreen?, to state: AppState) {
+        if DebugArguments.demoLibrary == "n4" {
+            applyN4Library(to: state)
+        } else if DebugArguments.demoLibrary != nil {
+            confirmDemoFingerprints(state)
+        }
+        // N4: el menú contextual de la captura `game-context-menu` es el de la tarjeta de «Todos los
+        // juegos», que con el inicio queda debajo de las estanterías.
+        if DebugArguments.value("-demoHome") == "off" || screen == .gameContextMenu {
+            let keys = LibraryHome.keys(state.library.entries, prefs: state.libraryPrefs.data)
+            var prefs = state.libraryPrefs.data
+            prefs.home.showFavorites = false
+            prefs.home.hidden = keys
+            state.libraryPrefs.applyDemo(prefs)
+        }
+        guard DebugArguments.demoLibrary == "n4", let screen else { return }
+        let entries = state.library.entries
+        let moved = entries.first { $0.id == n4Moved }
+        switch screen {
+        case .n4HomeCustomized:
+            var prefs = state.libraryPrefs.data
+            prefs.home = HomeSettings().pinning("Pruebas", true).hiding("Game Boy Advance", true)
+            prefs.home.showFavorites = false
+            state.libraryPrefs.applyDemo(prefs)
+        case .n4Category, .n4CategoryAX5:
+            state.libraryPath = [.category(path: ["Pruebas"])]
+        case .n4CategoryNested, .n4CategoryNestedList:
+            state.libraryPath = [.category(path: ["Pruebas"]), .category(path: ["Pruebas", "Blargg"])]
+            if screen == .n4CategoryNestedList {
+                var prefs = state.libraryPrefs.data
+                prefs.categoryLayouts["Pruebas/Blargg"] = .list
+                state.libraryPrefs.applyDemo(prefs)
+            }
+        case .n4CategoryVirtual:
+            state.libraryPath = [.category(path: ["Para jugar"])]
+        case .n4GameCenter, .n4GameCenterAX5, .n4TagEditor, .n4MoveCategory, .n4MoveCategoryAX5:
+            state.libraryPath = [.details(id: n4Moved, source: n4Moved)]
+            state.gameSettingsEntry = moved
+        case .n4GameCenterGBA:
+            state.libraryPath = [.details(id: n4GBA, source: n4GBA)]
+            state.gameSettingsEntry = entries.first { $0.id == n4GBA }
+        case .n4DetailsMoved:
+            state.libraryPath = [.details(id: n4Moved, source: n4Moved)]
+        case .n4FilterTag:
+            state.libraryTag = "pendiente"
+        case .n4SettingsHome, .n4SettingsHomeAX5:
+            state.selectedTab = .settings
+            state.settingsPath = [.library, .libraryHome]
+            var prefs = state.libraryPrefs.data
+            prefs.home = HomeSettings().pinning("Pruebas", true).hiding("Game Boy Advance", true)
+            state.libraryPrefs.applyDemo(prefs)
+        default:
+            break
+        }
+    }
+
+    /// Las huellas que la demostración da por conocidas (por ruta o en el escaneo) pasan a confirmadas.
+    private static func confirmDemoFingerprints(_ state: AppState) {
+        let hints = state.libraryPrefs.data.fingerprints
+        var entries = state.library.entries
+        guard !entries.isEmpty else { return }
+        for i in entries.indices {
+            if entries[i].fingerprint == nil { entries[i].fingerprint = hints[entries[i].id] }
+            entries[i].fingerprintVerified = entries[i].fingerprint != nil
+        }
+        LibraryIdentity.markDuplicates(&entries)
+        state.library.applyDemo(phase: state.library.phase, entries: entries)
+    }
+
+    private static func applyN4Library(to state: AppState) {
+        func make(_ path: String, _ title: String, color: Bool, fingerprint: String, size: Int = 65_536,
+                  saved: Bool = false) -> RomEntry {
+            let file = (path as NSString).lastPathComponent
+            var e = RomEntry(id: path, url: URL(fileURLWithPath: "/demo/\(path)"), fileName: file, title: title,
+                             isColor: color, sizeBytes: size, headerChecksumOK: true, cloud: .current, problem: nil,
+                             mirrorSaveDate: saved ? Date(timeIntervalSince1970: 1_790_000_000) : nil)
+            e.fingerprint = fingerprint
+            e.fingerprintVerified = true
+            return e
+        }
+        let entries = [
+            make("Acid/dmg-acid2.gb", "DMG-ACID2", color: false, fingerprint: "demo-dmg-acid2", size: 32_768, saved: true),
+            make("Acid/cgb-acid2.gbc", "CGB-ACID2", color: true, fingerprint: "demo-cgb-acid2", size: 32_768),
+            make("Pruebas/Blargg/cpu_instrs.gb", "CPU_INSTRS", color: false, fingerprint: "demo-cpu"),
+            make("Pruebas/Blargg/instr_timing.gb", "INSTR_TIMING", color: false, fingerprint: "demo-instr"),
+            make("Pruebas/Blargg/Sonido/dmg_sound.gb", "DMG_SOUND", color: false, fingerprint: "demo-sound"),
+            make("Pruebas/Mooneye/halt_ime1_timing.gb", "HALT_IME1", color: false, fingerprint: "demo-halt"),
+            make("Pruebas/Mooneye/boot_regs-cgb.gbc", "BOOT_REGS", color: true, fingerprint: "demo-boot"),
+            make(n4GBA, "jsmolka ARM", color: false, fingerprint: "demo-arm", size: 8_806),
+            make("Game Boy Advance/thumb.gba", "jsmolka THUMB", color: false, fingerprint: "demo-thumb", size: 8_806),
+            make(n4Moved, "RTC3TEST", color: false, fingerprint: "demo-rtc", size: 32_768),
+            make("homebrew-con-un-titulo-muy-largo.gbc", "Un homebrew con un título muy largo para probar el truncado",
+                 color: true, fingerprint: "demo-homebrew"),
+        ]
+        state.library.applyDemo(phase: .ready(folderName: "Juegos Game Boy"), entries: entries)
+        var prefs = LibraryPreferencesData()
+        func meta(favorite: Bool = false, played: TimeInterval? = nil, path: String? = nil, tags: [String] = [],
+                  virtual: [String]? = nil) -> GameMetadata {
+            var m = GameMetadata()
+            m.favorite = favorite
+            m.lastPlayed = played.map { Date(timeIntervalSince1970: $0) }
+            m.lastPlayedPath = played == nil ? nil : path
+            m.tags = Tags.sanitized(tags)
+            m.virtualFolder = virtual
+            return m
+        }
+        prefs.games = [
+            "demo-dmg-acid2": meta(played: 1_790_500_000, path: "Acid/dmg-acid2.gb", tags: ["vídeo"]),
+            "demo-cgb-acid2": meta(favorite: true, tags: ["vídeo", "color"]),
+            "demo-cpu": meta(played: 1_790_300_000, path: "Pruebas/Blargg/cpu_instrs.gb", tags: ["cpu", "pendiente"]),
+            "demo-sound": meta(tags: ["sonido"]),
+            "demo-arm": meta(favorite: true, played: 1_790_100_000, path: n4GBA),
+            "demo-rtc": meta(favorite: true, tags: ["reloj", "pendiente"], virtual: ["Para jugar"]),
+        ]
+        prefs.layout = .grid
+        state.libraryPrefs.applyDemo(prefs)
+        state.artwork.applyDemo(fingerprint: "demo-dmg-acid2")
+        state.artwork.applyDemo(fingerprint: "demo-arm", pixels: GameArtworkStore.demoGBAPixels())
+    }
 }
 #endif

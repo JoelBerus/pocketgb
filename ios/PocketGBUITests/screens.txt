@@ -209,3 +209,41 @@ library-landscape-bar-categories landscape dark  -screen library-landscape-bar-c
 library-landscape-bar-view       landscape light -screen library-landscape-bar-view -demoLibrary adaptive -uiTap library-bar-view
 library-landscape-panel-ax5      landscape light -screen library-landscape-panel-ax5 -demoLibrary adaptive -contentSizeCategory accessibility5 -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-categories
 library-landscape-panel-reduce-transparency landscape dark -screen library-landscape-panel-reduce-transparency -demoLibrary adaptive -reduceTransparency -uiDrag 0.5,0.6,0.5,0.1 -uiTap library-tool-filters
+
+# ---- N4 · Categorías, etiquetas, inicio y centro de ajustes del juego (iOS). `-demoLibrary n4`: juegos
+# libres en un árbol de varios niveles (Acid, Pruebas › Blargg › Sonido, Pruebas › Mooneye, Game Boy
+# Advance, Reloj y uno en la raíz), etiquetas, tres favoritos y rtc3test movido a «Para jugar» (ND3).
+# `-centerRoute tags|category` abre el centro en el editor de etiquetas o en «Mostrar en categoría».
+# `-uiDragTimes <n>` repite el arrastre. Tamaños: SIM_DEVICE (SE, 17 Pro y 17 Pro Max).
+n4-home                     portrait  light -screen n4-home -demoLibrary n4
+n4-home                     portrait  dark  -screen n4-home -demoLibrary n4
+n4-home-scrolled            portrait  light -screen n4-home-scrolled -demoLibrary n4 -uiDrag 0.5,0.8,0.5,0.25 -uiDragTimes 2
+n4-home-scrolled            portrait  dark  -screen n4-home-scrolled -demoLibrary n4 -uiDrag 0.5,0.8,0.5,0.25 -uiDragTimes 4
+n4-home-landscape           landscape light -screen n4-home-landscape -demoLibrary n4
+n4-home-landscape           landscape dark  -screen n4-home-landscape -demoLibrary n4
+n4-home-landscape-scrolled  landscape light -screen n4-home-landscape-scrolled -demoLibrary n4 -uiDrag 0.5,0.7,0.5,0.15
+n4-home-landscape-scrolled  landscape dark  -screen n4-home-landscape-scrolled -demoLibrary n4 -uiDrag 0.5,0.7,0.5,0.15 -uiDragTimes 6
+n4-home-ax5                 portrait  light -screen n4-home-ax5 -demoLibrary n4 -contentSizeCategory accessibility5 -uiDrag 0.5,0.8,0.5,0.3 -uiDragTimes 2
+n4-home-customized          portrait  light -screen n4-home-customized -demoLibrary n4 -uiDrag 0.5,0.8,0.5,0.3
+n4-category                 portrait  light -screen n4-category -demoLibrary n4
+n4-category-nested          portrait  light -screen n4-category-nested -demoLibrary n4
+n4-category-nested          landscape light -screen n4-category-nested -demoLibrary n4
+n4-category-nested-list     portrait  dark  -screen n4-category-nested-list -demoLibrary n4
+n4-category-virtual         portrait  light -screen n4-category-virtual -demoLibrary n4
+n4-category-ax5             portrait  light -screen n4-category-ax5 -demoLibrary n4 -contentSizeCategory accessibility5
+n4-game-center              portrait  light -screen n4-game-center -demoLibrary n4
+n4-game-center              portrait  dark  -screen n4-game-center -demoLibrary n4
+n4-game-center              landscape light -screen n4-game-center -demoLibrary n4
+n4-game-center-gba          portrait  light -screen n4-game-center-gba -demoLibrary n4 -uiSwipeUp
+n4-game-center-ax5          portrait  light -screen n4-game-center-ax5 -demoLibrary n4 -contentSizeCategory accessibility5 -uiDrag 0.5,0.8,0.5,0.2 -uiDragTimes 2
+n4-tag-editor               portrait  dark  -screen n4-tag-editor -demoLibrary n4 -centerRoute tags
+n4-tag-editor               portrait  light -screen n4-tag-editor -demoLibrary n4 -centerRoute tags
+n4-move-category            portrait  light -screen n4-move-category -demoLibrary n4 -centerRoute category
+n4-move-category-ax5        portrait  light -screen n4-move-category-ax5 -demoLibrary n4 -centerRoute category -contentSizeCategory accessibility5
+n4-details-moved            portrait  light -screen n4-details-moved -demoLibrary n4
+n4-filter-tag               portrait  light -screen n4-filter-tag -demoLibrary n4
+n4-landscape-filters        landscape light -screen n4-landscape-filters -demoLibrary n4 -uiTap library-bar-filters
+n4-landscape-categories     landscape dark  -screen n4-landscape-categories -demoLibrary n4 -uiDrag 0.5,0.7,0.5,0.15 -uiTap library-tool-categories
+n4-settings-home            portrait  light -screen n4-settings-home -demoLibrary n4
+n4-settings-home            portrait  dark  -screen n4-settings-home -demoLibrary n4
+n4-settings-home-ax5        portrait  light -screen n4-settings-home-ax5 -demoLibrary n4 -contentSizeCategory accessibility5 -uiDrag 0.5,0.8,0.5,0.2 -uiDragTimes 2

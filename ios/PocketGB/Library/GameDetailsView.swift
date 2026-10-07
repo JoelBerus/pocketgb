@@ -134,6 +134,40 @@ struct GameDetailsView: View {
                 .font(.title2.bold())
                 .fixedSize(horizontal: false, vertical: true)
             if entry.isDuplicate { alsoIn(entry) }
+            organization(entry)
+        }
+    }
+
+    /// N4: dónde se ve si se movió en la app (además de la ruta real de arriba) y sus etiquetas
+    /// (en el detalle y el centro, no en las tarjetas: N4A-8).
+    @ViewBuilder private func organization(_ entry: RomEntry) -> some View {
+        let prefs = state.libraryPrefs
+        if prefs.isMovedInApp(entry) {
+            Label {
+                Text("Se ve en «\(CategoryPaths.display(prefs.categoryPath(entry)))»")
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: MovedBadge.systemImage)
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Movido en la app. Se ve en \(CategoryPaths.display(prefs.categoryPath(entry)))")
+            .accessibilityIdentifier("game-details-shown-in")
+        }
+        let tags = prefs.tags(entry)
+        if !tags.isEmpty {
+            Label {
+                Text(tags.joined(separator: " · "))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "tag")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Etiquetas: \(tags.joined(separator: ", "))")
+            .accessibilityIdentifier("game-details-tags")
         }
     }
 
@@ -306,6 +340,7 @@ struct GameDetailsView: View {
     @ViewBuilder private func badges(_ entry: RomEntry) -> some View {
         ConsoleChip(badge: entry.badge)
         if entry.isDuplicate { DuplicateBadge() }
+        if state.libraryPrefs.isMovedInApp(entry) { MovedBadge() }
     }
 
     private func location(_ entry: RomEntry) -> some View {

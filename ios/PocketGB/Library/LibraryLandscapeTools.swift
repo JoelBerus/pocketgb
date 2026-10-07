@@ -64,9 +64,10 @@ enum LibraryToolAppearance {
     static func systemImage(_ panel: LibraryToolPanel, state: AppState) -> String {
         switch panel {
         case .filters:
-            state.libraryFilter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
+            state.libraryFilter == .all && state.libraryTag == nil
+                ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
         case .categories:
-            state.libraryCategory == .all ? "folder" : "folder.fill"
+            "folder"
         case .view:
             state.libraryPrefs.data.layout.systemImage
         }
@@ -74,8 +75,8 @@ enum LibraryToolAppearance {
 
     static func value(_ panel: LibraryToolPanel, state: AppState) -> String {
         switch panel {
-        case .filters: state.libraryFilter.title
-        case .categories: state.libraryCategory.title
+        case .filters: state.libraryTag.map { "\(state.libraryFilter.title), etiqueta \($0)" } ?? state.libraryFilter.title
+        case .categories: "Abre una categoría"
         case .view: "\(state.libraryPrefs.data.layout.title), \(state.libraryPrefs.data.sort.title)"
         }
     }
@@ -183,20 +184,45 @@ struct LibraryToolPanelContent: View {
                 .accessibilityIdentifier("library-filter-\(filter.rawValue)")
             }
         }
-    }
-
-    @ViewBuilder private var categoriesPanel: some View {
-        let entries = state.library.entries
-        PanelTitle("Categorías · carpetas")
-        ChipFlow {
-            ForEach([LibraryCategory.all] + prefs.categories(entries)) { category in
-                let count = prefs.visible(entries, filter: .all, query: "", category: category).count
-                Chip(title: category.title, systemImage: category == .all ? nil : category.systemImage,
-                     selected: state.libraryCategory == category, detail: "\(count)") {
-                    state.libraryCategory = category
+        // N4 · filtro por etiqueta, combinable con el de consola.
+        let tags = LibraryQuery.tagOptions(state.library.entries, prefs: prefs.data)
+        if !tags.isEmpty {
+            PanelTitle("Etiquetas")
+            ChipFlow {
+                Chip(title: "Todas", systemImage: nil, selected: state.libraryTag == nil) {
+                    state.libraryTag = nil
                     close()
                 }
-                .accessibilityIdentifier("library-category-\(category.id)")
+                .accessibilityIdentifier("library-tag-all")
+                ForEach(tags) { option in
+                    Chip(title: option.tag, systemImage: "tag",
+                         selected: state.libraryTag.map { Tags.same($0, option.tag) } ?? false,
+                         detail: "\(option.count)") {
+                        state.libraryTag = option.tag
+                        close()
+                    }
+                    .accessibilityIdentifier("library-tag-\(option.tag)")
+                }
+            }
+        }
+    }
+
+    /// N4 (N4A-1): cada categoría abre su pantalla (con sus subcategorías), ya no filtra en el sitio.
+    @ViewBuilder private var categoriesPanel: some View {
+        let options = LibraryCategory.options(state.library.entries, prefs: prefs.data)
+        PanelTitle("Categorías · carpetas")
+        ChipFlow {
+            ForEach(options) { option in
+                Chip(title: option.category.title, systemImage: option.category.systemImage,
+                     selected: nil, detail: "\(option.count)") {
+                    close()
+                    // Tras cerrar el panel: el popover y la navegación no se animan a la vez.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(250))
+                        state.openCategory(option.category.path)
+                    }
+                }
+                .accessibilityIdentifier("library-category-\(option.category.id)")
             }
         }
     }

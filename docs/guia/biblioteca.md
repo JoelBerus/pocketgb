@@ -3,7 +3,8 @@
 ## En vertical
 - Arriba tienes el título, el **buscador** y los filtros **Todos · GB · GBC · GBA · Favoritos**.
 - En la barra de arriba hay una **lupa**: abre el buscador aunque hayas bajado y ya no se vea.
-- El menú **«…»** cambia la vista (cuadrícula o lista), el orden (por nombre o por lo último que jugaste) y la **categoría**; también vuelve a escanear la carpeta o la cambia.
+- El menú **«…»** cambia la vista (cuadrícula o lista) y el orden (por nombre o por lo último que jugaste), abre una **categoría** y filtra por **etiqueta**; también vuelve a escanear la carpeta o la cambia.
+- Desde N4, la biblioteca empieza con un **inicio**: «Continuar jugando», Favoritos y una estantería por categoría, y debajo «Todos los juegos». Todo lo explica [categorias.md](categorias.md).
 
 ## En horizontal
 Al girar el iPhone la pantalla se aprovecha para los juegos:
@@ -15,15 +16,15 @@ Al girar el iPhone la pantalla se aprovecha para los juegos:
 | Botón | Qué hace |
 |---|---|
 | Lupa · **Buscar** | Abre el buscador con el teclado. Escribe parte del nombre (vale el nombre que le pusiste o el del archivo). Al cerrarlo, el buscador desaparece. |
-| Embudo · **Filtros** | Todos, GB, GBC, GBA o Favoritos. Con un filtro puesto el icono se rellena. |
-| Carpeta · **Categorías** | Las carpetas de primer nivel de tu carpeta de juegos (por ejemplo «Pokémon» o «Kirby»), con cuántos juegos tiene cada una, y «Sin categoría» para los juegos sueltos. «Todas» quita el filtro. |
+| Embudo · **Filtros** | Todos, GB, GBC, GBA o Favoritos y, debajo, tus **etiquetas**. Con un filtro puesto el icono se rellena. |
+| Carpeta · **Categorías** | Las categorías de primer nivel (por ejemplo «Pokémon» o «Kirby»), con cuántos juegos tiene cada una, y «Sin categoría» para los juegos sueltos. Tocar una **abre su pantalla**, con sus subcategorías ([categorias.md](categorias.md)). |
 | Cuadrícula o lista · **Vista y orden** | Cuadrícula o lista, ordenar por nombre o por lo último jugado, volver a escanear y cambiar de carpeta. |
 
 - Toca fuera de un panel para cerrarlo. Con texto muy grande, mantén pulsado un botón redondo para ver su nombre en grande.
-- Lo que elijas se mantiene al volver a vertical: el título de la sección te dice qué filtro o categoría tienes puesto, y lo quitas con el segmentado o con «…» › Categoría › Todas. Si cambias de carpeta o la categoría deja de existir, vuelve sola a «Todas».
+- Lo que elijas se mantiene al volver a vertical: el título de la sección te dice qué filtro o etiqueta tienes puesto, y lo quitas con el segmentado, con «Quitar» junto a la etiqueta o con «…» › Etiqueta › Todas. Si cambias de carpeta o ningún juego lleva ya esa etiqueta, el filtro se quita solo.
 - La lupa también está en la barra en vertical, como una opción más.
 
-Las categorías salen de tus carpetas (ver [carpetas.md](carpetas.md)). Más adelante podrás ver también las subcategorías y mover un juego de categoría sin tocar los archivos.
+Las categorías salen de tus carpetas (ver [carpetas.md](carpetas.md)). Las subcategorías, mostrar un juego en otra categoría sin tocar los archivos y las etiquetas están en [categorias.md](categorias.md).
 
 ## El detalle de un juego
 - **En vertical**, la imagen ocupa como mucho algo menos de la mitad de la pantalla, así ves enseguida el botón **Jugar** o **Continuar**.

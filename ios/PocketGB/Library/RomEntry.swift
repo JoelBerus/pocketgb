@@ -59,6 +59,10 @@ struct RomEntry: Identifiable, Hashable, Sendable {
     /// cálculo en segundo plano o de la última apertura. Partidas, estados, portadas y
     /// metadatos van por ella; la ruta (`id`) solo identifica el archivo.
     var fingerprint: String?
+    /// N4: `fingerprint` está confirmada (caché verificada por tamaño y fechas, calculada de los bytes o
+    /// dada por el núcleo al abrir). Una huella de caché obsoleta es solo una pista: con ella se ven los
+    /// metadatos, pero no se escriben etiquetas ni categoría virtual (`LibraryPreferences.confirmedFingerprint`).
+    var fingerprintVerified = false
     /// Otras rutas de la carpeta con la misma huella (duplicados, N1a). Comparten metadatos,
     /// partida, estados y portada.
     var duplicatePaths: [String] = []

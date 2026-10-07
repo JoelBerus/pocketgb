@@ -22,6 +22,10 @@ struct LibraryView: View {
     @State private var contentWidth: CGFloat = 0
     /// Borde inferior del área útil (encima de la barra de pestañas), para los paneles de la barra.
     @State private var safeBottom: CGFloat = 0
+    /// N4 · pila de la pestaña (categorías y detalle) guardada para la restauración de estado: si iOS
+    /// cierra la app en segundo plano, al volver sigue en la misma categoría.
+    @SceneStorage("library.navigation") private var savedNavigation: Data?
+    @State private var restoredNavigation = false
 
     /// Horizontal en iPhone: altura compacta.
     private var compactHeight: Bool { verticalSizeClass == .compact }
@@ -50,9 +54,25 @@ struct LibraryView: View {
                     case .details(let id, let source):
                         GameDetailsView(entryID: id)
                             .modifier(ZoomNavigation(sourceID: source, namespace: zoom))
+                    case .category(let path):
+                        CategoryView(path: path, zoom: zoom)
                     }
                 }
         }
+        .onAppear(perform: restoreNavigation)
+        .onChange(of: state.libraryPath) { _, path in
+            guard LibraryNavigationRestoration.enabled else { return }
+            savedNavigation = LibraryNavigationRestoration.encode(path)
+        }
+    }
+
+    /// Una vez por escena: la pila guardada vuelve si la pestaña está en su raíz (no pisa la del catálogo).
+    private func restoreNavigation() {
+        guard !restoredNavigation else { return }
+        restoredNavigation = true
+        guard LibraryNavigationRestoration.enabled, state.libraryPath.isEmpty,
+              let path = LibraryNavigationRestoration.decode(savedNavigation), !path.isEmpty else { return }
+        state.libraryPath = path
     }
 
     /// Barra de la biblioteca. N3b: la búsqueda también como botón de la barra, «como una opción
@@ -145,14 +165,28 @@ struct LibraryView: View {
                     Text(sort.title).tag(sort)
                 }
             }
-            // N3b: la categoría elegida en horizontal se ve y se cambia también en vertical.
-            Picker("Categoría", systemImage: "folder", selection: Binding(get: { state.libraryCategory },
-                                                                          set: { state.libraryCategory = $0 })) {
-                ForEach([LibraryCategory.all] + prefs.categories(library.entries)) { category in
-                    Text(category.title).tag(category)
+            // N4: «Categorías» abre la pantalla de cada categoría (N4A-1); «Etiqueta» filtra.
+            let options = LibraryCategory.options(library.entries, prefs: prefs.data)
+            if LibraryCategory.hasFolders(options) {
+                Menu("Categorías", systemImage: "folder") {
+                    ForEach(options) { option in
+                        Button("\(option.category.title) · \(option.count)", systemImage: option.category.systemImage) {
+                            state.openCategory(option.category.path)
+                        }
+                    }
                 }
             }
-            .pickerStyle(.menu)
+            let tags = LibraryQuery.tagOptions(library.entries, prefs: prefs.data)
+            if !tags.isEmpty || state.libraryTag != nil {
+                Picker("Etiqueta", systemImage: "tag", selection: Binding(get: { state.libraryTag },
+                                                                          set: { state.libraryTag = $0 })) {
+                    Text("Todas").tag(String?.none)
+                    ForEach(tags) { option in
+                        Text("\(option.tag) · \(option.count)").tag(Optional(option.tag))
+                    }
+                }
+                .pickerStyle(.menu)
+            }
             Divider()
             Button("Volver a escanear", systemImage: "arrow.clockwise") { library.refresh() }
             Button("Cambiar carpeta", systemImage: "folder") { state.chooseFolder() }
@@ -168,7 +202,7 @@ struct LibraryView: View {
         let query = state.librarySearch
         let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
         let shown = prefs.visible(library.entries, filter: state.libraryFilter, query: query,
-                                  category: state.libraryCategory)
+                                  tag: state.libraryTag)
         let compact = compactHeight
         return ScrollView {
             // Horizontal: perezosa, con el título de sección fijado. Vertical: la de siempre.
@@ -227,12 +261,14 @@ struct LibraryView: View {
             }
         }
         .onChange(of: state.libraryTools.searchRequests) { startSearch() }
-        // Una categoría que ya no existe (otra carpeta, juegos movidos u ocultos) vuelve a «Todas»
-        // (auditoría N3, H7).
-        .onChange(of: prefs.categories(library.entries)) { _, available in
-            state.libraryCategory = state.libraryCategory.validated(in: available)
+        // Una etiqueta que ya no lleva ningún juego visible (otra carpeta, juegos ocultos o etiqueta
+        // quitada) deja de filtrar (como la categoría de N3, auditoría N3, H7).
+        .onChange(of: LibraryQuery.tagOptions(library.entries, prefs: prefs.data)) { _, available in
+            if let tag = state.libraryTag, !available.contains(where: { Tags.same($0.tag, tag) }) {
+                state.libraryTag = nil
+            }
         }
-        .onChange(of: library.rootURL) { state.libraryCategory = .all }
+        .onChange(of: library.rootURL) { state.libraryTag = nil }
     }
 
     /// Dónde están las herramientas ahora (`LibraryToolsPlacement`).
@@ -252,13 +288,19 @@ struct LibraryView: View {
     @ViewBuilder private func gamesContent(_ shown: [RomEntry], query: String, searching: Bool,
                                            folderName: String, compact: Bool) -> some View {
         if !compact { minimized(filterPicker) }
+        if !compact, let tag = state.libraryTag { ActiveTagRow(tag: tag) }
         if searching {
             searchResults(shown, query: query)
         } else {
-            if state.libraryFilter == .all, state.libraryCategory == .all,
-               let continueEntries = continueCandidates, !continueEntries.isEmpty {
-                minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom,
-                                             itemWidth: compact ? gridColumnWidth : nil))
+            // N4 · el inicio (sin filtro ni etiqueta): «Continuar», Favoritos y una estantería por
+            // categoría; debajo, «Todos los juegos». Con un filtro, el inicio deja sitio a los resultados.
+            if state.libraryFilter == .all, state.libraryTag == nil {
+                if let continueEntries = continueCandidates, !continueEntries.isEmpty {
+                    minimized(ContinuePlayingRow(entries: continueEntries, zoom: zoom,
+                                                 itemWidth: compact ? gridColumnWidth : nil))
+                }
+                LibraryHomeRows(sections: LibraryHome.sections(library.entries, prefs: prefs.data),
+                                itemWidth: gridColumnWidth, zoom: zoom)
             }
             Section {
                 allGames(shown)
@@ -355,14 +397,14 @@ struct LibraryView: View {
         }
     }
 
-    /// «Todos los juegos», «GBA», «Pokémon» o «Pokémon · GBA».
+    /// «Todos los juegos», «GBA», «Etiqueta «rpg»» o «GBA · Etiqueta «rpg»».
     private var sectionTitle: String {
         let filter = state.libraryFilter
-        switch (state.libraryCategory, filter) {
-        case (.all, .all): return "Todos los juegos"
-        case (.all, _): return filter.title
-        case (let category, .all): return category.title
-        case (let category, _): return "\(category.title) · \(filter.title)"
+        switch (state.libraryTag, filter) {
+        case (nil, .all): return "Todos los juegos"
+        case (nil, _): return filter.title
+        case (let tag?, .all): return "Etiqueta «\(tag)»"
+        case (let tag?, _): return "\(filter.title) · Etiqueta «\(tag)»"
         }
     }
 
@@ -372,13 +414,13 @@ struct LibraryView: View {
                 ScanProgressRow(progress: progress)
             }
             if shown.isEmpty && !library.isScanning {
-                if state.libraryCategory != .all {
+                if let tag = state.libraryTag {
                     EmptyStateView(
-                        title: "Sin juegos en “\(state.libraryCategory.title)”",
-                        systemImage: "folder",
-                        message: "No hay juegos de este filtro en esta categoría.",
-                        primaryTitle: "Ver todas las categorías",
-                        primaryAction: { state.libraryCategory = .all })
+                        title: "Sin juegos con la etiqueta «\(tag)»",
+                        systemImage: "tag",
+                        message: "No hay juegos de este filtro con esta etiqueta.",
+                        primaryTitle: "Quitar la etiqueta",
+                        primaryAction: { state.libraryTag = nil })
                 } else {
                     EmptyStateView(
                         title: state.libraryFilter == .favorites ? "Sin favoritos" : "Sin juegos \(state.libraryFilter.title)",
@@ -489,14 +531,47 @@ struct LibraryView: View {
     }
 }
 
-/// Rutas de la pila de Biblioteca y Favoritos.
-enum LibraryRoute: Hashable {
+/// Rutas de la pila de Biblioteca y Favoritos. `Codable`: la pila se restaura (N4).
+enum LibraryRoute: Hashable, Codable {
     case details(id: String, source: String)
+    /// N4 · pantalla de una categoría (`[]` = «Sin categoría»).
+    case category(path: [String])
 
-    var entryID: String {
+    /// El juego de la ruta (nil en una categoría).
+    var entryID: String? {
         switch self {
         case .details(let id, _): id
+        case .category: nil
         }
+    }
+}
+
+/// N4 · restauración de la pila de la Biblioteca (`@SceneStorage`). Se guarda como JSON; una pila que
+/// no se entienda (otra versión) se ignora. En DEBUG solo con `-restoreNavigation`: el catálogo y los
+/// tests de UI empiezan siempre en el mismo sitio.
+enum LibraryNavigationRestoration {
+    /// Rutas como mucho (una pila absurda no se restaura entera).
+    static let maxRoutes = 32
+
+    static var enabled: Bool {
+        #if DEBUG
+        return DebugArguments.arguments.contains("-restoreNavigation")
+        #else
+        return true
+        #endif
+    }
+
+    static func encode(_ path: [LibraryRoute]) -> Data? {
+        try? JSONEncoder().encode(Array(path.suffix(maxRoutes)))
+    }
+
+    static func decode(_ data: Data?) -> [LibraryRoute]? {
+        guard let data, let path = try? JSONDecoder().decode([LibraryRoute].self, from: data) else { return nil }
+        let valid = path.filter {
+            if case .category(let p) = $0 { return p.isEmpty || CategoryPaths.isValid(p) }
+            return true
+        }
+        return Array(valid.prefix(maxRoutes))
     }
 }
 

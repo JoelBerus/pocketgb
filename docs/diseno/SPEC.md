@@ -753,3 +753,35 @@ Plan: [hitos/N-README.md](../hitos/N-README.md) §4 N3. Todo se decide por el **
 | N3-12 | `favorites-landscape` | Favoritos horizontal | landscape | dark | Título en línea con borde duro | Título grande perdido |
 
 Las capturas N3 se toman en iPhone SE (3.ª gen), iPhone 17 Pro y iPhone 17 Pro Max (`SIM_DEVICE`).
+
+## 16. Categorías, etiquetas, inicio y centro de ajustes del juego (N4)
+
+Plan: [hitos/N-README.md](../hitos/N-README.md) §4 N4 (ND3, ND12). Reglas para Joel: [11-biblioteca-carpetas](../11-biblioteca-carpetas.md); guía: [guia/categorias.md](../guia/categorias.md). Mismo comportamiento que Android (decisiones N4A-1…N4A-11 de su evidencia).
+
+### 16.1 Inicio
+- Pestaña Biblioteca sin búsqueda, filtro ni etiqueta: «Continuar jugando» (N3), **Favoritos** (hasta 10, con el total; «Ver todo» → pestaña Favoritos) y una **estantería por categoría de primer nivel** («Sin categoría» al final; sin carpetas no hay estanterías), y debajo «Todos los juegos». Contenido L1: tarjetas del ancho de una columna de la cuadrícula, sin vidrio; desplazamiento horizontal con ajuste al soltar (`.viewAligned`).
+- Cabecera de cada fila: título (encabezado para VoiceOver) con su número de juegos y «Ver todo» (etiqueta accesible «Ver todo Pokémon, 3 juegos»). Con tamaños de accesibilidad, el número bajo el título y «Ver todo» debajo.
+- En horizontal sigue §15.2: las filas van antes del título de sección fijado; el grupo flotante aparece al desplazar y sus paneles no tapan el título.
+
+### 16.2 Pantalla de categoría
+- `NavigationStack` de la pestaña (`LibraryRoute.category`, restaurable con `@SceneStorage`): migas tocables (separadores ocultos para VoiceOver; el nivel actual no es botón), subcategorías en cápsulas con su número de juegos, «Juegos · N» (del subárbol) y cuadrícula o lista (botón de la barra, recordado por categoría).
+- Las categorías del panel (horizontal) y de «…» › Categorías (vertical) **abren** su pantalla; ya no filtran en el sitio.
+
+### 16.3 Centro de ajustes del juego
+- Hoja del sistema (L3, `Form`) con su propia pila: identidad, Nombre, **Organización** (Categoría con la insignia «Movido en la app» y «Su carpeta: …», botones de vidrio «Cambiar» y «Volver a su carpeta» juntos; Etiquetas como texto), **Próximamente** (Portada, Progreso y momentos: deshabilitadas, «No disponible todavía» para VoiceOver), **Partida** (copias del juego), color/paleta o GBA y **Ocultar** (confirmación).
+- «Mostrar en categoría»: lista de categorías existentes (sangrada por nivel, «Su carpeta», «Ahora» y marca) y campo «Nueva categoría» con aviso en vivo si coincide con una existente sin mayúsculas ni acentos.
+- Insignia «Movido en la app»: cápsula de contorno fino con `arrow.turn.up.right`; en tarjetas solo el símbolo (el texto va en la etiqueta de VoiceOver de la tarjeta). Las etiquetas no van en las tarjetas.
+
+| # | ID | Pantalla/estado | Orientación | Apariencia | Debe verse | Error visual |
+|---:|---|---|---|---|---|---|
+| N4-1 | `n4-home` / `-scrolled` | Inicio vertical | portrait | ambos | Continuar, Favoritos (3 juegos), estanterías con su número y «Ver todo»; al desplazar, «Todos los juegos» | Filas recortadas o «Ver todo» cortado |
+| N4-2 | `n4-home-landscape` / `-scrolled` | Inicio horizontal | landscape | ambos | En reposo, herramientas en la barra; desplazado, «Todos los juegos» fijado y grupo flotante | Grupo sobre la barra desplegada |
+| N4-3 | `n4-home-ax5` / `n4-home-customized` | AX5 y ajustes del inicio aplicados | portrait | light | Títulos enteros; Pruebas fijada primero, GBA oculta, sin Favoritos | Títulos partidos |
+| N4-4 | `n4-category` / `-nested` / `-nested-list` / `-virtual` / `-ax5` | Pantalla de categoría | ambas | ambos | Migas, subcategorías con conteo, juegos del subárbol; lista recordada; categoría virtual «Para jugar» | Migas cortadas o juegos de otra categoría |
+| N4-5 | `n4-game-center` / `-gba` / `-ax5` | Centro de ajustes | ambas | ambos | Categoría con insignia y «Su carpeta», Cambiar y Volver juntos, etiquetas, Próximamente, Partida, emulación | Información repetida o botones partidos |
+| N4-6 | `n4-tag-editor` / `n4-move-category` / `-ax5` | Etiquetas y «Mostrar en categoría» | portrait | ambos | Añadir, quitar, sugerencias; categorías existentes con «Su carpeta»/«Ahora» y campo nuevo | Texto azul de botón o chips vacíos |
+| N4-7 | `n4-details-moved` / `n4-filter-tag` | Detalle movido y filtro por etiqueta | portrait | light | «Se ve en «Para jugar»» y etiquetas; título «Etiqueta «pendiente»» con Quitar | Ruta real oculta |
+| N4-8 | `n4-landscape-filters` / `-categories` | Paneles con etiquetas y categorías | landscape | ambos | Etiquetas con su número; categorías que abren su pantalla | Panel cortado |
+| N4-9 | `n4-settings-home` / `-ax5` | Ajustes › Biblioteca › Inicio | portrait | ambos | Fila de Favoritos; chincheta, flechas y «En el inicio» por categoría | Controles sin texto accesible |
+
+Las capturas N4 se toman en iPhone SE (3.ª gen), iPhone 17 Pro y iPhone 17 Pro Max (`SIM_DEVICE`).
