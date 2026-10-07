@@ -789,7 +789,8 @@ class LibraryUiTest {
     @Test
     fun detailsShowStatsContinueFromTheSaveAndOpenGameSettings() {
         var settings = 0
-        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 2 * 3_600_000)
+        // Minutos y no horas: «hace 2 h» pasa a «ayer» entre las 00:00 y las 02:00 (fallo de frontera de fecha).
+        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 5 * 60_000)
         compose.setContent {
             PocketGBTheme {
                 GameDetailsContent(
@@ -808,7 +809,7 @@ class LibraryUiTest {
         // A9 (cambia J8): sin estado automático la acción es «Jugar», que abre la partida junto al ROM igualmente.
         compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithTag("game-details-stats").assertIsDisplayed()
-        compose.onNodeWithText("hace 2 h").assertIsDisplayed()
+        compose.onNodeWithText("hace 5 min").assertIsDisplayed()
         compose.onNodeWithText("Nunca").assertIsDisplayed()
         compose.onNodeWithTag("game-details-states").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("game-details-settings").performScrollTo().performClick()
