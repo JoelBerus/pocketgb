@@ -10,4 +10,9 @@
 Sugerencia para iOS: conservar los estados de otra configuración, como Android, queda anotada para un lote iOS.
 
 ## Verificación desde limpio
-Ver los resultados más abajo, añadidos tras la ejecución.
+Árbol limpio de `b65b30f` (`git archive` + `local.properties` + ROMs libres enlazadas + `tools/build-gba-homebrew.sh`, rc=0):
+```
+./gradlew --no-daemon --max-workers=1 clean :app:testDebugUnitTest :app:assembleDebug :app:lintDebug   rc=0
+JVM: 708 tests, 0 fallos · lint: 0 errors, 23 warnings · aapt2: sin INTERNET
+with-lock.sh emu: GbaNativeTest tests=21 failures=0 · GbaGameTest tests=9 failures=0
+```
