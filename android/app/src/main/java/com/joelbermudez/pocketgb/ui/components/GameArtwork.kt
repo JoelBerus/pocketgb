@@ -74,12 +74,14 @@ fun GameArtwork(
     shape: Shape = RoundedCornerShape(if (compact) 8.dp else 12.dp),
     /** `true` si quien la contiene ya describe el juego (tarjeta, fila): la portada no se anuncia aparte. */
     decorative: Boolean = false,
+    /** N3a: ancho / alto del marco; el detalle pasa la proporción de la consola (`screenAspectRatio`). */
+    aspectRatio: Float = ARTWORK_RATIO,
 ) {
     val image = rememberArtwork(fingerprint)
     val dim = if (entry.problem == null) 1f else 0.45f
     Box(
         modifier
-            .aspectRatio(ARTWORK_RATIO)
+            .aspectRatio(aspectRatio)
             .clip(shape)
             .alpha(dim)
             .then(if (decorative) Modifier.clearAndSetSemantics {} else Modifier),

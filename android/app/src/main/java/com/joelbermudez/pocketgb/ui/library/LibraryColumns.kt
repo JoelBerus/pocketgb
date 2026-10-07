@@ -28,3 +28,15 @@ fun columnsFor(widthDp: Float, fontScale: Float): Int {
         else -> adaptive(1f)
     }
 }
+
+/** Margen lateral de la cuadrícula y de la lista (N3a: el carril «Continuar jugando» usa el mismo). */
+const val GRID_MARGIN_DP = 16f
+
+/** Separación entre columnas de la cuadrícula (N3a: y entre tarjetas del carril). */
+const val GRID_SPACING_DP = 12f
+
+/** Ancho de una celda de la cuadrícula de [columns] columnas en [widthDp], con [GRID_MARGIN_DP] y [GRID_SPACING_DP]. */
+fun gridCellWidth(widthDp: Float, columns: Int): Float {
+    val n = columns.coerceAtLeast(1)
+    return ((widthDp - 2 * GRID_MARGIN_DP - GRID_SPACING_DP * (n - 1)) / n).coerceAtLeast(0f)
+}

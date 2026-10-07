@@ -1,16 +1,45 @@
 package com.joelbermudez.pocketgb.ui.library
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.text.style.TextOverflow
+import com.joelbermudez.pocketgb.ui.a11y.LocalReduceMotion
+import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -44,9 +73,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,14 +86,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.library.CategoryOption
+import com.joelbermudez.pocketgb.library.LibraryCategory
 import com.joelbermudez.pocketgb.library.LibraryError
 import com.joelbermudez.pocketgb.library.LibraryFilter
 import com.joelbermudez.pocketgb.library.LibraryLayout
@@ -70,9 +109,13 @@ import com.joelbermudez.pocketgb.library.LibraryQuery
 import com.joelbermudez.pocketgb.library.LibrarySort
 import com.joelbermudez.pocketgb.library.LibraryState
 import com.joelbermudez.pocketgb.library.RomEntry
+import com.joelbermudez.pocketgb.library.continueRail
+import com.joelbermudez.pocketgb.library.visible
 import com.joelbermudez.pocketgb.ui.components.ContinueRail
 import com.joelbermudez.pocketgb.ui.components.EmptyState
+import com.joelbermudez.pocketgb.ui.components.bleedHorizontally
 import com.joelbermudez.pocketgb.ui.components.rememberArtworkFingerprints
+import kotlin.math.roundToInt
 
 /** N1-H2: aviso fijo sobre la biblioteca cuando sus preferencias son de otra versión de la app. */
 @Composable
@@ -97,6 +140,12 @@ private fun PreferencesReadOnlyBanner() {
  * [artworkFingerprints] son las huellas con portada capturada (carril «Continuar jugando», K10); `null` = leerlas
  * del almacén real. [newGamesSummary] > 0 muestra un aviso breve de juegos nuevos (K19) y luego llama a
  * [onNewGamesSummaryShown].
+ *
+ * N3b: si el espacio es más ancho que alto ([isLandscapeLibrary]) la búsqueda y los chips dejan la parte de arriba.
+ * En reposo Buscar, Filtros, Categorías y Vista/Orden son iconos de la barra superior ([LibraryBarActions]) y sus paneles
+ * cuelgan hacia abajo. Al desplazar, la barra superior se pliega, el título de sección se queda fijo y aparece a la
+ * derecha la barra flotante ([LibraryToolbar]) con paneles hacia arriba; al subir vuelven los iconos de arriba y la
+ * flotante se va. En vertical la estructura es la de siempre.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +167,9 @@ fun LibraryContent(
     artworkFingerprints: Set<String>? = null,
     /** N1-H2: `preferences.json` es de otra versión: aviso fijo de que los cambios no se guardarán. */
     preferencesReadOnly: Boolean = false,
+    /** N3b: categoría elegida (carpeta de primer nivel). */
+    category: LibraryCategory = LibraryCategory.All,
+    onCategoryChange: (LibraryCategory) -> Unit = {},
 ) {
     val showsGames = state is LibraryState.Ready && state.entries.isNotEmpty() ||
         state is LibraryState.Scanning && state.previous.isNotEmpty()
@@ -131,81 +183,235 @@ fun LibraryContent(
             onNewGamesSummaryShown()
         }
     }
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.library_title)) },
-                actions = {
-                    if (showsGames) MoreMenu(prefs, onLayoutChange, onSortChange, onRescan, onChooseFolder)
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-        if (preferencesReadOnly) PreferencesReadOnlyBanner()
-        Box(Modifier.fillMaxSize()) {
-            when (state) {
-                LibraryState.Loading -> ScanningPane(message = stringResource(R.string.library_loading))
-                LibraryState.NoFolder -> EmptyState(
-                    icon = Icons.Outlined.FolderOpen,
-                    title = stringResource(R.string.library_pick_title),
-                    message = stringResource(R.string.library_pick_message),
-                    actions = { Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_action)) } },
-                )
-                is LibraryState.Scanning -> if (state.previous.isEmpty()) {
-                    ScanningPane(message = scanMessage(state.done, state.total))
-                } else {
-                    GameBrowser(
-                        entries = state.previous,
-                        folderName = state.folderName,
-                        prefs = prefs,
-                        query = query,
-                        filter = filter,
-                        onQueryChange = onQueryChange,
-                        onFilterChange = onFilterChange,
-                        actions = actions,
-                        scanning = true,
-                        done = state.done,
-                        total = state.total,
-                        artworkFingerprints = withArtwork,
-                        onRescan = onRescan,
-                    )
-                }
-                is LibraryState.Ready -> if (state.entries.isEmpty()) {
-                    EmptyState(
-                        icon = Icons.Outlined.SportsEsports,
-                        title = stringResource(R.string.library_empty_title),
-                        message = stringResource(R.string.library_empty_message),
-                        actions = {
-                            Button(onClick = onRescan) { Text(stringResource(R.string.library_rescan)) }
-                            OutlinedButton(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }
-                        },
-                    )
-                } else {
-                    GameBrowser(
-                        entries = state.entries,
-                        folderName = state.folderName,
-                        prefs = prefs,
-                        query = query,
-                        filter = filter,
-                        onQueryChange = onQueryChange,
-                        onFilterChange = onFilterChange,
-                        actions = actions,
-                        scanning = false,
-                        done = 0,
-                        total = 0,
-                        artworkFingerprints = withArtwork,
-                        onRescan = onRescan,
-                    )
-                }
-                is LibraryState.Failed -> LibraryErrorPane(state.error, onChooseFolder, onRescan)
+    val shownEntries = when (state) {
+        is LibraryState.Ready -> state.entries
+        is LibraryState.Scanning -> state.previous
+        else -> emptyList()
+    }
+    val categories = remember(shownEntries, prefs) { LibraryCategory.options(shownEntries, prefs) }
+    val tools = rememberLibraryToolsState()
+    val preset = LocalLibraryToolsPreset.current
+    val topBarState = rememberTopAppBarState()
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(topBarState)
+    // Las posiciones de la cuadrícula y la lista viven aquí: deciden si el título está fijado (barra flotante) y se
+    // conservan al cerrar una búsqueda.
+    val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reduceMotion = LocalReduceMotion.current
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val landscape = isLandscapeLibrary(maxWidth.value, maxHeight.value)
+        // Alto visible de la lista con la barra superior desplegada (estable mientras la barra se pliega).
+        val viewportHeight = (maxHeight - TopAppBarDefaults.TopAppBarExpandedHeight).value
+        val searchVisible = landscape && showsGames && (tools.searchOpen || query.isNotEmpty())
+        // H7: al cerrar la búsqueda la barra superior vuelve como estaba (plegada o no), no siempre desplegada.
+        var offsetBeforeSearch by rememberSaveable { mutableFloatStateOf(0f) }
+        val openSearch = {
+            offsetBeforeSearch = topBarState.heightOffset
+            tools.panel = null
+            tools.searchOpen = true
+        }
+        val closeSearch = {
+            onQueryChange("")
+            tools.searchOpen = false
+            topBarState.heightOffset = offsetBeforeSearch
+        }
+        BackHandler(enabled = searchVisible) { closeSearch() }
+        // Al pasar de horizontal a vertical se cierra un panel abierto (solo en ese paso: el catálogo puede arrancar en
+        // vertical antes de girar). En vertical, sin texto, la búsqueda horizontal queda cerrada (H7: si se borra en
+        // vertical, al volver a horizontal no reaparece vacía).
+        var wasLandscape by remember { mutableStateOf(landscape) }
+        LaunchedEffect(landscape, query.isEmpty()) {
+            if (wasLandscape && !landscape) tools.panel = null
+            if (!landscape && query.isEmpty()) tools.searchOpen = false
+            wasLandscape = landscape
+        }
+        // H1: la barra flotante solo al desplazar (barra superior plegada a la mitad o más y título de sección fijado).
+        val collapsed by remember { derivedStateOf { topBarState.collapsedFraction } }
+        val firstVisible by remember(prefs.layout) {
+            derivedStateOf { if (prefs.layout == LibraryLayout.GRID) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex }
+        }
+        val floating = showsGames && showFloatingToolbar(
+            landscape = landscape,
+            searching = searchVisible,
+            collapsedFraction = collapsed,
+            titlePinned = isTitlePinned(tools.railShown, firstVisible),
+        )
+        // Si la barra flotante se va (al subir) con su panel abierto, el panel se cierra; solo en ese paso (el catálogo
+        // abre un panel flotante antes de desplazar).
+        var wasFloating by remember { mutableStateOf(false) }
+        LaunchedEffect(floating) {
+            if (wasFloating && !floating && tools.panelSource == PanelSource.FLOATING) tools.panel = null
+            wasFloating = floating
+        }
+        // Catálogo y pruebas: arrancar «desplazado» (carril fuera y barra superior plegada en la fracción pedida).
+        if (preset.scrolled) {
+            LaunchedEffect(Unit) {
+                withFrameNanos {}
+                if (prefs.layout == LibraryLayout.GRID) gridState.scrollToItem(1) else listState.scrollToItem(1)
+                withFrameNanos {}
+                topBarState.heightOffset = topBarState.heightOffsetLimit * preset.collapse.coerceIn(0f, 1f)
             }
         }
+        val toolActions = LibraryToolActions(
+            filter = filter,
+            category = category,
+            categories = categories,
+            layout = prefs.layout,
+            sort = prefs.sort,
+            onSearch = openSearch,
+            onFilterChange = onFilterChange,
+            onCategoryChange = onCategoryChange,
+            onLayoutChange = onLayoutChange,
+            onSortChange = onSortChange,
+        )
+        // H2: si al abrir un panel desde la barra flotante no cabe sin tapar el título, se pliega del todo la barra superior.
+        val foldTopBar: () -> Unit = {
+            scope.launch {
+                val target = topBarState.heightOffsetLimit
+                if (reduceMotion) {
+                    topBarState.heightOffset = target
+                } else {
+                    animate(topBarState.heightOffset, target) { value, _ -> topBarState.heightOffset = value }
+                }
+            }
+        }
+        Scaffold(
+            modifier = if (landscape) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier,
+            topBar = {
+                when {
+                    searchVisible -> LandscapeSearchBar(query, onQueryChange, onClose = closeSearch)
+                    landscape -> TopAppBar(
+                        title = { Text(stringResource(R.string.library_title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        actions = {
+                            if (showsGames) {
+                                LibraryBarActions(tools, toolActions)
+                                MoreMenu(prefs, onLayoutChange, onSortChange, onRescan, onChooseFolder, viewOptions = false)
+                            }
+                        },
+                        scrollBehavior = scrollBehavior,
+                        modifier = Modifier.testTag("library-top-bar"),
+                    )
+                    else -> TopAppBar(
+                        title = { Text(stringResource(R.string.library_title)) },
+                        actions = {
+                            if (showsGames) {
+                                MoreMenu(
+                                    prefs, onLayoutChange, onSortChange, onRescan, onChooseFolder,
+                                    viewOptions = true,
+                                    categories = categories,
+                                    category = category,
+                                    onCategoryChange = onCategoryChange,
+                                )
+                            }
+                        },
+                    )
+                }
+            },
+            floatingActionButton = {
+                // Aparece y se va deslizándose desde abajo; con «reducir movimiento», sin animación.
+                AnimatedVisibility(
+                    visible = floating,
+                    enter = if (reduceMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                    exit = if (reduceMotion) ExitTransition.None else slideOutVertically { it } + fadeOut(),
+                ) {
+                    LibraryToolbar(tools = tools, actions = toolActions, onNeedRoom = foldTopBar)
+                }
+            },
+            snackbarHost = { SnackbarHost(snackbar) },
+        ) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+            if (preferencesReadOnly) PreferencesReadOnlyBanner()
+            Box(Modifier.fillMaxSize()) {
+                val browser = BrowserMode(
+                    landscape = landscape,
+                    category = category,
+                    onCategoryChange = onCategoryChange,
+                    viewportHeightDp = viewportHeight,
+                    tools = tools,
+                    gridState = gridState,
+                    listState = listState,
+                    floatingToolbar = floating,
+                    reduceMotion = reduceMotion,
+                )
+                when (state) {
+                    LibraryState.Loading -> ScanningPane(message = stringResource(R.string.library_loading))
+                    LibraryState.NoFolder -> EmptyState(
+                        icon = Icons.Outlined.FolderOpen,
+                        title = stringResource(R.string.library_pick_title),
+                        message = stringResource(R.string.library_pick_message),
+                        actions = { Button(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_action)) } },
+                    )
+                    is LibraryState.Scanning -> if (state.previous.isEmpty()) {
+                        ScanningPane(message = scanMessage(state.done, state.total))
+                    } else {
+                        GameBrowser(
+                            entries = state.previous,
+                            folderName = state.folderName,
+                            prefs = prefs,
+                            query = query,
+                            filter = filter,
+                            onQueryChange = onQueryChange,
+                            onFilterChange = onFilterChange,
+                            actions = actions,
+                            scanning = true,
+                            done = state.done,
+                            total = state.total,
+                            artworkFingerprints = withArtwork,
+                            onRescan = onRescan,
+                            mode = browser,
+                        )
+                    }
+                    is LibraryState.Ready -> if (state.entries.isEmpty()) {
+                        EmptyState(
+                            icon = Icons.Outlined.SportsEsports,
+                            title = stringResource(R.string.library_empty_title),
+                            message = stringResource(R.string.library_empty_message),
+                            actions = {
+                                Button(onClick = onRescan) { Text(stringResource(R.string.library_rescan)) }
+                                OutlinedButton(onClick = onChooseFolder) { Text(stringResource(R.string.library_pick_other_action)) }
+                            },
+                        )
+                    } else {
+                        GameBrowser(
+                            entries = state.entries,
+                            folderName = state.folderName,
+                            prefs = prefs,
+                            query = query,
+                            filter = filter,
+                            onQueryChange = onQueryChange,
+                            onFilterChange = onFilterChange,
+                            actions = actions,
+                            scanning = false,
+                            done = 0,
+                            total = 0,
+                            artworkFingerprints = withArtwork,
+                            onRescan = onRescan,
+                            mode = browser,
+                        )
+                    }
+                    is LibraryState.Failed -> LibraryErrorPane(state.error, onChooseFolder, onRescan)
+                }
+            }
+            }
         }
     }
 }
+
+/** Lo que cambia la lista en horizontal (N3b) y la categoría elegida. */
+private class BrowserMode(
+    val landscape: Boolean,
+    val category: LibraryCategory,
+    val onCategoryChange: (LibraryCategory) -> Unit,
+    /** Alto visible de la lista con la barra superior desplegada: limita el alto del carril en horizontal. */
+    val viewportHeightDp: Float,
+    val tools: LibraryToolsState,
+    val gridState: LazyGridState,
+    val listState: LazyListState,
+    /** La barra flotante está a la vista: la lista deja 88 dp de aire al final. */
+    val floatingToolbar: Boolean,
+    val reduceMotion: Boolean,
+)
 
 @Composable
 private fun scanMessage(done: Int, total: Int): String =
@@ -285,68 +491,161 @@ private fun GameBrowser(
     total: Int,
     artworkFingerprints: Set<String>,
     onRescan: () -> Unit,
+    mode: BrowserMode,
 ) {
+    val landscape = mode.landscape
+    val category = mode.category
     val searching = query.isNotBlank()
-    val visible = remember(entries, prefs, filter, query) { LibraryQuery.visible(entries, prefs, filter, query) }
-    val rail = remember(entries, prefs, artworkFingerprints) {
-        LibraryQuery.recent(entries, prefs, hasArtwork = { it in artworkFingerprints })
+    val visible = remember(entries, prefs, filter, query, category) {
+        LibraryQuery.visible(entries, prefs, filter, query, category)
     }
+    // ND15: solo juegos que se pueden continuar. `canResume` lee estado (huellas reanudables): derivedStateOf lo sigue.
+    val rail by remember(entries, prefs, artworkFingerprints, actions) {
+        derivedStateOf {
+            LibraryQuery.continueRail(entries, prefs, isResumable = actions.canResume, hasArtwork = { it in artworkFingerprints })
+        }
+    }
+    val showRail = filter == LibraryFilter.ALL && category == LibraryCategory.All && rail.isNotEmpty()
+    // Al cerrar una búsqueda la cuadrícula vuelve a donde estaba (los estados viven en LibraryContent).
+    val gridState = mode.gridState
+    val listState = mode.listState
+    SideEffect { mode.tools.railShown = landscape && showRail }
     var pulled by remember { mutableStateOf(false) }
     LaunchedEffect(scanning) { if (!scanning) pulled = false }
+    val resetFilters = {
+        onFilterChange(LibraryFilter.ALL)
+        mode.onCategoryChange(LibraryCategory.All)
+    }
+    val title = sectionTitle(filter, category)
     Column(Modifier.fillMaxSize()) {
         if (scanning) ScanProgress(done, total)
-        SearchField(query, onQueryChange)
-        FilterRow(filter, onFilterChange)
-        PullToRefreshBox(
-            isRefreshing = pulled,
-            onRefresh = {
-                pulled = true
-                onRescan()
-            },
-            modifier = Modifier.weight(1f),
-        ) {
-            when {
-                visible.isEmpty() -> NoResults(
-                    query = query,
-                    filter = filter,
-                    allHidden = filter == LibraryFilter.ALL && !searching,
-                    onFilterChange = onFilterChange,
+        if (!landscape) {
+            SearchField(query, onQueryChange)
+            FilterRow(filter, onFilterChange)
+        }
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val fontScale = LocalDensity.current.fontScale
+            // En vertical la barra no se pliega: el alto de esta caja ya es estable.
+            val viewport = if (landscape) mode.viewportHeightDp else maxHeight.value
+            val metrics = remember(maxWidth, viewport, fontScale, landscape) {
+                railMetricsFor(maxWidth.value, viewport, fontScale, landscape)
+            }
+            PullToRefreshBox(
+                isRefreshing = pulled,
+                onRefresh = {
+                    pulled = true
+                    onRescan()
+                },
+                modifier = Modifier.fillMaxSize().onGloballyPositioned {
+                    val bounds = it.boundsInWindow()
+                    mode.tools.viewportTop = bounds.top.roundToInt()
+                    mode.tools.viewportBottom = bounds.bottom.roundToInt()
+                },
+            ) {
+                // 88 dp de aire al final mientras se ve la barra flotante (cambia con suavidad: la lista no salta).
+                val bottomPadding by animateDpAsState(
+                    targetValue = if (landscape && mode.floatingToolbar) ToolbarClearance else 16.dp,
+                    animationSpec = if (mode.reduceMotion) snap() else tween(),
+                    label = "library-bottom-padding",
                 )
-                searching -> GameCollection(
-                    entries = visible,
-                    prefs = prefs,
-                    layout = LibraryLayout.LIST,
-                    actions = actions,
-                    header = { ResultsCount(visible.size) },
-                )
-                else -> GameCollection(
-                    entries = visible,
-                    prefs = prefs,
-                    layout = prefs.layout,
-                    actions = actions,
-                    header = {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            if (filter == LibraryFilter.ALL && rail.isNotEmpty()) {
-                                ContinueRail(
-                                    entries = rail,
-                                    prefs = prefs,
-                                    onOpenDetails = actions.onOpenDetails,
-                                    onContinue = actions.onPlay ?: actions.onOpenDetails,
-                                )
+                val railContent: @Composable () -> Unit = {
+                    ContinueRail(
+                        entries = rail,
+                        prefs = prefs,
+                        onOpenDetails = actions.onOpenDetails,
+                        onContinue = actions.onPlay ?: actions.onOpenDetails,
+                        metrics = metrics,
+                    )
+                }
+                val landscapeHeader: (@Composable (GameMenuController) -> Unit)? = if (showRail) {
+                    { _ -> railContent() }
+                } else {
+                    null
+                }
+                when {
+                    visible.isEmpty() -> NoResults(
+                        query = query,
+                        filter = filter,
+                        category = category,
+                        allHidden = filter == LibraryFilter.ALL && category == LibraryCategory.All && !searching,
+                        onSearchEverywhere = resetFilters,
+                        onFilterChange = onFilterChange,
+                    )
+                    searching -> GameCollection(
+                        entries = visible,
+                        prefs = prefs,
+                        layout = LibraryLayout.LIST,
+                        actions = actions,
+                        header = { ResultsCount(visible.size) },
+                        bottomPadding = bottomPadding,
+                    )
+                    landscape -> GameCollection(
+                        entries = visible,
+                        prefs = prefs,
+                        layout = prefs.layout,
+                        actions = actions,
+                        // En horizontal el título de sección se queda fijo arriba al desplazar (el carril no).
+                        header = landscapeHeader,
+                        pinnedHeader = { PinnedSectionHeader(title, folderName, mode.tools) },
+                        gridState = gridState,
+                        listState = listState,
+                        bottomPadding = bottomPadding,
+                    )
+                    else -> GameCollection(
+                        entries = visible,
+                        prefs = prefs,
+                        layout = prefs.layout,
+                        actions = actions,
+                        header = {
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                if (showRail) railContent()
+                                SectionHeader(title = title, folderName = folderName)
                             }
-                            SectionHeader(
-                                title = if (filter == LibraryFilter.ALL) {
-                                    stringResource(R.string.library_all_games)
-                                } else {
-                                    filter.title
-                                },
-                                folderName = folderName,
-                            )
-                        }
-                    },
-                )
+                        },
+                        gridState = gridState,
+                        listState = listState,
+                        bottomPadding = bottomPadding,
+                    )
+                }
             }
         }
+    }
+}
+
+/** Aire bajo la última fila en horizontal para que la barra flotante no la tape (barra 56 dp + márgenes). */
+private val ToolbarClearance = 88.dp
+
+/** «Todos los juegos», el filtro, la categoría o «Categoría · filtro» (N3b; lógica en [sectionTitle] puro). */
+@Composable
+private fun sectionTitle(filter: LibraryFilter, category: LibraryCategory): String {
+    val allGames = stringResource(R.string.library_all_games)
+    val root = stringResource(R.string.n3_category_root)
+    val format = stringResource(R.string.n3_section_with_filter)
+    return sectionTitle(filter, category, SectionLabels(allGames, root) { a, b -> String.format(format, a, b) })
+}
+
+/**
+ * Título de sección fijado (horizontal): fondo opaco de todo el ancho, para que las tarjetas pasen por debajo. Anota
+ * dónde está el encabezado entero (título y carpeta, H6) para que los paneles no lo tapen.
+ */
+@Composable
+private fun PinnedSectionHeader(title: String, folderName: String?, tools: LibraryToolsState) {
+    DisposableEffect(tools) { onDispose { tools.forgetHeader() } }
+    Box(
+        Modifier
+            .bleedHorizontally(GRID_MARGIN_DP.dp)
+            .background(MaterialTheme.colorScheme.background)
+            .onGloballyPositioned {
+                val bounds = it.boundsInWindow()
+                tools.headerTop = bounds.top.roundToInt()
+                tools.headerBottom = bounds.bottom.roundToInt()
+            }
+            .padding(horizontal = GRID_MARGIN_DP.dp)
+            .heightIn(min = PinnedHeaderMinHeight)
+            .testTag("library-pinned-header"),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        SectionHeader(title = title, folderName = folderName)
     }
 }
 
@@ -378,7 +677,14 @@ private fun SectionHeader(title: String, folderName: String?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("library-section-title"))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .testTag("library-section-title")
+                .semantics { heading() },
+        )
         if (folderName != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(
@@ -391,7 +697,8 @@ private fun SectionHeader(title: String, folderName: String?) {
                     folderName,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.width(160.dp),
+                    // N3: a su medida (hasta 160 dp), así el icono de carpeta queda junto al nombre.
+                    modifier = Modifier.widthIn(max = 160.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
@@ -466,11 +773,14 @@ private fun FilterRow(filter: LibraryFilter, onFilterChange: (LibraryFilter) -> 
 private fun NoResults(
     query: String,
     filter: LibraryFilter,
+    category: LibraryCategory,
     allHidden: Boolean,
+    onSearchEverywhere: () -> Unit,
     onFilterChange: (LibraryFilter) -> Unit,
 ) {
+    val narrowed = filter != LibraryFilter.ALL || category != LibraryCategory.All
     when {
-        query.isNotBlank() && filter == LibraryFilter.ALL -> EmptyState(
+        query.isNotBlank() && !narrowed -> EmptyState(
             icon = Icons.Outlined.SearchOff,
             title = stringResource(R.string.library_no_results_title, query.trim()),
             message = stringResource(R.string.library_no_results_all),
@@ -478,9 +788,13 @@ private fun NoResults(
         query.isNotBlank() -> EmptyState(
             icon = Icons.Outlined.SearchOff,
             title = stringResource(R.string.library_no_results_title, query.trim()),
-            message = stringResource(R.string.library_no_results_filter, filter.title),
+            message = if (category != LibraryCategory.All) {
+                stringResource(R.string.n3_no_results_category, categoryTitle(category))
+            } else {
+                stringResource(R.string.library_no_results_filter, filter.title)
+            },
             actions = {
-                Button(onClick = { onFilterChange(LibraryFilter.ALL) }) {
+                Button(onClick = onSearchEverywhere) {
                     Text(stringResource(R.string.library_search_all))
                 }
             },
@@ -489,6 +803,14 @@ private fun NoResults(
             icon = Icons.Outlined.VisibilityOff,
             title = stringResource(R.string.library_all_hidden_title),
             message = stringResource(R.string.library_all_hidden_message),
+        )
+        category != LibraryCategory.All -> EmptyState(
+            icon = Icons.Outlined.FolderOff,
+            title = stringResource(R.string.n3_no_games_category_title, sectionTitle(filter, category)),
+            message = stringResource(R.string.n3_no_games_category_message),
+            actions = {
+                Button(onClick = onSearchEverywhere) { Text(stringResource(R.string.n3_show_all_categories)) }
+            },
         )
         filter == LibraryFilter.FAVORITES -> EmptyState(
             icon = Icons.Outlined.SearchOff,
@@ -509,7 +831,10 @@ private fun NoResults(
     }
 }
 
-/** «Más opciones»: vista, orden, volver a escanear y cambiar de carpeta. */
+/**
+ * «Más opciones»: vista, orden, categoría (si hay carpetas, N3b), volver a escanear y cambiar de carpeta. En horizontal
+ * ([viewOptions] = `false`) vista, orden y categoría están en la barra flotante y aquí quedan escanear y carpeta.
+ */
 @Composable
 private fun MoreMenu(
     prefs: LibraryPreferencesData,
@@ -517,6 +842,10 @@ private fun MoreMenu(
     onSortChange: (LibrarySort) -> Unit,
     onRescan: () -> Unit,
     onChooseFolder: () -> Unit,
+    viewOptions: Boolean,
+    categories: List<CategoryOption> = emptyList(),
+    category: LibraryCategory = LibraryCategory.All,
+    onCategoryChange: (LibraryCategory) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -524,22 +853,46 @@ private fun MoreMenu(
             Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.library_more_options))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            MenuHeader(stringResource(R.string.library_view))
-            LibraryLayout.entries.forEach { layout ->
-                MenuChoice(layout.title, selected = prefs.layout == layout) {
-                    onLayoutChange(layout)
-                    expanded = false
+            if (viewOptions) {
+                MenuHeader(stringResource(R.string.library_view))
+                LibraryLayout.entries.forEach { layout ->
+                    MenuChoice(layout.title, selected = prefs.layout == layout) {
+                        onLayoutChange(layout)
+                        expanded = false
+                    }
+                }
+                HorizontalDivider()
+                MenuHeader(stringResource(R.string.library_sort_by))
+                LibrarySort.entries.forEach { sort ->
+                    MenuChoice(sort.title, selected = prefs.sort == sort) {
+                        onSortChange(sort)
+                        expanded = false
+                    }
+                }
+                HorizontalDivider()
+                if (LibraryCategory.hasFolders(categories)) {
+                    MenuHeader(stringResource(R.string.n3_menu_category))
+                    MenuChoice(
+                        stringResource(R.string.n3_category_all),
+                        selected = category == LibraryCategory.All,
+                        modifier = Modifier.testTag("menu-category-all"),
+                    ) {
+                        onCategoryChange(LibraryCategory.All)
+                        expanded = false
+                    }
+                    categories.forEach { option ->
+                        MenuChoice(
+                            stringResource(R.string.n3_category_option, categoryTitle(option.category), option.count),
+                            selected = category == option.category,
+                            modifier = Modifier.testTag("menu-category-${categoryTag(option.category)}"),
+                        ) {
+                            onCategoryChange(option.category)
+                            expanded = false
+                        }
+                    }
+                    HorizontalDivider()
                 }
             }
-            HorizontalDivider()
-            MenuHeader(stringResource(R.string.library_sort_by))
-            LibrarySort.entries.forEach { sort ->
-                MenuChoice(sort.title, selected = prefs.sort == sort) {
-                    onSortChange(sort)
-                    expanded = false
-                }
-            }
-            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.library_rescan)) },
                 leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
@@ -573,10 +926,11 @@ private fun MenuHeader(text: String) {
 }
 
 @Composable
-private fun MenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun MenuChoice(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(label) },
         onClick = onClick,
+        modifier = modifier,
         leadingIcon = if (selected) {
             { Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.library_selected)) }
         } else {

@@ -28,6 +28,7 @@ import com.joelbermudez.pocketgb.debug.catalog.gameplayCatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.libraryCatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.n1CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.n2CatalogScreens
+import com.joelbermudez.pocketgb.debug.catalog.n3CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.settingsCatalogScreens
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.library.RomEntry
@@ -166,7 +167,7 @@ private val a6CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
 
 internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
     a6CatalogScreens + a7CatalogScreens + a7Aliases.mapValues { (_, target) -> a6CatalogScreens.getValue(target) } +
-        a7ComposedScreens(a6CatalogScreens) + a9CatalogScreens + n1CatalogScreens + n2CatalogScreens
+        a7ComposedScreens(a6CatalogScreens) + a9CatalogScreens + n1CatalogScreens + n2CatalogScreens + n3CatalogScreens
 
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {

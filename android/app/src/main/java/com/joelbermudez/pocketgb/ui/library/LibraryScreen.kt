@@ -32,6 +32,7 @@ fun LibraryScreen(
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val category by viewModel.category.collectAsStateWithLifecycle()
     val summary by viewModel.newGamesSummary.collectAsStateWithLifecycle()
     val preferencesReadOnly by viewModel.preferencesReadOnly.collectAsStateWithLifecycle()
     val chooseFolder = rememberFolderPicker(viewModel::chooseFolder)
@@ -66,6 +67,8 @@ fun LibraryScreen(
         filter = filter,
         onQueryChange = viewModel::setQuery,
         onFilterChange = viewModel::setFilter,
+        category = category,
+        onCategoryChange = viewModel::setCategory,
         onLayoutChange = viewModel::setLayout,
         onSortChange = viewModel::setSort,
         onChooseFolder = chooseFolder,

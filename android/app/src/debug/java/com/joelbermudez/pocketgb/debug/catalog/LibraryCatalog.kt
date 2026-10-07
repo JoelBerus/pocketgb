@@ -27,8 +27,12 @@ import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LocalAutoFocusSearch
 import com.joelbermudez.pocketgb.ui.library.LocalInitialMenuFor
 
-// A9: «Renombrar» está en el menú contextual de la app; el catálogo lo muestra igual.
-private val actions = GameActions({}, {}, {}, onPlay = {}, onGameSettings = {}, onRename = {})
+// A9: «Renombrar» está en el menú contextual de la app; el catálogo lo muestra igual. N3 (ND15): el carril solo muestra
+// juegos que se pueden continuar; los tres recientes del catálogo lo son.
+private val actions = GameActions(
+    {}, {}, {}, onPlay = {}, onGameSettings = {}, onRename = {},
+    canResume = { CatalogData.fingerprint(it.id) in CatalogData.coveredFingerprints },
+)
 
 @Composable
 private fun CatalogLibrary(

@@ -1,20 +1,27 @@
 package com.joelbermudez.pocketgb.ui.details
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
@@ -47,16 +54,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -198,6 +211,8 @@ fun GameDetailsContent(
     onRename: (() -> Unit)? = null,
     /** Solo el catálogo de capturas: el menú de la barra superior arranca abierto. */
     initialMenuOpen: Boolean = false,
+    /** Solo el catálogo de capturas: la información arranca desplazada estos px (se limita al final). */
+    initialInfoScroll: Int = 0,
 ) {
     var confirmHide by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(initialMenuOpen) }
@@ -239,101 +254,70 @@ fun GameDetailsContent(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            GameArtwork(
-                entry,
-                artworkKey,
-                Modifier.fillMaxWidth().testTag("game-details-artwork"),
-                shape = MaterialTheme.shapes.large,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(entry.displayTitle, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("game-details-title"))
-                // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera y bajo el chip.
-                val location = locationText(entry.location, inRoot = null)
-                val locationDescription = stringResource(R.string.n1_location_description, location)
-                val locationText: @Composable () -> Unit = {
-                    Text(
-                        location,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("game-details-location").semantics { contentDescription = locationDescription },
-                    )
-                }
-                if (LocalLargeFont.current) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ConsoleChip(entry.isColor)
-                        locationText()
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ConsoleChip(entry.isColor)
-                        locationText()
-                    }
-                }
-                if (entry.isDuplicate) AlsoIn(entry.alsoAt)
-            }
-
-            val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
-            if (problemMessage != null) ProblemCard(problemMessage)
-
-            // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. A9 (cambia J8, ND6), como iOS:
-            // «Continuar» retoma el estado automático exacto si sigue siendo el de la partida; si no hay, «Jugar» abre la
-            // partida. Con «Continuar» también se ofrece «Jugar desde el inicio» (solo la partida, sin el estado).
-            val playable = entry.isPlayable && load !is DetailsLoad.Failed
-            Button(
-                onClick = onPlay,
-                enabled = playable,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play"),
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(
-                    stringResource(if (canResume) R.string.details_continue else R.string.details_play),
-                    modifier = Modifier.padding(start = 8.dp),
+        // N3a: dos columnas si el espacio es más ancho que alto o ≥ 600 dp (imagen a la izquierda limitada en alto, la
+        // información con su propio scroll a la derecha y «Jugar» visible sin desplazar); si no, una columna con la imagen
+        // como mucho al 45 % del alto. La proporción es la de la consola.
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            val ratio = entry.screenAspectRatio
+            val layout = detailLayoutFor(maxWidth.value, maxHeight.value, ratio)
+            val artwork: @Composable (Modifier) -> Unit = { artworkModifier ->
+                GameArtwork(
+                    entry,
+                    artworkKey,
+                    artworkModifier.width(layout.artworkWidthDp.dp).testTag("game-details-artwork"),
+                    shape = MaterialTheme.shapes.large,
+                    aspectRatio = ratio,
                 )
             }
-            if (canResume) {
-                OutlinedButton(
-                    onClick = onPlayFromStart,
-                    enabled = playable,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play-from-start"),
+            val info: @Composable () -> Unit = {
+                DetailsInfo(
+                    entry = entry,
+                    load = load,
+                    favorite = favorite,
+                    lastPlayedAt = lastPlayedAt,
+                    onPlay = onPlay,
+                    onToggleFavorite = onToggleFavorite,
+                    onOpenSettings = onOpenSettings,
+                    canResume = canResume,
+                    onPlayFromStart = onPlayFromStart,
+                    onHide = { confirmHide = true },
+                    // «Jugar» siempre justo bajo el título (H3): con un nombre o una ruta largos, la ruta y «También en» lo
+                    // empujaban fuera de la pantalla (en dos columnas y también en vertical). En dos columnas el título
+                    // ocupa como mucho 2 líneas (completo en la barra superior y en «Renombrar»).
+                    playFirst = true,
+                    titleMaxLines = if (layout.twoColumns) 2 else Int.MAX_VALUE,
+                )
+            }
+            val scroll = rememberScrollState(initialInfoScroll)
+            if (layout.twoColumns) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = DETAIL_MARGIN_DP.dp).testTag("game-details-two-columns"),
+                    horizontalArrangement = Arrangement.spacedBy(DETAIL_COLUMN_SPACING_DP.dp),
                 ) {
-                    Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Text(stringResource(R.string.a9_play_from_start), modifier = Modifier.padding(start = 8.dp))
+                    Box(Modifier.padding(vertical = (DETAIL_VERTICAL_PADDING_DP / 2).dp)) { artwork(Modifier) }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .verticalScroll(scroll)
+                            .padding(vertical = (DETAIL_VERTICAL_PADDING_DP / 2).dp)
+                            .testTag("game-details-info"),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) { info() }
                 }
-                Text(
-                    stringResource(R.string.a9_resume_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().testTag("game-details-resume-hint"),
-                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(horizontal = DETAIL_MARGIN_DP.dp, vertical = 8.dp)
+                        .testTag("game-details-info"),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    artwork(Modifier.align(Alignment.CenterHorizontally))
+                    info()
+                }
             }
-
-            Stats(entry, lastPlayedAt)
-            SecondaryActions(favorite, onToggleFavorite, onOpenSettings)
-            Facts(entry, load)
-
-            OutlinedButton(
-                onClick = { confirmHide = true },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-hide"),
-            ) {
-                Icon(Icons.Outlined.VisibilityOff, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(stringResource(R.string.details_hide), modifier = Modifier.padding(start = 8.dp))
-            }
-            Text(
-                stringResource(R.string.details_hide_footer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
     if (confirmHide) {
@@ -344,6 +328,130 @@ fun GameDetailsContent(
                 onHide()
             },
             onDismiss = { confirmHide = false },
+        )
+    }
+}
+
+/** Cabecera, Jugar/Continuar, estadísticas, acciones, información técnica y ocultar (columna derecha o bajo la imagen). */
+@Composable
+private fun DetailsInfo(
+    entry: RomEntry,
+    load: DetailsLoad,
+    favorite: Boolean,
+    lastPlayedAt: Long?,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onOpenSettings: () -> Unit,
+    canResume: Boolean,
+    onPlayFromStart: () -> Unit,
+    onHide: () -> Unit,
+    playFirst: Boolean = false,
+    titleMaxLines: Int = Int.MAX_VALUE,
+) {
+    val title: @Composable () -> Unit = {
+        Text(
+            entry.displayTitle,
+            style = MaterialTheme.typography.headlineSmall,
+            maxLines = titleMaxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("game-details-title"),
+        )
+    }
+    if (playFirst) {
+        title()
+        PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!playFirst) title()
+        // N1b: ruta completa («Pokémon › 2ª generación · archivo»); con fuente grande, entera y bajo el chip.
+        val location = locationText(entry.location, inRoot = null)
+        val locationDescription = stringResource(R.string.n1_location_description, location)
+        val locationText: @Composable () -> Unit = {
+            Text(
+                location,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("game-details-location").semantics { contentDescription = locationDescription },
+            )
+        }
+        if (LocalLargeFont.current) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ConsoleChip(entry.isColor)
+                locationText()
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ConsoleChip(entry.isColor)
+                locationText()
+            }
+        }
+        if (entry.isDuplicate) AlsoIn(entry.alsoAt)
+    }
+
+    val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
+    if (problemMessage != null) ProblemCard(problemMessage)
+
+    if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
+
+    Stats(entry, lastPlayedAt)
+    SecondaryActions(favorite, onToggleFavorite, onOpenSettings)
+    TechnicalInfo(entry, load)
+
+    OutlinedButton(
+        onClick = onHide,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-hide"),
+    ) {
+        Icon(Icons.Outlined.VisibilityOff, contentDescription = null, modifier = Modifier.size(20.dp))
+        Text(stringResource(R.string.details_hide), modifier = Modifier.padding(start = 8.dp))
+    }
+    Text(
+        stringResource(R.string.details_hide_footer),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** «Jugar» o «Continuar», y con «Continuar» también «Jugar desde el inicio» y su explicación. */
+@Composable
+private fun PlayActions(
+    entry: RomEntry,
+    load: DetailsLoad,
+    canResume: Boolean,
+    onPlay: () -> Unit,
+    onPlayFromStart: () -> Unit,
+) {
+    // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. A9 (cambia J8, ND6), como iOS:
+    // «Continuar» retoma el estado automático exacto si sigue siendo el de la partida; si no hay, «Jugar» abre la
+    // partida. Con «Continuar» también se ofrece «Jugar desde el inicio» (solo la partida, sin el estado).
+    val playable = entry.isPlayable && load !is DetailsLoad.Failed
+    Button(
+        onClick = onPlay,
+        enabled = playable,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play"),
+    ) {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+        Text(
+            stringResource(if (canResume) R.string.details_continue else R.string.details_play),
+            modifier = Modifier.padding(start = 8.dp),
+        )
+    }
+    if (canResume) {
+        OutlinedButton(
+            onClick = onPlayFromStart,
+            enabled = playable,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("game-details-play-from-start"),
+        ) {
+            Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(stringResource(R.string.a9_play_from_start), modifier = Modifier.padding(start = 8.dp))
+        }
+        Text(
+            stringResource(R.string.a9_resume_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().testTag("game-details-resume-hint"),
         )
     }
 }
@@ -429,65 +537,96 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Favorito, Estados (aún no) y Ajustes del juego. */
+/**
+ * Favorito, Estados (aún no) y Ajustes del juego. N3a: en una fila con el icono al lado si caben los tres textos enteros
+ * (se miden con la fuente real); si no, en una fila con el icono encima (antes se cortaban en un teléfono de 360 dp:
+ * «Favori», «Estad», «Ajust»); con fuente grande (R9), apilados a todo el ancho.
+ */
 @Composable
 private fun SecondaryActions(favorite: Boolean, onToggleFavorite: () -> Unit, onOpenSettings: () -> Unit) {
     val favoriteLabel = stringResource(if (favorite) R.string.menu_favorite_remove else R.string.menu_favorite_add)
     val soon = stringResource(R.string.details_states_soon)
-    val favoriteButton: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedButton(
-            onClick = onToggleFavorite,
-            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-favorite")
-                .semantics { contentDescription = favoriteLabel },
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-        ) {
-            Icon(
-                if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
+    val settingsDescription = stringResource(R.string.details_settings_button)
+    val labels = listOf(
+        stringResource(R.string.game_favorite),
+        stringResource(R.string.details_states),
+        stringResource(R.string.details_settings),
+    )
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    val textsWidth = remember(labels, labelStyle, density) {
+        with(density) { labels.sumOf { measurer.measure(it, labelStyle, maxLines = 1).size.width }.toDp() }
+    }
+    val gaps = SecondaryActionsSpacing * (labels.size - 1)
+    val largeFont = LocalLargeFont.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val style = when {
+            largeFont -> SecondaryStyle.STACKED
+            maxWidth >= textsWidth + SecondaryInlineChrome * labels.size + gaps -> SecondaryStyle.INLINE
+            maxWidth >= textsWidth + SecondaryCompactChrome * labels.size + gaps -> SecondaryStyle.COMPACT
+            else -> SecondaryStyle.STACKED
+        }
+        val button: @Composable (
+            Modifier, String, ImageVector, Boolean, String, androidx.compose.ui.semantics.SemanticsPropertyReceiver.() -> Unit, () -> Unit,
+        ) -> Unit = { modifier, label, icon, enabled, tag, semantics, onClick ->
+            OutlinedButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = modifier.heightIn(min = 48.dp).testTag(tag).semantics(properties = semantics),
+                // Con el icono encima, esquinas redondeadas en vez de pastilla (el botón es más alto).
+                shape = if (style == SecondaryStyle.COMPACT) MaterialTheme.shapes.large else ButtonDefaults.outlinedShape,
+                contentPadding = if (style == SecondaryStyle.COMPACT) {
+                    PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                } else {
+                    ButtonDefaults.ButtonWithIconContentPadding
+                },
+            ) {
+                if (style == SecondaryStyle.COMPACT) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Text(label, maxLines = 1)
+                    }
+                } else {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(label, modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+                }
+            }
+        }
+        val buttons: @Composable (Modifier) -> Unit = { modifier ->
+            button(
+                modifier, labels[0], if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder, true, "game-details-favorite",
+                { contentDescription = favoriteLabel }, onToggleFavorite,
             )
-            Text(stringResource(R.string.game_favorite), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+            button(modifier, labels[1], Icons.Outlined.ViewAgenda, false, "game-details-states", { stateDescription = soon }, {})
+            button(
+                modifier, labels[2], Icons.Outlined.Tune, true, "game-details-settings",
+                { contentDescription = settingsDescription }, onOpenSettings,
+            )
         }
-    }
-    val statesButton: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedButton(
-            onClick = {},
-            enabled = false,
-            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-states")
-                .semantics { stateDescription = soon },
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-        ) {
-            Icon(Icons.Outlined.ViewAgenda, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(stringResource(R.string.details_states), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
-        }
-    }
-    val settingsButton: @Composable (Modifier) -> Unit = { modifier ->
-        val settingsDescription = stringResource(R.string.details_settings_button)
-        OutlinedButton(
-            onClick = onOpenSettings,
-            modifier = modifier.heightIn(min = 48.dp).testTag("game-details-settings")
-                .semantics { contentDescription = settingsDescription },
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-        ) {
-            Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(stringResource(R.string.details_settings), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
-        }
-    }
-    if (LocalLargeFont.current) {
-        // Con fuente grande (R9) los botones se apilan: en una fila sus textos no caben.
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            favoriteButton(Modifier.fillMaxWidth())
-            statesButton(Modifier.fillMaxWidth())
-            settingsButton(Modifier.fillMaxWidth())
-        }
-    } else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            favoriteButton(Modifier.weight(1f))
-            statesButton(Modifier.weight(1f))
-            settingsButton(Modifier.weight(1f))
+        if (style == SecondaryStyle.STACKED) {
+            Column(
+                Modifier.fillMaxWidth().testTag("game-details-actions-stacked"),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) { buttons(Modifier.fillMaxWidth()) }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().testTag("game-details-actions-${style.name.lowercase()}"),
+                horizontalArrangement = Arrangement.spacedBy(SecondaryActionsSpacing),
+            ) { buttons(Modifier.weight(1f)) }
         }
     }
 }
+
+private enum class SecondaryStyle { INLINE, COMPACT, STACKED }
+
+private val SecondaryActionsSpacing = 8.dp
+
+/** Lo que ocupa un botón con el icono al lado además de su texto: márgenes 16 + 24, icono 18, separación 6 y aire. */
+private val SecondaryInlineChrome = 68.dp
+
+/** Con el icono encima: márgenes 8 + 8 y aire. */
+private val SecondaryCompactChrome = 24.dp
 
 @Composable
 private fun ProblemCard(message: String) {
@@ -506,9 +645,42 @@ private fun ProblemCard(message: String) {
     }
 }
 
+/**
+ * «Información técnica» (datos del núcleo): cartucho, ROM, partida (RAM · batería · reloj), checksums y SHA-256
+ * seleccionable. Plegable (N3a, como el `DisclosureGroup` que iOS adopta); desplegada de entrada para no esconder lo que
+ * Android ya mostraba. El estado se conserva al girar.
+ */
+@Composable
+private fun TechnicalInfo(entry: RomEntry, load: DetailsLoad) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    val stateText = stringResource(if (expanded) R.string.n3_details_technical_expanded else R.string.n3_details_technical_collapsed)
+    val actionLabel = stringResource(if (expanded) R.string.n3_details_technical_collapse else R.string.n3_details_technical_expand)
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable(onClickLabel = actionLabel, role = Role.Button) { expanded = !expanded }
+                .semantics(mergeDescendants = true) { stateDescription = stateText }
+                .testTag("game-details-technical-toggle"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.n3_details_technical),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+        }
+        if (expanded) Facts(entry, load)
+    }
+}
+
 @Composable
 private fun Facts(entry: RomEntry, load: DetailsLoad) {
-    Column {
+    Column(Modifier.testTag("game-details-technical")) {
         when (load) {
             DetailsLoad.Loading -> if (entry.problem == null) {
                 Row(

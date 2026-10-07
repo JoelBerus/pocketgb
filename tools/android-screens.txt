@@ -191,3 +191,40 @@ n2-settings-diagonals-ax5 portrait dark fontScale=2.0
 library-prefs-read-only portrait light
 library-prefs-read-only portrait dark
 save-warning-set-aside portrait dark
+# N3 · biblioteca y detalle adaptables: carril con el ancho de la cuadrícula (solo reanudables), herramientas arriba en reposo y barra flotante al desplazar en horizontal, y detalle a dos columnas
+n3-rail-portrait portrait light
+n3-rail-portrait portrait dark
+n3-rail-portrait-ax5 portrait light fontScale=2.0
+n3-library-landscape landscape light
+n3-library-landscape landscape dark
+n3-library-landscape-ax5 landscape light fontScale=2.0
+n3-library-landscape-scrolled landscape light
+n3-library-landscape-scrolled landscape dark
+n3-library-landscape-filters landscape light
+n3-library-landscape-filters landscape dark
+n3-library-landscape-categories landscape light
+n3-library-landscape-view landscape light
+n3-library-landscape-scrolled-filters landscape light
+n3-library-landscape-scrolled-filters landscape dark
+n3-library-landscape-scrolled-categories landscape light
+n3-library-landscape-scrolled-view landscape light
+n3-library-landscape-white landscape light
+n3-library-landscape-white-scrolled landscape light
+n3-library-landscape-search landscape light
+n3-library-landscape-search-results landscape light
+n3-library-landscape-category landscape light
+n3-library-landscape-list landscape dark
+n3-library-portrait-category portrait light
+n3-library-wide landscape light window=wide
+n3-library-wide-filters landscape dark window=wide
+n3-details-portrait portrait light
+n3-details-portrait portrait dark
+n3-details-portrait-ax5 portrait light fontScale=2.0
+n3-details-portrait-long portrait light
+n3-details-landscape landscape light
+n3-details-landscape landscape dark
+n3-details-landscape-resume landscape light
+n3-details-landscape-long landscape light
+n3-details-landscape-ax5 landscape light fontScale=2.0
+n3-details-landscape-scrolled landscape light
+n3-details-wide landscape light window=wide
