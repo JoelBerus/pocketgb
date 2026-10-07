@@ -1,6 +1,6 @@
 # N8 nativo · Game Boy Advance en Android (capa nativa y JNI): evidencia
 
-Rama `n8-android-gba-nativo` (desde `siguiente-nivel` @ `c3d8405`), worktree propio. Commits: `25756cc` (implementación, tests y 05-android-spec), `9458375` (prueba de superficie GBA), `de8519a` (evidencia) y `71e5564` (integración de `siguiente-nivel` con A9 y N2; ver «Integración con A9 y N2»). Es el lote **N8 nativo** de [hitos/N-README.md](../hitos/N-README.md) §4 N8. Solo se tocó:
+Rama `n8-android-gba-nativo` (desde `siguiente-nivel` @ `c3d8405`), worktree propio. Commits: `25756cc` (implementación, tests y 05-android-spec), `9458375` (prueba de superficie GBA), `de8519a` (evidencia), `71e5564` (integración de `siguiente-nivel` con A9 y N2; ver «Integración con A9 y N2») y `fb8b6c8` (respuesta a la auditoría Opus: [N8-nativo-respuesta.md](N8-nativo-respuesta.md), con su verificación desde limpio). Es el lote **N8 nativo** de [hitos/N-README.md](../hitos/N-README.md) §4 N8. Solo se tocó:
 - la capa nativa (`android/app/src/main/cpp/`);
 - el envoltorio Kotlin mínimo (`emulator/`);
 - los tests;
@@ -72,7 +72,7 @@ armeabi-v7a: total=280 gba/arm=79 sha256=1 duplicados=0
 x86:         total=280 gba/arm=79 sha256=1 duplicados=0
 x86_64:      total=280 gba/arm=79 sha256=1 duplicados=0
 ```
-RELEASE_SIMBOLOS
+Desde limpio (`fb8b6c8`), Debug y Release (`RelWithDebInfo`) dan lo mismo en los 4 ABI: `total=280 gba/arm=79 sha256=1 duplicados=0`.
 
 ### Desde limpio (aviso del orquestador)
 `git archive HEAD` (`9458375`) en `scratchpad/n8-clean2` + `android/local.properties`. Las ROMs libres se **enlazan** (no se copian al árbol): `gba/tests/roms` y `gba/build/hb`.

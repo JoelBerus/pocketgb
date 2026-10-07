@@ -13,4 +13,22 @@ Informe: [N8-nativo-opus.md](N8-nativo-opus.md) (APROBAR CON CAMBIOS, sin bloque
 | iOS `sramLoad` (fuera de alcance) | Sin cambios aquí | Android ya restaura el RTC si el medio se rechaza; la diferencia con iOS queda anotada para un lote iOS. | — |
 
 ## Verificación desde limpio
-VERIFICACION_LIMPIO
+`git archive` de `fb8b6c8` en `scratchpad/n8-clean4` + `android/local.properties`, con las ROMs libres enlazadas (no copiadas):
+```
+$ ./gradlew --no-daemon --max-workers=1 clean :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+buildCMakeDebug y buildCMakeRelWithDebInfo × 4 ABI (Debug: gba.c, cpu.c, native_session.c con -g -O2)
+BUILD SUCCESSFUL in 4m 50s — 123 actionable tasks: 122 executed, 1 up-to-date
+JVM: 483 tests, 0 skipped, 0 failures, 0 errors
+lint: 20 avisos, 0 errores
+aapt2 dump permissions (Debug y Release): solo DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION → sin INTERNET
+```
+Dentro de `with-lock.sh emu` (Small_Phone_API_35, `boot_completed=1`, arm64-v8a):
+```
+package=com.joelbermudez.pocketgb.emulator   tests=65 failures=0 errors=0 skipped=0
+  CoreBridgeTest 6 · EmulatorSessionHandleLockTest 3 · EmulatorSessionTest 15 · GbaNativeTest 21 · NativeLibraryTest 1 · NativeSaveBridgeTest 19
+class=com.joelbermudez.pocketgb.video.GameSurfaceTest   tests=5 failures=0 (incluye la de PixelCopy GBA)
+package=com.joelbermudez.pocketgb.input      tests=29 failures=0
+tools/android-save-kill-test.sh 50 (APK Debug -O2 del árbol limpio):
+iter  50  kill=kill9      tras  428 ms  -> OK bytes=8192 counter=3235 confirmed=3235 backups=5 stateTmpFound=0 stateTmpOrphans=0
+Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)
+```
