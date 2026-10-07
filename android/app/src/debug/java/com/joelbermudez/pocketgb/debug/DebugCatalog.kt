@@ -30,6 +30,7 @@ import com.joelbermudez.pocketgb.debug.catalog.n1CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.n2CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.n3CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.n4CatalogScreens
+import com.joelbermudez.pocketgb.debug.catalog.n8CatalogScreens
 import com.joelbermudez.pocketgb.debug.catalog.settingsCatalogScreens
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.library.RomEntry
@@ -54,7 +55,7 @@ private fun demoEntry(
     uri = "content://demo/$id",
     fileName = id.substringAfterLast('/'),
     title = title,
-    isColor = isColor,
+    console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(isColor),
     sizeBytes = sizeBytes,
     headerChecksumOk = problem == null,
     problem = problem,
@@ -169,7 +170,7 @@ private val a6CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
 internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
     a6CatalogScreens + a7CatalogScreens + a7Aliases.mapValues { (_, target) -> a6CatalogScreens.getValue(target) } +
         a7ComposedScreens(a6CatalogScreens) + a9CatalogScreens + n1CatalogScreens + n2CatalogScreens + n3CatalogScreens +
-        n4CatalogScreens
+        n4CatalogScreens + n8CatalogScreens
 
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {

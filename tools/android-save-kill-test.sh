@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Prueba de cierre forzado de las partidas (Android A5, SPEC §5.2/§8; decisión J11).
 #
-# Uso: tools/android-save-kill-test.sh [N=50]
+# Uso: tools/android-save-kill-test.sh [N=50] [gb|gba]
+#
+# N8: con `gba` usa los modos `save-stress-gba`/`save-verify-gba`: una ROM de GBA sintética (contador de 16 bits por
+# fotograma en la SRAM de 32 KiB) con el RTC forzado, así que el `.sav` es el medio + 16 B del reloj (32 784 B, el
+# formato de iOS) y se comprueba igual (contador que no retrocede, sin temporales, backups de tamaño válido).
 #
 # Cada iteración: arranca la app Debug en modo `save-stress` (ROM contador sintética, muchísimas escrituras
 # atómicas con rotación de backups, pausas y estados al azar), espera a que escriba, duerme entre 50 y
@@ -16,6 +20,12 @@
 set -euo pipefail
 
 iterations="${1:-50}"
+console="${2:-gb}"
+case "$console" in
+  gb) suffix="" ;;
+  gba) suffix="-gba" ;;
+  *) echo "Consola desconocida: $console (gb o gba)" >&2; exit 1 ;;
+esac
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
 adb_bin="$sdk_root/platform-tools/adb"
 package="com.joelbermudez.pocketgb"
@@ -65,10 +75,10 @@ kill_app() {
   "$adb_bin" shell am force-stop "$package"
 }
 
-echo "Calentamiento: crear la partida base y comprobar que el modo save-stress arranca…"
+echo "Consola: $console. Calentamiento: crear la partida base y comprobar que el modo save-stress$suffix arranca…"
 "$adb_bin" shell am force-stop "$package"
 "$adb_bin" logcat -c
-start_mode save-stress
+start_mode "save-stress$suffix"
 if ! wait_log 'SAVE-STRESS READY' 40 >/dev/null; then
   echo "FALLO: save-stress no llegó a arrancar" >&2
   "$adb_bin" logcat -d -s "$tag:*" | tail -20 >&2
@@ -84,14 +94,14 @@ for ((i = 1; i <= iterations; i++)); do
   if (( i % 2 == 1 )); then method="force-stop"; else method="kill9"; fi
   delay_ms=$(( (RANDOM * 32768 + RANDOM) % 1451 + 50 ))
   "$adb_bin" logcat -c
-  start_mode save-stress
+  start_mode "save-stress$suffix"
   # El retardo aleatorio cuenta desde que el juego ya escribe (en un emulador cargado el arranque tarda
   # más que el propio retardo y se mataría el proceso antes de que hubiera nada que proteger).
   if wait_log 'SAVE-STRESS READY' 40 >/dev/null; then ready=$((ready + 1)); fi
   sleep "$(awk -v ms="$delay_ms" 'BEGIN { printf "%.3f", ms / 1000 }')"
   kill_app "$method"
   "$adb_bin" logcat -c
-  start_mode save-verify
+  start_mode "save-verify$suffix"
   if result="$(wait_log 'SAVE-VERIFY (OK|FAIL)' 40)"; then
     detail="${result#*SAVE-VERIFY }"
     if [[ "$detail" == OK* && "$detail" == *"stateTmpOrphans=0"* ]]; then
@@ -108,7 +118,7 @@ for ((i = 1; i <= iterations; i++)); do
 done
 
 echo
-echo "Resultado: OK=$ok FAIL=$fail sin-verificación=$missing de $iterations (stress listo antes de matar: $ready)"
+echo "Resultado ($console): OK=$ok FAIL=$fail sin-verificación=$missing de $iterations (stress listo antes de matar: $ready)"
 if (( fail > 0 || missing > 0 || ok == 0 || ready < iterations )); then
   echo "FALLO de la prueba de cierre forzado (fallos=$fail, sin-verificación=$missing, stress listo=$ready/$iterations)" >&2
   exit 1

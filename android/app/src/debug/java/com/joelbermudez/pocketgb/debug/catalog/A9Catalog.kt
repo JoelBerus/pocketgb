@@ -133,7 +133,7 @@ internal val a9CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
             A9Library(prefs)
             GameSettingsSheet(
                 title = DEMO_ALIAS,
-                isColor = false,
+                console = com.joelbermudez.pocketgb.library.RomConsole.GB,
                 global = GameplaySettingsData(),
                 overrides = GameOverrides(),
                 onOverridesChange = {},

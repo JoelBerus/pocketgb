@@ -17,7 +17,7 @@ class LibraryAliasTest {
     val tmp = TemporaryFolder()
 
     private fun rom(id: String, title: String, color: Boolean = false) =
-        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, color, 32768, true, null)
+        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color), 32768, true, null)
 
     private val red = rom("Pokemon Red.gb", "POKEMON RED")
     private val yellow = rom("Amarillo/Pokemon Yellow.gbc", "POKEMON YELLOW", color = true)

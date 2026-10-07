@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ButtonDefaults
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.settings.MAX_CONTROL_SCALE
@@ -53,6 +54,8 @@ fun controlName(id: ControlId): String = stringResource(
         ControlId.START -> R.string.editor_control_start
         ControlId.SELECT -> R.string.editor_control_select
         ControlId.MENU -> R.string.editor_control_menu
+        ControlId.L -> R.string.n8_editor_control_l
+        ControlId.R -> R.string.n8_editor_control_r
     },
 )
 
@@ -77,6 +80,8 @@ fun ControlsEditorBar(
     separation: Float = 1f,
     onCloser: () -> Unit = {},
     onFarther: () -> Unit = {},
+    /** N8: la disposición que se edita es la de esta consola (GB y GBA se guardan aparte). */
+    console: Console = Console.GB,
 ) {
     val landscape = orientation == ControlsOrientation.LANDSCAPE
     Column(
@@ -84,7 +89,16 @@ fun ControlsEditorBar(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Pill(stringResource(if (landscape) R.string.editor_title_landscape else R.string.editor_title_portrait))
+        Pill(
+            stringResource(
+                when {
+                    console == Console.GBA && landscape -> R.string.n8_editor_title_gba_landscape
+                    console == Console.GBA -> R.string.n8_editor_title_gba_portrait
+                    landscape -> R.string.editor_title_landscape
+                    else -> R.string.editor_title_portrait
+                },
+            ),
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = onReset,

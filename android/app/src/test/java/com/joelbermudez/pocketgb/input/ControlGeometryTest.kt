@@ -20,7 +20,7 @@ class ControlGeometryTest {
         )
         val geometry = ControlGeometry(layout, ControlsOrientation.PORTRAIT, area)
 
-        ControlId.entries.forEach { id ->
+        geometry.controls.forEach { id ->
             val frame = geometry.frames.getValue(id)
             assertTrue("$id sale por la izquierda", frame.left >= area.left)
             assertTrue("$id sale por arriba", frame.top >= area.top)
@@ -92,7 +92,7 @@ class ControlGeometryTest {
         val safe = ControlBounds(48f, 0f, 352f, 650f)
         val landscape = ControlLayout.defaults(ControlsOrientation.LANDSCAPE)
         val geometry = ControlGeometry(landscape, ControlsOrientation.LANDSCAPE, safe)
-        ControlId.entries.forEach { id ->
+        geometry.controls.forEach { id ->
             val frame = geometry.frames.getValue(id)
             assertTrue("$id sale del área segura por la izquierda", frame.left >= safe.left - 0.01f)
             assertTrue("$id sale del área segura por la derecha", frame.right <= safe.right + 0.01f)
@@ -134,7 +134,7 @@ class ControlGeometryTest {
             val dpad = geometry.frames.getValue(ControlId.DPAD)
             assertEquals("separación $separation", 140f * DpadShape.footprint(separation), dpad.width, 0.01f)
             // El resto de controles no se mueve ni cambia de tamaño.
-            ControlId.entries.filter { it != ControlId.DPAD }.forEach { id ->
+            geometry.controls.filter { it != ControlId.DPAD }.forEach { id ->
                 assertEquals("$id", cross.frames.getValue(id), geometry.frames.getValue(id))
             }
         }
@@ -279,7 +279,7 @@ class ControlGeometryTest {
         val safe = ControlGeometry.safeArea(2400f, 1080f, insets)
         assertEquals(ControlBounds(120f, 0f, 2310f, 1040f), safe)
         val geometry = ControlGeometry(ControlLayout.defaults(ControlsOrientation.LANDSCAPE), ControlsOrientation.LANDSCAPE, safe)
-        ControlId.entries.forEach { id ->
+        geometry.controls.forEach { id ->
             val frame = geometry.frames.getValue(id)
             assertTrue("$id invade el recorte izquierdo", frame.left >= 120f)
             assertTrue("$id invade el recorte derecho", frame.right <= 2310f)

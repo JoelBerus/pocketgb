@@ -66,7 +66,7 @@ class LibraryOrganizationViewModelTest {
         },
         openTree = { tree },
         roms = RomSource { _, _ -> ByteArray(0x8000) },
-        inspector = {
+        inspector = { _, _ ->
             RomInfo(
                 title = "POKEMON RED", cgbFlag = 0, cartType = 0x13, romBytes = 1_048_576, sramBytes = 32768,
                 hasBattery = true, hasRtc = false, headerChecksumOk = true, globalChecksumOk = true,

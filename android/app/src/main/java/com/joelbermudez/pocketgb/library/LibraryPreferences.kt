@@ -28,6 +28,8 @@ enum class LibraryFilter(val title: String) {
     ALL("Todos"),
     GB("GB"),
     GBC("GBC"),
+    /** N8: solo Game Boy Advance (= iOS `.gba`). */
+    GBA("GBA"),
     FAVORITES("Favoritos"),
 }
 
@@ -319,21 +321,30 @@ data class LibraryPreferencesData(
 object LibraryQuery {
     fun matches(entry: RomEntry, filter: LibraryFilter, isFavorite: Boolean): Boolean = when (filter) {
         LibraryFilter.ALL -> true
-        LibraryFilter.GB -> !entry.isColor
-        LibraryFilter.GBC -> entry.isColor
+        LibraryFilter.GB -> entry.console == RomConsole.GB
+        LibraryFilter.GBC -> entry.console == RomConsole.GBC
+        LibraryFilter.GBA -> entry.console == RomConsole.GBA
         LibraryFilter.FAVORITES -> isFavorite
     }
 
     /**
      * Busca en el alias (si lo hay), en el título de la cabecera y en el nombre del archivo (A9) y, en [entry] presentado,
-     * en la categoría en la que se ve (cada nivel, N4) y en sus etiquetas (N4).
+     * en la categoría en la que se ve (cada nivel, N4), en sus etiquetas (N4) y en su consola (N8).
      */
     fun matches(entry: RomEntry, query: String): Boolean {
         val q = fold(query.trim())
         if (q.isEmpty()) return true
         return fold(entry.displayTitle).contains(q) || fold(entry.title).contains(q) || fold(entry.fileName).contains(q) ||
-            entry.categoryPath.any { fold(it).contains(q) } || entry.tags.any { fold(it).contains(q) }
+            entry.categoryPath.any { fold(it).contains(q) } || entry.tags.any { fold(it).contains(q) } ||
+            matchesConsole(entry.console, q)
     }
+
+    /**
+     * N8: la consola también se busca: su nombre corto exacto («gba», «gbc») o, desde 4 letras, su nombre completo
+     * («advance», «game boy color»).
+     */
+    private fun matchesConsole(console: RomConsole, folded: String): Boolean =
+        fold(console.shortName) == folded || (folded.length >= 4 && fold(console.displayName).contains(folded))
 
     fun visible(
         entries: List<RomEntry>,

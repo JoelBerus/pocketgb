@@ -41,7 +41,7 @@ class GameSettingsSheetTest {
         PocketGBTheme {
             GameSettingsSheet(
                 title = "TETRIS",
-                isColor = isColor,
+                console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(isColor),
                 global = settings,
                 overrides = settings.perGame[fingerprint] ?: GameOverrides(),
                 onOverridesChange = { next ->
@@ -119,7 +119,7 @@ class GameSettingsSheetTest {
     fun loadingAndUnavailableStatesExplainThemselves() {
         compose.setContent {
             PocketGBTheme {
-                GameSettingsSheet("X", false, GameplaySettingsData(), GameOverrides(), {}, {}, loading = true)
+                GameSettingsSheet("X", com.joelbermudez.pocketgb.library.RomConsole.GB, GameplaySettingsData(), GameOverrides(), {}, {}, loading = true)
             }
         }
         compose.onNodeWithText("Leyendo el juego…").assertIsDisplayed()

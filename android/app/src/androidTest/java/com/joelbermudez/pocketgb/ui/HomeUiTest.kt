@@ -63,7 +63,7 @@ class HomeUiTest {
     val compose = createComposeRule()
 
     private fun entry(id: String, title: String, color: Boolean = false) = RomEntry(
-        id = id, uri = "content://n4/$id", fileName = id.substringAfterLast('/'), title = title, isColor = color,
+        id = id, uri = "content://n4/$id", fileName = id.substringAfterLast('/'), title = title, console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color),
         sizeBytes = 32L * 1024, headerChecksumOk = true, problem = null,
     )
 

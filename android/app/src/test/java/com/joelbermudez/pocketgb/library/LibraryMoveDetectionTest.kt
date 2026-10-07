@@ -30,7 +30,7 @@ class LibraryMoveDetectionTest {
         documentId: String? = null,
         header: String? = red,
     ) = RomEntry(
-        id, "content://$id", name, name.substringBeforeLast('.').uppercase(), false, size ?: 0L, true, null,
+        id, "content://$id", name, name.substringBeforeLast('.').uppercase(), com.joelbermudez.pocketgb.library.RomConsole.GB, size ?: 0L, true, null,
         lastModified = modified, documentId = documentId, headerKey = header,
     )
 

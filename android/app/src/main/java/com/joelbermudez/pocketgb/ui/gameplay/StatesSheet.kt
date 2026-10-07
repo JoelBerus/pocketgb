@@ -264,10 +264,12 @@ private fun Thumbnail(png: ByteArray?, label: String) {
         png?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
     val description = stringResource(R.string.state_preview, label)
+    // N8: la proporción de la captura (10:9 en GB, 3:2 en GBA); sin captura, la de Game Boy.
+    val ratio = bitmap?.takeIf { it.height > 0 }?.let { it.width.toFloat() / it.height } ?: (10f / 9f)
     Box(
         modifier = Modifier
             .width(88.dp)
-            .aspectRatio(10f / 9f)
+            .aspectRatio(ratio)
             .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small),
         contentAlignment = Alignment.Center,
     ) {

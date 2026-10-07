@@ -37,7 +37,7 @@ private object N1Data {
         uri = "content://demo/$id",
         fileName = id.substringAfterLast('/'),
         title = title,
-        isColor = color,
+        console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color),
         sizeBytes = size,
         headerChecksumOk = true,
         problem = null,

@@ -33,7 +33,7 @@ class ContinueChoiceUiTest {
     val compose = createComposeRule()
 
     private fun entry(id: String, title: String) =
-        RomEntry(id, "content://t/$id", id, title, false, 32768, true, null)
+        RomEntry(id, "content://t/$id", id, title, com.joelbermudez.pocketgb.library.RomConsole.GB, 32768, true, null)
 
     private val red = entry("Red.gb", "RED")
     private val blue = entry("Blue.gb", "BLUE")

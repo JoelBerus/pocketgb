@@ -23,7 +23,10 @@ enum class ResumeFailure {
      */
     NOT_CURRENT,
 
-    /** El estado es de otro modelo o configuración (DMG, CGB, compatibilidad) o de otro ROM. Se conserva. */
+    /**
+     * El estado es de otro modelo o configuración (DMG, CGB, compatibilidad; en GBA, tipo de partida, reloj o BIOS) o de
+     * otro ROM. Se conserva.
+     */
     INCOMPATIBLE,
 
     /** Firma, CRC, longitud o versión que esta app no lee (dañado o truncado). Se conserva. */
@@ -134,7 +137,9 @@ object ExactContinuation {
     }
 
     fun reasonFor(error: CoreError): ResumeFailure = when (error) {
-        is CoreError.StateRomMismatch -> ResumeFailure.INCOMPATIBLE
+        // N8: un estado de GBA de otra configuración del mismo ROM (tipo de partida, reloj, BIOS o una EEPROM que ya
+        // medía 8 KiB) se conserva igual que uno de otro modelo de Game Boy.
+        is CoreError.StateRomMismatch, is CoreError.StateConfig -> ResumeFailure.INCOMPATIBLE
         is CoreError.StateMagic, is CoreError.StateVersion, is CoreError.StateCorrupt, is CoreError.BufferTooSmall ->
             ResumeFailure.CORRUPT
         else -> ResumeFailure.UNREADABLE

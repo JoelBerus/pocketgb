@@ -8,7 +8,7 @@ import org.junit.Test
 /** N3b · categorías de primer nivel de `folderPath` y N3a/ND15 · carril «Continuar jugando» solo con reanudables. */
 class LibraryCategoryTest {
     private fun rom(id: String, title: String = id.substringAfterLast('/'), color: Boolean = false, problem: RomProblem? = null) =
-        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, color, 32768, true, problem)
+        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color), 32768, true, problem)
 
     private val red = rom("Pokémon/1ª generación/Pokemon Red.gb", "POKEMON RED")
     private val gold = rom("Pokémon/2ª generación/Johto/Pokemon Gold.gbc", "POKEMON GOLD", color = true)

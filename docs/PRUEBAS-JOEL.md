@@ -60,6 +60,18 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | N4-5 | Ajustes › Biblioteca › Inicio: fijar una categoría, ocultar otra y quitar la fila de Favoritos | El inicio cambia al momento; la oculta sigue en «Todos los juegos» y en Categorías |
 | N4-6 | Mover en Drive un juego que estaba en una categoría virtual y con etiquetas; volver a la app y abrir su detalle | Sigue en su categoría virtual y con sus etiquetas |
 
+### N8 · Game Boy Advance en Android (teléfono de Joel, APK Debug)
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| N8-1 | Con `Roms/Kirby/Kirby - Nightmare in Dream Land.gba` en Drive, abrir la biblioteca y tocar el filtro **GBA** | Kirby aparece con el chip «GBA» y su portada 3:2 recortada en la tarjeta; el filtro deja solo los `.gba`; el detalle muestra la imagen 3:2, «Tipo de partida: … (detectado)», el código del juego y el reloj. Anotar el tipo detectado |
+| N8-2 | Rendimiento: `adb shell am start -n com.joelbermudez.pocketgb/.MainActivity --es debug gba-bench --es library "Kirby - Nightmare in Dream Land.gba"` y luego `adb logcat -d -s PocketGBBench` | Una línea `GBA-BENCH … núcleo=X ms/frame sesión×4=Y fps`: X muy por debajo de 16,7 ms y Y cerca de 239 (el tope a ×4). Copiar la línea a la evidencia de N8 |
+| N8-3 | Jugar Kirby al menos 30 min en vertical y en horizontal | 60 fps sin cortes ni deriva de audio; L y R táctiles responden (cápsulas arriba), sin entradas fantasma |
+| N8-4 | Con mando: L1 y R1 en Kirby; L2 y R2; botón Guía | L1/R1 son L y R del juego; L2 abre el menú y R2 cambia la velocidad; Guía abre el menú. En un juego de Game Boy, L1 sigue siendo el menú y R1 la velocidad |
+| N8-5 | Guardar en Kirby, forzar el cierre (deslizar la app en recientes) y volver a abrir | La partida está; en Drive aparece `Kirby - Nightmare in Dream Land.sav` junto al ROM, del tamaño del tipo detectado en N8-1 |
+| N8-6 | Salir de Kirby y tocar «Continuar» | Retoma justo donde lo dejaste |
+| N8-7 | Ajustes del juego de Kirby › Tipo de partida › «Flash 64 KiB»; abrir el juego; volver a «Detectado» | Aviso «Partida distinta de los ajustes del juego» y la partida intacta; con «Detectado» vuelve a cargar |
+| N8-8 | (Opcional) Copiar tu propio volcado como `gba_bios.bin` en la raíz de `Roms/` | Ajustes › Emulación › BIOS dice «BIOS oficial verificada» y el arranque muestra el logo de la consola; un archivo que no es la BIOS oficial se ignora (emulada) |
+
 ## iPhone
 
 | # | Prueba | Resultado esperado |

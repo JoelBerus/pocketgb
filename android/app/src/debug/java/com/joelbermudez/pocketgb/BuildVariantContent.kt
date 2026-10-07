@@ -24,6 +24,20 @@ internal fun buildVariantContent(intent: Intent): Boolean {
             SaveVerifyScreen()
             return true
         }
+        // N8: la misma prueba con una partida de GBA (medio + RTC).
+        "save-stress-gba" -> {
+            SaveStressScreen(com.joelbermudez.pocketgb.debug.SaveStress.GBA)
+            return true
+        }
+        "save-verify-gba" -> {
+            SaveVerifyScreen(com.joelbermudez.pocketgb.debug.SaveStress.GBA)
+            return true
+        }
+        // N8: ms/frame de un juego de GBA en la app (`--es rom <files/x.gba>` o `--es library <archivo>`).
+        "gba-bench" -> {
+            com.joelbermudez.pocketgb.debug.GbaBenchScreen(intent.getStringExtra("rom"), intent.getStringExtra("library"))
+            return true
+        }
     }
     val debugIntent = DebugIntent.from(intent) ?: return false
     // Escala de fuente y señales de accesibilidad forzadas (A7): han de estar fuera de `PocketGBTheme`, que las lee.

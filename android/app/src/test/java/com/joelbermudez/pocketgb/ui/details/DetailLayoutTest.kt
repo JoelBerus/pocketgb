@@ -71,7 +71,7 @@ class DetailLayoutTest {
 
     @Test
     fun theConsoleOfTheRomGivesTheProportion() {
-        fun rom(name: String) = RomEntry(name, "content://$name", name, name, false, 32768, true, null)
+        fun rom(name: String) = RomEntry(name, "content://$name", name, name, com.joelbermudez.pocketgb.library.RomConsole.GB, 32768, true, null)
         assertEquals(gb, rom("Pokemon Red.gb").screenAspectRatio, tolerance)
         assertEquals(gb, rom("Pokemon Gold.gbc").screenAspectRatio, tolerance)
         assertEquals(gba, rom("Kirby.gba").screenAspectRatio, tolerance)

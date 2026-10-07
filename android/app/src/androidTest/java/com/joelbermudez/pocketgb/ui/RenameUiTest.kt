@@ -88,7 +88,7 @@ class RenameUiTest {
             folders = folders,
             openTree = { tree },
             roms = RomSource { uri, _ -> roms.getValue(uri.substringAfterLast('/')) },
-            inspector = RomInspector { rom -> CoreBridge().use { it.loadRom(rom) } },
+            inspector = RomInspector { rom, _ -> CoreBridge().use { it.loadRom(rom) } },
             preferencesFile = LibraryPreferencesFile(prefsFile),
             io = Dispatchers.IO,
             scope = scope,

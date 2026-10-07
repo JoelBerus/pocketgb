@@ -29,7 +29,16 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
         /** Tope de lectura de un estado (entrada no confiable): el real ronda las centenas de KiB. */
         const val MAX_STATE_BYTES = 4 shl 20
         const val MAX_THUMBNAIL_BYTES = 1 shl 20
-        private val MAGIC = "PGBS".toByteArray(Charsets.US_ASCII)
+        /** Bytes de la firma del núcleo al principio del estado. */
+        private const val MAGIC_BYTES = 4
+
+        /**
+         * Firmas de estado válidas (= iOS `StateStore.signatures`): `PGBS` (Game Boy, `core/`) y, desde N8, `PGBA`
+         * (Game Boy Advance, `gba/`). Sin la segunda, todo estado de GBA se vería «Dañado» y nunca se continuaría.
+         */
+        private val SIGNATURES = listOf("PGBS", "PGBA").map { it.toByteArray(Charsets.US_ASCII) }
+
+        fun isKnownSignature(head: ByteArray): Boolean = SIGNATURES.any { it.contentEquals(head) }
         private const val OBSOLETE_PREFIX = "auto.obsolete-"
     }
 
@@ -44,7 +53,7 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
     fun stateFile(slot: StateSlot) = File(directory, "${slot.fileStem}.state")
     fun thumbnailFile(slot: StateSlot) = File(directory, "${slot.fileStem}.png")
 
-    /** Ranuras ocupadas. `corrupt` si la firma no es `PGBS` (solo se lee la cabecera). */
+    /** Ranuras ocupadas. `corrupt` si la firma no es `PGBS` ni `PGBA` (solo se lee la cabecera). */
     fun entries(): Map<StateSlot, Entry> {
         val result = linkedMapOf<StateSlot, Entry>()
         for (slot in StateSlot.entries) {
@@ -57,7 +66,7 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
     fun entry(slot: StateSlot, withThumbnail: Boolean): Entry? {
         val file = stateFile(slot)
         if (!ops.exists(file)) return null
-        val head = try { ops.readPrefix(file, MAGIC.size) } catch (_: IOException) { ByteArray(0) }
+        val head = try { ops.readPrefix(file, MAGIC_BYTES) } catch (_: IOException) { ByteArray(0) }
         val thumb = if (!withThumbnail) {
             null
         } else {
@@ -67,12 +76,12 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
                 null
             }
         }
-        return Entry(slot, ops.lastModified(file) ?: 0L, thumb, !head.contentEquals(MAGIC))
+        return Entry(slot, ops.lastModified(file) ?: 0L, thumb, !isKnownSignature(head))
     }
 
     /**
      * Estado automático que «Continuar» puede ofrecer (A9, iOS `automaticEntry(newerThan:)`): existe, su firma es
-     * `PGBS` y no es anterior a la partida local ([saveDateMs], `null` si no hay `.sav`). Una partida guardada después
+     * `PGBS` o `PGBA` (N8) y no es anterior a la partida local ([saveDateMs], `null` si no hay `.sav`). Una partida guardada después
      * lo invalida: restaurar un backup nunca debe quedar revertido al continuar. Solo lee la fecha y 4 bytes (la
      * biblioteca lo consulta por cada juego); el contenido se valida al abrir ([ExactContinuation.apply]).
      */

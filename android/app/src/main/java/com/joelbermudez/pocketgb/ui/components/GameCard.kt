@@ -38,15 +38,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.library.RomConsole
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 
-/** Chip GB/GBC: texto, nunca solo color. */
+/** Nombre de la consola para lectores de pantalla y textos: «Game Boy», «Game Boy Color» o «Game Boy Advance». */
 @Composable
-fun ConsoleChip(isColor: Boolean, modifier: Modifier = Modifier, announce: Boolean = true) {
-    val description = stringResource(if (isColor) R.string.game_system_gbc else R.string.game_system_gb)
+fun consoleName(console: RomConsole): String = stringResource(
+    when (console) {
+        RomConsole.GB -> R.string.game_system_gb
+        RomConsole.GBC -> R.string.game_system_gbc
+        RomConsole.GBA -> R.string.n8_game_system_gba
+    },
+)
+
+/** Chip GB/GBC/GBA: texto, nunca solo color. */
+@Composable
+fun ConsoleChip(console: RomConsole, modifier: Modifier = Modifier, announce: Boolean = true) {
+    val description = consoleName(console)
     Text(
-        text = if (isColor) "GBC" else "GB",
+        text = console.shortName,
         modifier = modifier
             .width(38.dp)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
@@ -83,7 +94,7 @@ fun GameMetaLine(
     compactBadges: Boolean = false,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ConsoleChip(entry.isColor, announce = announce)
+        ConsoleChip(entry.console, announce = announce)
         if (favorite) {
             Icon(
                 Icons.Filled.Star,
@@ -163,7 +174,7 @@ fun MovedBadge(
 /** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, duplicado, movido (N4), problema y última partida. */
 @Composable
 fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
-    val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
+    val system = consoleName(entry.console)
     val parts = mutableListOf(entry.displayTitle, system)
     if (favorite) parts += stringResource(R.string.game_favorite)
     if (entry.isNew) parts += stringResource(R.string.game_new)

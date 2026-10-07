@@ -57,7 +57,7 @@ fun DisplaySettingsContent(
                 GamePlaceholder(
                     seed = "pocketgb-display-preview",
                     title = "PocketGB",
-                    isColor = false,
+                    console = com.joelbermudez.pocketgb.library.RomConsole.GB,
                     modifier = Modifier.aspectRatio(10f / 9f),
                 )
             }

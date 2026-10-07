@@ -62,7 +62,7 @@ class ControlsTalkBackTest {
         assertNull("visibles: sin estado", node(ControlId.A).stateDescription)
         onMain { view.controlsVisibility = ControlsVisibility.HIDDEN }
         settle()
-        ControlId.entries.filter { it != ControlId.MENU }.forEach {
+        ControlId.entries.filter { it != ControlId.MENU && !it.isShoulder }.forEach {
             assertEquals("$it oculto", view.context.getString(R.string.controls_a11y_hidden), node(it).stateDescription)
         }
         onMain { view.controlsVisibility = ControlsVisibility.ALWAYS }

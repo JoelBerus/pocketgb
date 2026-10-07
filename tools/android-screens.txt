@@ -267,3 +267,23 @@ n4-settings-library portrait light swipe=up
 n4-settings-home portrait light
 n4-settings-home portrait dark
 n4-settings-home-ax5 portrait light fontScale=2.0
+n8-library portrait light
+n8-library portrait dark
+n8-library-filter-gba portrait light
+n8-library-landscape-filters landscape light
+n8-details portrait light
+n8-details portrait dark
+n8-details-landscape landscape light
+n8-game-center portrait light
+n8-game-center portrait dark
+n8-game-center-custom portrait light
+n8-settings-emulation portrait light
+n8-controller-mapping portrait light swipe=up
+n8-gameplay portrait dark
+n8-gameplay-landscape landscape dark
+n8-gameplay-landscape-fill landscape dark scaleMode=fill
+n8-editor portrait dark
+n8-editor-landscape landscape dark
+n8-states portrait dark
+n8-settings-warning portrait dark
+n8-details-technical portrait light

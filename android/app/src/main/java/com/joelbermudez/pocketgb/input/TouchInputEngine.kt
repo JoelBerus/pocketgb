@@ -1,5 +1,7 @@
 package com.joelbermudez.pocketgb.input
 
+import com.joelbermudez.pocketgb.emulator.GbaButtonBits
+
 class TouchInputEngine(var geometry: ControlGeometry) {
     private val touches = mutableMapOf<Int, ControlHit>()
     private val points = mutableMapOf<Int, ControlPoint>()
@@ -57,6 +59,9 @@ class TouchInputEngine(var geometry: ControlGeometry) {
                     ControlId.START -> GameBoyButton.START.mask
                     ControlId.SELECT -> GameBoyButton.SELECT.mask
                     ControlId.MENU -> 0
+                    // N8: L y R de GBA (bits 9 y 8 de la máscara común).
+                    ControlId.L -> GbaButtonBits.L
+                    ControlId.R -> GbaButtonBits.R
                 }
             }
         })

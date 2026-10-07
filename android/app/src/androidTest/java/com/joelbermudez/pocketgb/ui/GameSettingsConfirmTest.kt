@@ -86,7 +86,7 @@ class GameSettingsConfirmTest {
             folders = folders,
             openTree = { tree },
             roms = { _, _ -> ByteArray(0x8000) },
-            inspector = {
+            inspector = { _, _ ->
                 RomInfo(
                     title = "RED", cgbFlag = 0, cartType = 0x13, romBytes = 32768, sramBytes = 8192, hasBattery = true,
                     hasRtc = false, headerChecksumOk = true, globalChecksumOk = true, cgbMode = false, cgbCompat = false,

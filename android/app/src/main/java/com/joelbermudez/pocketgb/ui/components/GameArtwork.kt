@@ -63,7 +63,7 @@ fun rememberArtwork(fingerprint: String?): ImageBitmap? {
 
 /**
  * Portada de un juego (K9 + K11): la última captura al cerrarlo, o el placeholder generado de forma determinista
- * si aún no hay. Proporción 10:9 (la pantalla de Game Boy); con problema se atenúa. Sin suavizado: es pixel art.
+ * si aún no hay. Proporción 10:9 por defecto (la del detalle sigue a la consola: 3:2 en GBA); con problema se atenúa. Sin suavizado: es pixel art.
  */
 @Composable
 fun GameArtwork(
@@ -92,14 +92,16 @@ fun GameArtwork(
                 bitmap = image,
                 contentDescription = description,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds,
+                // N8: una captura de GBA (3:2) en un marco de 10:9 se recorta centrada en vez de deformarse; en el
+                // marco de su proporción (detalle) cabe exacta.
+                contentScale = ContentScale.Crop,
                 filterQuality = FilterQuality.None,
             )
         } else {
             GamePlaceholder(
                 seed = fingerprint ?: entry.id,
                 title = entry.displayTitle,
-                isColor = entry.isColor,
+                console = entry.console,
                 modifier = Modifier.fillMaxSize(),
                 compact = compact,
             )

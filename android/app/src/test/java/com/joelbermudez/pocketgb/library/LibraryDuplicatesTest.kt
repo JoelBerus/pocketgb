@@ -8,7 +8,7 @@ import org.junit.Test
 /** N1a · duplicados: la misma huella conocida en varias rutas se marca y cada copia sabe dónde están las demás. */
 class LibraryDuplicatesTest {
     private fun rom(id: String, title: String = "POKEMON RED") =
-        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, false, 32768, true, null)
+        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, com.joelbermudez.pocketgb.library.RomConsole.GB, 32768, true, null)
 
     private val fp = "ab".repeat(32)
     private val root = rom("Pokemon Red.gb")

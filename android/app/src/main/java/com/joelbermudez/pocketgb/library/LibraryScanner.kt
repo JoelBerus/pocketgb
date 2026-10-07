@@ -40,11 +40,14 @@ class PartialListingException(
 class HeaderCache private constructor(private val byKey: Map<Key, String>) {
     private data class Key(val documentId: String, val size: Long, val lastModified: Long)
 
-    /** Cabecera (0x150 bytes, solo 0x134–0x14F con datos) si [node] no cambió desde que se leyó; si no, `null`. */
+    /**
+     * Cabecera (GB: 0x150 bytes, solo 0x134–0x14F con datos; GBA: 0xC0, solo 0xA0–0xBF) si [node] no cambió desde que
+     * se leyó; si no, `null`.
+     */
     fun lookup(node: TreeNode): ByteArray? {
         val modified = node.lastModified ?: return null
         if (node.sizeBytes <= 0) return null
-        return byKey[Key(node.id, node.sizeBytes, modified)]?.let(RomHeader::fromIdentity)
+        return byKey[Key(node.id, node.sizeBytes, modified)]?.let(RomHeader::fromAnyIdentity)
     }
 
     companion object {
@@ -59,7 +62,7 @@ class HeaderCache private constructor(private val byKey: Map<Key, String>) {
                 val modified = stamp.lastModified?.takeIf { it > 0 } ?: continue
                 if (stamp.headerCarried) continue // N1-V2-H1: no se leyó con esa fecha: no vale como caché
                 val header = stamp.header ?: continue
-                if (RomHeader.fromIdentity(header) != null) map[Key(id, size, modified)] = header
+                if (RomHeader.fromAnyIdentity(header) != null) map[Key(id, size, modified)] = header
             }
             return HeaderCache(map)
         }
@@ -123,12 +126,19 @@ data class ScanStats(
 class ScanResult(val entries: List<RomEntry>, val stats: ScanStats)
 
 /**
- * Enumera los ROMs de la carpeta: solo `.gb`/`.gbc`, en la raíz y en sus subcarpetas hasta [MAX_FOLDER_DEPTH]
+ * Enumera los ROMs de la carpeta: solo `.gb`/`.gbc`/`.gba` (N8), en la raíz y en sus subcarpetas hasta [MAX_FOLDER_DEPTH]
  * niveles (N1b), sin abrir ni modificar los ROMs (solo se lee su cabecera). Nombres reservados (ND11): lo que empieza
  * por `.` se ignora, `PocketGB/` en la raíz es de la app y las carpetas que empiezan por `_` quedan apartadas.
  */
 object LibraryScanner {
+    /** Límite de un ROM de Game Boy (8 MiB). */
     const val MAX_ROM_BYTES = 8L * 1024 * 1024
+
+    /** N8: límite de un ROM de Game Boy Advance (32 MiB, = iOS `GBACoreBridge.maxROMBytes`). */
+    const val MAX_GBA_ROM_BYTES = 32L * 1024 * 1024
+
+    /** Límite de tamaño por consola: 8 MiB en Game Boy y 32 MiB en Game Boy Advance (= iOS `romLimit(for:)`). */
+    fun romLimit(console: RomConsole): Long = if (console == RomConsole.GBA) MAX_GBA_ROM_BYTES else MAX_ROM_BYTES
 
     /** Niveles de carpeta bajo la raíz que se recorren (la raíz es el nivel 0; `a/b/c/d/e/x.gb` es el último). */
     const val MAX_FOLDER_DEPTH = 5
@@ -139,7 +149,7 @@ object LibraryScanner {
     /** Carpeta de la app en la raíz (ND11): intercambio y exportados; no se escanea. */
     const val APP_FOLDER = "PocketGB"
 
-    private val extensions = setOf("gb", "gbc")
+    private val extensions = setOf("gb", "gbc", "gba")
 
     fun scan(
         tree: DocumentTree,
@@ -296,12 +306,13 @@ object LibraryScanner {
     private fun entry(tree: DocumentTree, candidate: Candidate, stats: StatsBuilder, cache: HeaderCache): RomEntry {
         val node = candidate.node
         val fallbackTitle = node.name.substringBeforeLast('.')
-        val colorByName = node.name.substringAfterLast('.').equals("gbc", ignoreCase = true)
+        val byName = RomConsole.fromFileName(node.name)
+        val isGba = byName == RomConsole.GBA
 
         fun make(
             problem: RomProblem?,
             title: String = fallbackTitle,
-            isColor: Boolean = colorByName,
+            console: RomConsole = byName,
             checksumOk: Boolean = true,
             headerKey: String? = null,
         ) = RomEntry(
@@ -309,7 +320,7 @@ object LibraryScanner {
             uri = tree.uriOf(node),
             fileName = node.name,
             title = title.ifEmpty { fallbackTitle },
-            isColor = isColor,
+            console = console,
             sizeBytes = node.sizeBytes,
             headerChecksumOk = checksumOk,
             problem = problem,
@@ -322,20 +333,26 @@ object LibraryScanner {
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)
-        if (node.sizeBytes > MAX_ROM_BYTES) return make(RomProblem.TOO_LARGE)
-        val cached = cache.lookup(node)
+        if (node.sizeBytes > romLimit(byName)) return make(if (isGba) RomProblem.TOO_LARGE_GBA else RomProblem.TOO_LARGE)
+        // Una caché de la otra consola (el archivo cambió de extensión sin cambiar de sello) no vale: se relee.
+        val cached = cache.lookup(node)?.takeIf { it.size == if (isGba) RomHeader.GBA_MINIMUM_BYTES else RomHeader.MINIMUM_BYTES }
         if (cached != null) stats.headerCacheHits++
         val head = cached ?: try {
             stats.headReads++
-            tree.readHead(node, RomHeader.MINIMUM_BYTES)
+            tree.readHead(node, if (isGba) RomHeader.GBA_MINIMUM_BYTES else RomHeader.MINIMUM_BYTES)
         } catch (error: DocumentReadException) {
             return make(if (error.remote) RomProblem.REMOTE_UNAVAILABLE else RomProblem.UNREADABLE)
         } catch (_: IOException) {
             return make(RomProblem.UNREADABLE)
         }
+        if (isGba) {
+            val key = RomHeader.gbaIdentity(head)
+            val info = RomHeader.parseGba(head) ?: return make(RomProblem.INVALID_HEADER_GBA, headerKey = key)
+            return make(null, info.title, RomConsole.GBA, info.checksumOk, key)
+        }
         val key = RomHeader.identity(head)
         val info = RomHeader.parse(head) ?: return make(RomProblem.INVALID_HEADER, headerKey = key)
-        return make(null, info.title, info.isColor, info.checksumOk, key)
+        return make(null, info.title, RomConsole.gameBoy(info.isColor), info.checksumOk, key)
     }
 
     /** Orden por el nombre visible (el alias si lo hay, A9; el título de la cabecera si no). */

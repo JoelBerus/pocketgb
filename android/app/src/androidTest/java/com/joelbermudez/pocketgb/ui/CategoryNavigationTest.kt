@@ -95,7 +95,7 @@ class CategoryNavigationTest {
             },
             openTree = { tree },
             roms = RomSource { uri, _ -> roms.getValue(uri.removePrefix("content://n4nav/")) },
-            inspector = RomInspector { rom -> CoreBridge().use { it.loadRom(rom) } },
+            inspector = RomInspector { rom, _ -> CoreBridge().use { it.loadRom(rom) } },
             preferencesFile = LibraryPreferencesFile(File(dir, "preferences.json")),
             io = Dispatchers.IO,
             scope = scope,

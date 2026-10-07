@@ -13,7 +13,7 @@ import org.junit.Test
  */
 class LibraryOrganizationTest {
     private fun rom(id: String, title: String, color: Boolean = false) =
-        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, color, 32768, true, null)
+        RomEntry(id, "content://$id", id.substringAfterLast('/'), title, com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color), 32768, true, null)
 
     // Roms/
     //   Pokémon/1ª generación/{Red, Yellow}   Pokémon/2ª generación/Gold   Pokémon/2ª generación/Johto/Crystal

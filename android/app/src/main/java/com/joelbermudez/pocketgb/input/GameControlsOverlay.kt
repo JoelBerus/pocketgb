@@ -33,6 +33,8 @@ fun GameControlsOverlay(
     safeInsets: SafeInsets = SafeInsets.NONE,
     editor: ControlsEditorBinding? = null,
 ) {
+    // N8: la consola de la sesión decide si hay L/R y qué disposición (GB o GBA) se usa.
+    val console = session.console
     val highContrast = LocalHighContrast.current
     val reduceMotion = LocalReduceMotion.current
     val previewDpadMask = LocalPreviewDpadMask.current
@@ -57,8 +59,9 @@ fun GameControlsOverlay(
             view.controlsVisibility = if (editor != null) ControlsVisibility.ALWAYS else settings.visibility
             view.sizeScale = settings.sizeScale
             view.safeInsets = safeInsets
+            view.shoulders = console == com.joelbermudez.pocketgb.emulator.Console.GBA
             view.orientationOverride = orientation
-            view.controlLayout = orientation?.let { ControlLayout.from(settings.layout(it), it) }
+            view.controlLayout = orientation?.let { settings.controlLayout(it, console) }
             view.editing = editor != null
             view.selected = editor?.selected
             if (editor != null) {
