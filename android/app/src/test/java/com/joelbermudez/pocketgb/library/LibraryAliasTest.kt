@@ -162,8 +162,9 @@ class LibraryAliasTest {
         val file = File(tmp.root, "preferences.json").apply { writeText(fixture) }
         val data = LibraryPreferencesFile(file).load()
         assertTrue("el archivo no se aparta como corrupto", file.exists())
-        assertEquals(setOf("Pokemon Red.gb"), data.favorites)
-        assertEquals(1_759_700_000_000L, data.lastPlayed["Pokemon Red.gb"])
+        // N1a: el favorito y la fecha pasan a la huella al cargar (migración); lo que ve el usuario no cambia.
+        assertTrue(data.isFavorite(red))
+        assertEquals(1_759_700_000_000L, data.lastPlayedAt(red))
         assertEquals("9d4c1e07b3a85f26c0de91ab47f3825e6b10c9d7a2f45e83b6c1d09e7f2a4b58", data.fingerprints["Pokemon Red.gb"])
         assertEquals(setOf("Roto.gb"), data.hiddenPaths)
         assertEquals(LibraryLayout.LIST, data.layout)

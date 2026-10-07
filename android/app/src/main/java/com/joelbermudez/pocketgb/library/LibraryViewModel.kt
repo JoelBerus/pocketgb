@@ -48,6 +48,8 @@ class LibraryViewModel(
     private val preferencesFile: PreferencesStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    /** N1b: cuánto costó cada escaneo (la app lo anota en el registro del sistema). */
+    private val scanLog: (ScanStats) -> Unit = {},
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state.asStateFlow()
@@ -70,6 +72,10 @@ class LibraryViewModel(
 
     private val _filter = MutableStateFlow(LibraryFilter.ALL)
     val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
+
+    /** N1b: lo que costó el último escaneo terminado (consultas SAF, apartados, si fue completo). */
+    private val _lastScan = MutableStateFlow<ScanStats?>(null)
+    val lastScan: StateFlow<ScanStats?> = _lastScan.asStateFlow()
 
     // ---- Operaciones de carpeta: una a la vez, y solo la más reciente publica estado ----
 
@@ -208,7 +214,7 @@ class LibraryViewModel(
                 else -> emptyList()
             }
             publish(LibraryState.Scanning(previous, name))
-            val entries = LibraryScanner.scan(
+            val result = LibraryScanner.scanDetailed(
                 openTree(uri),
                 progress = { done, total ->
                     // Sin inundar a la UI: el primero, cada cinco y el último.
@@ -218,7 +224,13 @@ class LibraryViewModel(
                 },
                 checkCancelled = { context.ensureActive() },
             )
-            LibraryState.Ready(markNew(entries), name)
+            context.ensureActive()
+            _lastScan.value = result.stats
+            scanLog(result.stats)
+            ensureLoaded()
+            // N1a: movimientos reconocidos por su sello (sin leer los ROMs) antes de decidir qué es «Nuevo».
+            mutate { it.reconciled(result.entries, result.stats.complete) }
+            LibraryState.Ready(markNew(result.entries, result.stats.complete), name)
         } catch (error: CancellationException) {
             throw error
         } catch (_: TreePermissionException) {
@@ -239,10 +251,12 @@ class LibraryViewModel(
     /**
      * K19: «Nuevo» = no visto en el escaneo anterior. El primer escaneo de una carpeta (sin ids conocidos) reconoce
      * todo y no marca nada. Los nuevos siguen marcados hasta que se abren ([recordPlayed]). Cada escaneo completo poda
-     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo». Un
-     * listado vacío no poda (un proveedor en la nube con un fallo pasajero no debe olvidar toda la biblioteca).
+     * `knownIds` a los ids presentes (A6-H8): un ROM borrado o renombrado que reaparezca vuelve a ser «Nuevo», salvo que se
+     * reconozca como movido ([reconciled], N1a). Un listado vacío o un escaneo incompleto no podan (un proveedor en la
+     * nube con un fallo pasajero no debe olvidar toda la biblioteca).
      */
-    private fun markNew(entries: List<RomEntry>): List<RomEntry> {
+    /** Intenta cargar las preferencias si aún no lo están; si el disco falla, se sigue sin ellas. */
+    private fun ensureLoaded() {
         synchronized(persistLock) {
             if (!loaded) {
                 try {
@@ -252,6 +266,10 @@ class LibraryViewModel(
                 }
             }
         }
+    }
+
+    private fun markNew(entries: List<RomEntry>, complete: Boolean): List<RomEntry> {
+        ensureLoaded()
         if (!loaded) return entries // sin preferencias no se sabe qué era conocido: no se marca nada
         val ids = entries.map { it.id }.toSet()
         val known = _prefs.value.knownIds
@@ -260,7 +278,8 @@ class LibraryViewModel(
             return entries
         }
         val gone = known - ids
-        if (gone.isNotEmpty() && ids.isNotEmpty()) mutate { it.copy(knownIds = it.knownIds - gone) }
+        // N1a: con un escaneo incompleto (una carpeta falló) lo que no aparece puede seguir ahí: no se poda.
+        if (gone.isNotEmpty() && ids.isNotEmpty() && complete) mutate { it.copy(knownIds = it.knownIds - gone) }
         val fresh = ids - known
         val toAnnounce = fresh - announcedNew
         if (toAnnounce.isNotEmpty()) {

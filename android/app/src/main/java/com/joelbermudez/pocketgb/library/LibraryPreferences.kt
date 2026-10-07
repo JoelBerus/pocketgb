@@ -7,6 +7,9 @@ import java.text.Normalizer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 
 @Serializable
 enum class LibraryLayout(val title: String) {
@@ -28,15 +31,33 @@ enum class LibraryFilter(val title: String) {
 }
 
 /**
+ * Versiones de `preferences.json` (N1a). Un archivo sin `formatVersion` es de A5–A9 ([LEGACY]): favoritos y «jugado»
+ * por ruta. Al leerlo se migra ([LibraryPreferencesData.migrated]) y se escribe como [CURRENT].
+ */
+object LibraryPreferencesFormat {
+    const val LEGACY = 1
+
+    /** N1a: favoritos, «jugado», ocultos y alias por huella; la ruta solo es provisional; caché de sellos por ruta. */
+    const val CURRENT = 2
+}
+
+/**
  * Lo que PocketGB recuerda de cada juego. Solo metadatos de la app: ocultar un juego
  * no toca el ROM, ni su partida, ni sus copias.
+ *
+ * Identidad (N1a): todo lo del juego va por **huella** (SHA-256 del ROM) en cuanto se conoce, así que sobrevive a mover o
+ * renombrar el archivo. Antes de conocerla, la ruta relativa ([RomEntry.id]) es una clave provisional que se migra al
+ * conocer la huella ([recordFingerprint]). La huella se conoce al abrir el juego o ver su detalle (en Android nunca se
+ * calcula en segundo plano: en Drive leer el ROM lo descarga) y, sin leerlo, cuando un reescaneo reconoce que una ruta
+ * nueva es un documento ya visto ([reconciled]).
  */
 @Serializable
 data class LibraryPreferencesData(
+    /** Favoritos provisionales por id (ruta), sin huella conocida. */
     val favorites: Set<String> = emptySet(),
-    /** Última vez que se abrió cada juego (epoch ms), por id. */
+    /** Última vez que se abrió cada juego (epoch ms), provisional por id (ruta), sin huella conocida. */
     val lastPlayed: Map<String, Long> = emptyMap(),
-    /** Huella SHA-256 del ROM por id; se conoce al abrirlo o ver su detalle. */
+    /** Huella SHA-256 del ROM por id; se conoce al abrirlo, al ver su detalle o al reconocer que se movió (N1a). */
     val fingerprints: Map<String, String> = emptyMap(),
     /** Ocultos por huella: sobreviven a mover o renombrar el ROM. */
     val hiddenFingerprints: Set<String> = emptySet(),
@@ -50,12 +71,29 @@ data class LibraryPreferencesData(
     val aliasesByFingerprint: Map<String, String> = emptyMap(),
     /** A9: nombre visible provisional por id (ruta) antes de conocer la huella; se migra al conocerla. */
     val aliasesByPath: Map<String, String> = emptyMap(),
+    /** N1a: favoritos por huella. */
+    val favoriteFingerprints: Set<String> = emptySet(),
+    /** N1a: última vez que se abrió cada juego (epoch ms), por huella. */
+    val lastPlayedByFingerprint: Map<String, Long> = emptyMap(),
+    /**
+     * N1a: caché por documento. Sello (nombre, tamaño, fecha) de cada ruta del último escaneo; junto con [fingerprints]
+     * da la terna → huella con la que se reconoce un ROM movido sin leerlo.
+     */
+    val documents: Map<String, DocumentStamp> = emptyMap(),
+    /** N1a: versión del formato ([LibraryPreferencesFormat]). */
+    val formatVersion: Int = LibraryPreferencesFormat.CURRENT,
 ) {
     fun acknowledge(ids: Set<String>) = if (knownIds.containsAll(ids)) this else copy(knownIds = knownIds + ids)
 
-    fun isFavorite(entry: RomEntry) = entry.id in favorites
+    fun isFavorite(entry: RomEntry): Boolean =
+        entry.id in favorites || fingerprints[entry.id]?.let { it in favoriteFingerprints } == true
 
-    fun lastPlayedAt(entry: RomEntry): Long? = lastPlayed[entry.id]
+    /** La fecha más reciente entre la de la huella y la provisional de la ruta. */
+    fun lastPlayedAt(entry: RomEntry): Long? {
+        val byFingerprint = fingerprints[entry.id]?.let(lastPlayedByFingerprint::get)
+        val byPath = lastPlayed[entry.id]
+        return if (byFingerprint == null) byPath else if (byPath == null) byFingerprint else maxOf(byFingerprint, byPath)
+    }
 
     fun isHidden(entry: RomEntry): Boolean {
         if (entry.id in hiddenPaths) return true
@@ -63,22 +101,61 @@ data class LibraryPreferencesData(
         return fingerprint in hiddenFingerprints
     }
 
-    fun toggleFavorite(entry: RomEntry) =
-        copy(favorites = if (isFavorite(entry)) favorites - entry.id else favorites + entry.id)
+    /** Por huella si se conoce; si no, provisional por ruta. Quitarlo lo quita de ambos sitios. */
+    fun toggleFavorite(entry: RomEntry): LibraryPreferencesData {
+        val fingerprint = fingerprints[entry.id]
+        return when {
+            isFavorite(entry) -> copy(
+                favorites = favorites - entry.id,
+                favoriteFingerprints = if (fingerprint != null) favoriteFingerprints - fingerprint else favoriteFingerprints,
+            )
+            fingerprint != null -> copy(favoriteFingerprints = favoriteFingerprints + fingerprint)
+            else -> copy(favorites = favorites + entry.id)
+        }
+    }
 
-    /** Al abrir un juego: fecha y huella. Un alias provisional por ruta pasa a la huella (iOS `recordPlayed`). */
-    fun recordPlayed(id: String, fingerprint: String, at: Long) =
-        copy(lastPlayed = lastPlayed + (id to at)).recordFingerprint(id, fingerprint)
+    /** Al abrir un juego: fecha (por huella) y huella, con la migración de lo provisional ([recordFingerprint]). */
+    fun recordPlayed(id: String, fingerprint: String, at: Long): LibraryPreferencesData {
+        val known = recordFingerprint(id, fingerprint)
+        return known.copy(lastPlayedByFingerprint = known.lastPlayedByFingerprint + (fingerprint to at))
+    }
 
-    /** Huella conocida (al abrir o al ver el detalle). Migra el alias provisional por ruta a la huella. */
+    /**
+     * Huella conocida para la ruta [id] (al abrir, al ver el detalle o al reconocer un movimiento). Lo provisional de
+     * esa ruta (favorito, fecha, oculto y alias) pasa a la huella (iOS `recordPlayed`). Si no hay nada que cambiar
+     * devuelve el mismo valor (no provoca escrituras).
+     */
     fun recordFingerprint(id: String, fingerprint: String): LibraryPreferencesData {
         val pathAlias = aliasesByPath[id]
+        val pathPlayed = lastPlayed[id]
+        val pathFavorite = id in favorites
+        val pathHidden = id in hiddenPaths
+        if (fingerprints[id] == fingerprint && pathAlias == null && pathPlayed == null && !pathFavorite && !pathHidden) return this
+        val fingerprintPlayed = lastPlayedByFingerprint[fingerprint]
         return copy(
             fingerprints = fingerprints + (id to fingerprint),
+            favorites = favorites - id,
+            favoriteFingerprints = if (pathFavorite) favoriteFingerprints + fingerprint else favoriteFingerprints,
+            lastPlayed = lastPlayed - id,
+            lastPlayedByFingerprint = if (pathPlayed == null) {
+                lastPlayedByFingerprint
+            } else {
+                lastPlayedByFingerprint + (fingerprint to maxOf(pathPlayed, fingerprintPlayed ?: Long.MIN_VALUE))
+            },
+            hiddenPaths = hiddenPaths - id,
+            hiddenFingerprints = if (pathHidden) hiddenFingerprints + fingerprint else hiddenFingerprints,
             aliasesByFingerprint = if (pathAlias != null) aliasesByFingerprint + (fingerprint to pathAlias) else aliasesByFingerprint,
             aliasesByPath = if (pathAlias != null) aliasesByPath - id else aliasesByPath,
         )
     }
+
+    /**
+     * N1a: migración desde [LibraryPreferencesFormat.LEGACY] (A5–A9). Cada ruta con huella conocida lleva sus
+     * registros provisionales a la huella; lo que no tiene huella sigue por ruta. Lo que ve el usuario no cambia.
+     */
+    fun migrated(): LibraryPreferencesData =
+        fingerprints.entries.fold(this) { data, (id, fingerprint) -> data.recordFingerprint(id, fingerprint) }
+            .copy(formatVersion = LibraryPreferencesFormat.CURRENT)
 
     /** Alias del juego, o `null` si se muestra el título de la cabecera. */
     fun aliasOf(entry: RomEntry): String? {
@@ -154,9 +231,10 @@ object LibraryQuery {
         filter: LibraryFilter,
         query: String,
     ): List<RomEntry> {
-        // Con el alias aplicado (A9): la búsqueda, el orden y la UI usan el nombre visible.
+        val copies = copies(entries, prefs)
+        // Con el alias aplicado (A9): la búsqueda, el orden y la UI usan el nombre visible. Con las copias (N1a).
         val shown = entries.filter { !prefs.isHidden(it) && matches(it, filter, prefs.isFavorite(it)) }
-            .map(prefs::withAlias)
+            .map { present(it, prefs, copies) }
             .filter { matches(it, query) }
         return when (prefs.sort) {
             LibrarySort.TITLE -> shown.sortedWith(LibraryScanner.titleOrder)
@@ -168,8 +246,10 @@ object LibraryQuery {
     }
 
     /** Juegos que el usuario ocultó, para poder mostrarlos de nuevo. */
-    fun hidden(entries: List<RomEntry>, prefs: LibraryPreferencesData): List<RomEntry> =
-        entries.filter { prefs.isHidden(it) }.map(prefs::withAlias).sortedWith(LibraryScanner.titleOrder)
+    fun hidden(entries: List<RomEntry>, prefs: LibraryPreferencesData): List<RomEntry> {
+        val copies = copies(entries, prefs)
+        return entries.filter { prefs.isHidden(it) }.map { present(it, prefs, copies) }.sortedWith(LibraryScanner.titleOrder)
+    }
 
     /** Máximo de juegos del carril «Continuar jugando» (K10). */
     const val CONTINUE_LIMIT = 5
@@ -177,20 +257,51 @@ object LibraryQuery {
     /**
      * Jugados recientemente (no ocultos), del más reciente al más antiguo. Con [hasArtwork] solo quedan los
      * jugables cuya huella tiene portada capturada (carril «Continuar jugando», K10): nunca una portada inventada.
+     * Un juego con varias copias (N1a) sale una sola vez (la primera por ruta).
      */
     fun recent(
         entries: List<RomEntry>,
         prefs: LibraryPreferencesData,
         limit: Int = CONTINUE_LIMIT,
         hasArtwork: ((String) -> Boolean)? = null,
-    ): List<RomEntry> =
-        entries.filter {
+    ): List<RomEntry> {
+        val copies = copies(entries, prefs)
+        return entries.filter {
             !prefs.isHidden(it) && prefs.lastPlayedAt(it) != null &&
                 (hasArtwork == null || it.isPlayable && prefs.fingerprints[it.id]?.let(hasArtwork) == true)
         }
-            .sortedByDescending { prefs.lastPlayedAt(it) }
+            .sortedWith(compareByDescending<RomEntry> { prefs.lastPlayedAt(it) }.thenBy { it.id })
+            .distinctBy { prefs.fingerprints[it.id] ?: "ruta:${it.id}" }
             .take(limit)
-            .map(prefs::withAlias)
+            .map { present(it, prefs, copies) }
+    }
+
+    /**
+     * N1a: para cada id con copias, dónde están las demás copias presentes de su misma huella **conocida** (ordenadas por
+     * ruta). Una huella desconocida nunca se adivina por título o tamaño.
+     */
+    fun copies(entries: List<RomEntry>, prefs: LibraryPreferencesData): Map<String, List<RomLocation>> {
+        val groups = entries.groupBy { prefs.fingerprints[it.id] }.filter { (fingerprint, group) -> fingerprint != null && group.size > 1 }
+        if (groups.isEmpty()) return emptyMap()
+        val result = HashMap<String, List<RomLocation>>()
+        for (group in groups.values) {
+            val ordered = group.sortedWith { a, b -> NaturalOrder.compare(a.id, b.id) }
+            for (entry in ordered) result[entry.id] = ordered.filter { it.id != entry.id }.map { it.location }
+        }
+        return result
+    }
+
+    /** N1a: el juego [id] tal como se muestra en el detalle (alias y copias), o `null` si ya no está en la carpeta. */
+    fun presented(entries: List<RomEntry>, prefs: LibraryPreferencesData, id: String): RomEntry? {
+        val entry = entries.firstOrNull { it.id == id } ?: return null
+        return present(entry, prefs, copies(entries, prefs))
+    }
+
+    private fun present(entry: RomEntry, prefs: LibraryPreferencesData, copies: Map<String, List<RomLocation>>): RomEntry {
+        val withAlias = prefs.withAlias(entry)
+        val others = copies[entry.id].orEmpty()
+        return if (others == withAlias.alsoAt) withAlias else withAlias.copy(alsoAt = others)
+    }
 
     private fun fold(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD)
@@ -312,8 +423,15 @@ class LibraryPreferencesFile(
         }
     }
 
+    /**
+     * Decodifica y, si el archivo es de una versión anterior (sin `formatVersion`: A5–A9), lo migra (N1a). Un archivo de
+     * una versión futura conserva lo que esta versión conoce y se escribirá como la actual.
+     */
     private fun decode(text: String): LibraryPreferencesData? = try {
-        json.decodeFromString(LibraryPreferencesData.serializer(), text)
+        val data = json.decodeFromString(LibraryPreferencesData.serializer(), text)
+        val version = (json.parseToJsonElement(text) as? JsonObject)?.get("formatVersion")
+            ?.let { it as? JsonPrimitive }?.intOrNull ?: LibraryPreferencesFormat.LEGACY
+        if (version < LibraryPreferencesFormat.CURRENT) data.migrated() else data.copy(formatVersion = LibraryPreferencesFormat.CURRENT)
     } catch (_: SerializationException) {
         null
     } catch (_: IllegalArgumentException) {
