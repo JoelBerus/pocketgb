@@ -108,6 +108,8 @@ AAudio usa modo low-latency y callback nativo sobre ring buffer SPSC estéreo a 
 
 Una única vista Android gestiona todos los punteros, deslizamiento entre botones, diagonales sin direcciones opuestas y captura del D-pad. La disposición y tamaño se guardan por orientación. Opacidad, visibilidad, estilo de cruceta y háptica siguen las opciones de iOS, adaptadas visualmente a Material.
 
+**Cruceta (N2).** Misma estructura que la de iOS con el tema Material propio (roles tonales del esquema, sin vidrio): la cruz Game Boy es la unión de dos rectángulos redondeados (0,76 W × 0,29 W) dentro de un disco, y las flechas separadas son cuatro círculos de 0,36 W en rombo con iconos Material que escalan con el control. Solo se ilumina el brazo o círculo pulsado (dos en diagonal); el centro de la cruz no se resalta. La interpretación del toque es `DpadSectors`: zona muerta del 30 % con histéresis (sale a 0,24), sectores por modo «Diagonales» (Normales: 8 × 45°; **Reducidas**, por defecto: diagonal a ±15° de los 45° y cardinales a ±30°; Desactivadas: 4 × 90°) con 6° de histéresis angular por dedo, y háptica solo al activarse una dirección nueva. El stick de un mando físico conserva sus ocho sectores de 45°. La separación de las flechas (0,7–1,5, por orientación, 1,0 de fábrica) se ajusta en el editor y el marco, la zona táctil y el nodo de TalkBack de la cruceta siguen al grupo (siempre ≥ 48 dp). Guía: [controles-android](../guia/controles-android.md).
+
 Mandos físicos usan `onKeyDown`, `onKeyUp` y `onGenericMotionEvent`; cruceta/stick, A/B, Start/Select y avance rápido son configurables. Las máscaras táctil y física se combinan con OR.
 
 ## 5. Biblioteca y persistencia

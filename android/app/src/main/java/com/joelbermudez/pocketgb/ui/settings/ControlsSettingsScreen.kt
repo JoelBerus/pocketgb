@@ -8,7 +8,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.RadioButton
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -80,32 +82,7 @@ fun ControlsSettingsContent(
                 tag = "controls-dpad",
             )
         }
-        SettingsGroup(
-            header = stringResource(R.string.controls_diagonals_header),
-            footer = stringResource(R.string.controls_diagonals_footer),
-        ) {
-            // Tres nombres largos («Desactivadas») no caben en botones segmentados: lista de opciones con su explicación.
-            listOf(
-                Triple(DiagonalMode.NORMAL, R.string.controls_diagonals_normal, R.string.controls_diagonals_normal_hint),
-                Triple(DiagonalMode.REDUCED, R.string.controls_diagonals_reduced, R.string.controls_diagonals_reduced_hint),
-                Triple(DiagonalMode.DISABLED, R.string.controls_diagonals_disabled, R.string.controls_diagonals_disabled_hint),
-            ).forEachIndexed { index, (mode, label, hint) ->
-                ListItem(
-                    headlineContent = { Text(stringResource(label)) },
-                    supportingContent = { Text(stringResource(hint)) },
-                    leadingContent = { RadioButton(selected = data.diagonalMode == mode, onClick = null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .heightIn(min = 56.dp)
-                        .selectable(
-                            selected = data.diagonalMode == mode,
-                            role = Role.RadioButton,
-                            onClick = { onUpdate { it.copy(diagonalMode = mode) } },
-                        )
-                        .testTag("controls-diagonals-$index"),
-                )
-            }
-        }
+        DiagonalsGroup(data, onUpdate)
         SettingsGroup(header = stringResource(R.string.controls_group_header)) {
             ChoiceRow(
                 title = stringResource(R.string.controls_size_label),
@@ -170,6 +147,42 @@ fun ControlsSettingsContent(
                 enabled = !data.isFactoryLayout(ControlsOrientation.LANDSCAPE),
                 tag = "reset-layout-landscape",
             ) { onUpdate { it.resetLayout(ControlsOrientation.LANDSCAPE) } }
+        }
+    }
+}
+
+/** Grupo «Diagonales» (N2): tres nombres largos no caben en botones segmentados, así que es una lista de opciones con su explicación. */
+@Composable
+internal fun DiagonalsGroup(
+    data: GameplaySettingsData,
+    onUpdate: ((GameplaySettingsData) -> GameplaySettingsData) -> Unit,
+) {
+    SettingsGroup(
+        header = stringResource(R.string.controls_diagonals_header),
+        footer = stringResource(R.string.controls_diagonals_footer),
+    ) {
+        // Tres nombres largos («Desactivadas») no caben en botones segmentados: lista de opciones con su explicación.
+        Column(Modifier.selectableGroup()) {
+            listOf(
+                Triple(DiagonalMode.NORMAL, R.string.controls_diagonals_normal, R.string.controls_diagonals_normal_hint),
+                Triple(DiagonalMode.REDUCED, R.string.controls_diagonals_reduced, R.string.controls_diagonals_reduced_hint),
+                Triple(DiagonalMode.DISABLED, R.string.controls_diagonals_disabled, R.string.controls_diagonals_disabled_hint),
+            ).forEachIndexed { index, (mode, label, hint) ->
+                ListItem(
+                    headlineContent = { Text(stringResource(label)) },
+                    supportingContent = { Text(stringResource(hint)) },
+                    leadingContent = { RadioButton(selected = data.diagonalMode == mode, onClick = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .heightIn(min = 56.dp)
+                        .selectable(
+                            selected = data.diagonalMode == mode,
+                            role = Role.RadioButton,
+                            onClick = { onUpdate { it.copy(diagonalMode = mode) } },
+                        )
+                        .testTag("controls-diagonals-$index"),
+                )
+            }
         }
     }
 }

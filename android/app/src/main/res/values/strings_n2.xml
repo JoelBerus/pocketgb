@@ -2,7 +2,6 @@
 <resources>
     <!-- N2 · Ajustes › Controles: diagonales de la cruceta -->
     <string name="controls_diagonals_header">Diagonales</string>
-    <string name="controls_diagonals_label">Diagonales de la cruceta</string>
     <string name="controls_diagonals_normal">Normales</string>
     <string name="controls_diagonals_reduced">Reducidas</string>
     <string name="controls_diagonals_disabled">Desactivadas</string>

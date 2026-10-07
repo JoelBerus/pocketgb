@@ -159,3 +159,5 @@ n2-settings-controls portrait dark
 n2-settings-controls-scrolled portrait light swipe=up
 n2-settings-controls-scrolled portrait dark swipe=up
 n2-settings-controls-ax5 portrait light fontScale=2.0 swipe=up
+n2-settings-diagonals-ax5 portrait light fontScale=2.0
+n2-settings-diagonals-ax5 portrait dark fontScale=2.0

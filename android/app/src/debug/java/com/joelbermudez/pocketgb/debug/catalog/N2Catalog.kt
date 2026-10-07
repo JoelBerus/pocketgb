@@ -6,6 +6,8 @@ import com.joelbermudez.pocketgb.debug.DebugIntent
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.LocalPreviewDpadMask
 import com.joelbermudez.pocketgb.ui.settings.ControlsSettingsContent
+import com.joelbermudez.pocketgb.ui.settings.DiagonalsGroup
+import com.joelbermudez.pocketgb.ui.settings.components.SettingsPage
 
 private typealias N2Screen = @Composable (DebugIntent) -> Unit
 
@@ -44,4 +46,8 @@ internal val n2CatalogScreens: Map<String, N2Screen> = buildMap {
     put("n2-settings-controls") { i -> ControlsSettingsContent(i.gameplaySettings(), onUpdate = {}, onBack = {}) }
     put("n2-settings-controls-scrolled") { i -> ControlsSettingsContent(i.gameplaySettings(), onUpdate = {}, onBack = {}) }
     put("n2-settings-controls-ax5") { i -> ControlsSettingsContent(i.gameplaySettings(), onUpdate = {}, onBack = {}) }
+    // Solo el grupo «Diagonales» (la página entera no deja ver sus filas con la fuente al 200 % sin desplazar varias veces).
+    put("n2-settings-diagonals-ax5") { i ->
+        SettingsPage("Controles", onBack = {}) { DiagonalsGroup(i.gameplaySettings(), onUpdate = {}) }
+    }
 }

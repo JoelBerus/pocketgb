@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorGroup
 import androidx.compose.ui.graphics.vector.VectorPath
 import androidx.compose.ui.graphics.vector.toPath
+import androidx.core.graphics.withTranslation
 import kotlin.math.max
 
 /**
@@ -59,11 +60,10 @@ internal object DpadIcons {
         val scale = size / extent
         paint.style = Paint.Style.FILL
         paint.color = color
-        canvas.save()
-        canvas.translate(cx, cy)
-        canvas.scale(scale, scale)
-        canvas.translate(-glyph.bounds.centerX(), -glyph.bounds.centerY())
-        canvas.drawPath(glyph.path, paint)
-        canvas.restore()
+        canvas.withTranslation(cx, cy) {
+            scale(scale, scale)
+            translate(-glyph.bounds.centerX(), -glyph.bounds.centerY())
+            drawPath(glyph.path, paint)
+        }
     }
 }
