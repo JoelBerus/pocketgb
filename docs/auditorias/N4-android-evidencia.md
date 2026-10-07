@@ -117,3 +117,27 @@ Defectos que se vieron en las capturas y se corrigieron antes de la verificació
 - **Plegable y tablet**: no se repitieron las capturas en `Pixel_Fold_API_35` para N4.
 - El aviso emergente «Drag handle» que asoma en las capturas de las hojas (`game-settings`, `n4-game-center*`) es previo a N4: sale porque el emulador tiene teclado físico y el asa recibe el foco al abrir la hoja.
 - No se actualizaron `docs/ESTADO.md` ni la tabla de `docs/hitos/README.md` (los lleva el orquestador al fusionar).
+
+## Respuesta a la auditoría (verificación vigente, sobre `aa87b28`)
+Hallazgos H1–H15 y cambios: [N4-android-respuesta](N4-android-respuesta.md). Decisiones del orquestador: se mantienen N4A-1, N4A-2, N4A-3 (con el total visible, H1), N4A-5 (con H10) y N4A-8; la pausa sigue sin centro de ajustes. El ejemplo de categoría virtual pasa de «Favoritas» a «Para jugar» (catálogo y documentación; H13).
+
+### Desde limpio
+```
+git archive aa87b28 | tar -x -C <scratchpad>/n4-android/clean4      # + local.properties, ROMs libres enlazadas
+PATH="$PATH:$NDK/…/bin" make -C clean4/gba homebrew                   # rc=0, 22 .gba
+./gradlew --no-daemon --max-workers=1 --continue :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+BUILD SUCCESSFUL in 4m 19s · 120 actionable tasks: 120 executed
+```
+- **JVM: 668 pruebas, 0 fallos** (+4: `theFavoritesRowCountsEveryFavoriteEvenBeyondTheLimit`, `aCopyShownInItsOwnFolderIsNotMarkedAsMoved`, `movingAPinnedCategoryKeepsTheRelativeOrder…`, `aTypedCategoryReusesAnExistingOne…`).
+- **Lint: `0 errors, 20 warnings`** (los de siempre). Release **sin `INTERNET`** (`aapt2 dump permissions`).
+- **Instrumentadas completas** (`with-lock.sh emu`, sin filtro): **447 pruebas, 0 fallos, 0 omitidas** (+1: `HomeUiTest.inLandscapeWithTheWholeHomeScrollingDownPinsTheTitleAndPanelsDoNotCoverIt`; `GameCenterUiTest` escribe «pokemon» y comprueba que se reutiliza «Pokémon»; la prueba al 200 % mide el texto dibujado).
+- **Kill-test** con el APK limpio: `Resultado: OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)` · `OK: 50/50 iteraciones con el invariante intacto`.
+- **Mutaciones de las correcciones** (`library.*`, 233 pruebas): 4 fallos, uno por mutación (ver la respuesta).
+
+### Capturas regeneradas y revisadas (APK de `aa87b28`; scratchpad `n4-android/resp/`)
+`n4-game-center` (C,O), `-moved`, `-landscape`, `-ax5` (fuente del sistema 2,0), `n4-details-moved`, `n4-category-virtual`, `n4-home` (C,O), `n4-home-ax5-scrolled`, `n4-move-category` (C,O), `n4-home-landscape-scrolled`, vistas con Read:
+- Centro: «Para jugar [Movido en la app]» y «Su carpeta: Puzles» sin repetir; «Cambiar» y «Volver a su carpeta» bajo la fila (con la fuente del sistema del emulador al 1,3 las dos acciones se reparten en dos líneas); etiquetas como texto «pendiente · rpg».
+- Detalle: «Movido en la app · Se ve en «Para jugar»» y «dos jugadores» como texto.
+- `n4-home-ax5-scrolled` muestra ya la estantería «Aventuras 2 juegos · Ver todo» con la portada a la izquierda (H14).
+- `n4-home-landscape-scrolled`: «Todos los juegos · Roms» fijado y la barra flotante.
+- Sigue asomando el aviso «Drag handle» sobre el asa de las hojas (foco de teclado físico del emulador; previo a N4).
