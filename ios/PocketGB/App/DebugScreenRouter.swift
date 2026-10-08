@@ -882,6 +882,14 @@ extension DebugScreenRouter {
         return dir
     }()
 
+    /// N7a · `-demoConflicts`: copias en conflicto de mentira en Ajustes › Partidas (no hay archivos).
+    static let demoConflictCopies: [(title: String, url: URL)]? = {
+        guard DebugArguments.arguments.contains("-demoConflicts") else { return nil }
+        return [("Pokémon Rojo", URL(fileURLWithPath: "/demo/Pokemon Rojo 2.sav")),
+                ("Pokémon Rojo", URL(fileURLWithPath: "/demo/Pokemon Rojo.sync-conflict-20261008-101010-ABCDEFG.sav")),
+                ("Tetris", URL(fileURLWithPath: "/demo/Tetris (1).sav"))]
+    }()
+
     static func applyN6(_ screen: DebugScreen, to state: AppState) {
         guard DebugArguments.demoLibrary == "n5", DebugArguments.value("-demoMoments") == "rich" else { return }
         var entries = state.library.entries

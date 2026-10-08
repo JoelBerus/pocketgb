@@ -5,6 +5,8 @@ struct SavesSettingsView: View {
     @Environment(AppState.self) private var state
     @State private var games: [(fingerprint: String, record: SavesIndex.Record?)] = []
     @State private var loaded = false
+    /// N7a · copias en conflicto del proveedor junto a cada `.sav` (solo se listan).
+    @State private var conflicts: [(title: String, url: URL)] = []
 
     var body: some View {
         Form {
@@ -27,6 +29,24 @@ struct SavesSettingsView: View {
             } footer: {
                 Text("La partida de cada juego se guarda en este iPhone y se copia junto al ROM. PocketGB conserva las 5 versiones anteriores.")
             }
+            if !conflicts.isEmpty {
+                Section {
+                    ForEach(conflicts, id: \.url) { copy in
+                        VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
+                            Text(copy.url.lastPathComponent)
+                            Text(copy.title)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("saves-conflict-copy")
+                    }
+                } header: {
+                    Text("Copias en conflicto")
+                } footer: {
+                    Text("iCloud, Drive u otras apps crearon estas copias del .sav junto al juego. PocketGB nunca las borra. Para usar una, ábrela con PocketGB desde Archivos o impórtala desde el detalle del juego.")
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
@@ -37,6 +57,13 @@ struct SavesSettingsView: View {
                 games = SavesIndex(directory: dir).savedGames()
             }
             loaded = true
+            let roms = state.library.entries.map { (state.libraryPrefs.displayTitle($0), $0.url) }
+            conflicts = await Task.detached(priority: .utility) {
+                roms.flatMap { title, url in ConflictCopies.scan(romURL: url).map { (title: title, url: $0) } }
+            }.value
+            #if DEBUG
+            if let demo = DebugScreenRouter.demoConflictCopies { conflicts = demo }
+            #endif
         }
     }
 }

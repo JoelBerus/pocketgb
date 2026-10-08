@@ -231,10 +231,10 @@ struct SaveMirrorTests {
         #expect(try mirror.read() == d2)
     }
 
-    /// Auditoría D2-D5 Codex, H1: un contenido que PocketGB escribió antes, restaurado a mano
-    /// junto al ROM (fecha nueva), no es una escritura propia tardía: gana por fecha y la
-    /// copia local queda como backup.
-    @Test func restoredHistoricalMirrorWithNewDateWinsAndBacksUpLocal() throws {
+    /// N7a (N-README §3.4, «espejo = una escritura nuestra anterior»): un contenido que PocketGB ya escribió,
+    /// restaurado a mano junto al ROM con fecha nueva, **no** gana por fecha (antes sí, auditoría D2-D5 H1): gana la
+    /// local y el espejo se reescribe. Regla 6: el contenido del espejo queda en una copia apartada que no rota.
+    @Test func restoredHistoricalMirrorWithNewDateLosesToLocalAndIsKept() throws {
         let store = SaveStore(directory: dir, fingerprint: "restored-\(UUID().uuidString)")
         let mirror = try mirrorFile(nil)
         let target = SaveTarget(local: store, mirror: mirror)
@@ -258,10 +258,10 @@ struct SaveMirrorTests {
 
         let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
                                                validSizes: [4])
-        #expect(reopened.data == d1)
-        #expect(try store.load() == d1)
-        #expect(try Data(contentsOf: store.backupURL(1)) == d2)   // la local no se pierde
-        #expect(try mirror.read() == d1)                           // el espejo no se toca
+        #expect(reopened.data == d2)
+        #expect(try store.load() == d2)
+        #expect(store.keptCopies().contains { (try? Data(contentsOf: $0.url)) == d1 })   // nada se pierde
+        #expect(reopened.warning == nil)
     }
 
     @Test func newerExternalMirrorWinsAndBacksUpLocal() throws {
@@ -284,11 +284,17 @@ struct SaveMirrorTests {
         try mirror.write(external)
         try FileManager.default.setAttributes([.modificationDate: new], ofItemAtPath: mirror.url.path)
 
+        // N7a: la local (2) cambió sin pasar por el espejo y el espejo (3) es desconocido: divergencia, se pregunta.
+        #expect(throws: SaveOpening.Refusal.self) {
+            try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(), validSizes: [4])
+        }
+        #expect(try store.load() == local)   // preguntar no toca nada
         let reopened = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: mirror.snapshot(),
-                                               validSizes: [4])
+                                               validSizes: [4], lineage: .init(divergence: .useOther))
         #expect(reopened.data == external)
         #expect(try store.load() == external)
         #expect(try Data(contentsOf: store.backupURL(1)) == local)
+        #expect(reopened.warning == .divergenceResolved)
     }
 
     @Test @MainActor func synchronousSessionFlushDoesNotWaitForBlockedRealMirror() throws {

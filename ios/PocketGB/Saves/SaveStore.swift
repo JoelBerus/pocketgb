@@ -76,6 +76,25 @@ struct SaveStore: Sendable {
         }
     }
 
+    /// N7a · historial de linaje: las escrituras propias del espejo (sin fechas).
+    func lineageHistory() -> SaveLineage.History {
+        let history = mirrorHistory()
+        return SaveLineage.History(written: history.successful.map(\.hash), pending: history.pending)
+    }
+
+    /// N7b · sha de todas las partidas que este iPhone ha tenido de este juego y que aún conserva: historial del
+    /// espejo, copias de seguridad y copias apartadas. Sirve para reconocer un paquete «más viejo».
+    func knownHashes() -> Set<String> {
+        var known = Set(lineageHistory().written + lineageHistory().pending)
+        for n in 1...Self.keepBackups {
+            if let data = try? Data(contentsOf: backupURL(n)) { known.insert(SaveLineage.sha256(data)) }
+        }
+        for copy in keptCopies() {
+            if let data = try? Data(contentsOf: copy.url) { known.insert(SaveLineage.sha256(data)) }
+        }
+        return known
+    }
+
     func recordMirrorAttempt(_ data: Data) throws {
         let hash = Self.contentHash(data)
         var history = mirrorHistory()

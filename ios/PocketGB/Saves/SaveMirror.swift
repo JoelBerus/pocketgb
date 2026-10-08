@@ -105,6 +105,8 @@ enum SaveResolution: Equatable {
     /// La única partida que hay tiene un tamaño incorrecto: no se carga ni se toca,
     /// y la sesión no guarda (para no sobrescribirla).
     case wrongSize(fromMirror: Bool)
+    /// N7a · las dos partidas avanzaron por separado (linaje): hay que preguntar antes de cargar nada.
+    case divergent
 
     struct Candidate: Equatable {
         let data: Data
@@ -115,7 +117,10 @@ enum SaveResolution: Equatable {
     ///   - local: `Saves/<huella>.sav`.
     ///   - mirror: `<rom>.sav` junto al ROM (nil si no hay o no hay carpeta).
     ///   - isValidSize: tamaños que acepta `gb_sram_load`.
+    ///   - lineage: N7a, relación del espejo con la local según el historial (nil = sin calcular: regla por fecha).
+    ///   - divergence: lo que eligió Joel si ya se le preguntó por una divergencia.
     static func resolve(local: Candidate?, mirror: Candidate?, mirrorIsOwned: Bool = false,
+                        lineage: SaveLineage.MirrorRelation? = nil, divergence: DivergenceChoice? = nil,
                         isValidSize: (Int) -> Bool) -> SaveResolution {
         let localOK = local.map { isValidSize($0.data.count) } ?? false
         let mirrorOK = mirror.map { isValidSize($0.data.count) } ?? false
@@ -154,6 +159,22 @@ enum SaveResolution: Equatable {
                 return .load(data: local.data, backupOther: nil, installLocal: false,
                              updateMirror: true, mirrorIgnored: false, quarantineLocal: false)
             }
+            // N7a · linaje (N-README §3.4): con historial no se mira la fecha (el reloj puede ir desfasado).
+            let useLocal = SaveResolution.load(data: local.data, backupOther: nil, installLocal: false, updateMirror: true,
+                                               mirrorIgnored: false, quarantineLocal: false)
+            let useMirror = SaveResolution.load(data: mirror.data, backupOther: nil, installLocal: true,
+                                                updateMirror: false, mirrorIgnored: false, quarantineLocal: false)
+            switch lineage {
+            case .ownEarlier?: return useLocal
+            case .external?: return useMirror
+            case .divergent?:
+                switch divergence {
+                case nil: return .divergent
+                case .keepLocal?: return useLocal
+                case .useOther?: return useMirror
+                }
+            case .same?, .noHistory?, nil: break
+            }
             // Difieren: gana la más reciente; ante la duda (sin fecha o empate), la local.
             let mirrorNewer = (mirror.date ?? .distantPast) > (local.date ?? .distantPast)
             return mirrorNewer
@@ -181,6 +202,10 @@ enum SaveLoadWarning: Equatable, Sendable {
     case mirrorShared
     /// Error al leer la partida local.
     case unreadable(String)
+    /// N7a · el `.sav` junto al juego cambió fuera de PocketGB y la de este iPhone no: se instaló con copia.
+    case externalChange
+    /// N7a · divergencia resuelta con la elección de Joel: la otra quedó como momento «Conflicto» y apartada.
+    case divergenceResolved
 
     var title: String {
         switch self {
@@ -189,6 +214,8 @@ enum SaveLoadWarning: Equatable, Sendable {
         case .mirrorUnavailable: "Partida de iCloud sin descargar"
         case .mirrorShared: "Partida sin copia junto al juego"
         case .unreadable: "No se pudo leer la partida"
+        case .externalChange: "Partida actualizada desde la carpeta"
+        case .divergenceResolved: "Partida en conflicto guardada"
         }
     }
 
@@ -206,6 +233,10 @@ enum SaveLoadWarning: Equatable, Sendable {
             "El archivo .sav junto al juego está en iCloud y no se pudo descargar. Se usa la partida de este iPhone y el de iCloud no se tocará."
         case .mirrorShared:
             "Otro juego de la carpeta tiene el mismo nombre, así que la partida solo se guarda en este iPhone."
+        case .externalChange:
+            "El archivo .sav junto al juego cambió fuera de PocketGB y se ha instalado. La partida anterior de este iPhone quedó en las copias de seguridad."
+        case .divergenceResolved:
+            "La otra partida no se ha perdido: está en Momentos como «Conflicto» y en Ajustes › Partidas › Copias apartadas."
         case .unreadable(let detail):
             "\(detail) Esta sesión no guardará."
         }
@@ -227,11 +258,32 @@ enum SaveOpening {
         /// No hay partida local y la de iCloud no se pudo leer: abrir empezaría de cero
         /// y el primer guardado podría pisarla. Mejor no abrir (auditoría D2, H1).
         case mirrorNotDownloaded
+        /// N7a · divergencia: la partida de este iPhone y la de junto al juego avanzaron por separado. No se carga
+        /// nada hasta que Joel elija (`DivergenceChoice`).
+        case divergence(localDate: Date?, otherDate: Date?)
+    }
+
+    /// N7a · opciones de linaje de una apertura.
+    struct LineageOptions {
+        var divergence: DivergenceChoice?
+        /// Donde queda la perdedora de una divergencia como momento «Conflicto …» (nil = solo copia apartada).
+        var conflictMoments: MomentStore?
+
+        init(divergence: DivergenceChoice? = nil, conflictMoments: MomentStore? = nil) {
+            self.divergence = divergence
+            self.conflictMoments = conflictMoments
+        }
+    }
+
+    /// Nombre del momento con la perdedora de una divergencia.
+    static func conflictName(_ date: Date = Date()) -> String {
+        "Conflicto \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 
     static func prepare(store: SaveStore, mirror: SaveMirror?, snapshot: SaveMirror.Snapshot,
                         validSizes: Set<Int>,
-                        mirrorWriter: (@Sendable (Data) throws -> Void)? = nil) throws -> Outcome {
+                        mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
+                        lineage options: LineageOptions = LineageOptions()) throws -> Outcome {
         func makeTarget(_ mirror: SaveMirror?, pending: Bool = false) -> SaveTarget {
             if let mirrorWriter {
                 return SaveTarget(local: store, mirror: mirror, mirrorPending: pending,
@@ -256,8 +308,15 @@ enum SaveOpening {
             }
         }
         let mirrorIsOwned = mirrorCandidate.map { store.recognizesOwnedMirror($0.data, date: $0.date) } ?? false
+        let relation: SaveLineage.MirrorRelation? = (local != nil && mirrorCandidate != nil)
+            ? SaveLineage.relation(local: SaveLineage.sha256(local!.data), mirror: SaveLineage.sha256(mirrorCandidate!.data),
+                                   history: store.lineageHistory())
+            : nil
         switch SaveResolution.resolve(local: local, mirror: mirrorCandidate, mirrorIsOwned: mirrorIsOwned,
+                                      lineage: relation, divergence: options.divergence,
                                       isValidSize: { validSizes.contains($0) }) {
+        case .divergent:
+            throw Refusal.divergence(localDate: local?.date, otherDate: mirrorCandidate?.date)
         case .none:
             return Outcome(data: nil, target: makeTarget(usableMirror), warning: nil)
         case let .load(data, backupOther, installLocal, updateMirror, mirrorIgnored, quarantineLocal):
@@ -268,11 +327,18 @@ enum SaveOpening {
                local.data != mirrorCandidate.data {
                 try store.keepMirrorLoser(data == mirrorCandidate.data ? local.data : mirrorCandidate.data)
             }
+            // N7a · divergencia resuelta: la que pierde queda además como momento «Conflicto …» (solo partida).
+            if relation == .divergent, let local, let mirrorCandidate, let moments = options.conflictMoments {
+                let loser = data == mirrorCandidate.data ? local.data : mirrorCandidate.data
+                _ = try? moments.create(.init(state: nil, sram: loser, thumbnail: nil), name: conflictName())
+            }
             if let backupOther { try store.addBackup(backupOther) }
             if quarantineLocal { try store.quarantineCurrent() }
             if installLocal { try store.save(data) }
             let target = makeTarget(mirrorIgnored ? nil : usableMirror, pending: updateMirror)
             let warning: SaveLoadWarning? = mirrorIgnored ? .mirrorIgnored
+                : relation == .external && data != local?.data ? .externalChange
+                : relation == .divergent ? .divergenceResolved
                 : quarantineLocal ? .localQuarantined
                 : unavailable ? .mirrorUnavailable : nil
             return Outcome(data: data, target: target, warning: warning)
