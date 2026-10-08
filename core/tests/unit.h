@@ -42,6 +42,7 @@ void unit_pgbm(struct ut *t);
  * (0..UT_PGBM_SEEDS-1) en `out` y devuelve su longitud (0 si no cabe). */
 #define UT_PGBM_SEEDS 7u
 size_t ut_pgbm_seed(unsigned which, uint8_t *out, size_t cap);
+void unit_pgbm_cross(struct ut *t);
 void unit_progress(struct ut *t);
 /* Semillas de fuzz_progress (partidas sintéticas): escribe la entrada nº `which`
  * (0..UT_PROGRESS_SEEDS-1) en `out` y devuelve su longitud (0 si no cabe). */

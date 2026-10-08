@@ -194,6 +194,41 @@ Los cuatro se generan **en el test** (`core/tests/unit_pgbm.c`, `build_golden`) 
 ```
 `sav_sha256` y `state_of_sav_sha256` son el SHA-256 de `pat(0x21, 8192)` (`d3c5532fe0534370189004c7704430c1470f5c0f0be7b9e522c3799517ac28ef`) y `rom_sha256` es `ROMF` en hexadecimal: el test lo comprueba (el importador hace lo mismo con cualquier paquete). G3 lleva el número de secciones = 3; al leerlo, `pgbm_parse` devuelve `SAVE` y `ROMF` e ignora `xtra`. G4 es G3 con el tipo en mayúsculas: el CRC es válido y aun así se rechaza.
 
+### Vectores cruzados de las apps (N7b: X1…X7)
+Generador de referencia: `core/tests/unit_pgbm_cross.c` (`make -C core test`, suite `pgbmx`). **iOS y Android construyen cada vector con sus propias llamadas** (Swift / JNI a `pgbm_encode`), comprueban que el SHA-256 del archivo es el de la tabla y lo pasan **a su importador real** con el cartucho de referencia, que debe dar el resultado indicado. Ningún `.pgbm` se guarda en el repo: se generan en el test.
+
+**Cartucho de referencia:** huella = `pat(0x10, 32)` (`10355a7f…c41668b`), Game Boy, **con batería**, RAM de **32 768 B** sin RTC. Cargas: `S1` = `pat(0x21, 32768)`, `S2` = `pat(0x23, 32768)`, `B` = `pat(0x22, 32768)`, `T1` = `pat(0x42, 4096)`, `T2` = `pat(0x43, 4096)`, `S4` = `pat(0x21, 8000)`. Ningún vector lleva `THMB`.
+
+| SHA-256 de la carga | Valor |
+|---|---|
+| `S1` | `5e08944e1a748c003e29abf76d1930cb1ed35933e7741e52a9ce055f3fa77a76` |
+| `B` | `b28ee9fab76c8a575342631959fca77e58ef6885e554111f35e76195dc16322b` |
+| `S2` | `cbab8faef55e97b329a4bcffbe8cc683be5aabc75970565eca6008250e3f6b39` |
+| `pat(0x24, 32768)` | `fb840ce50edf61d2eb00d99ca6db957bb61e7bbd3376c1e7fc783b0a7d63a752` |
+| `S4` | `dc8f54f472d2e4a9e5562f22c1c52a3067a66b1374c398ab3e7a930944976c58` |
+
+| Vector | Secciones | META (B) | Longitud | CRC-32 | SHA-256 del archivo | Resultado esperado del importador |
+|---|---|---|---|---|---|---|
+| **X1** Android envía, estado exacto | `ROMF` · `META` · `SAVE`=`S1` · `STAT`=`T1` | 536 | 37480 | `68b5f56d` | `b7d163cf9fda7b6ccbcd240b1a25b97518caccdda45b5a38e37a021e713bf796` | Se acepta. `state_of_sav_sha256` = `sav_sha256` → se ofrece «Continuar donde lo dejaste en Pixel de prueba» (el estado viaja como estado automático). Equipo origen `android` |
+| **X2** iPhone avanza desde X1 | `ROMF` · `META` · `SAVE`=`S2` · `STAT`=`T2` | 466 | 37410 | `0c617b44` | `e79d7993c7cd380ac7496f792766362e0689fe285ff2c06a9424508b40db5f2f` | Se acepta; el estado es de otra partida (`state_of` ≠ `sav`): **no** se ofrece continuar ni se instala `STAT`. Con la local = `S1` (= `base`): **avance** (se instala con backup, sin pregunta). Con la local = `B`: **divergencia** (se pregunta) |
+| **X3** `SAVE` vacía | `ROMF` · `META` · `SAVE` (0 B) | 318 | 390 | `44e5d413` | `c1f033894a9d9f7bc15cfcc353b776caf6303fadb51f7168829045cfbb430e17` | No toca el `.sav` (juego con batería); deja backup de lo actual |
+| **X4** `SAVE` de 8000 B | `ROMF` · `META` · `SAVE`=`S4` | 315 | 8387 | `4727d089` | `336401621230102beadbadbdba1643acdc58da343fe36e2105d9e07966933771` | Igual que X3 (tamaño ≠ 32 768) |
+| **X5** `META` `format: 2` | `ROMF` · `META` · `SAVE`=`S1` | 318 | 33158 | `feb5f534` | `8b1fb567aa21ffd5c907b59111c93eb4f67d7dba91bb57aff5e4b5804f30718a` | Rechazado sin tocar nada («actualiza la app») |
+| **X6** sin `META` | `ROMF` · `SAVE`=`S1` | — | 32832 | `2ed4513a` | `c7f5650966a804b620f8d29a63766b2583d53a2a30384b030ceafe224b236a2e` | Rechazado sin tocar nada |
+| **X7** `sav_sha256` ≠ `SAVE` | `ROMF` · `META` · `SAVE`=`S1` | 318 | 33158 | `9565865d` | `6d8b3af30e6fe76adf7fef36fc21f80a3db0a86d4df1a8faa00d573b07a39880` | Rechazado sin tocar nada |
+| **G4** (arriba) | sección crítica `XTRA` | — | 93 | — | ver G4 | `PGBM_ERR_CRITICAL`: rechazado sin tocar nada («actualiza la app») |
+
+`META` exacto de cada vector (ASCII, una línea, sin espacios; `R` = `10355a7fa4c9ee13385d82a7ccf1163b6085aacff4193e6388add2f71c41668b`):
+```
+X1 {"format":1,"rom_sha256":"R","sav_sha256":"S1","base_sav_sha256":"B","device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790003600000,"core":{"name":"gb","version":"1.0.0"},"state_of_sav_sha256":"S1","play_time_ms":7200000,"title":"Prueba cruzada","tags":["cruzado"]}
+X2 {"format":1,"rom_sha256":"R","sav_sha256":"S2","base_sav_sha256":"S1","device":{"platform":"ios","name":"iPhone de prueba"},"created_ms":1790007200000,"core":{"name":"gb","version":"1.0.0"},"state_of_sav_sha256":"<pat(0x24, 32768)>"}
+X3 {"format":1,"rom_sha256":"R","sav_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","base_sav_sha256":null,"device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790000000000,"core":{"name":"gb","version":"1.0.0"}}
+X4 {"format":1,"rom_sha256":"R","sav_sha256":"S4","base_sav_sha256":null,"device":{"platform":"ios","name":"iPhone de prueba"},"created_ms":1790000000000,"core":{"name":"gb","version":"1.0.0"}}
+X5 {"format":2,"rom_sha256":"R","sav_sha256":"S1","base_sav_sha256":null,"device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790000000000,"core":{"name":"gb","version":"1.0.0"}}
+X7 {"format":1,"rom_sha256":"R","sav_sha256":"B","base_sav_sha256":null,"device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790000000000,"core":{"name":"gb","version":"1.0.0"}}
+```
+(los nombres `R`, `S1`, `B`, `S2`, `S4` se sustituyen por su hex de 64 caracteres en minúsculas, entre las comillas). La referencia en Python de arriba los reproduce con `pgbm([(b"ROMF", ROM), (b"META", meta), (b"SAVE", sav), (b"STAT", st)])`.
+
 ### G2 byte a byte
 ```
 0000: 50 47 42 4d              mágico «PGBM»

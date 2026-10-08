@@ -173,6 +173,7 @@ static int run_unit(void)
         { "link", unit_link },
         { "progress", unit_progress },
         { "pgbm", unit_pgbm },
+        { "pgbmx", unit_pgbm_cross },
     };
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         int before = t.failed;
