@@ -30,3 +30,6 @@ iPhone SE (3.ª gen.):
 Release generic/platform=iOS:
 ** BUILD SUCCEEDED **
 ```
+
+
+> **Nota (2026-10-08, ND18):** Joel decide que HEIC no se acepta en ninguna parte, tampoco al importar. `CoverFormat.imported` ya no incluye HEIC, el `fileImporter` solo admite PNG/JPEG/WebP y `PhotosPicker` pide representaciones PNG/JPEG/WebP (con `preferredItemEncoding: .compatible`, Fotos transcodifica fuera de la app). El test pasa a llamarse `heicIsAlwaysRejected` y comprueba que importar un HEIC falla.
