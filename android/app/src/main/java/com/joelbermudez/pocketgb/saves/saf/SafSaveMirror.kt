@@ -125,7 +125,17 @@ class SafSaveMirror(
         requireBackgroundThread()
         return synchronized(lock) {
             try {
-                val matches = savFiles(listChildren())
+                val children = listChildren()
+                // N7a: copias en conflicto del proveedor (`X 2.sav`, `X (1).sav`…): solo se anotan para listarlas en
+                // Ajustes › Partidas; nunca se leen, se instalan ni se borran. Mejor esfuerzo.
+                try {
+                    store.recordProviderConflicts(
+                        children.filter { !it.isDirectory && com.joelbermudez.pocketgb.saves.SaveLineage.isProviderConflictCopy(base, it.name) }
+                            .map { SaveStore.ProviderConflict(it.name, it.lastModified) },
+                    )
+                } catch (_: IOException) {
+                }
+                val matches = savFiles(children)
                 when {
                     matches.isEmpty() -> {
                         baselineKnown = true

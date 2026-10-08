@@ -248,6 +248,24 @@ fun SavesSettingsContent(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            if (game.providerConflicts.isNotEmpty()) {
+                                Text(stringResource(R.string.n7_saves_provider_conflicts), style = MaterialTheme.typography.labelLarge)
+                                game.providerConflicts.forEach { c ->
+                                    Text(
+                                        stringResource(
+                                            R.string.n7_saves_provider_conflict_item, c.name,
+                                            c.dateMs?.let(::formatDate) ?: stringResource(R.string.saves_backup_unknown_date),
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.heightIn(min = 48.dp).testTag("provider-conflict-${game.fingerprint.take(8)}"),
+                                    )
+                                }
+                                Text(
+                                    stringResource(R.string.n7_saves_provider_conflicts_footer),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             if (game.backups.isNotEmpty() || game.setAside.isNotEmpty()) {
                                 Text(
                                     stringResource(R.string.saves_restore_footer),

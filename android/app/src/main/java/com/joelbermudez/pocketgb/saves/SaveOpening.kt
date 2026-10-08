@@ -52,6 +52,8 @@ object SaveOpening {
         mirrorMode: MirrorMode = MirrorMode.ReadWrite,
         mirrorWriter: ((ByteArray) -> Long?)? = null,
         registry: MirrorChannelRegistry = MirrorChannelRegistry.shared,
+        /** N7a: guarda la partida del otro lado de una divergencia como momento «Conflicto …»; devuelve su id. */
+        recordConflict: ((ByteArray) -> String?)? = null,
     ): Outcome {
         // Con el espejo desactivado (colisión de nombres) ni siquiera se interpreta su snapshot.
         val activeMirror = if (mirrorMode == MirrorMode.Shared) null else mirror
@@ -84,11 +86,40 @@ object SaveOpening {
                 }
             }
         }
-        val owned = mirrorCandidate?.let { store.recognizesOwnedMirror(it.data, it.dateMs) } ?: false
+        // N7a · linaje (§3.4): con local y espejo válidos y distintos decide la tabla por huellas, no por fechas.
+        val localValid = (localState as? SaveStore.LocalSave.Present)?.data?.takeIf { it.size in validSizes }
+        val mirrorValid = mirrorCandidate?.data?.takeIf { it.size in validSizes }
+        val lineage = if (localValid != null && mirrorValid != null) {
+            SaveLineage.classifyMirror(
+                store.contentHash(localValid), store.contentHash(mirrorValid), store.ownMirrorHashes(), store.lastOwnMirrorHashes(),
+            )
+        } else {
+            null
+        }
+        val owned = lineage == SaveLineage.Mirror.OWN_OLDER
         val extraWarning = when (mirrorMode) {
             MirrorMode.ReadOnly -> SaveLoadWarning.MirrorReadOnly
             MirrorMode.Shared -> SaveLoadWarning.MirrorShared
             MirrorMode.ReadWrite -> null
+        }
+        if (lineage == SaveLineage.Mirror.EXTERNAL_CHANGE && localValid != null && mirrorValid != null) {
+            // Cambio externo: la local no cambió desde nuestra última escritura. Se instala con backup (la escritura
+            // atómica deja la local en `.1`) y aviso, sea cual sea la fecha (reloj desfasado).
+            store.save(mirrorValid)
+            store.recordReceived(mirrorValid)
+            return Outcome(mirrorValid, makeTarget(usableMirror), SaveLoadWarning.ExternalChange)
+        }
+        if (lineage == SaveLineage.Mirror.DIVERGENCE && localValid != null && mirrorValid != null) {
+            // Divergencia: las dos cambiaron por separado. Sigue la local; la otra se aparta (fuera de la rotación), va
+            // a backup y queda como momento «Conflicto …» antes de reescribir el espejo. Se avisa y se ofrece usarla.
+            store.setAsideMirrorLoser(mirrorValid)
+            store.addBackup(mirrorValid)
+            val conflict = try { recordConflict?.invoke(mirrorValid) } catch (_: Exception) { null }
+            return Outcome(
+                localValid,
+                makeTarget(usableMirror, pending = usableMirror != null),
+                SaveLoadWarning.Divergence(conflict),
+            )
         }
         return when (val r = SaveResolution.resolve(local, mirrorCandidate, owned) { it in validSizes }) {
             SaveResolution.None -> Outcome(null, makeTarget(usableMirror), extraWarning)
@@ -108,7 +139,10 @@ object SaveOpening {
                 // Orden de efectos: apartado → addBackup → cuarentena → instalación. Si uno falla, los siguientes no se hacen.
                 r.backupOther?.let(store::addBackup)
                 if (r.quarantineLocal) store.quarantineCurrent()
-                if (r.installLocal) store.save(r.data)
+                if (r.installLocal) {
+                    store.save(r.data)
+                    store.recordReceived(r.data) // N7a: llegó de fuera (espejo): es la base del linaje
+                }
                 val target = makeTarget(if (r.mirrorIgnored) null else usableMirror, pending = r.updateMirror && usableMirror != null)
                 val warning = when {
                     r.mirrorIgnored -> SaveLoadWarning.MirrorIgnored

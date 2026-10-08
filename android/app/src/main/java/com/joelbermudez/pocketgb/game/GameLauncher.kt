@@ -182,6 +182,8 @@ class GameLauncher(
     private val progress: com.joelbermudez.pocketgb.progress.ProgressStore? = null,
     /** N6: nombre visible de una ranura migrada («Ranura 1», «Rescate»…) a partir de su origen (`slot1`, `rescue`…). */
     private val migratedName: (String) -> String = { it },
+    /** N7a: nombre del momento «Conflicto …» que guarda la otra partida de una divergencia (recibe la fecha en ms). */
+    private val conflictName: (Long) -> String = { "Conflicto" },
 ) {
     /**
      * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
@@ -309,6 +311,9 @@ class GameLauncher(
                         validSizes = validSizes,
                         mirrorMode = setup?.mode ?: SaveOpening.MirrorMode.ReadWrite,
                         registry = registry,
+                        recordConflict = moments?.let { m ->
+                            { other: ByteArray -> m.create(MomentStore.Capture(null, other, null), conflictName(now())).id }
+                        },
                     )
                 } catch (_: SaveOpening.Refusal) {
                     return OpenResult.Failed(OpenError.MirrorNotDownloaded)
