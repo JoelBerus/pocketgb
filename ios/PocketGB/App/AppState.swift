@@ -158,6 +158,12 @@ final class AppState {
     /// N7a · la elección de Joel para la próxima apertura (se consume en `start`).
     @ObservationIgnored private var divergenceChoice: DivergenceChoice?
     @ObservationIgnored private var lastOpenRequest: (entry: RomEntry, mode: GameLaunchMode)?
+    /// N7b · importación pendiente de la elección de Joel (divergencia, paquete más viejo o `.sav` crudo).
+    var importPrompt: ImportPrompt?
+    /// N7c · estado de la partida de cada huella («Partida: Pixel · hace 2 h») y continuación exacta de otro equipo.
+    var saveStatuses: [String: SaveStatus] = [:]
+    /// N7b · importando o preparando una exportación.
+    var travelBusy = false
     /// N6 · cargar un momento al abrir el juego desde el detalle (se carga en pausa).
     @ObservationIgnored private var momentAfterOpen: (fingerprint: String, id: String)?
     /// Aviso breve sobre el juego ("Estado guardado").
@@ -842,6 +848,10 @@ final class AppState {
                 let saves = SaveStore(directory: savesDirectory, fingerprint: fingerprint)
                 return states.automaticEntry(newerThan: saves.modificationDate) != nil
             })
+            let statuses = Dictionary(uniqueKeysWithValues: fingerprints.compactMap { fingerprint -> (String, SaveStatus)? in
+                SaveStatus.read(SaveStore(directory: savesDirectory, fingerprint: fingerprint),
+                                resumable: valid.contains(fingerprint)).map { (fingerprint, $0) }
+            })
             await MainActor.run {
                 guard let self else { return }
                 if replacing {
@@ -849,6 +859,7 @@ final class AppState {
                 } else {
                     self.resumableFingerprints.formUnion(valid)
                 }
+                if replacing { self.saveStatuses = statuses } else { self.saveStatuses.merge(statuses) { $1 } }
             }
         }
     }

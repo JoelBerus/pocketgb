@@ -243,3 +243,11 @@ enum LibraryIdentity {
         }
     }
 }
+
+extension RomFingerprint {
+    /// N7b · SHA-256 completo (32 bytes) de los mismos bytes que hashea el núcleo: la sección `ROMF` de un `.pgbm`.
+    static func fullDigest(data: Data, console: Console) -> Data? {
+        guard let length = hashedLength(console: console, header: data, fileSize: data.count) else { return nil }
+        return Data(SHA256.hash(data: data.prefix(length)))
+    }
+}

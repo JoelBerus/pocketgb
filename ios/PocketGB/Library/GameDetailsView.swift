@@ -468,6 +468,8 @@ struct GameDetailsView: View {
     @ViewBuilder private func progressSection(_ entry: RomEntry) -> some View {
         if let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry) {
             GameProgressSection(entry: entry, fingerprint: fingerprint)
+            // N7b · exportar e importar la partida.
+            if entry.isPlayable { GameSaveTravelSection(entry: entry, fingerprint: fingerprint) }
         }
     }
 

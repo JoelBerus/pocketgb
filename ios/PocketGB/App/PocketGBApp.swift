@@ -104,6 +104,30 @@ struct RootView: View {
         } message: {
             Text(state.divergencePrompt?.message ?? "")
         }
+        // N7b · importar: «Abrir con PocketGB» y la elección ante una divergencia.
+        .onOpenURL { url in state.handleIncomingFile(url) }
+        .confirmationDialog(state.importPrompt?.title ?? "", isPresented: Binding(
+            get: { state.importPrompt != nil }, set: { if !$0 { state.importPrompt = nil } }),
+                            titleVisibility: .visible) {
+            if state.importPrompt?.plan.raw == true {
+                Button("Usar este .sav") { state.resolveImport(.useOther) }
+            } else {
+                Button("Usar la\(state.importPrompt?.plan.origin.map { " de \($0)" } ?? " del paquete")") {
+                    state.resolveImport(.useOther)
+                }
+                Button("Seguir con la de este iPhone") { state.resolveImport(.keepLocal) }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text(state.importPrompt?.message ?? "")
+        }
+        .overlay {
+            if state.travelBusy {
+                ProgressView("Preparando la partida…")
+                    .padding(PocketSpacing.lg)
+                    .pocketGlass(in: RoundedRectangle(cornerRadius: PocketRadius.group))
+            }
+        }
     }
 }
 
