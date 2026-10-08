@@ -142,15 +142,15 @@ enum SidecarCover {
     }
 }
 
-/// Formatos reconocidos por sus primeros bytes (nunca por la extensión). HEIC solo se acepta al importar
-/// (diferencia con Android: Fotos guarda así las fotos del iPhone); la carpeta, como Android.
+/// Formatos reconocidos por sus primeros bytes (nunca por la extensión). HEIC se reconoce solo para
+/// rechazarlo: no se acepta en ninguna parte, tampoco al importar (ND18, paridad con Android).
 enum CoverFormat: Sendable {
     case png, jpeg, webp, heic
 
-    /// Formatos de la imagen de la carpeta (y de cualquier lectura que no sea importar): como Android.
+    /// Formatos de la imagen de la carpeta: como Android.
     static let folder: Set<CoverFormat> = [.png, .jpeg, .webp]
-    /// Al importar (Fotos o Archivos) se acepta también HEIC (N5iA-1: solo aquí).
-    static let imported: Set<CoverFormat> = [.png, .jpeg, .webp, .heic]
+    /// Al importar (Fotos o Archivos): los mismos, sin HEIC (ND18).
+    static let imported: Set<CoverFormat> = [.png, .jpeg, .webp]
     /// Copias reducidas que guarda la app: siempre PNG.
     static let stored: Set<CoverFormat> = [.png]
 }
@@ -192,7 +192,7 @@ enum CoverImageRules {
 ///    reserva el mapa de bits entero) y copia PNG (sin pérdida; conserva la transparencia).
 /// Cualquier fallo devuelve `nil`: quien llama pasa a la siguiente fuente o a la portada generada.
 enum CoverDecoder {
-    /// `formats`: firmas aceptadas (por defecto las de la carpeta; HEIC solo al importar, N5iA-1).
+    /// `formats`: firmas aceptadas (por defecto las de la carpeta; HEIC nunca, ND18).
     static func decode(_ data: Data, formats: Set<CoverFormat> = CoverFormat.folder,
                        maxSide: Int = CoverImageRules.targetSide) -> CGImage? {
         guard !data.isEmpty, data.count <= CoverImageRules.maxBytes,

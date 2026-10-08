@@ -219,15 +219,16 @@ struct CoversTests {
         #expect(CoverDecoder.readLimited(ok) != nil)
     }
 
-    /// N5iA-1: un «Juego.png» que por dentro es HEIC no llega al decodificador HEVC en la carpeta, ni una
-    /// copia guardada que no sea PNG; al importar, HEIC sí vale (la mutación «aceptar HEIC en todas partes»
-    /// rompe las dos primeras comprobaciones).
-    @Test func heicIsOnlyAcceptedWhenImporting() async throws {
+    /// N5iA-1 + ND18: HEIC se rechaza siempre, en la carpeta (un «Juego.png» que por dentro es HEIC) y al
+    /// importar; tampoco vale una copia guardada que no sea PNG. Mutación: volver a añadir `.heic` a
+    /// `CoverFormat.imported` (o a `folder`) rompe el test.
+    @Test func heicIsAlwaysRejected() async throws {
         let heic = Self.encoded(.heic, width: 64, height: 48)
         #expect(CoverImageRules.sniff(heic) == .heic)
         #expect(CoverDecoder.decode(heic) == nil)
         #expect(CoverDecoder.reduce(heic) == nil)
-        #expect(CoverDecoder.decode(heic, formats: CoverFormat.imported) != nil)
+        #expect(CoverDecoder.decode(heic, formats: CoverFormat.imported) == nil)
+        #expect(!CoverFormat.imported.contains(.heic) && !CoverFormat.folder.contains(.heic))
         #expect(CoverDecoder.decode(Self.encoded(.jpeg, width: 8, height: 8), formats: CoverFormat.stored) == nil)
 
         let covers = store { _ in heic }
@@ -235,8 +236,8 @@ struct CoversTests {
         covers.load(game, fingerprint: "fa")
         try await eventually { covers.failedFolder.count == 1 }
         #expect(covers.shown(game, fingerprint: "fa") == .generated)
-        #expect(await covers.importImage(heic, fingerprint: "fa"))
-        #expect(covers.shown(game, fingerprint: "fa").kind == .imported)
+        #expect(await covers.importImage(heic, fingerprint: "fa") == false)
+        #expect(covers.shown(game, fingerprint: "fa") == .generated)
         // Una copia de la caché que no es PNG (manipulada) no se usa.
         let folder = dir.appendingPathComponent("Covers/Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

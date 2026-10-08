@@ -57,6 +57,8 @@ Principios: **la carpeta es la verdad** (su estructura define las categorías), 
 | ND15 | (Joel, 2026-10-07) El carril «Continuar jugando» de Android muestra solo juegos reanudables, como iOS (A9-5; se aplica en N3 Android). |
 | ND16 | (Joel, 2026-10-07) Se acepta que con opacidad de controles del 30–50 % sobre una escena blanca el contraste pulsado/neutro baje de 3:1 (N2-H4). |
 | ND17 | (Joel, 2026-10-07) **Sustituye a K10:** el carril «Continuar jugando» de Android muestra todo juego reanudable (ND15) **aunque no tenga portada**; no depende de ninguna fuente de portada (sin portada propia se ve la generada). |
+| ND18 | (Joel, 2026-10-08) **Sin HEIC en las portadas de iOS**, en ninguna parte (carpeta, copias ni importación desde Fotos o Archivos): paridad con Android. Fotos entrega JPEG; bytes HEIC se rechazan con «Formato no compatible: usa PNG, JPEG o WebP». |
+| ND19 | (Joel, 2026-10-08) Se ratifican tal cual las tres diferencias de GBA en Android: L/R más abajo en horizontal (y=0,26), se conservan los estados de otra configuración y pausa/velocidad van en L2/R2 del mando. |
 
 Decisiones provisionales anteriores que este plan toca (Joel las ratifica al cerrar cada hito): **J8** (Android «Continuar» = solo SRAM; cambia en A9), **K9** (portada = último fotograma; pasa a ser una fuente más en N5), **K10** (carril solo con portada; **sustituida por ND17**: el carril ya no exige portada), **R14** (lista-detalle desactivada; N3a añade detalle a dos columnas sin activarla), **G7-3** (RTC dentro del `.sav`; base de N8).
 

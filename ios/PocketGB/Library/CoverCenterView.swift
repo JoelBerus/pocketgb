@@ -5,17 +5,24 @@ import UniformTypeIdentifiers
 
 /// Una imagen elegida en Fotos, como archivo temporal (nunca se carga entera en memoria antes de mirar su
 /// tamaño). `PhotosPicker` no pide permiso de acceso a la fototeca.
+/// ND18: solo se piden representaciones PNG, JPEG o WebP. Si la foto es HEIC, Fotos entrega su
+/// representación JPEG (la conversión la hace el sistema, fuera de la app: PocketGB nunca decodifica HEIC).
+/// Si aun así llegan bytes HEIC, `CoverDecoder` los rechaza por la firma.
 struct PickedImageFile: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .image) { received in
-            let copy = FileManager.default.temporaryDirectory
-                .appendingPathComponent("cover-\(UUID().uuidString)")
-                .appendingPathExtension(received.file.pathExtension)
-            try FileManager.default.copyItem(at: received.file, to: copy)
-            return PickedImageFile(url: copy)
-        }
+        FileRepresentation(importedContentType: .png, importing: copy)
+        FileRepresentation(importedContentType: .jpeg, importing: copy)
+        FileRepresentation(importedContentType: .webP, importing: copy)
+    }
+
+    private static func copy(_ received: ReceivedTransferredFile) throws -> PickedImageFile {
+        let copy = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-\(UUID().uuidString)")
+            .appendingPathExtension(received.file.pathExtension)
+        try FileManager.default.copyItem(at: received.file, to: copy)
+        return PickedImageFile(url: copy)
     }
 }
 
@@ -37,7 +44,7 @@ struct CoverCenterView: View {
         Form {
             if importFailed {
                 Section {
-                    Label("No se pudo usar esa imagen. Elige un PNG, JPG, WebP o HEIC de menos de 15 MB.",
+                    Label("Formato no compatible: usa PNG, JPEG o WebP (de menos de 15 MB).",
                           systemImage: "exclamationmark.triangle")
                         .foregroundStyle(PocketColor.danger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +62,7 @@ struct CoverCenterView: View {
         .background(PocketColor.backgroundBase.ignoresSafeArea())
         .navigationTitle("Portada")
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(isPresented: $importingFile, allowedContentTypes: [.png, .jpeg, .webP, .heic]) { result in
+        .fileImporter(isPresented: $importingFile, allowedContentTypes: [.png, .jpeg, .webP]) { result in
             guard case .success(let url) = result else { return }
             Task { await importFile(url, securityScoped: true) }
         }
@@ -168,7 +175,7 @@ struct CoverCenterView: View {
 
     private func imageSection(_ entry: RomEntry) -> some View {
         Section {
-            PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
+            PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .compatible) {
                 Label("Elegir de Fotos", systemImage: "photo.on.rectangle")
             }
             .disabled(importing)

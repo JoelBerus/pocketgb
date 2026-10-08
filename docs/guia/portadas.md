@@ -34,7 +34,7 @@ GMRoms/
 
 En los **ajustes del juego › Portada**:
 - **Elegir de Fotos** abre el selector de fotos del sistema. No hace falta dar permiso a la fototeca.
-- **Elegir archivo** abre Archivos. Ahí valen PNG, JPG, WebP o HEIC.
+- **Elegir archivo** abre Archivos. Ahí valen PNG, JPG o WebP. HEIC no se acepta; si eliges una foto HEIC desde Fotos, el sistema la entrega como JPEG.
 
 La app guarda una **copia reducida** en el iPhone, de 1024 píxeles de lado como mucho. Tu imagen original no cambia. Al importarla, el juego pasa a usar «Imagen». «Quitar imagen importada» la borra.
 
@@ -64,7 +64,7 @@ En **Ajustes › Biblioteca › Portadas** eliges qué gana en «Automática» c
 
 ## Imágenes que no valen
 
-PocketGB trata cada imagen como algo que puede venir mal. Solo acepta PNG, JPG o WebP (y HEIC al importar) de **menos de 15 MB** y de hasta 16 384 píxeles de lado y 100 megapíxeles. Mira el contenido real del archivo, no la extensión, y lee el tamaño en la cabecera antes de abrir la imagen. Si una imagen está dañada o cortada, es enorme o no es una imagen aunque se llame `.png`, la app pasa a la siguiente fuente; si no hay otra, usa la generada. Si falla al importarla, verás «No se pudo usar esa imagen».
+PocketGB trata cada imagen como algo que puede venir mal. Solo acepta PNG, JPG o WebP (nunca HEIC, ni al importar) de **menos de 15 MB** y de hasta 16 384 píxeles de lado y 100 megapíxeles. Mira el contenido real del archivo, no la extensión, y lee el tamaño en la cabecera antes de abrir la imagen. Si una imagen está dañada o cortada, es enorme o no es una imagen aunque se llame `.png`, la app pasa a la siguiente fuente; si no hay otra, usa la generada. Si falla al importarla, verás «Formato no compatible: usa PNG, JPEG o WebP».
 
 ## Espacio
 
