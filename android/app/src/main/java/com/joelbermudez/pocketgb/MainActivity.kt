@@ -34,7 +34,26 @@ class MainActivity : ComponentActivity() {
     // Dueño de la partida abierta: sobrevive a la rotación; la sesión nunca vive en un `remember`.
     private val gameplay: GameplayViewModel by viewModels { GameplayViewModelFactory(applicationContext, library) }
 
+    /** N7b: documento recibido por «Abrir con» o «Compartir» (se procesa una vez). */
+    private val incoming = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
+
+    private fun incomingUri(intent: android.content.Intent?): android.net.Uri? = when (intent?.action) {
+        android.content.Intent.ACTION_VIEW -> intent.data
+        android.content.Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION") intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM)
+        }
+        else -> null
+    }?.takeIf { it.scheme == "content" }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        incomingUri(intent)?.let { incoming.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) incoming.value = incomingUri(intent)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
@@ -64,6 +83,8 @@ class MainActivity : ComponentActivity() {
                         library = library,
                         gameplay = gameplay,
                         gameplaySettings = gameplaySettings,
+                        incomingUri = incoming.value,
+                        onIncomingHandled = { incoming.value = null },
                     )
                 }
             }

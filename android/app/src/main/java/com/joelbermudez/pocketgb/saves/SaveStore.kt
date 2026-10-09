@@ -310,6 +310,42 @@ class SaveStore(
         writeHistory(MirrorHistory(h.successful, h.pending, (listOf(hash) + h.received.filter { it != hash }).take(HISTORY_LIMIT)))
     }
 
+    // MARK: N7b/N7c · origen de la partida («Partida: iPhone · hace 2 h»)
+
+    val originFile: File get() = File(directory, "$fingerprint.origin.json")
+
+    /** De qué equipo llegó la partida [hash] y cuándo la escribió (`created_ms` del paquete). */
+    data class Origin(val hash: String, val platform: String, val deviceName: String, val createdMs: Long)
+
+    fun recordOrigin(origin: Origin) = lock.withLock {
+        val json = buildJsonObject {
+            put("hash", origin.hash)
+            put("platform", origin.platform)
+            put("name", origin.deviceName)
+            put("created", origin.createdMs)
+        }
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val tmp = File(originFile.path + ".tmp")
+        ops.writeSynced(tmp, json.toString().toByteArray(Charsets.UTF_8))
+        ops.atomicReplace(tmp, originFile)
+    }
+
+    /** El origen anotado, solo si sigue siendo la partida actual [currentHash] (si se jugó aquí después, ya no vale). */
+    fun origin(currentHash: String?): Origin? = try {
+        if (currentHash == null || !ops.exists(originFile)) null
+        else {
+            val o = Json.parseToJsonElement(ops.readBytes(originFile, 1 shl 12).toString(Charsets.UTF_8)).jsonObject
+            val hash = (o["hash"] as? JsonPrimitive)?.contentOrNull
+            val origin = Origin(
+                hash ?: "", (o["platform"] as? JsonPrimitive)?.contentOrNull ?: "",
+                (o["name"] as? JsonPrimitive)?.contentOrNull ?: "", (o["created"] as? JsonPrimitive)?.longOrNull ?: 0L,
+            )
+            origin.takeIf { hash == currentHash && it.deviceName.isNotEmpty() }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     // MARK: N7a · copias en conflicto del proveedor
 
     val providerConflictsFile: File get() = File(directory, "$fingerprint.provider-conflicts.json")

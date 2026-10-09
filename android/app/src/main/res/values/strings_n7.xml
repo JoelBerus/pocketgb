@@ -9,4 +9,37 @@
     <string name="n7_saves_provider_conflicts">Copias en conflicto del proveedor</string>
     <string name="n7_saves_provider_conflict_item">%1$s · %2$s</string>
     <string name="n7_saves_provider_conflicts_footer">Las creó la nube junto al juego al chocar dos versiones. PocketGB nunca las borra: ábrelas con «Importar partida» si quieres usar una.</string>
+    <!-- N7b · exportar e importar -->
+    <string name="n7_menu_share">Compartir partida…</string>
+    <string name="n7_menu_save_package">Guardar partida en…</string>
+    <string name="n7_menu_export_sav">Exportar .sav…</string>
+    <string name="n7_menu_import">Importar partida…</string>
+    <string name="n7_share_title">Compartir partida</string>
+    <string name="n7_export_saved">Partida exportada.</string>
+    <string name="n7_export_no_save">Este juego aún no tiene partida que exportar.</string>
+    <string name="n7_failed">No se pudo completar: %1$s</string>
+    <string name="n7_import_busy">Cierra el juego antes de importar (está abierto o guardando).</string>
+    <string name="n7_import_title">Partida importada</string>
+    <string name="n7_import_installed">Se instaló la partida. La que había queda en Ajustes › Partidas.</string>
+    <string name="n7_import_same">Ya tenías esta misma partida: no ha cambiado nada.</string>
+    <string name="n7_import_stale">Esa partida es anterior a la tuya: se conserva la tuya y la importada queda en Ajustes › Partidas.</string>
+    <string name="n7_import_used_incoming">Se instaló la partida importada. La de este teléfono quedó como momento «Conflicto» y en Ajustes › Partidas.</string>
+    <string name="n7_import_kept_local">Sigues con la partida de este teléfono. La importada quedó como momento «Conflicto» y en Ajustes › Partidas.</string>
+    <string name="n7_import_size_mismatch">La partida del archivo no tiene el tamaño de la de este juego (o viene vacía): no se ha tocado tu partida. Por seguridad, queda una copia en Ajustes › Partidas.</string>
+    <string name="n7_choose_title">¿Con qué partida sigues?</string>
+    <string name="n7_choose_body">La partida cambió en este teléfono y también en %1$s. La que no elijas no se pierde: queda como momento «Conflicto» y en Ajustes › Partidas.</string>
+    <string name="n7_choose_incoming">Usar la importada</string>
+    <string name="n7_choose_local">Seguir con esta</string>
+    <string name="n7_other_device">el archivo</string>
+    <string name="n7_not_now">Ahora no</string>
+    <string name="n7_continue_from">Continuar donde lo dejaste en %1$s</string>
+    <string name="n7_reject_not_package">No es una partida de PocketGB.</string>
+    <string name="n7_reject_damaged">El archivo está dañado o incompleto (¿se cortó la descarga?). No se ha tocado nada.</string>
+    <string name="n7_reject_newer">Este archivo viene de una versión más nueva de PocketGB: actualiza la app. No se ha tocado nada.</string>
+    <string name="n7_reject_meta">El archivo no tiene datos válidos de la partida. No se ha tocado nada.</string>
+    <string name="n7_reject_other_game">Esta partida es de otro juego. No se ha tocado nada.</string>
+    <string name="n7_reject_unknown_sizes">Abre el juego una vez antes de importar su partida.</string>
+    <string name="n7_reject_wrong_size">Ese .sav no tiene el tamaño de la partida de este juego. No se ha tocado nada.</string>
+    <string name="n7_open_raw_sav">Para importar un .sav, abre el juego en la biblioteca y usa «Importar partida…».</string>
+    <string name="n7_open_no_game">No encuentro ese juego en tu biblioteca. Añade su ROM a la carpeta y vuelve a abrir el archivo.</string>
 </resources>

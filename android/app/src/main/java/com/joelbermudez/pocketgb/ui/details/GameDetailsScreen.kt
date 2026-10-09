@@ -164,6 +164,7 @@ fun GameDetailsScreen(
         } else {
             null
         },
+        travel = com.joelbermudez.pocketgb.ui.travel.rememberTravelActions(entry, fingerprint, prefs),
     )
     RenameGameHost(
         entry = entry.takeIf { renaming },
@@ -232,6 +233,8 @@ fun GameDetailsContent(
     onOpenMoments: (() -> Unit)? = null,
     /** N6: panel de progreso (tiempo, hitos, lector Pokémon) bajo las estadísticas; `null` = sin panel. */
     progress: (@Composable () -> Unit)? = null,
+    /** N7b: exportar e importar la partida (menú de la barra superior); `null` = sin esas entradas. */
+    travel: com.joelbermudez.pocketgb.ui.travel.TravelActions? = null,
 ) {
     var confirmHide by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(initialMenuOpen) }
@@ -266,6 +269,7 @@ fun GameDetailsContent(
                                     },
                                     modifier = Modifier.testTag("game-details-rename"),
                                 )
+                                if (travel != null) TravelMenuItems(travel) { menuOpen = false }
                             }
                         }
                     }
@@ -898,4 +902,25 @@ private fun ChecksumFact(label: String, ok: Boolean, okText: String, badText: St
         }
     }
     HorizontalDivider()
+}
+
+/** N7b: entradas de exportar e importar del menú del detalle. */
+@Composable
+private fun TravelMenuItems(travel: com.joelbermudez.pocketgb.ui.travel.TravelActions, close: () -> Unit) {
+    val items = listOf(
+        Triple(R.string.n7_menu_share, "game-details-share", travel.onSharePackage),
+        Triple(R.string.n7_menu_save_package, "game-details-save-package", travel.onSavePackage),
+        Triple(R.string.n7_menu_export_sav, "game-details-export-sav", travel.onExportSav),
+        Triple(R.string.n7_menu_import, "game-details-import", travel.onImport),
+    )
+    for ((label, tag, action) in items) {
+        DropdownMenuItem(
+            text = { Text(stringResource(label)) },
+            onClick = {
+                close()
+                action()
+            },
+            modifier = Modifier.testTag(tag),
+        )
+    }
 }

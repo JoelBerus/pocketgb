@@ -68,12 +68,52 @@ fun PocketGBApp(
     library: LibraryViewModel,
     gameplay: GameplayViewModel,
     gameplaySettings: GameplaySettingsRepository,
+    /** N7b: documento recibido por «Abrir con» / «Compartir» (se valida por cabecera). */
+    incomingUri: android.net.Uri? = null,
+    onIncomingHandled: () -> Unit = {},
 ) {
     // El estado de navegación vive aquí (no en el Scaffold): al salir de una partida se vuelve al mismo sitio.
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
-    GameplayRoot(gameplay) {
-        AppContent(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
+    val travel = remember(gameplay) {
+        com.joelbermudez.pocketgb.ui.travel.TravelEnvironment(
+            onSaveChanged = gameplay::didRestoreSave,
+            onContinue = { entry -> gameplay.open(entry, LaunchMode.RESUME) },
+        )
     }
+    androidx.compose.runtime.CompositionLocalProvider(com.joelbermudez.pocketgb.ui.travel.LocalTravelEnvironment provides travel) {
+        GameplayRoot(gameplay) {
+            AppContent(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
+            IncomingRoute(incomingUri, library, onIncomingHandled)
+        }
+    }
+}
+
+/** N7b: lee (fuera del hilo principal, con tope) el documento recibido y lo pasa al importador. */
+@Composable
+private fun IncomingRoute(uri: android.net.Uri?, library: LibraryViewModel, onHandled: () -> Unit) {
+    if (uri == null) return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val bytes by androidx.compose.runtime.produceState<Result<ByteArray>?>(null, uri) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.joelbermudez.pocketgb.travel.TravelService(context.applicationContext).read(uri) }
+        }
+    }
+    val state by library.state.collectAsStateWithLifecycle()
+    val prefs by library.prefs.collectAsStateWithLifecycle()
+    val entries = when (val s = state) {
+        is com.joelbermudez.pocketgb.library.LibraryState.Ready -> s.entries
+        is com.joelbermudez.pocketgb.library.LibraryState.Scanning -> s.previous
+        else -> emptyList()
+    }
+    val read = bytes ?: return
+    read.fold(
+        { com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(it, entries, prefs, onHandled) },
+        {
+            com.joelbermudez.pocketgb.ui.travel.InfoDialog(
+                androidx.compose.ui.res.stringResource(com.joelbermudez.pocketgb.R.string.n7_reject_damaged), onHandled,
+            )
+        },
+    )
 }
 
 @Composable

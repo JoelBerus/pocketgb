@@ -6,6 +6,7 @@
 
 #include "pocketgb.h"
 #include "pocketgb_progress.h"
+#include "pocketgb_pgbm.h"
 #include "pocketgba.h"
 #include "native_session.h"
 
@@ -1124,4 +1125,103 @@ Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativeProgressRead(
     jintArray result = (*env)->NewIntArray(env, count);
     if (result != NULL) (*env)->SetIntArrayRegion(env, result, 0, count, values);
     return result;
+}
+
+/*
+ * N7b · contenedor `.pgbm` (docs/12-formato-pgbm.md). El paquete es ENTRADA NO CONFIABLE: se copia a un bloque propio de
+ * tamaño exacto (tope PGBM_MAX_TOTAL antes de reservar) y lo valida pgbm_parse. Devuelve el `pgbm_result` (sus valores
+ * son contrato: Kotlin los mapea por número). En éxito, `spans` recibe desplazamiento y longitud de META, SAVE, STAT y
+ * THMB dentro del propio paquete (-1, 0 = ausente) y `rom_fp` los 32 bytes de ROMF.
+ */
+JNIEXPORT jint JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativePgbmParse(
+    JNIEnv *env, jclass clazz, jbyteArray package, jintArray spans, jbyteArray rom_fp
+) {
+    (void)clazz;
+    if (package == NULL || spans == NULL || rom_fp == NULL) return (jint)PGBM_ERR_ARG;
+    if ((*env)->GetArrayLength(env, spans) < 8 || (*env)->GetArrayLength(env, rom_fp) < (jsize)PGBM_ROMF_BYTES) {
+        return (jint)PGBM_ERR_ARG;
+    }
+    const jsize len = (*env)->GetArrayLength(env, package);
+    if (len < 0 || (size_t)len > PGBM_MAX_TOTAL) return (jint)PGBM_ERR_TOO_LARGE;
+    uint8_t *buf = malloc(len > 0 ? (size_t)len : 1u);
+    if (buf == NULL) return (jint)PGBM_ERR_ARG;
+    (*env)->GetByteArrayRegion(env, package, 0, len, (jbyte *)buf);
+    pgbm_view view;
+    const pgbm_result r = pgbm_parse(buf, (size_t)len, &view);
+    if (r == PGBM_OK) {
+        const pgbm_span s[4] = { view.meta, view.sav, view.state, view.thumb };
+        jint out[8];
+        for (int i = 0; i < 4; i++) {
+            /* SAVE puede ir vacía (presente con longitud 0): su desplazamiento sigue siendo válido o NULL. */
+            out[2 * i] = s[i].data != NULL ? (jint)(s[i].data - buf) : -1;
+            out[2 * i + 1] = (jint)s[i].len;
+        }
+        (*env)->SetIntArrayRegion(env, spans, 0, 8, out);
+        (*env)->SetByteArrayRegion(env, rom_fp, 0, (jsize)PGBM_ROMF_BYTES, (const jbyte *)view.rom_fp);
+    }
+    free(buf);
+    return (jint)r;
+}
+
+static bool copy_span(JNIEnv *env, jbyteArray a, uint32_t max, uint8_t **out, uint32_t *len) {
+    *out = NULL;
+    *len = 0;
+    if (a == NULL) return true;
+    const jsize n = (*env)->GetArrayLength(env, a);
+    if (n < 0 || (uint32_t)n > max) return false;
+    if (n == 0) return true;
+    *out = malloc((size_t)n);
+    if (*out == NULL) return false;
+    (*env)->GetByteArrayRegion(env, a, 0, n, (jbyte *)*out);
+    *len = (uint32_t)n;
+    return true;
+}
+
+/*
+ * Codifica el paquete canónico (pgbm_encode). `result[0]` recibe el `pgbm_result`; devuelve los bytes o NULL. Las
+ * opcionales NULL o vacías no se escriben; `sav` NULL = SAVE vacía.
+ */
+JNIEXPORT jbyteArray JNICALL
+Java_com_joelbermudez_pocketgb_emulator_NativeLibrary_nativePgbmEncode(
+    JNIEnv *env, jclass clazz, jbyteArray rom_fp, jbyteArray meta, jbyteArray sav, jbyteArray state, jbyteArray thumb,
+    jintArray result
+) {
+    (void)clazz;
+    jint code = (jint)PGBM_ERR_ARG;
+    jbyteArray out_array = NULL;
+    uint8_t *m = NULL, *s = NULL, *st = NULL, *th = NULL, *out = NULL;
+    pgbm_view v;
+    memset(&v, 0, sizeof v);
+    if (rom_fp == NULL || result == NULL || (*env)->GetArrayLength(env, result) < 1) goto done;
+    if ((*env)->GetArrayLength(env, rom_fp) != (jsize)PGBM_ROMF_BYTES) goto done;
+    (*env)->GetByteArrayRegion(env, rom_fp, 0, (jsize)PGBM_ROMF_BYTES, (jbyte *)v.rom_fp);
+    code = (jint)PGBM_ERR_TOO_LARGE;
+    if (!copy_span(env, meta, PGBM_MAX_META, &m, &v.meta.len) || !copy_span(env, sav, PGBM_MAX_SAV, &s, &v.sav.len) ||
+        !copy_span(env, state, PGBM_MAX_STATE, &st, &v.state.len) || !copy_span(env, thumb, PGBM_MAX_THUMB, &th, &v.thumb.len)) {
+        goto done;
+    }
+    v.meta.data = m;
+    v.sav.data = s;
+    v.state.data = st;
+    v.thumb.data = th;
+    const size_t size = pgbm_encoded_size(&v);
+    if (size == 0) goto done;
+    out = malloc(size);
+    code = (jint)PGBM_ERR_ARG;
+    if (out == NULL) goto done;
+    size_t written = 0;
+    code = (jint)pgbm_encode(&v, out, size, &written);
+    if (code == (jint)PGBM_OK) {
+        out_array = (*env)->NewByteArray(env, (jsize)written);
+        if (out_array != NULL) (*env)->SetByteArrayRegion(env, out_array, 0, (jsize)written, (const jbyte *)out);
+    }
+done:
+    if (result != NULL && (*env)->GetArrayLength(env, result) >= 1) (*env)->SetIntArrayRegion(env, result, 0, 1, &code);
+    free(m);
+    free(s);
+    free(st);
+    free(th);
+    free(out);
+    return out_array;
 }
