@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -26,6 +27,7 @@ import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.saves.LaunchMode
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation3.runtime.NavEntry
@@ -84,8 +86,56 @@ fun PocketGBApp(
         GameplayRoot(gameplay) {
             AppContent(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
             IncomingRoute(incomingUri, library, onIncomingHandled)
+            ExchangeInboxRoute(library)
         }
     }
+}
+
+/**
+ * N7c: al terminar cada escaneo de la biblioteca se mira `PocketGB/Intercambio/`; el primer paquete nuevo de un juego de
+ * la biblioteca (no enviado desde aquí) se ofrece para importar. «Ahora no» lo da por visto (sigue en la carpeta).
+ */
+@Composable
+private fun ExchangeInboxRoute(library: LibraryViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val service = remember(context) { com.joelbermudez.pocketgb.travel.TravelService(context.applicationContext) }
+    val state by library.state.collectAsStateWithLifecycle()
+    val prefs by library.prefs.collectAsStateWithLifecycle()
+    val ready = state as? com.joelbermudez.pocketgb.library.LibraryState.Ready ?: return
+    class Offer(val item: com.joelbermudez.pocketgb.travel.ExchangeFolder.Item, val bytes: ByteArray, val entry: RomEntry, val device: String)
+    var offer by remember { androidx.compose.runtime.mutableStateOf<Offer?>(null) }
+    var importing by remember { androidx.compose.runtime.mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(ready) {
+        offer = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val exchange = service.exchange() ?: return@runCatching null
+                for (item in service.inbox.pending(exchange.list()).take(8)) {
+                    val bytes = exchange.read(item.documentId)
+                    val peek = service.importer.peek(bytes) as? com.joelbermudez.pocketgb.travel.SaveImporter.Peek.Package
+                    val id = peek?.let { p -> prefs.fingerprints.entries.firstOrNull { it.value == p.romFingerprint }?.key }
+                    val entry = ready.entries.firstOrNull { it.id == id }
+                    if (peek == null || entry == null) { service.inbox.markSeen(item); continue }
+                    return@runCatching Offer(item, bytes, entry, peek.meta.deviceName)
+                }
+                null
+            }.getOrNull()
+        }
+    }
+    offer?.let { o ->
+        com.joelbermudez.pocketgb.ui.travel.InboxDialog(
+            o.device, o.entry.alias ?: o.entry.title,
+            onImport = {
+                offer = null
+                kotlin.concurrent.thread { runCatching { service.inbox.markSeen(o.item) } }
+                importing = o.bytes
+            },
+            onLater = {
+                offer = null
+                kotlin.concurrent.thread { runCatching { service.inbox.markSeen(o.item) } }
+            },
+        )
+    }
+    com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(importing, ready.entries, prefs) { importing = null }
 }
 
 /** N7b: lee (fuera del hilo principal, con tope) el documento recibido y lo pasa al importador. */

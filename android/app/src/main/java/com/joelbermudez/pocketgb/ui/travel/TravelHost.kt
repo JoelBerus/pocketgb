@@ -42,6 +42,8 @@ val LocalTravelEnvironment = compositionLocalOf { TravelEnvironment() }
 
 /** Acciones del menú del detalle. Cada una `null` = no se ofrece. */
 class TravelActions(
+    /** N7c: el `.pgbm` va directo a `PocketGB/Intercambio/` de la carpeta (Drive). */
+    val onSend: () -> Unit,
     val onSharePackage: () -> Unit,
     val onSavePackage: () -> Unit,
     val onExportSav: () -> Unit,
@@ -173,6 +175,27 @@ fun rememberTravelActions(
     val name = entry.alias ?: entry.title
     val actions = remember(entry, fingerprint, prefs) {
         TravelActions(
+            onSend = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val exchange = service.exchange() ?: return@runCatching null
+                            val data = service.exporter.buildPackage(service.exportInfo(entry, fingerprint, prefs))
+                            val id = exchange.send(
+                                com.joelbermudez.pocketgb.travel.ExchangeFolder.fileName(name, service.deviceName(), System.currentTimeMillis()), data,
+                            )
+                            service.inbox.markSent(id)
+                            id
+                        }
+                    }.fold(
+                        { id ->
+                            if (id == null) message(R.string.n7_send_no_folder)
+                            else message(R.string.n7_sent, "PocketGB/" + com.joelbermudez.pocketgb.travel.ExchangeFolder.INBOX)
+                        },
+                        ::failure,
+                    )
+                }
+            },
             onSharePackage = {
                 build(raw = false) { data ->
                     runCatching { service.share(data, service.exporter.fileName(name, "pgbm"), res.getString(R.string.n7_share_title)) }
@@ -203,46 +226,12 @@ fun rememberTravelActions(
     when (val d = dialog) {
         null -> Unit
         is TravelDialog.Message -> InfoDialog(d.text) { close() }
-        is TravelDialog.Imported -> AlertDialog(
-            onDismissRequest = { close() },
-            title = { Text(stringResource(R.string.n7_import_title)) },
-            text = { Text(d.text) },
-            confirmButton = {
-                if (d.continueFrom != null) {
-                    TextButton(
-                        onClick = { close(); env.onContinue(entry) },
-                        modifier = Modifier.heightIn(min = 48.dp).testTag("travel-continue"),
-                    ) { Text(stringResource(R.string.n7_continue_from, d.continueFrom)) }
-                } else {
-                    TextButton(onClick = { close() }, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-ok")) {
-                        Text(stringResource(R.string.warning_ok))
-                    }
-                }
-            },
-            dismissButton = if (d.continueFrom != null) {
-                { TextButton(onClick = { close() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.n7_not_now)) } }
-            } else {
-                null
-            },
-            modifier = Modifier.testTag("travel-imported"),
-        )
-        is TravelDialog.Choose -> AlertDialog(
-            onDismissRequest = { close() },
-            title = { Text(stringResource(R.string.n7_choose_title)) },
-            text = { Text(stringResource(R.string.n7_choose_body, d.device ?: stringResource(R.string.n7_other_device))) },
-            confirmButton = {
-                TextButton(
-                    onClick = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.USE_INCOMING) },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("travel-use-incoming"),
-                ) { Text(stringResource(R.string.n7_choose_incoming)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL) },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("travel-keep-local"),
-                ) { Text(stringResource(R.string.n7_choose_local)) }
-            },
-            modifier = Modifier.testTag("travel-choose"),
+        is TravelDialog.Imported -> ImportedDialog(d.text, d.continueFrom, onContinue = { close(); env.onContinue(entry) }, onDismiss = { close() })
+        is TravelDialog.Choose -> ChooseDialog(
+            d.device,
+            onIncoming = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.USE_INCOMING) },
+            onLocal = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL) },
+            onDismiss = { close() },
         )
     }
     return actions
@@ -277,4 +266,69 @@ internal fun doneText(r: SaveImporter.Result.Done): Int = when (r.lineage) {
     SaveLineage.Incoming.ALREADY_CURRENT -> R.string.n7_import_same
     SaveLineage.Incoming.STALE -> R.string.n7_import_stale
     SaveLineage.Incoming.DIVERGENCE -> if (r.installed) R.string.n7_import_used_incoming else R.string.n7_import_kept_local
+}
+
+/** Resultado de una importación; con [continueFrom] ofrece «Continuar donde lo dejaste en <equipo>» (ND6). */
+@Composable
+internal fun ImportedDialog(text: String, continueFrom: String?, onContinue: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.n7_import_title)) },
+        text = { Text(text) },
+        confirmButton = {
+            if (continueFrom != null) {
+                TextButton(onClick = onContinue, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-continue")) {
+                    Text(stringResource(R.string.n7_continue_from, continueFrom))
+                }
+            } else {
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-ok")) {
+                    Text(stringResource(R.string.warning_ok))
+                }
+            }
+        },
+        dismissButton = if (continueFrom != null) {
+            { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.n7_not_now)) } }
+        } else {
+            null
+        },
+        modifier = Modifier.testTag("travel-imported"),
+    )
+}
+
+/** Divergencia al importar: la que no se elige queda como momento «Conflicto» y en las copias. */
+@Composable
+internal fun ChooseDialog(device: String?, onIncoming: () -> Unit, onLocal: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.n7_choose_title)) },
+        text = { Text(stringResource(R.string.n7_choose_body, device ?: stringResource(R.string.n7_other_device))) },
+        confirmButton = {
+            TextButton(onClick = onIncoming, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-use-incoming")) {
+                Text(stringResource(R.string.n7_choose_incoming))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onLocal, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-keep-local")) {
+                Text(stringResource(R.string.n7_choose_local))
+            }
+        },
+        modifier = Modifier.testTag("travel-choose"),
+    )
+}
+
+/** N7c: un paquete nuevo en `PocketGB/Intercambio/`. */
+@Composable
+internal fun InboxDialog(device: String, game: String, onImport: () -> Unit, onLater: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(R.string.n7_inbox_title)) },
+        text = { Text(stringResource(R.string.n7_inbox_body, device, game)) },
+        confirmButton = {
+            TextButton(onClick = onImport, modifier = Modifier.heightIn(min = 48.dp).testTag("inbox-import")) { Text(stringResource(R.string.n7_inbox_import)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp).testTag("inbox-later")) { Text(stringResource(R.string.n7_not_now)) }
+        },
+        modifier = Modifier.testTag("inbox-dialog"),
+    )
 }

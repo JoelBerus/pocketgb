@@ -57,6 +57,16 @@ class TravelService(private val context: Context) {
         )
     }
 
+    /** N7c: la bandeja `PocketGB/Intercambio/` de la carpeta de la biblioteca, o `null` sin carpeta concedida. */
+    fun exchange(): ExchangeFolder? {
+        val store = com.joelbermudez.pocketgb.library.LibraryFolderStore(context)
+        val uri = store.currentUri() ?: return null
+        if (!store.hasPersistedPermission()) return null
+        return ExchangeFolder(context.contentResolver, Uri.parse(uri))
+    }
+
+    val inbox = ExchangeInbox(File(context.filesDir, "exchange-seen.json"))
+
     fun deviceName(): String =
         Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: Build.MODEL
 

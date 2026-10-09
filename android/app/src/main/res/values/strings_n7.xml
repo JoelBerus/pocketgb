@@ -42,4 +42,13 @@
     <string name="n7_reject_wrong_size">Ese .sav no tiene el tamaño de la partida de este juego. No se ha tocado nada.</string>
     <string name="n7_open_raw_sav">Para importar un .sav, abre el juego en la biblioteca y usa «Importar partida…».</string>
     <string name="n7_open_no_game">No encuentro ese juego en tu biblioteca. Añade su ROM a la carpeta y vuelve a abrir el archivo.</string>
+    <!-- N7c · enviar a otro dispositivo y estado de la partida -->
+    <string name="n7_menu_send">Enviar a otro dispositivo</string>
+    <string name="n7_sent">Partida enviada a %1$s. En el otro equipo, ábrela con PocketGB.</string>
+    <string name="n7_send_no_folder">Elige antes la carpeta de la biblioteca (Ajustes › Biblioteca) con permiso de escritura.</string>
+    <string name="n7_inbox_title">Partida recibida</string>
+    <string name="n7_inbox_body">Hay una partida de %1$s para «%2$s» en Intercambio.</string>
+    <string name="n7_inbox_import">Importar</string>
+    <string name="n7_save_status_device">%1$s · %2$s</string>
+    <string name="n7_save_status_here">Este teléfono · %1$s</string>
 </resources>

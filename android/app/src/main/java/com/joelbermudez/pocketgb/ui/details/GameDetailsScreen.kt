@@ -141,6 +141,14 @@ fun GameDetailsScreen(
     var showSettings by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     val fingerprint = prefs.fingerprints[entry.id]
+    val statusContext = LocalContext.current
+    val saveStatus by produceState<com.joelbermudez.pocketgb.travel.SaveStatus?>(null, fingerprint, load, prefs, resumable) {
+        value = fingerprint?.let { fp ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.joelbermudez.pocketgb.travel.SaveStatus.read(java.io.File(statusContext.filesDir, "saves"), fp) }.getOrNull()
+            }
+        }
+    }
     GameDetailsContent(
         entry = entry,
         load = load,
@@ -165,6 +173,7 @@ fun GameDetailsScreen(
             null
         },
         travel = com.joelbermudez.pocketgb.ui.travel.rememberTravelActions(entry, fingerprint, prefs),
+        saveStatus = saveStatus,
     )
     RenameGameHost(
         entry = entry.takeIf { renaming },
@@ -235,6 +244,8 @@ fun GameDetailsContent(
     progress: (@Composable () -> Unit)? = null,
     /** N7b: exportar e importar la partida (menú de la barra superior); `null` = sin esas entradas. */
     travel: com.joelbermudez.pocketgb.ui.travel.TravelActions? = null,
+    /** N7c: de dónde viene la partida («iPhone · hace 2 h»); `null` = la fecha del `.sav` junto al ROM, como antes. */
+    saveStatus: com.joelbermudez.pocketgb.travel.SaveStatus? = null,
 ) {
     var confirmHide by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(initialMenuOpen) }
@@ -307,6 +318,7 @@ fun GameDetailsContent(
                     onHide = { confirmHide = true },
                     onOpenMoments = onOpenMoments,
                     progress = progress,
+                    saveStatus = saveStatus,
                     // «Jugar» siempre justo bajo el título (H3): con un nombre o una ruta largos, la ruta y «También en» lo
                     // empujaban fuera de la pantalla (en dos columnas y también en vertical). En dos columnas el título
                     // ocupa como mucho 2 líneas (completo en la barra superior y en «Renombrar»).
@@ -375,6 +387,7 @@ private fun DetailsInfo(
     titleMaxLines: Int = Int.MAX_VALUE,
     onOpenMoments: (() -> Unit)? = null,
     progress: (@Composable () -> Unit)? = null,
+    saveStatus: com.joelbermudez.pocketgb.travel.SaveStatus? = null,
 ) {
     val title: @Composable () -> Unit = {
         Text(
@@ -425,7 +438,7 @@ private fun DetailsInfo(
 
     if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
 
-    Stats(entry, lastPlayedAt)
+    Stats(entry, lastPlayedAt, saveStatus)
     SecondaryActions(favorite, onToggleFavorite, onOpenSettings, onOpenMoments)
     progress?.invoke()
     TechnicalInfo(entry, load)
@@ -565,13 +578,18 @@ private fun AlsoIn(copies: List<RomLocation>) {
 
 /** Jugado, Partida (fecha del `.sav` junto al ROM) y Tamaño, en tres columnas. */
 @Composable
-private fun Stats(entry: RomEntry, lastPlayedAt: Long?) {
+private fun Stats(entry: RomEntry, lastPlayedAt: Long?, saveStatus: com.joelbermudez.pocketgb.travel.SaveStatus? = null) {
     Column {
         HorizontalDivider()
         val played = stringResource(R.string.details_played)
         val playedValue = lastPlayedAt?.let { relativeDateText(it) } ?: stringResource(R.string.details_never)
         val save = stringResource(R.string.details_save)
-        val saveValue = entry.mirrorSaveDate?.let { relativeDateText(it) } ?: stringResource(R.string.details_none)
+        val saveValue = when {
+            // N7c: «iPhone · hace 2 h» si la partida actual llegó de otro equipo; «Este teléfono · …» si se jugó aquí.
+            saveStatus?.device != null -> stringResource(R.string.n7_save_status_device, saveStatus.device, relativeDateText(saveStatus.atMs))
+            saveStatus != null -> stringResource(R.string.n7_save_status_here, relativeDateText(saveStatus.atMs))
+            else -> entry.mirrorSaveDate?.let { relativeDateText(it) } ?: stringResource(R.string.details_none)
+        }
         val size = stringResource(R.string.details_size)
         val sizeValue = ByteFormat.format(entry.sizeBytes)
         if (LocalLargeFont.current) {
@@ -908,6 +926,7 @@ private fun ChecksumFact(label: String, ok: Boolean, okText: String, badText: St
 @Composable
 private fun TravelMenuItems(travel: com.joelbermudez.pocketgb.ui.travel.TravelActions, close: () -> Unit) {
     val items = listOf(
+        Triple(R.string.n7_menu_send, "game-details-send", travel.onSend),
         Triple(R.string.n7_menu_share, "game-details-share", travel.onSharePackage),
         Triple(R.string.n7_menu_save_package, "game-details-save-package", travel.onSavePackage),
         Triple(R.string.n7_menu_export_sav, "game-details-export-sav", travel.onExportSav),
