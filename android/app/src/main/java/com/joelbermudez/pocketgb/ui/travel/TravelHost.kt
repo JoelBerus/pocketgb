@@ -67,7 +67,7 @@ fun IncomingPackageHost(
     val context = LocalContext.current
     val service = remember(context) { TravelService(context.applicationContext) }
     val peek = remember(bytes) { service.importer.peek(bytes) }
-    val res = context.resources
+    val res = androidx.compose.ui.platform.LocalResources.current
     when (peek) {
         SaveImporter.Peek.RawSave -> InfoDialog(res.getString(R.string.n7_open_raw_sav), onDone)
         is SaveImporter.Peek.Rejected -> InfoDialog(res.getString(rejectionText(peek.reason)), onDone)
@@ -110,7 +110,7 @@ fun rememberTravelActions(
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<TravelDialog?>(null) }
     var pendingExport by remember { mutableStateOf<ByteArray?>(null) }
-    val res = context.resources
+    val res = androidx.compose.ui.platform.LocalResources.current
 
     fun message(id: Int, vararg args: Any) { dialog = TravelDialog.Message(res.getString(id, *args)) }
 

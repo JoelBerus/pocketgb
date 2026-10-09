@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import com.joelbermudez.pocketgb.R
 import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
@@ -62,7 +63,7 @@ class TravelService(private val context: Context) {
         val store = com.joelbermudez.pocketgb.library.LibraryFolderStore(context)
         val uri = store.currentUri() ?: return null
         if (!store.hasPersistedPermission()) return null
-        return ExchangeFolder(context.contentResolver, Uri.parse(uri))
+        return ExchangeFolder(context.contentResolver, uri.toUri())
     }
 
     val inbox = ExchangeInbox(File(context.filesDir, "exchange-seen.json"))
