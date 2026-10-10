@@ -181,6 +181,13 @@ enum DebugScreen: String, CaseIterable {
     case n6ProgressEditor = "n6-progress-editor"
     case n6ProgressAX5 = "n6-progress-ax5"
     case n6LibraryPercent = "n6-library-percent"
+    // N7 (iOS): partidas que viajan
+    case n7DetailSave = "n7-detail-save"
+    case n7DetailSaveAX5 = "n7-detail-save-ax5"
+    case n7Divergence = "n7-divergence"
+    case n7ImportPrompt = "n7-import-prompt"
+    case n7ImportDone = "n7-import-done"
+    case n7SettingsConflicts = "n7-settings-conflicts"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -333,6 +340,7 @@ enum DebugScreenRouter {
         applyN4(screen, to: state)
         applyN5(screen, to: state)
         applyN6(screen, to: state)
+        applyN7(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -882,6 +890,14 @@ extension DebugScreenRouter {
         return dir
     }()
 
+    /// N7a · `-demoConflicts`: copias en conflicto de mentira en Ajustes › Partidas (no hay archivos).
+    static let demoConflictCopies: [(title: String, url: URL)]? = {
+        guard DebugArguments.arguments.contains("-demoConflicts") else { return nil }
+        return [("Pokémon Rojo", URL(fileURLWithPath: "/demo/Pokemon Rojo 2.sav")),
+                ("Pokémon Rojo", URL(fileURLWithPath: "/demo/Pokemon Rojo.sync-conflict-20261008-101010-ABCDEFG.sav")),
+                ("Tetris", URL(fileURLWithPath: "/demo/Tetris (1).sav"))]
+    }()
+
     static func applyN6(_ screen: DebugScreen, to state: AppState) {
         guard DebugArguments.demoLibrary == "n5", DebugArguments.value("-demoMoments") == "rich" else { return }
         var entries = state.library.entries
@@ -929,6 +945,48 @@ extension DebugScreenRouter {
         case .n6ProgressEditor, .n6ProgressAX5:
             state.libraryPath = [.details(id: n6Pokemon, source: n6Pokemon)]
             if let pokemon { state.showGameCenter(pokemon, at: .progress(fingerprint: "demo-pokemon")) }
+        default:
+            break
+        }
+    }
+}
+
+// MARK: - N7 (iOS): partidas que viajan
+
+extension DebugScreenRouter {
+    /// Pantallas de N7 sobre la biblioteca `-demoLibrary n5` (juego «Acid/dmg-acid2.gb», huella de demostración). Sin
+    /// archivos de partida reales: el estado y las preguntas se siembran en memoria.
+    static func applyN7(_ screen: DebugScreen, to state: AppState) {
+        let id = "Acid/dmg-acid2.gb", fp = "demo-dmg-acid2"
+        let entry = state.library.entries.first { $0.id == id }
+        let plan = SaveImport.Plan(fingerprint: fp, save: Data(count: 8_192), incoming: Data(count: 8_192),
+                                   relation: .divergent(baseKnown: true), continuation: nil, thumbnail: nil,
+                                   meta: PackageMeta(romSHA256: String(repeating: "0", count: 64),
+                                                     savSHA256: String(repeating: "0", count: 64), baseSavSHA256: nil,
+                                                     platform: "android", deviceName: "Pixel 8", createdMs: 0,
+                                                     coreName: "gb", coreVersion: nil, stateOfSavSHA256: nil),
+                                   raw: false, batteryless: false)
+        switch screen {
+        case .n7DetailSave, .n7DetailSaveAX5:
+            state.libraryPath = [.details(id: id, source: id)]
+            state.saveStatuses[fp] = SaveStatus(device: "Pixel 8", date: Date().addingTimeInterval(-2 * 3600),
+                                                continuesFromOtherDevice: true)
+        case .n7Divergence:
+            state.libraryPath = [.details(id: id, source: id)]
+            if let entry {
+                state.divergencePrompt = DivergencePrompt(entry: entry, mode: .resumeAutomatic,
+                                                          localDate: Date(timeIntervalSince1970: 1_790_600_000),
+                                                          otherDate: Date(timeIntervalSince1970: 1_790_650_000))
+            }
+        case .n7ImportPrompt:
+            state.libraryPath = [.details(id: id, source: id)]
+            if let entry { state.importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: state.libraryPrefs.displayTitle(entry)) }
+        case .n7ImportDone:
+            state.libraryPath = [.details(id: id, source: id)]
+            state.notify("Partida importada", "Se ha instalado la partida de Pixel 8. La anterior quedó en «Antes de cargar» y en las copias de seguridad. Puedes continuar justo donde lo dejaste.")
+        case .n7SettingsConflicts:
+            state.selectedTab = .settings
+            state.settingsPath = [.saves]
         default:
             break
         }

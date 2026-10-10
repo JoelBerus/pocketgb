@@ -44,6 +44,12 @@ struct SaveStore: Sendable {
         }
         var successful: [Written] = []
         var pending: [String] = []
+        /// ND20 (b, g): últimas partidas recibidas de fuera (paquete, cambio externo o primera instalación desde el
+        /// espejo), de la más reciente a la más antigua.
+        var received: [String] = []
+        /// ND20 (m): ruta del espejo al que se refiere el historial (minúsculas). Otro espejo (un duplicado del mismo
+        /// ROM en otra carpeta) no usa este historial.
+        var location: String?
 
         init() {}
 
@@ -56,6 +62,8 @@ struct SaveStore: Sendable {
                 successful = ((try? c.decode([String].self, forKey: .successful)) ?? []).map { Written(hash: $0, date: nil) }
             }
             pending = (try? c.decode([String].self, forKey: .pending)) ?? []
+            received = (try? c.decode([String].self, forKey: .received)) ?? []
+            location = try? c.decode(String.self, forKey: .location)
         }
     }
 
@@ -76,9 +84,49 @@ struct SaveStore: Sendable {
         }
     }
 
-    func recordMirrorAttempt(_ data: Data) throws {
+    /// N7a · historial de linaje: las escrituras propias del espejo y las partidas recibidas (sin fechas).
+    /// - Parameter mirror: el espejo que se va a comparar. Si el historial es de otro espejo (ND20 m), no vale:
+    ///   se devuelve vacío y se aplica la regla de N1 (fecha + copia apartada).
+    func lineageHistory(mirror: URL? = nil) -> SaveLineage.History {
+        let history = mirrorHistory()
+        if let mirror, let location = history.location, location != Self.location(mirror) { return SaveLineage.History() }
+        return SaveLineage.History(written: history.successful.map(\.hash), pending: history.pending,
+                                   received: history.received)
+    }
+
+    static func location(_ url: URL) -> String { url.standardizedFileURL.path.lowercased() }
+
+    /// ND20 (b, g): anota una partida recibida de fuera.
+    func recordReceived(_ data: Data) throws {
         let hash = Self.contentHash(data)
         var history = mirrorHistory()
+        history.received.removeAll { $0 == hash }
+        history.received.insert(hash, at: 0)
+        history.received = Array(history.received.prefix(8))
+        try writeMirrorHistory(history)
+    }
+
+    /// ND20 (g): la última partida recibida de fuera (`base_sav_sha256` al exportar).
+    var lastReceived: String? { mirrorHistory().received.first }
+
+    /// N7b · sha de todas las partidas que este iPhone ha tenido de este juego y que aún conserva: historial del
+    /// espejo, copias de seguridad y copias apartadas. Sirve para reconocer un paquete «más viejo».
+    func knownHashes() -> Set<String> {
+        let lineage = lineageHistory()
+        var known = Set(lineage.written + lineage.pending + lineage.received)
+        for n in 1...Self.keepBackups {
+            if let data = try? Data(contentsOf: backupURL(n)) { known.insert(SaveLineage.sha256(data)) }
+        }
+        for copy in keptCopies() {
+            if let data = try? Data(contentsOf: copy.url) { known.insert(SaveLineage.sha256(data)) }
+        }
+        return known
+    }
+
+    func recordMirrorAttempt(_ data: Data, mirror: URL? = nil) throws {
+        let hash = Self.contentHash(data)
+        var history = mirrorHistory()
+        if let mirror { history.location = Self.location(mirror) }
         history.pending.removeAll { $0 == hash }
         history.pending.insert(hash, at: 0)
         history.pending = Array(history.pending.prefix(8))

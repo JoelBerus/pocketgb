@@ -153,6 +153,19 @@ final class AppState {
     @ObservationIgnored private var sessionEmulation: EmulationOptions?
     /// N6 · resultado o error de una acción de momentos: lo muestra la pantalla de Momentos (también sobre la pausa).
     var momentNotice: MomentNotice?
+    /// N7a · divergencia al abrir: la partida de este iPhone y la de junto al juego avanzaron por separado.
+    var divergencePrompt: DivergencePrompt?
+    /// N7a · la elección de Joel para la próxima apertura (se consume en `start`).
+    @ObservationIgnored private var pendingDivergence: PendingDivergence?
+    @ObservationIgnored private var lastOpenRequest: (entry: RomEntry, mode: GameLaunchMode)?
+    /// N7b · importación pendiente de la elección de Joel (divergencia, paquete más viejo o `.sav` crudo).
+    var importPrompt: ImportPrompt?
+    /// N7b · `.sav` abierto con PocketGB cuyo nombre encaja con varios juegos.
+    var saveTargetChoice: SaveTargetChoice?
+    /// N7c · estado de la partida de cada huella («Partida: Pixel · hace 2 h») y continuación exacta de otro equipo.
+    var saveStatuses: [String: SaveStatus] = [:]
+    /// N7b · importando o preparando una exportación.
+    var travelBusy = false
     /// N6 · cargar un momento al abrir el juego desde el detalle (se carga en pausa).
     @ObservationIgnored private var momentAfterOpen: (fingerprint: String, id: String)?
     /// Aviso breve sobre el juego ("Estado guardado").
@@ -399,10 +412,11 @@ final class AppState {
                                snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode,
                                console: Console, bios: (data: Data?, status: BIOSFile.Status)) {
         opening = false
-        if case .failure = result { momentAfterOpen = nil }   // H4
+        if case .failure = result { momentAfterOpen = nil; pendingDivergence = nil }   // H4; N7 H2
         if console == .gameBoyAdvance { gbaBIOSStatus = bios.status }
         switch result {
         case .success(let payload):
+            lastOpenRequest = (entry, mode)
             start(romData: payload.rom, mirror: mirror, snapshot: snapshot, fileName: entry.fileName,
                   entryID: entry.id,
                   overrides: libraryPrefs.overrides(fingerprint: payload.fingerprint, path: entry.id),
@@ -420,6 +434,16 @@ final class AppState {
                 showAlert("No se puede abrir “\(entry.fileName)”", error.localizedDescription)
             }
         }
+    }
+
+    /// N7a · Joel eligió qué partida seguir ante una divergencia: se vuelve a abrir el juego con esa elección.
+    func resolveDivergence(_ choice: DivergenceChoice) {
+        guard let prompt = divergencePrompt else { return }
+        divergencePrompt = nil
+        pendingDivergence = PendingDivergence(entryID: prompt.entry.id, choice: choice)
+        open(entry: prompt.entry, mode: choice == .useOther ? .fresh : prompt.mode)
+        // H2: si la apertura ni siquiera empezó (juego con problema, sin descargar…), la elección no queda pendiente.
+        if !opening { pendingDivergence = nil }
     }
 
     // MARK: - Cable link (M9)
@@ -624,10 +648,18 @@ final class AppState {
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let emulation = gameplay.data.emulation(with: overrides)
+            let choice = PendingDivergence.take(&pendingDivergence, entryID: entryID)
+            let romFingerprint = RomFingerprint.compute(data: romData, console: console)
+            let conflictMoments = romFingerprint.flatMap(momentStoreFor)
+            let conflictStates = romFingerprint.flatMap { fp in
+                (try? StateStore.defaultRoot()).map { StateStore(root: $0, fingerprint: fp) }
+            }
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
                                               emulation: emulation,
-                                              console: console, bios: bios) { [weak self] in
+                                              console: console, bios: bios,
+                                              lineage: .init(divergence: choice, conflictMoments: conflictMoments,
+                                                             states: conflictStates)) { [weak self] in
                 self?.enterBackground()
             }
             session.applyAudioPreferences(audioPreferences)
@@ -658,10 +690,18 @@ final class AppState {
             loadMomentAfterOpening(session, pendingMoment)
             if let forced = session.gameSettingsWarning {
                 showAlert(forced.title, forced.message)
+            } else if session.loadWarning == .mirrorOlderKept {
+                // N7a: aviso no bloqueante (la partida del iPhone es la buena; el espejo se pondrá al día).
+                showGameToast("El .sav junto al juego estaba desfasado: se actualizará")
             } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
                 showAlert(warning.title, warning.message)
             } else if !session.info.headerChecksumOK {
                 showAlert("Cabecera dañada", "La cabecera del ROM no coincide con su checksum. Puede ser un volcado dañado.")
+            }
+        } catch let SaveOpening.Refusal.divergence(localDate, otherDate) {
+            if let request = lastOpenRequest {
+                divergencePrompt = DivergencePrompt(entry: request.entry, mode: request.mode,
+                                                    localDate: localDate, otherDate: otherDate)
             }
         } catch SaveOpening.Refusal.mirrorNotDownloaded {
             showAlert("Partida de iCloud sin descargar",
@@ -782,6 +822,13 @@ final class AppState {
               (try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)) != nil
         else { return }
         resumableFingerprints.insert(session.info.fingerprint)
+        // N7c · el estado automático ya es de este iPhone: deja de ofrecerse «Continuar … en <equipo>».
+        let fingerprint = session.info.fingerprint
+        if let dir = try? SaveStore.defaultDirectory() {
+            let store = SaveStore(directory: dir, fingerprint: fingerprint)
+            SaveImport.Origin.endContinuation(store)
+            saveStatuses[fingerprint] = SaveStatus.read(store, resumable: true)
+        }
     }
 
     func canResume(_ entry: RomEntry) -> Bool {
@@ -819,6 +866,10 @@ final class AppState {
                 let saves = SaveStore(directory: savesDirectory, fingerprint: fingerprint)
                 return states.automaticEntry(newerThan: saves.modificationDate) != nil
             })
+            let statuses = Dictionary(uniqueKeysWithValues: fingerprints.compactMap { fingerprint -> (String, SaveStatus)? in
+                SaveStatus.read(SaveStore(directory: savesDirectory, fingerprint: fingerprint),
+                                resumable: valid.contains(fingerprint)).map { (fingerprint, $0) }
+            })
             await MainActor.run {
                 guard let self else { return }
                 if replacing {
@@ -826,6 +877,11 @@ final class AppState {
                 } else {
                     self.resumableFingerprints.formUnion(valid)
                 }
+                #if DEBUG
+                // Catálogo N7: el estado sembrado por el router no se sustituye por el de disco.
+                if DebugArguments.screen?.hasPrefix("n7-") == true { return }
+                #endif
+                if replacing { self.saveStatuses = statuses } else { self.saveStatuses.merge(statuses) { $1 } }
             }
         }
     }
@@ -1126,5 +1182,31 @@ enum FastForward {
     static func next(_ speed: Int) -> Int {
         guard let i = speeds.firstIndex(of: speed) else { return 1 }
         return speeds[(i + 1) % speeds.count]
+    }
+}
+
+/// N7a · pregunta de divergencia al abrir un juego.
+struct DivergencePrompt: Equatable {
+    let entry: RomEntry
+    let mode: GameLaunchMode
+    let localDate: Date?
+    let otherDate: Date?
+
+    var message: String {
+        func when(_ date: Date?) -> String { date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "fecha desconocida" }
+        return "La partida de este iPhone (\(when(localDate))) y la del archivo .sav junto al juego (\(when(otherDate))) avanzaron por separado. Elige con cuál seguir: la otra no se borra, queda en Momentos como «Conflicto» y en las copias apartadas."
+    }
+}
+
+/// N7a · elección de divergencia pendiente: solo vale para la apertura del mismo juego y se consume siempre
+/// (auditoría N7 iOS, H2).
+struct PendingDivergence: Equatable, Sendable {
+    let entryID: String
+    let choice: DivergenceChoice
+
+    static func take(_ pending: inout PendingDivergence?, entryID: String?) -> DivergenceChoice? {
+        defer { pending = nil }
+        guard let p = pending, p.entryID == entryID else { return nil }
+        return p.choice
     }
 }

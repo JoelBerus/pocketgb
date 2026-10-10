@@ -56,7 +56,8 @@ final class SRAMPersistence: @unchecked Sendable {
     /// guarda o si esta sesión no debe guardar (`warning` lo explica).
     /// - Throws: `SaveOpening.Refusal` si la única partida está en iCloud sin descargar.
     static func open(core: any ConsoleCore, info: RomInfo, savesDirectory: URL, mirror: SaveMirror?,
-                     snapshot: SaveMirror.Snapshot, mirrorWriter: (@Sendable (Data) throws -> Void)?)
+                     snapshot: SaveMirror.Snapshot, mirrorWriter: (@Sendable (Data) throws -> Void)?,
+                     lineage: SaveOpening.LineageOptions = .init())
         throws -> (persister: SRAMPersistence?, warning: SaveLoadWarning?) {
         guard info.hasBattery, core.sramSaveSize > 0 else { return (nil, nil) }
         let store = SaveStore(directory: savesDirectory, fingerprint: info.fingerprint)
@@ -68,7 +69,7 @@ final class SRAMPersistence: @unchecked Sendable {
             }
             let outcome = try SaveOpening.prepare(store: store, mirror: mirror, snapshot: snapshot,
                                                   validSizes: EmulatorSession.validSaveSizes(info),
-                                                  mirrorWriter: mirrorWriter)
+                                                  mirrorWriter: mirrorWriter, lineage: lineage)
             if let data = outcome.data { try core.sramLoad(data) }
             return (outcome.target.map { SRAMPersistence(core: core, target: $0) }, outcome.warning)
         } catch let refusal as SaveOpening.Refusal {

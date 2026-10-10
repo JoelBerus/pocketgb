@@ -86,6 +86,7 @@ final class EmulatorSession: @unchecked Sendable {
                      mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
                      emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
                      console: Console = .gameBoy, bios: Data? = nil,
+                     lineage: SaveOpening.LineageOptions = .init(),
                      onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let now = Int64(Date().timeIntervalSince1970)
         let core: any ConsoleCore
@@ -116,7 +117,8 @@ final class EmulatorSession: @unchecked Sendable {
                 validSizes: Self.validSaveSizes(info), existingSizes: sizes)
         }
         let opened = try SRAMPersistence.open(core: core, info: info, savesDirectory: savesDirectory,
-                                              mirror: mirror, snapshot: mirrorSnapshot, mirrorWriter: mirrorWriter)
+                                              mirror: mirror, snapshot: mirrorSnapshot, mirrorWriter: mirrorWriter,
+                                              lineage: lineage)
         self.init(core: core, info: info, persisters: opened.persister.map { [$0] } ?? [],
                   loadWarning: opened.warning, gameSettingsWarning: forcedWarning,
                   onAudioInterrupted: onAudioInterrupted)
