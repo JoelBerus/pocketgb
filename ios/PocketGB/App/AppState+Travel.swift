@@ -83,6 +83,13 @@ extension AppState {
         gameplay.data.emulation(with: libraryPrefs.overrides(fingerprint: libraryPrefs.fingerprint(of: entry), path: entry.id))
     }
 
+    /// N7c · «Continuar donde lo dejaste en <equipo>» si el estado automático llegó de otro equipo con la partida.
+    func continueTitle(_ entry: RomEntry) -> String {
+        guard let fp = libraryPrefs.fingerprint(of: entry), let status = saveStatuses[fp],
+              status.continuesFromOtherDevice, let device = status.device else { return "Continuar" }
+        return "Continuar donde lo dejaste en \(device)"
+    }
+
     // MARK: Importar
 
     /// «Abrir con PocketGB» desde Archivos, Drive o la hoja de compartir.

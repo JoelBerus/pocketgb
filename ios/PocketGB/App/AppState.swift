@@ -811,6 +811,13 @@ final class AppState {
               (try? stateStore.save(saved.state, thumbnail: Self.thumbnail(saved.pixels), to: .auto)) != nil
         else { return }
         resumableFingerprints.insert(session.info.fingerprint)
+        // N7c · el estado automático ya es de este iPhone: deja de ofrecerse «Continuar … en <equipo>».
+        let fingerprint = session.info.fingerprint
+        if let dir = try? SaveStore.defaultDirectory() {
+            let store = SaveStore(directory: dir, fingerprint: fingerprint)
+            SaveImport.Origin.endContinuation(store)
+            saveStatuses[fingerprint] = SaveStatus.read(store, resumable: true)
+        }
     }
 
     func canResume(_ entry: RomEntry) -> Bool {
@@ -859,6 +866,10 @@ final class AppState {
                 } else {
                     self.resumableFingerprints.formUnion(valid)
                 }
+                #if DEBUG
+                // Catálogo N7: el estado sembrado por el router no se sustituye por el de disco.
+                if DebugArguments.screen?.hasPrefix("n7-") == true { return }
+                #endif
                 if replacing { self.saveStatuses = statuses } else { self.saveStatuses.merge(statuses) { $1 } }
             }
         }

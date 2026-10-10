@@ -168,6 +168,13 @@ enum SaveImport {
             return try? JSONDecoder().decode(Origin.self, from: data)
         }
 
+        /// Al guardar un estado automático propio: la continuación de otro equipo ya no es la que hay.
+        static func endContinuation(_ store: SaveStore) {
+            guard var origin = load(store), origin.continuation else { return }
+            origin.continuation = false
+            try? origin.save(to: store)
+        }
+
         func save(to store: SaveStore) throws {
             let url = Self.url(store)
             let tmp = url.appendingPathExtension("tmp")

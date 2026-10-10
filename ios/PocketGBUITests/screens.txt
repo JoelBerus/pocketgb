@@ -296,3 +296,13 @@ n6-progress-editor          portrait  light -screen n6-progress-editor -demoLibr
 n6-progress-editor          portrait  dark  -screen n6-progress-editor -demoLibrary n5 -demoMoments rich -uiSwipeUp
 n6-progress-ax5             portrait  light -screen n6-progress-ax5 -demoLibrary n5 -demoMoments rich -contentSizeCategory accessibility5
 n6-library-percent          portrait  light -screen n6-library-percent -demoLibrary n5 -demoMoments rich
+
+# ---- N7 · Partidas que viajan (iOS). Estado y preguntas sembrados en memoria (`applyN7`); sin partidas reales.
+# `-demoConflicts`: copias en conflicto de mentira en Ajustes › Partidas.
+n7-detail-save              portrait  light -screen n7-detail-save -demoLibrary n5 -demoMoments rich -uiDrag 0.5,0.85,0.5,0.15 -uiDragTimes 2
+n7-detail-save              portrait  dark  -screen n7-detail-save -demoLibrary n5 -demoMoments rich
+n7-detail-save-ax5          portrait  light -screen n7-detail-save-ax5 -demoLibrary n5 -demoMoments rich -contentSizeCategory accessibility5 -uiDrag 0.5,0.85,0.5,0.15 -uiDragTimes 6
+n7-divergence               portrait  light -screen n7-divergence -demoLibrary n5 -demoMoments rich
+n7-import-prompt            portrait  dark  -screen n7-import-prompt -demoLibrary n5 -demoMoments rich
+n7-import-done              portrait  light -screen n7-import-done -demoLibrary n5 -demoMoments rich
+n7-settings-conflicts       portrait  light -screen n7-settings-conflicts -demoLibrary n5 -demoConflicts

@@ -15,8 +15,25 @@ struct GameSaveTravelSection: View {
         VStack(alignment: .leading, spacing: PocketSpacing.xs) {
             Label("Partida", systemImage: "externaldrive")
                 .font(.headline)
+            // N7c · de dónde viene la partida actual y cuándo.
+            if let status = state.saveStatuses[fingerprint] {
+                Text(status.text())
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("game-save-status")
+            }
             GlassEffectContainer(spacing: PocketSpacing.xs) {
                 VStack(spacing: PocketSpacing.xs) {
+                    // N7c · en iOS no hay carpeta común con Android (ND2): el paquete va por la hoja de compartir
+                    // (Google Drive, AirDrop, Archivos…). El otro equipo lo abre con PocketGB.
+                    ShareLink(item: ExportedSaveFile(name: SaveExport.fileName(title, ext: "pgbm"),
+                                                     contentType: .pocketGBPackage) {
+                        try await state.exportPackage(entry)
+                    }, preview: SharePreview("\(title).pgbm")) {
+                        row("Enviar a otro dispositivo", "paperplane")
+                    }
+                    .accessibilityHint("Comparte un paquete con la partida y el punto exacto para continuar en otro equipo")
+                    .accessibilityIdentifier("game-save-send")
                     ShareLink(item: ExportedSaveFile(name: SaveExport.fileName(title, ext: "sav"), contentType: .gameBoySave) {
                         try await MainActor.run { try state.exportRawSave(entry) }
                     }, preview: SharePreview("\(title).sav")) {

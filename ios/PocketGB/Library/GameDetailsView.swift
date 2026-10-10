@@ -412,7 +412,7 @@ struct GameDetailsView: View {
                 Button {
                     state.open(entry: entry, mode: resumable ? .resumeAutomatic : .fresh)
                 } label: {
-                    Label(resumable ? "Continuar" : "Jugar", systemImage: "play.fill")
+                    Label(resumable ? state.continueTitle(entry) : "Jugar", systemImage: "play.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
