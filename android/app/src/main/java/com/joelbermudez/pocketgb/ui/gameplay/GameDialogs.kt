@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -129,7 +130,12 @@ fun SaveDivergenceDialog(localDateMs: Long?, mirrorDateMs: Long?, onKeepLocal: (
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.n7_warning_divergence_title)) },
-        text = { Text(stringResource(R.string.n7_divergence_ask, date(localDateMs) ?: unknown, date(mirrorDateMs) ?: unknown)) },
+        text = {
+            // Con fuente grande el texto se desplaza: nunca se corta (los botones siguen visibles).
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                Text(stringResource(R.string.n7_divergence_ask, date(localDateMs) ?: unknown, date(mirrorDateMs) ?: unknown))
+            }
+        },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 TextButton(onClick = onKeepLocal, modifier = Modifier.heightIn(min = 48.dp).testTag("divergence-keep-local")) {

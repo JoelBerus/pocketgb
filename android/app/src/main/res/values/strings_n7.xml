@@ -51,7 +51,7 @@
     <string name="n7_save_status_device">%1$s · %2$s</string>
     <string name="n7_save_status_here">Este teléfono · %1$s</string>
     <!-- ND20 · respuesta a la auditoría de N7 Android -->
-    <string name="n7_divergence_ask">La partida cambió en este teléfono (%1$s) y también en el .sav junto al juego, que escribió otro equipo (%2$s). ¿Con cuál sigues? La otra no se pierde: queda como momento «Conflicto», en las copias y apartada en Ajustes › Partidas. Hasta que elijas no se toca nada.</string>
+    <string name="n7_divergence_ask">Cambió aquí (%1$s) y en el .sav junto al juego (%2$s). ¿Con cuál sigues? La otra queda como momento «Conflicto» y en Ajustes › Partidas. Hasta que elijas no se toca nada.</string>
     <string name="n7_divergence_keep_local">Seguir con la de este teléfono</string>
     <string name="n7_divergence_use_mirror">Usar la del otro equipo</string>
     <string name="n7_warning_divergence_done">La otra partida no se pierde: quedó como momento «Conflicto» (Momentos › Recuperar la partida), en las copias y apartada en Ajustes › Partidas.</string>
