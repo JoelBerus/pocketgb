@@ -87,7 +87,8 @@ enum SaveImport {
         var needsChoice: Bool {
             switch relation {
             case .older, .divergent: true
-            default: raw && save != nil && relation != .same && relation != .noLocal
+            // Un `.sav` crudo siempre se confirma, también sin partida previa (auditoría N7 iOS, H3).
+            default: raw && save != nil && relation != .same
             }
         }
         var origin: String? { meta?.deviceName }
@@ -143,6 +144,9 @@ enum SaveImport {
         case alreadyCurrent(continuation: Bool)
         /// Divergencia o paquete más viejo: hay que preguntar. No se ha tocado nada.
         case needsChoice
+        /// La partida ya es la misma, pero el paquete trae otro estado automático que el de este iPhone: se pregunta
+        /// antes de sustituirlo (auditoría N7 iOS, H1). No se ha tocado nada.
+        case needsStateChoice
         /// Joel eligió seguir con la suya: la del paquete quedó apartada y como momento «Conflicto».
         case keptLocal
         /// La partida del paquete no vale para este cartucho (vacía o de otro tamaño): el `.sav` no se tocó y lo
@@ -190,14 +194,30 @@ enum SaveImport {
                       moments: MomentStore?, ownership: FingerprintOwnership, now: Date = Date()) throws -> Outcome {
         try ownership.withExclusive(plan.fingerprint, owner: "importar") {
             let current = try store.load()
-            func keepCurrent(_ label: String) throws {
-                guard let current else { return }
-                try store.keepMirrorLoser(current, now: now)
-                let auto = try? states?.load(.auto)
-                _ = try? moments?.appendBeforeLoad(.init(state: auto, sram: current, thumbnail: nil), label: label)
+            // El estado automático propio (si lo hay). Nunca se sustituye sin guardarlo antes (auditoría N7 iOS, H1).
+            let ownAuto = try? states?.load(.auto)
+            var ownAutoKept = false
+            var ringIDs: Set<String> = []
+            let label = plan.origin.map { "Antes de importar de \($0)" } ?? "Antes de importar"
+
+            /// Lo actual (partida y estado automático) entra en «Antes de cargar»; la partida, además, en una copia
+            /// apartada que no rota.
+            func keepCurrent() throws {
+                if let current { try store.keepMirrorLoser(current, now: now) }
+                guard current != nil || ownAuto != nil, let moments else { return }
+                let entry = try moments.appendBeforeLoad(.init(state: ownAuto, sram: current, thumbnail: nil), label: label)
+                ringIDs.insert(entry.id)
+                ownAutoKept = ownAuto != nil
             }
             func installContinuation() throws -> Bool {
                 guard let state = plan.continuation, let states else { return false }
+                if let ownAuto, ownAuto != state, !ownAutoKept {
+                    // Regla 6: el estado propio se guarda antes de sustituirlo; si no se puede, no se sustituye.
+                    guard let moments else { return false }
+                    ringIDs.insert(try moments.appendBeforeLoad(.init(state: ownAuto, sram: current, thumbnail: nil),
+                                                                label: label).id)
+                    ownAutoKept = true
+                }
                 // Después del `.sav`: el estado es más nuevo que la partida y «Continuar» lo ofrece.
                 try states.save(state, thumbnail: plan.thumbnail, to: .auto)
                 return true
@@ -207,10 +227,26 @@ enum SaveImport {
                 try? Origin(platform: meta.platform, deviceName: meta.deviceName, createdMs: meta.createdMs,
                             savSHA256: meta.savSHA256, importedAt: now, continuation: continuation).save(to: store)
             }
+            /// N1: el anillo vuelve a su tamaño solo con todo escrito, sin expulsar las entradas de esta importación.
+            func trimRing() { if !ringIDs.isEmpty { try? moments?.trimRing(keeping: ringIDs) } }
 
-            if plan.batteryless {
+            if plan.batteryless || plan.relation == .same, plan.save != nil || plan.batteryless {
+                // La partida ya es esta: solo puede cambiar el estado automático. Si el propio es otro, se pregunta.
+                if let state = plan.continuation, let ownAuto, ownAuto != state {
+                    switch choice {
+                    case nil:
+                        return .needsStateChoice
+                    case .keepLocal?:
+                        _ = try? moments?.create(.init(state: state, sram: current, thumbnail: plan.thumbnail),
+                                                 name: SaveOpening.conflictName(now))
+                        return .keptLocal
+                    case .useOther?:
+                        break
+                    }
+                }
                 let c = try installContinuation()
                 recordOrigin(c)
+                trimRing()
                 return .alreadyCurrent(continuation: c)
             }
             guard let incoming = plan.save else {
@@ -218,11 +254,6 @@ enum SaveImport {
                 if let current { try store.addBackup(current) }
                 if !plan.incoming.isEmpty { try store.keepMirrorLoser(plan.incoming, now: now) }
                 return .saveNotTouched
-            }
-            if plan.relation == .same {
-                let c = try installContinuation()
-                recordOrigin(c)
-                return .alreadyCurrent(continuation: c)
             }
             if plan.needsChoice {
                 switch choice {
@@ -234,16 +265,17 @@ enum SaveImport {
                                              name: SaveOpening.conflictName(now))
                     return .keptLocal
                 case .useOther?:
-                    if let current {
-                        _ = try? moments?.create(.init(state: try? states?.load(.auto), sram: current, thumbnail: nil),
+                    if let current, !plan.raw {
+                        _ = try? moments?.create(.init(state: ownAuto, sram: current, thumbnail: nil),
                                                  name: SaveOpening.conflictName(now))
                     }
                 }
             }
-            try keepCurrent(plan.origin.map { "Antes de importar de \($0)" } ?? "Antes de importar")
+            try keepCurrent()
             try store.save(incoming)
             let c = try installContinuation()
             recordOrigin(c)
+            trimRing()
             return .installed(continuation: c)
         }
     }

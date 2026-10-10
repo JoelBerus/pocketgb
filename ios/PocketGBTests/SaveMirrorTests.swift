@@ -261,10 +261,10 @@ struct SaveMirrorTests {
         #expect(reopened.data == d2)
         #expect(try store.load() == d2)
         #expect(store.keptCopies().contains { (try? Data(contentsOf: $0.url)) == d1 })   // nada se pierde
-        #expect(reopened.warning == nil)
+        #expect(reopened.warning == .mirrorOlderKept)   // aviso no bloqueante (auditoría N7 iOS)
     }
 
-    @Test func newerExternalMirrorWinsAndBacksUpLocal() throws {
+    @Test func divergentExternalMirrorAsksThenUsesTheChoice() throws {
         let store = SaveStore(directory: dir, fingerprint: "external-\(UUID().uuidString)")
         let mirror = try mirrorFile(nil)
         let own = Data([1, 1, 1, 1])

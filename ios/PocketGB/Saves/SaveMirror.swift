@@ -206,6 +206,9 @@ enum SaveLoadWarning: Equatable, Sendable {
     case externalChange
     /// N7a · divergencia resuelta con la elección de Joel: la otra quedó como momento «Conflicto» y apartada.
     case divergenceResolved
+    /// N7a · el `.sav` junto al juego era una versión anterior de esta partida (p. ej. iCloud aún no subió la nueva):
+    /// se sigue con la de este iPhone y se actualiza. Aviso no bloqueante.
+    case mirrorOlderKept
 
     var title: String {
         switch self {
@@ -216,6 +219,7 @@ enum SaveLoadWarning: Equatable, Sendable {
         case .unreadable: "No se pudo leer la partida"
         case .externalChange: "Partida actualizada desde la carpeta"
         case .divergenceResolved: "Partida en conflicto guardada"
+        case .mirrorOlderKept: "Partida junto al juego desfasada"
         }
     }
 
@@ -235,6 +239,8 @@ enum SaveLoadWarning: Equatable, Sendable {
             "Otro juego de la carpeta tiene el mismo nombre, así que la partida solo se guarda en este iPhone."
         case .externalChange:
             "El archivo .sav junto al juego cambió fuera de PocketGB y se ha instalado. La partida anterior de este iPhone quedó en las copias de seguridad."
+        case .mirrorOlderKept:
+            "El archivo .sav junto al juego tenía una versión anterior de esta partida. Se sigue con la de este iPhone y el .sav se actualizará; la versión anterior quedó en las copias apartadas."
         case .divergenceResolved:
             "La otra partida no se ha perdido: está en Momentos como «Conflicto» y en Ajustes › Partidas › Copias apartadas."
         case .unreadable(let detail):
@@ -308,7 +314,11 @@ enum SaveOpening {
             }
         }
         let mirrorIsOwned = mirrorCandidate.map { store.recognizesOwnedMirror($0.data, date: $0.date) } ?? false
-        let relation: SaveLineage.MirrorRelation? = (local != nil && mirrorCandidate != nil)
+        // H7 (auditoría N7 iOS): sin linaje si alguna de las dos tiene un tamaño que no vale (cuarentena o espejo
+        // ignorado): ni momento «Conflicto» ni avisos de linaje.
+        let sizesValid = local.map { validSizes.contains($0.data.count) } == true
+            && mirrorCandidate.map { validSizes.contains($0.data.count) } == true
+        let relation: SaveLineage.MirrorRelation? = sizesValid
             ? SaveLineage.relation(local: SaveLineage.sha256(local!.data), mirror: SaveLineage.sha256(mirrorCandidate!.data),
                                    history: store.lineageHistory())
             : nil
@@ -339,6 +349,7 @@ enum SaveOpening {
             let warning: SaveLoadWarning? = mirrorIgnored ? .mirrorIgnored
                 : relation == .external && data != local?.data ? .externalChange
                 : relation == .divergent ? .divergenceResolved
+                : relation == .ownEarlier && !mirrorIsOwned ? .mirrorOlderKept
                 : quarantineLocal ? .localQuarantined
                 : unavailable ? .mirrorUnavailable : nil
             return Outcome(data: data, target: target, warning: warning)

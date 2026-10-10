@@ -109,7 +109,12 @@ struct RootView: View {
         .confirmationDialog(state.importPrompt?.title ?? "", isPresented: Binding(
             get: { state.importPrompt != nil }, set: { if !$0 { state.importPrompt = nil } }),
                             titleVisibility: .visible) {
-            if state.importPrompt?.plan.raw == true {
+            if state.importPrompt?.stateOnly == true {
+                Button("Continuar donde lo dejaste\(state.importPrompt?.plan.origin.map { " en \($0)" } ?? "")") {
+                    state.resolveImport(.useOther)
+                }
+                Button("Mantener el de este iPhone") { state.resolveImport(.keepLocal) }
+            } else if state.importPrompt?.plan.raw == true {
                 Button("Usar este .sav") { state.resolveImport(.useOther) }
             } else {
                 Button("Usar la\(state.importPrompt?.plan.origin.map { " de \($0)" } ?? " del paquete")") {
@@ -120,6 +125,21 @@ struct RootView: View {
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text(state.importPrompt?.message ?? "")
+        }
+        .confirmationDialog("¿De qué juego es «\(state.saveTargetChoice?.fileName ?? "")»?", isPresented: Binding(
+            get: { state.saveTargetChoice != nil }, set: { if !$0 { state.saveTargetChoice = nil } }),
+                            titleVisibility: .visible) {
+            ForEach(state.saveTargetChoice?.candidates ?? [], id: \.id) { entry in
+                Button("\(state.libraryPrefs.displayTitle(entry)) · \(entry.locationText)") {
+                    if let choice = state.saveTargetChoice {
+                        state.saveTargetChoice = nil
+                        state.importSave(choice.data, into: entry)
+                    }
+                }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Hay varios juegos con ese nombre. Elige en cuál importar la partida; se te pedirá confirmación.")
         }
         .overlay {
             if state.travelBusy {

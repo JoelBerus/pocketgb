@@ -101,6 +101,23 @@ enum ConflictCopies {
         return false
     }
 
+    /// Nombre original de una copia en conflicto («Juego 2» → «Juego», «Juego (1)» → «Juego»,
+    /// «Juego.sync-conflict-…» → «Juego», «Juego (… conflicted copy …)» → «Juego»). Otro nombre se devuelve tal cual.
+    static func originalStem(_ stem: String) -> String {
+        let lower = stem.lowercased()
+        if let r = lower.range(of: ".sync-conflict-") { return String(stem[..<r.lowerBound]) }
+        if stem.hasSuffix(")"), let open = stem.range(of: " (", options: .backwards) {
+            let inner = stem[open.upperBound..<stem.index(before: stem.endIndex)].lowercased()
+            if Int(inner).map({ $0 >= 1 }) == true || inner.contains("conflicted copy") || inner.contains("copia en conflicto") {
+                return String(stem[..<open.lowerBound])
+            }
+        }
+        if let space = stem.range(of: " ", options: .backwards), let n = Int(stem[space.upperBound...]), n >= 2 {
+            return String(stem[..<space.lowerBound])
+        }
+        return stem
+    }
+
     /// Copias en conflicto del `.sav` de un ROM, en su carpeta. Solo lista: no lee ni toca nada.
     static func scan(romURL: URL) -> [URL] {
         let folder = romURL.deletingLastPathComponent()

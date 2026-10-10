@@ -980,7 +980,7 @@ extension DebugScreenRouter {
             }
         case .n7ImportPrompt:
             state.libraryPath = [.details(id: id, source: id)]
-            if let entry { state.importPrompt = ImportPrompt(entry: entry, plan: plan) }
+            if let entry { state.importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: state.libraryPrefs.displayTitle(entry)) }
         case .n7ImportDone:
             state.libraryPath = [.details(id: id, source: id)]
             state.notify("Partida importada", "Se ha instalado la partida de Pixel 8. La anterior quedó en «Antes de cargar» y en las copias de seguridad. Puedes continuar justo donde lo dejaste.")

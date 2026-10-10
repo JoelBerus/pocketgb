@@ -30,19 +30,29 @@ struct ImportPrompt: Identifiable {
     let id = UUID()
     let entry: RomEntry
     let plan: SaveImport.Plan
+    /// Título del juego tal como lo muestra la biblioteca (la pregunta siempre lo nombra; auditoría N7 iOS, H3).
+    let gameTitle: String
+    /// La partida ya es la misma; solo cambiaría el punto para continuar (auditoría N7 iOS, H1).
+    var stateOnly = false
 
     var title: String {
-        if plan.raw { return "¿Usar este .sav?" }
+        if stateOnly { return "¿Cambiar dónde continúas «\(gameTitle)»?" }
+        if plan.raw { return "¿Usar este .sav en «\(gameTitle)»?" }
         switch plan.relation {
-        case .older: return "Este paquete es más antiguo"
-        default: return "Dos partidas distintas"
+        case .older: return "Paquete más antiguo de «\(gameTitle)»"
+        default: return "Dos partidas distintas de «\(gameTitle)»"
         }
     }
 
     var message: String {
         let from = plan.origin.map { " de \($0)" } ?? ""
         let keep = "La que no elijas no se borra: queda en Momentos como «Conflicto» y en las copias apartadas."
-        if plan.raw { return "Sustituirá la partida actual de este juego. La actual se guarda antes en «Antes de cargar» y en las copias de seguridad." }
+        if stateOnly {
+            return "La partida\(from) es la misma que ya tienes, pero el punto para continuar es otro. Si lo cambias, el de este iPhone queda en Momentos › «Antes de cargar»; si no, el del paquete queda como «Conflicto»."
+        }
+        if plan.raw {
+            return "Sustituirá la partida de «\(gameTitle)». La actual (si la hay) se guarda antes en «Antes de cargar» y en las copias de seguridad."
+        }
         switch plan.relation {
         case .older: return "La partida\(from) es una versión que este iPhone ya tuvo y que después avanzó. \(keep)"
         case .divergent(baseKnown: false):
@@ -50,6 +60,14 @@ struct ImportPrompt: Identifiable {
         default: return "La partida de este iPhone y la\(from) avanzaron por separado. \(keep)"
         }
     }
+}
+
+/// N7b · un `.sav` abierto con PocketGB cuyo nombre encaja con varios juegos: Joel elige (auditoría N7 iOS, H3).
+struct SaveTargetChoice: Identifiable {
+    let id = UUID()
+    let fileName: String
+    let data: Data
+    let candidates: [RomEntry]
 }
 
 extension AppState {
@@ -116,14 +134,25 @@ extension AppState {
             }
             importSave(data, into: entry)
         } else {
-            let stem = url.deletingPathExtension().lastPathComponent.lowercased()
-            guard let entry = library.entries.first(where: {
-                $0.url.deletingPathExtension().lastPathComponent.lowercased() == stem
-            }) else {
-                return notify("¿De qué juego es?",
-                              "No hay un juego con el mismo nombre que «\(url.lastPathComponent)». Ábrelo desde el detalle del juego › Importar partida. No se ha cambiado nada.")
+            // Una copia en conflicto («Juego 2.sav», «Juego (1).sav»…) se busca por su nombre original (H8).
+            // Primero el nombre exacto («Juego 2.sav» puede ser la partida de «Juego 2.gb»).
+            let raw = url.deletingPathExtension().lastPathComponent
+            func matching(_ stem: String) -> [RomEntry] {
+                library.entries.filter {
+                    $0.url.deletingPathExtension().lastPathComponent.lowercased() == stem.lowercased() && !libraryPrefs.isHidden($0)
+                }
             }
-            importSave(data, into: entry)
+            var candidates = matching(raw)
+            if candidates.isEmpty { candidates = matching(ConflictCopies.originalStem(raw)) }
+            switch candidates.count {
+            case 0:
+                notify("¿De qué juego es?",
+                       "No hay un juego con el mismo nombre que «\(url.lastPathComponent)». Ábrelo desde el detalle del juego › Importar partida. No se ha cambiado nada.")
+            case 1:
+                importSave(data, into: candidates[0])
+            default:
+                saveTargetChoice = SaveTargetChoice(fileName: url.lastPathComponent, data: data, candidates: candidates)
+            }
         }
     }
 
@@ -167,7 +196,11 @@ extension AppState {
             let from = plan.origin.map { " de \($0)" } ?? ""
             switch outcome {
             case .needsChoice:
-                importPrompt = ImportPrompt(entry: entry, plan: plan)
+                importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: libraryPrefs.displayTitle(entry))
+                return
+            case .needsStateChoice:
+                importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: libraryPrefs.displayTitle(entry),
+                                            stateOnly: true)
                 return
             case .installed(let c):
                 notify("Partida importada", "Se ha instalado la partida\(from). La anterior quedó en «Antes de cargar» y en las copias de seguridad."

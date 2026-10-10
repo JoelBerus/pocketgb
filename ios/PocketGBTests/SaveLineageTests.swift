@@ -90,7 +90,7 @@ struct SaveLineageTests {
         let outcome = try open(store, mirror)
         #expect(outcome.data == d2)
         #expect(outcome.target?.mirrorPending == true)
-        #expect(outcome.warning == nil)
+        #expect(outcome.warning == .mirrorOlderKept)
     }
 
     /// Cambio externo con el reloj del otro equipo atrasado: la fecha no importa, se instala con copia y aviso.
@@ -196,5 +196,43 @@ struct SaveLineageTests {
         #expect(found == ["Juego (1).sav", "Juego 2.sav"])
         let after = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         #expect(after.count == 7)
+    }
+
+    // MARK: Auditoría N7 iOS
+
+    /// H7: con la local de tamaño incorrecto (cuarentena) o el espejo ignorado no hay linaje: ni «Conflicto» ni aviso.
+    @Test func wrongSizesNeverProduceConflictMomentsOrLineageWarnings() throws {
+        for wrongLocal in [true, false] {
+            let (store, mirror) = try setup("h7")
+            try play(d1, store, mirror)
+            if wrongLocal { try store.save(Data([9, 9, 9])) } else { try store.save(d2) }
+            try (wrongLocal ? d3 : Data([7, 7, 7, 7, 7])).write(to: mirror.url)
+            let moments = MomentStore(root: dir.appendingPathComponent("m-\(wrongLocal)"), fingerprint: store.fingerprint)
+            let outcome = try open(store, mirror, .init(divergence: nil, conflictMoments: moments))
+            #expect(outcome.warning == (wrongLocal ? .localQuarantined : .mirrorIgnored))
+            #expect(((try? moments.snapshot().moments) ?? []).isEmpty)
+        }
+    }
+
+    /// H8: el nombre original de una copia en conflicto.
+    @Test func originalStemOfConflictCopies() {
+        #expect(ConflictCopies.originalStem("Pokemon Rojo 2") == "Pokemon Rojo")
+        #expect(ConflictCopies.originalStem("Pokemon Rojo (1)") == "Pokemon Rojo")
+        #expect(ConflictCopies.originalStem("Pokemon Rojo.sync-conflict-20261008-101010-ABCDEFG") == "Pokemon Rojo")
+        #expect(ConflictCopies.originalStem("Pokemon Rojo (Joel's conflicted copy 2026-10-08)") == "Pokemon Rojo")
+        #expect(ConflictCopies.originalStem("Pokemon Rojo") == "Pokemon Rojo")
+        #expect(ConflictCopies.originalStem("Pokemon Rojo (beta)") == "Pokemon Rojo (beta)")
+        #expect(ConflictCopies.originalStem("Juego 1") == "Juego 1")
+    }
+
+    /// H2: la elección de divergencia solo vale para el mismo juego y se consume siempre.
+    @Test func pendingDivergenceOnlyAppliesToTheSameGame() {
+        var pending: PendingDivergence? = PendingDivergence(entryID: "a.gb", choice: .useOther)
+        #expect(PendingDivergence.take(&pending, entryID: "b.gb") == nil)
+        #expect(pending == nil)   // descartada: no se aplica después a «a.gb» por sorpresa
+        pending = PendingDivergence(entryID: "a.gb", choice: .keepLocal)
+        #expect(PendingDivergence.take(&pending, entryID: "a.gb") == .keepLocal)
+        #expect(pending == nil)
+        #expect(PendingDivergence.take(&pending, entryID: "a.gb") == nil)
     }
 }

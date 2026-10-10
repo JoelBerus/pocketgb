@@ -156,10 +156,12 @@ final class AppState {
     /// N7a · divergencia al abrir: la partida de este iPhone y la de junto al juego avanzaron por separado.
     var divergencePrompt: DivergencePrompt?
     /// N7a · la elección de Joel para la próxima apertura (se consume en `start`).
-    @ObservationIgnored private var divergenceChoice: DivergenceChoice?
+    @ObservationIgnored private var pendingDivergence: PendingDivergence?
     @ObservationIgnored private var lastOpenRequest: (entry: RomEntry, mode: GameLaunchMode)?
     /// N7b · importación pendiente de la elección de Joel (divergencia, paquete más viejo o `.sav` crudo).
     var importPrompt: ImportPrompt?
+    /// N7b · `.sav` abierto con PocketGB cuyo nombre encaja con varios juegos.
+    var saveTargetChoice: SaveTargetChoice?
     /// N7c · estado de la partida de cada huella («Partida: Pixel · hace 2 h») y continuación exacta de otro equipo.
     var saveStatuses: [String: SaveStatus] = [:]
     /// N7b · importando o preparando una exportación.
@@ -410,7 +412,7 @@ final class AppState {
                                snapshot: SaveMirror.Snapshot, shared: Bool, mode: GameLaunchMode,
                                console: Console, bios: (data: Data?, status: BIOSFile.Status)) {
         opening = false
-        if case .failure = result { momentAfterOpen = nil }   // H4
+        if case .failure = result { momentAfterOpen = nil; pendingDivergence = nil }   // H4; N7 H2
         if console == .gameBoyAdvance { gbaBIOSStatus = bios.status }
         switch result {
         case .success(let payload):
@@ -438,8 +440,10 @@ final class AppState {
     func resolveDivergence(_ choice: DivergenceChoice) {
         guard let prompt = divergencePrompt else { return }
         divergencePrompt = nil
-        divergenceChoice = choice
+        pendingDivergence = PendingDivergence(entryID: prompt.entry.id, choice: choice)
         open(entry: prompt.entry, mode: choice == .useOther ? .fresh : prompt.mode)
+        // H2: si la apertura ni siquiera empezó (juego con problema, sin descargar…), la elección no queda pendiente.
+        if !opening { pendingDivergence = nil }
     }
 
     // MARK: - Cable link (M9)
@@ -644,8 +648,7 @@ final class AppState {
         do {
             let savesDirectory = try SaveStore.defaultDirectory()
             let emulation = gameplay.data.emulation(with: overrides)
-            let choice = divergenceChoice
-            divergenceChoice = nil
+            let choice = PendingDivergence.take(&pendingDivergence, entryID: entryID)
             let conflictMoments = RomFingerprint.compute(data: romData, console: console).flatMap(momentStoreFor)
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
@@ -682,6 +685,9 @@ final class AppState {
             loadMomentAfterOpening(session, pendingMoment)
             if let forced = session.gameSettingsWarning {
                 showAlert(forced.title, forced.message)
+            } else if session.loadWarning == .mirrorOlderKept {
+                // N7a: aviso no bloqueante (la partida del iPhone es la buena; el espejo se pondrá al día).
+                showGameToast("El .sav junto al juego estaba desfasado: se actualizará")
             } else if let warning = session.loadWarning ?? (session.info.hasBattery ? extraWarning : nil) {
                 showAlert(warning.title, warning.message)
             } else if !session.info.headerChecksumOK {
@@ -1184,5 +1190,18 @@ struct DivergencePrompt: Equatable {
     var message: String {
         func when(_ date: Date?) -> String { date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "fecha desconocida" }
         return "La partida de este iPhone (\(when(localDate))) y la del archivo .sav junto al juego (\(when(otherDate))) avanzaron por separado. Elige con cuál seguir: la otra no se borra, queda en Momentos como «Conflicto» y en las copias apartadas."
+    }
+}
+
+/// N7a · elección de divergencia pendiente: solo vale para la apertura del mismo juego y se consume siempre
+/// (auditoría N7 iOS, H2).
+struct PendingDivergence: Equatable, Sendable {
+    let entryID: String
+    let choice: DivergenceChoice
+
+    static func take(_ pending: inout PendingDivergence?, entryID: String?) -> DivergenceChoice? {
+        defer { pending = nil }
+        guard let p = pending, p.entryID == entryID else { return nil }
+        return p.choice
     }
 }

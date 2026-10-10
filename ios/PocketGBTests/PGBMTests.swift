@@ -303,4 +303,84 @@ struct PGBMTests {
         ]
         for json in bad { #expect(throws: PackageMeta.Invalid.self, "\(json)") { try PackageMeta.parse(Data(json.utf8)) } }
     }
+
+    // MARK: Auditoría N7 iOS
+
+    private let ownAuto = Data("PGBS".utf8) + pat(0x55, 4092)
+
+    /// H1: la partida ya es la misma (X1 con local = S1) pero el estado propio es otro: se pregunta sin tocar nada; al
+    /// aceptar, el propio queda en «Antes de cargar» con su estado; al rechazar, el del paquete queda como «Conflicto».
+    @Test func sameSaveWithDifferentOwnAutoAsksAndKeepsIt() throws {
+        let e = env()
+        try e.store.save(S1)
+        try e.states.save(ownAuto, thumbnail: nil, to: .auto)
+        let before = snapshot(e)
+        #expect(try run(try x1, e) == .needsStateChoice)
+        #expect(snapshot(e) == before)
+
+        #expect(try run(try x1, e, choice: .keepLocal) == .keptLocal)
+        #expect(try e.states.load(.auto) == ownAuto)
+        let conflict = try #require(try e.moments.snapshot().moments.first)
+        #expect(try e.moments.loadState(.moment, conflict.id) == pat(0x42, 4096))
+
+        #expect(try run(try x1, e, choice: .useOther) == .alreadyCurrent(continuation: true))
+        #expect(try e.states.load(.auto) == pat(0x42, 4096))
+        let kept = try #require(try e.moments.snapshot().beforeLoad.first)
+        #expect(try e.moments.loadState(.beforeLoad, kept.id) == ownAuto)
+        #expect(try e.store.load() == S1)
+    }
+
+    /// H1: juego sin batería (SAVE vacía) con estado propio distinto: igual, se pregunta y se conserva.
+    @Test func batterylessGameKeepsOwnAutoBeforeReplacing() throws {
+        let e = env()
+        try e.states.save(ownAuto, thumbnail: nil, to: .auto)
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let pkg = try package(meta: meta(#"{"format":1,"rom_sha256":"R","sav_sha256":"\#(empty)","device":{"platform":"android","name":"Pixel"},"created_ms":1,"core":{"name":"gb"},"state_of_sav_sha256":"\#(empty)"}"#),
+                              save: Data(), state: pat(0x42, 64))
+        let cart = SaveImport.Cartridge(fingerprint: cartridge.fingerprint, romSHA256: R, console: .gameBoy,
+                                        hasBattery: false, validSizes: [])
+        let plan = try SaveImport.evaluate(pkg, cartridge: cart, local: nil, known: [])
+        func apply(_ c: DivergenceChoice?) throws -> SaveImport.Outcome {
+            try SaveImport.apply(plan, choice: c, store: e.store, states: e.states, moments: e.moments, ownership: e.ownership)
+        }
+        #expect(try apply(nil) == .needsStateChoice)
+        #expect(try e.states.load(.auto) == ownAuto)
+        #expect(try apply(.useOther) == .alreadyCurrent(continuation: true))
+        #expect(try e.states.load(.auto) == pat(0x42, 64))
+        let kept = try #require(try e.moments.snapshot().beforeLoad.first)
+        #expect(try e.moments.loadState(.beforeLoad, kept.id) == ownAuto)
+    }
+
+    /// H1: sin partida local pero con estado propio, instalar un paquete con continuación guarda antes ese estado.
+    @Test func noLocalSaveStillKeepsOwnAuto() throws {
+        let e = env()
+        try FileManager.default.createDirectory(at: e.states.directory, withIntermediateDirectories: true)
+        try e.states.save(ownAuto, thumbnail: nil, to: .auto)
+        #expect(try run(try x1, e) == .installed(continuation: true))
+        let kept = try #require(try e.moments.snapshot().beforeLoad.first)
+        #expect(try e.moments.loadState(.beforeLoad, kept.id) == ownAuto)
+    }
+
+    /// N1: importar deja el anillo en 3 y conserva la entrada nueva.
+    @Test func importTrimsTheRingKeepingTheNewEntry() throws {
+        let e = env()
+        for i in 0..<3 { _ = try e.moments.appendBeforeLoad(.init(state: nil, sram: pat(i, 4), thumbnail: nil), label: "v\(i)") }
+        try e.store.save(S1)
+        #expect(try run(try x2, e) == .installed(continuation: false))
+        let ring = try e.moments.snapshot().beforeLoad
+        #expect(ring.count == 3)
+        #expect(ring.first?.name.hasPrefix("Antes de importar") == true)
+        #expect(try e.moments.loadSRAM(.beforeLoad, try #require(ring.first).id) == S1)
+    }
+
+    /// H3: un `.sav` crudo se confirma también sin partida previa, y la pregunta nombra el juego.
+    @Test func rawSaveIsConfirmedEvenWithoutLocalAndNamesTheGame() throws {
+        let e = env()
+        #expect(try run(S1, e) == .needsChoice)
+        #expect(try e.store.load() == nil)
+        let plan = try SaveImport.evaluate(S1, cartridge: cartridge, local: nil, known: [])
+        let entry = RomEntry(id: "x.gb", url: URL(fileURLWithPath: "/x.gb"), fileName: "x.gb", title: "X", isColor: false,
+                             sizeBytes: 0, headerChecksumOK: true, cloud: .current, problem: nil, mirrorSaveDate: nil)
+        #expect(ImportPrompt(entry: entry, plan: plan, gameTitle: "Pokémon Rojo").title.contains("Pokémon Rojo"))
+    }
 }
