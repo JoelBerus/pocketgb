@@ -63,13 +63,15 @@ fun SavesScreen(
     onBack: () -> Unit,
     /** N4: solo la partida de esta huella (desde el centro de ajustes del juego). */
     onlyFingerprint: String? = null,
+    /** Copias en conflicto vistas al escanear la biblioteca, por huella ([SavesBrowser.list]). */
+    scannedConflicts: Map<String, List<com.joelbermudez.pocketgb.saves.SaveStore.ProviderConflict>> = emptyMap(),
 ) {
     val openFingerprint by gameplay.openFingerprint.collectAsStateWithLifecycle()
     var refresh by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val games by produceState<List<SavedGameUi>?>(null, refresh) {
+    val games by produceState<List<SavedGameUi>?>(null, refresh, scannedConflicts) {
         value = withContext(Dispatchers.IO) {
-            runCatching { browser.list() }.getOrDefault(emptyList()).filter { onlyFingerprint == null || it.fingerprint == onlyFingerprint }
+            runCatching { browser.list(scannedConflicts) }.getOrDefault(emptyList()).filter { onlyFingerprint == null || it.fingerprint == onlyFingerprint }
         }
     }
     // Fecha de la partida actual: la `.sav` local de cada huella (lectura barata de la fecha, fuera del hilo principal).

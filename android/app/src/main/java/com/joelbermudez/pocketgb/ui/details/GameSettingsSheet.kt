@@ -102,9 +102,10 @@ fun GameSettingsHost(
             saveFailed = !(change() || library.confirmFingerprint(entry) && change())
         }
     }
-    val fingerprint = prefs.fingerprints[entry.id]
     // N1-H1: una huella heredada de un movimiento (sin leer el ROM) se confirma antes de leer o escribir ajustes.
-    val confirmed = fingerprint != null && prefs.hasConfirmedFingerprint(entry)
+    // H12: `fingerprint` solo existe si está confirmada (no hay que volver a comprobar que no es null).
+    val fingerprint = prefs.fingerprints[entry.id]?.takeIf { prefs.hasConfirmedFingerprint(entry) }
+    val confirmed = fingerprint != null
     LaunchedEffect(entry.id, confirmed) {
         if (!confirmed && library.loadDetails(entry.id) is DetailsLoad.Failed) unavailable = true
     }
@@ -123,7 +124,7 @@ fun GameSettingsHost(
         onChangeCategory = { picking = true },
         onReturnToFolder = { persist { library.returnToFolder(entry) } },
         onEditTags = { editingTags = true },
-        onOpenSaves = if (onOpenSaves != null && confirmed && fingerprint != null) {
+        onOpenSaves = if (onOpenSaves != null && fingerprint != null) {
             {
                 onDismiss()
                 onOpenSaves(fingerprint)
@@ -133,11 +134,11 @@ fun GameSettingsHost(
         },
         onHide = { confirmHide = true },
         saveFailed = saveFailed,
-        cover = rememberCoverCenter(entry, fingerprint?.takeIf { confirmed }),
+        cover = rememberCoverCenter(entry, fingerprint),
         title = shown.displayTitle,
         onOpenProgress = { showProgress = true },
     )
-    val gbaInfo = if (entry.isGba) rememberGbaSettingsInfo(fingerprint?.takeIf { confirmed }) else GbaSettingsInfo()
+    val gbaInfo = if (entry.isGba) rememberGbaSettingsInfo(fingerprint) else GbaSettingsInfo()
     GameSettingsSheet(
         title = shown.displayTitle,
         headerTitle = entry.title,
@@ -145,9 +146,9 @@ fun GameSettingsHost(
         console = entry.console,
         gbaInfo = gbaInfo,
         global = settings,
-        overrides = fingerprint?.takeIf { confirmed }?.let { settings.perGame[it] } ?: GameOverrides(),
+        overrides = fingerprint?.let { settings.perGame[it] } ?: GameOverrides(),
         onOverridesChange = { next ->
-            if (confirmed && fingerprint != null) repository.update { it.setOverrides(fingerprint, next) }
+            if (fingerprint != null) repository.update { it.setOverrides(fingerprint, next) }
         },
         onDismiss = onDismiss,
         loading = !confirmed && !unavailable,
@@ -189,7 +190,7 @@ fun GameSettingsHost(
             onDismiss = { editingTags = false },
         )
     }
-    if (showProgress && confirmed && fingerprint != null) {
+    if (showProgress && fingerprint != null) {
         com.joelbermudez.pocketgb.ui.progress.ProgressDialog(fingerprint, shown.displayTitle) { showProgress = false }
     }
     if (confirmHide) {

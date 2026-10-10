@@ -16,7 +16,7 @@ Cuando el iPhone te devuelve una partida, déjala en esa misma carpeta `PocketGB
 
 ## Continuar donde lo dejaste en el otro equipo
 
-Si el paquete trae el estado automático de su partida, al importarlo verás **«Continuar donde lo dejaste en iPhone de Joel»**. Te lleva al momento exacto en que saliste del juego en el otro equipo. Si eliges «Ahora no», el botón **Continuar** del detalle hace lo mismo más tarde.
+Si el paquete trae el estado automático de su partida, al importarlo verás **«Continuar donde lo dejaste en iPhone de Joel»**. Te lleva al momento exacto en que saliste del juego en el otro equipo. Si eliges «Ahora no», el botón del detalle dice **«Continuar donde lo dejaste en iPhone de Joel»** y hace lo mismo más tarde, mientras no juegues aquí.
 
 ## De dónde viene tu partida
 
@@ -43,13 +43,13 @@ PocketGB compara la partida que llega con la tuya:
 | Es una que este teléfono ya tuvo (más vieja que la tuya) | Te pregunta **«Ya tuviste esta partida»**; la que no elijas queda en Ajustes › Partidas |
 | Las dos cambiaron por separado | Te pregunta **«¿Con qué partida sigues?»**: la que no elijas queda como momento **«Conflicto · …»** (Momentos › Recuperar la partida) y en Ajustes › Partidas |
 
-Nunca se pierde nada: **antes de instalar, la partida que tenías (con su punto de «Continuar») pasa a «Antes de importar»** en Momentos, a una copia apartada y a las copias de seguridad (Ajustes › Partidas). Si el paquete trae el punto de «Continuar» y tu partida no cambia, te pregunta antes de sustituir el tuyo.
+Nunca se pierde nada: **antes de instalar, la partida que tenías (con su punto de «Continuar») pasa a «Antes de importar»** en Momentos, a una copia apartada y a las copias de seguridad (Ajustes › Partidas). Si el paquete trae el punto de «Continuar» y tu partida no cambia, te pregunta antes de sustituir el tuyo; si eliges **Mantener el mío**, el del paquete no se pierde: queda en Momentos como **«Conflicto · …»**.
 
-Un `.sav` suelto siempre se confirma: **«¿Importar este .sav? Se usará como partida de «Rojo»»**. Si lo abres con **Abrir con › PocketGB**, se busca el juego por el nombre del archivo (`Rojo (1).sav` vale para `Rojo.gb`); si hay varios con ese nombre, eliges.
+Un `.sav` suelto siempre se confirma: **«¿Importar este .sav? Se usará como partida de «Rojo»»**. Si lo abres con **Abrir con › PocketGB**, se busca el juego que se llama exactamente como el archivo; si no hay ninguno, se prueba sin la marca de copia (`Rojo (1).sav` vale para `Rojo.gb`, pero `Tetris 2.sav` es de `Tetris 2.gb` si lo tienes). Si hay varios con ese nombre, eliges.
 
 El alias, las etiquetas, los hitos y el tiempo de juego del otro equipo **se suman** a los tuyos: se juntan las etiquetas y los hitos (un hito marcado en cualquiera de los dos queda marcado), se conserva tu alias si ya tenías uno y el tiempo de juego es el mayor de los dos. Si el otro equipo jugaba con otra configuración (color de Game Boy, tipo de partida, reloj o BIOS), la partida y el sitio exacto se importan igual y el aviso te dice qué ajuste del juego cambiar (por ejemplo, «el color de Game Boy») para continuar justo donde lo dejaste. Si no lo cambias y el sitio exacto no carga, no pasa nada: tu partida queda intacta y se juega desde ella; el sitio exacto se conserva por si cambias el ajuste después.
 
-Puedes importar la partida de un juego que aún no has abierto en este teléfono: PocketGB mira su cabecera para saber qué tamaño de partida le corresponde.
+Puedes importar la partida de un juego que aún no has abierto en este teléfono: PocketGB mira siempre su cabecera para saber qué tamaño de partida le corresponde.
 
 PocketGB **no toca tu partida** y te avisa si el archivo:
 
@@ -71,4 +71,4 @@ Abrir y cerrar un juego sin jugar no cuenta como cambio: si después el otro equ
 
 PocketGB decide por el **contenido** de las partidas, no por la hora, así que un reloj mal puesto en un equipo no hace ganar a una partida vieja.
 
-Si la nube crea copias como `Rojo 2.sav`, `Rojo (1).sav`, «conflicted copy» o «copia en conflicto», PocketGB las enseña en **Ajustes › Partidas › Copias en conflicto del proveedor**. No las borra nunca; si una es la buena, impórtala con **Importar partida…**.
+Si la nube crea copias como `Rojo 2.sav`, `Rojo (1).sav`, `Rojo (Joel's conflicted copy …).sav` o «copia en conflicto», PocketGB las enseña en **Ajustes › Partidas › Copias en conflicto del proveedor**, en cuanto escanea la biblioteca (aunque no hayas abierto el juego desde entonces). No las borra nunca; si una es la buena, impórtala con **Importar partida…**.

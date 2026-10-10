@@ -108,9 +108,13 @@ object SaveOpening {
         val historyLocation = store.mirrorLocation()
         val sameLocation = historyLocation == null || activeMirror?.location == null || historyLocation == activeMirror.location
         val lineage = if (localValid != null && mirrorValid != null && sameLocation) {
-            SaveLineage.classifyMirror(
-                store.contentHash(localValid), store.contentHash(mirrorValid), store.ownMirrorHashes(), store.lastOwnMirrorHashes(),
-            )
+            val localHash = store.contentHash(localValid)
+            if (SaveLineage.isTruncatedOwnWrite(localValid, mirrorValid, localHash, store.mirrorHistoryPending().firstOrNull())) {
+                // H9: un `"wt"` cortado dejó un prefijo de nuestra última escritura: gana la local y se reescribe.
+                SaveLineage.Mirror.OWN_OLDER
+            } else {
+                SaveLineage.classifyMirror(localHash, store.contentHash(mirrorValid), store.ownMirrorHashes(), store.lastOwnMirrorHashes())
+            }
         } else {
             null
         }

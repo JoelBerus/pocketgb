@@ -33,7 +33,7 @@ Las carpetas de primer nivel (aquí «Pokémon») son **categorías** y las de d
 
 El archivo `.sav` con el **mismo nombre** que el ROM, en la **misma carpeta**, es la copia de tu partida que comparten tus otros emuladores y equipos. PocketGB guarda además la suya en el teléfono, que es la que manda, con copias de respaldo.
 
-Si en una misma carpeta tienes dos juegos con el mismo nombre y distinta extensión (`Juego.gb` y `Juego.gbc`), PocketGB no escribe su `.sav` junto a ellos para no mezclar las partidas; te lo avisa al abrirlos.
+Si en una misma carpeta tienes dos juegos con el mismo nombre y distinta extensión (`Juego.gb` y `Juego.gbc`, o `Juego.gb` y `Juego.gba`), PocketGB no escribe su `.sav` junto a ellos para no mezclar las partidas; te lo avisa al abrirlos.
 
 ## Mover o renombrar juegos
 

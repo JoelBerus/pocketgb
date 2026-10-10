@@ -57,16 +57,16 @@ class SaveExporter(
             savSha256 = savHash,
             baseSavSha256 = store.lineageBase(),
             devicePlatform = "android",
-            deviceName = info.deviceName.take(128),
+            deviceName = info.deviceName.takeCodePoints(128),
             createdMs = nowMs,
             coreName = info.console,
             coreVersion = info.coreVersion.take(32),
             config = info.config,
             stateOfSavSha256 = state?.let { savHash },
             playTimeMs = info.playTimeMs,
-            title = info.title?.take(256),
-            alias = info.alias?.take(256),
-            tags = info.tags?.take(64)?.map { it.take(64) },
+            title = info.title?.takeCodePoints(256),
+            alias = info.alias?.takeCodePoints(256),
+            tags = info.tags?.take(64)?.map { it.takeCodePoints(64) },
             milestones = info.milestones?.take(256),
         )
         return codec.encode(PgbmPackage(hexToBytes(info.fingerprint), meta.toJson(), sav, state, null))
@@ -80,3 +80,7 @@ class SaveExporter(
 
     private fun hexToBytes(hex: String): ByteArray = ByteArray(hex.length / 2) { hex.substring(2 * it, 2 * it + 2).toInt(16).toByte() }
 }
+
+/** H13: los primeros [n] code points (nunca parte un par sustituto, como `String.take` en UTF-16). */
+internal fun String.takeCodePoints(n: Int): String =
+    if (codePointCount(0, length) <= n) this else substring(0, offsetByCodePoints(0, n))

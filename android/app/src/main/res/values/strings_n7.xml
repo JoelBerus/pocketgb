@@ -64,8 +64,10 @@
     <string name="n7_raw_confirm_body">Se usará como partida de «%1$s». La que tienes ahora pasa a «Antes de importar» (Momentos) y a Ajustes › Partidas.</string>
     <string name="n7_raw_import">Importar</string>
     <string name="n7_replace_state_title">¿Sustituir el punto de «Continuar»?</string>
-    <string name="n7_replace_state_body">El paquete de %1$s trae el sitio exacto donde lo dejó. Si lo usas, el de este teléfono pasa a «Antes de importar» (Momentos).</string>
+    <string name="n7_replace_state_body">El paquete de %1$s trae el sitio exacto donde lo dejó. Si lo usas, el de este teléfono pasa a «Antes de importar» (Momentos); si mantienes el tuyo, el del paquete queda en Momentos como «Conflicto».</string>
     <string name="n7_replace_state_confirm">Usar el del paquete</string>
+    <string name="n7_replace_state_keep">Mantener el mío</string>
+    <string name="n7_import_state_kept_local">Sigues desde el punto de este teléfono. El del paquete quedó en Momentos como «Conflicto».</string>
     <!-- ND21 · estado de otra configuración: se instala y se avisa de qué ajuste cambiar (como iOS) -->
     <string name="n7_config_note">Ojo: en %1$s se jugó con otra configuración (%2$s). Cámbiala en los ajustes del juego para continuar justo donde lo dejaste; si no, puede que no cargue y se jugará desde tu partida, que queda intacta.</string>
     <string name="n7_config_key_model">el color de Game Boy</string>

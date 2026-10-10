@@ -94,7 +94,7 @@ class SafSaveMirror(
 
     /**
      * Qué se permite hacer con el espejo en esta sesión, según el listado real del proveedor:
-     * - [SaveOpening.MirrorMode.Shared] si otra ROM hermana (`Juego.gb` y `Juego.GBC`, sin distinguir
+     * - [SaveOpening.MirrorMode.Shared] si otra ROM hermana (`Juego.gb`, `Juego.GBC` o `Juego.gba`, sin distinguir
      *   mayúsculas) comparte la base del nombre: el espejo se desactiva por completo;
      * - [SaveOpening.MirrorMode.ReadOnly] sin permiso persistido de escritura o si el proveedor no ofrece
      *   escritura en el `.sav` (o crear en la carpeta si aún no existe): J7;
@@ -390,20 +390,13 @@ class SafSaveMirror(
     private fun savFiles(children: List<Child>): List<Child> =
         children.filter { !it.isDirectory && it.name.equals(mirrorName, ignoreCase = true) }
 
+    private fun fileNames(children: List<Child>): List<String> = children.filter { !it.isDirectory }.map { it.name }
+
     /** ND20 (l): bases de los otros ROMs de la carpeta: `X 2.sav` es la partida de `X 2.gb`, no una copia en conflicto. */
-    private fun siblingRomBases(children: List<Child>): Set<String> = children.filter { child ->
-        !child.isDirectory && child.name.substringAfterLast('.', "").lowercase(Locale.ROOT) in ROM_EXTENSIONS + "gba"
-    }.map { it.name.substringBeforeLast('.') }.toSet()
+    private fun siblingRomBases(children: List<Child>): Set<String> = SafSiblings.romBases(fileNames(children))
 
     /** Cuántas ROMs de la carpeta (contando esta) resolverían al mismo `<base>.sav`, sin distinguir mayúsculas. */
-    private fun siblingRomsSharingBase(children: List<Child>): Int {
-        val mine = base.lowercase(Locale.ROOT)
-        return children.count { child ->
-            !child.isDirectory && !child.name.startsWith(".") &&
-                child.name.substringAfterLast('.', "").lowercase(Locale.ROOT) in ROM_EXTENSIONS &&
-                child.name.substringBeforeLast('.').lowercase(Locale.ROOT) == mine
-        }
-    }
+    private fun siblingRomsSharingBase(children: List<Child>): Int = SafSiblings.romsSharingBase(base, fileNames(children))
 
     private fun requireBackgroundThread() {
         check(Looper.getMainLooper()?.thread !== Thread.currentThread()) {
@@ -418,7 +411,6 @@ class SafSaveMirror(
         const val TAG = "SafSaveMirror"
         const val VERIFY_ATTEMPTS = 8
         const val VERIFY_DELAY_MS = 150L
-        val ROM_EXTENSIONS = setOf("gb", "gbc")
         val CHILD_COLUMNS = arrayOf(
             Document.COLUMN_DOCUMENT_ID,
             Document.COLUMN_DISPLAY_NAME,
@@ -426,5 +418,24 @@ class SafSaveMirror(
             Document.COLUMN_FLAGS,
             Document.COLUMN_LAST_MODIFIED,
         )
+    }
+}
+
+/**
+ * Qué ROMs de la carpeta comparten el `.sav` del espejo (puro, sin SAF, para probarlo en la JVM). H2: un `.gba` cuenta igual
+ * que un `.gb`/`.gbc`: `Juego.gb` y `Juego.gba` resolverían ambos a `Juego.sav`, así que el espejo pasa a modo compartido.
+ */
+internal object SafSiblings {
+    val ROM_EXTENSIONS = setOf("gb", "gbc", "gba")
+
+    private fun isRom(name: String) = !name.startsWith(".") && name.substringAfterLast('.', "").lowercase(Locale.ROOT) in ROM_EXTENSIONS
+
+    /** Bases (sin extensión) de los ROMs entre [fileNames]. */
+    fun romBases(fileNames: List<String>): Set<String> = fileNames.filter(::isRom).map { it.substringBeforeLast('.') }.toSet()
+
+    /** Cuántos ROMs entre [fileNames] (contando el propio) tienen la base [base], sin distinguir mayúsculas. */
+    fun romsSharingBase(base: String, fileNames: List<String>): Int {
+        val mine = base.lowercase(Locale.ROOT)
+        return fileNames.count { isRom(it) && it.substringBeforeLast('.').lowercase(Locale.ROOT) == mine }
     }
 }

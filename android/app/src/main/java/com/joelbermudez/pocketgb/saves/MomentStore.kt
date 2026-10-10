@@ -162,15 +162,37 @@ class MomentStore(
         capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null, protect: String? = null,
     ): Moment = pushBeforeLoadDeferred(capture, label, config, playTimeMs, protect).also { it.commit() }.entry
 
-    /** Push cuyo borrado de las expulsadas espera a [commit] (tras confirmar la carga). Sin commit quedan huérfanas y
-     *  [recoverOrphans] las retira al volver a abrir. */
+    /**
+     * Push cuya expulsión espera a [commit] (tras confirmar la carga o la instalación). H8: hasta entonces las expulsadas
+     * SIGUEN en el índice (el anillo tiene una de más), así que si la operación falla o el proceso muere, nada recuperable
+     * se ha borrado ni [recoverOrphans] lo tomará por huérfano. [commit] reescribe el índice sin ellas y después borra sus
+     * archivos (el índice es el punto de confirmación). Sin commit, el siguiente push recorta el anillo.
+     */
     inner class PendingPush internal constructor(val entry: Moment, val evicted: List<String>) {
-        fun commit() = lock.withLock { for (id in evicted) deleteFiles(Kind.BEFORE_LOAD, id) }
+        fun commit() = lock.withLock {
+            if (evicted.isEmpty()) return@withLock
+            val index = indexForWriting()
+            val next = index.copy(beforeLoad = index.beforeLoad.filter { it.id !in evicted })
+            if (next != index) writeIndex(next)
+            for (id in evicted) deleteFiles(Kind.BEFORE_LOAD, id)
+        }
+
+        /**
+         * Deshace el push cuando la operación se rechazó ANTES de tocar nada (p. ej. el núcleo no aceptó el estado): la
+         * entrada nueva es una copia de lo que sigue intacto, así que sale del índice y se borra; las que iban a
+         * expulsarse se quedan. No usar si la operación pudo cambiar algo: entonces basta con no llamar a [commit].
+         */
+        fun rollback() = lock.withLock {
+            val index = indexForWriting()
+            val next = index.copy(beforeLoad = index.beforeLoad.filter { it.id != entry.id })
+            if (next != index) writeIndex(next)
+            deleteFiles(Kind.BEFORE_LOAD, entry.id)
+        }
     }
 
     /**
-     * Como [pushBeforeLoad], pero sin borrar los archivos de las expulsadas hasta [PendingPush.commit] (N6A-H2: si la
-     * carga o la instalación fallan, nada recuperable se ha borrado). [protect] nunca sale expulsada.
+     * Como [pushBeforeLoad], pero sin expulsar nada hasta [PendingPush.commit] (N6A-H2, H8: si la carga o la instalación
+     * fallan, nada recuperable se ha borrado ni sacado del índice). [protect] nunca sale expulsada.
      */
     fun pushBeforeLoadDeferred(
         capture: Capture, label: String, config: Map<String, String> = emptyMap(), playTimeMs: Long? = null, protect: String? = null,
@@ -190,9 +212,9 @@ class MomentStore(
             val protected = index.beforeLoad.filter { it.id == protect }
             val ring = listOf(entry) + protected + index.beforeLoad.filter { it.id != protect }
             val keepIds = ring.take(RING_SIZE).mapTo(HashSet()) { it.id }
-            val kept = (listOf(entry) + index.beforeLoad).filter { it.id in keepIds }
             val evicted = ring.filter { it.id !in keepIds }.map { it.id }
-            writeIndex(index.copy(beforeLoad = kept))
+            // H8: la nueva entra en el índice; las expulsadas no salen de él hasta commit().
+            writeIndex(index.copy(beforeLoad = listOf(entry) + index.beforeLoad))
             PendingPush(entry, evicted)
         }
 

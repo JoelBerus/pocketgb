@@ -145,7 +145,11 @@ fun GameDetailsScreen(
     val saveStatus by produceState<com.joelbermudez.pocketgb.travel.SaveStatus?>(null, fingerprint, load, prefs, resumable) {
         value = fingerprint?.let { fp ->
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { com.joelbermudez.pocketgb.travel.SaveStatus.read(java.io.File(statusContext.filesDir, "saves"), fp) }.getOrNull()
+                runCatching {
+                    com.joelbermudez.pocketgb.travel.SaveStatus.read(
+                        java.io.File(statusContext.filesDir, "saves"), fp, statesRoot = java.io.File(statusContext.filesDir, "states"),
+                    )
+                }.getOrNull()
             }
         }
     }
@@ -403,7 +407,7 @@ private fun DetailsInfo(
     }
     if (playFirst) {
         title()
-        PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
+        PlayActions(entry, load, canResume, onPlay, onPlayFromStart, saveStatus?.continueFrom)
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!playFirst) title()
@@ -439,7 +443,7 @@ private fun DetailsInfo(
     val problemMessage = entry.problem?.message ?: (load as? DetailsLoad.Failed)?.error?.message
     if (problemMessage != null) ProblemCard(problemMessage)
 
-    if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
+    if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart, saveStatus?.continueFrom)
 
     Stats(entry, lastPlayedAt, saveStatus)
     if (showSendTip) com.joelbermudez.pocketgb.ui.tips.TipCard(com.joelbermudez.pocketgb.tips.Tip.SEND)
@@ -470,6 +474,8 @@ private fun PlayActions(
     canResume: Boolean,
     onPlay: () -> Unit,
     onPlayFromStart: () -> Unit,
+    /** Equipo del que llegó el estado automático con la partida: «Continuar donde lo dejaste en <equipo>» (= iOS). */
+    continueFrom: String? = null,
 ) {
     // Jugable solo si la biblioteca no vio problemas y los metadatos no fallaron. A9 (cambia J8, ND6), como iOS:
     // «Continuar» retoma el estado automático exacto si sigue siendo el de la partida; si no hay, «Jugar» abre la
@@ -482,7 +488,11 @@ private fun PlayActions(
     ) {
         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
         Text(
-            stringResource(if (canResume) R.string.details_continue else R.string.details_play),
+            when {
+                canResume && continueFrom != null -> stringResource(R.string.n7_continue_from, continueFrom)
+                canResume -> stringResource(R.string.details_continue)
+                else -> stringResource(R.string.details_play)
+            },
             modifier = Modifier.padding(start = 8.dp),
         )
     }

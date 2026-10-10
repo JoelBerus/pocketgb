@@ -101,6 +101,12 @@ data class RomEntry(
     val coverUri: String? = null,
     /** N5: sello de esa imagen (documento, tamaño, fecha): si cambia, se vuelve a leer. */
     val coverStamp: String? = null,
+    /**
+     * Copias en conflicto del proveedor junto al `.sav` del ROM (`X 2.sav`, `X (Joel's conflicted copy …).sav`…), con su
+     * fecha, vistas al escanear (= iOS `ConflictCopies.scan`): Ajustes › Partidas las lista aunque el juego no se haya
+     * abierto desde entonces. Solo nombres: nunca se leen ni se borran.
+     */
+    val conflictCopies: List<Pair<String, Long?>> = emptyList(),
 ) {
     /** Lo que ve el usuario en biblioteca, carril, favoritos, detalle y pausa: el alias o el título de la cabecera. */
     val displayTitle: String
@@ -242,3 +248,18 @@ object RomHeader {
     /** La cabecera de una identidad de cualquiera de las dos consolas ([fromIdentity] o [fromGbaIdentity]). */
     fun fromAnyIdentity(hex: String): ByteArray? = fromIdentity(hex) ?: fromGbaIdentity(hex)
 }
+
+/**
+ * Copias en conflicto del último escaneo agrupadas por huella (las copias del mismo ROM se juntan, sin repetir nombre).
+ * Solo las huellas conocidas; una huella escaneada sin copias da lista vacía (ya no hay).
+ */
+fun scannedConflictsByFingerprint(
+    entries: List<RomEntry>,
+    fingerprints: Map<String, String>,
+): Map<String, List<com.joelbermudez.pocketgb.saves.SaveStore.ProviderConflict>> =
+    entries.mapNotNull { e -> fingerprints[e.id]?.let { it to e } }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, list) ->
+            list.flatMap { it.conflictCopies }.distinctBy { it.first }
+                .map { (name, date) -> com.joelbermudez.pocketgb.saves.SaveStore.ProviderConflict(name, date) }
+        }

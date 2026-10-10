@@ -552,4 +552,29 @@ class LibraryScannerTest {
         assertEquals(listOf("Rojo.gb"), result.entries.map { it.id })
         assertFalse(result.stats.complete)
     }
+
+    /** Paridad con iOS (auditoría final N): las copias en conflicto del `.sav` se ven al escanear, con su fecha. */
+    @Test
+    fun scanListsProviderConflictCopiesNextToEachRom() {
+        val tree = FakeTree(
+            dirs = mapOf(
+                null to listOf(
+                    file("z", "Zelda.gb"), file("zs", "Zelda.sav"),
+                    file("z1", "Zelda (Joel's conflicted copy 2026-10-08).sav", modified = 5L),
+                    file("z2", "Zelda 2.sav", modified = 6L),
+                    file("t", "Tetris.gb"), file("t2", "Tetris 2.gba"), file("t2s", "Tetris 2.sav"),
+                ),
+            ),
+            heads = mapOf("z" to rom("ZELDA"), "t" to rom("TETRIS")),
+        )
+        val entries = LibraryScanner.scan(tree)
+        assertEquals(
+            listOf("Zelda (Joel's conflicted copy 2026-10-08).sav" to 5L, "Zelda 2.sav" to 6L),
+            entries.single { it.fileName == "Zelda.gb" }.conflictCopies,
+        )
+        assertEquals("`Tetris 2.sav` es de `Tetris 2.gba`", emptyList<Pair<String, Long?>>(), entries.single { it.fileName == "Tetris.gb" }.conflictCopies)
+        val byFp = scannedConflictsByFingerprint(entries, mapOf("Zelda.gb" to "fz", "Tetris.gb" to "ft"))
+        assertEquals(listOf("Zelda (Joel's conflicted copy 2026-10-08).sav", "Zelda 2.sav"), byFp["fz"]!!.map { it.name })
+        assertEquals(emptyList<String>(), byFp["ft"]!!.map { it.name })
+    }
 }
