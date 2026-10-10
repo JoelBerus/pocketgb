@@ -66,7 +66,7 @@ internal val n7CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     put("n7-choose") { _ -> GameBackdrop { ChooseDialog("iPhone de Joel", {}, {}, {}) } }
     put("n7-inbox") { _ -> GameBackdrop { InboxDialog("iPhone de Joel", "BLOQUES", {}, {}) } }
     put("n7-warning-divergence") { _ -> GameBackdrop { SaveLoadWarningDialog(SaveLoadWarning.Divergence("c1")) {} } }
-    put("n7-warning-external") { _ -> GameBackdrop { SaveLoadWarningDialog(SaveLoadWarning.ExternalChange) {} } }
+    put("n7-warning-external") { _ -> GameBackdrop { SaveLoadWarningDialog(SaveLoadWarning.ExternalChange(readOnly = true)) {} } }
     put("n7-saves-conflicts") { _ ->
         val games = remember {
             listOf(
@@ -82,4 +82,13 @@ internal val n7CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
         }
         SavesSettingsContent(games, openFingerprint = null, snackbar = remember { SnackbarHostState() }, onRestore = { _, _ -> }, onBack = {})
     }
+    // ND20 · respuesta a la auditoría (al final: los catálogos solo crecen).
+    put("n7-divergence-ask") { _ ->
+        GameBackdrop {
+            com.joelbermudez.pocketgb.ui.gameplay.SaveDivergenceDialog(
+                System.currentTimeMillis() - 3_600_000L, System.currentTimeMillis() - 600_000L, {}, {}, {},
+            )
+        }
+    }
+    put("n7-warning-mirror-older") { _ -> GameBackdrop { SaveLoadWarningDialog(SaveLoadWarning.MirrorOlderSetAside()) {} } }
 }

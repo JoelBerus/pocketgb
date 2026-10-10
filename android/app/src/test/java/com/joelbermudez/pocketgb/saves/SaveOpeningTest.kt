@@ -28,6 +28,8 @@ class SaveOpeningTest {
     @Before fun setUp() { dir = File(tmp.newFolder(), "saves") }
 
     private fun read(d: ByteArray, date: Long?) = SaveMirror.Snapshot.Read(d, date)
+    private fun dirTree(): Map<String, List<Byte>> =
+        dir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(dir).path to it.readBytes().toList() }
     private fun awaitIdle(target: SaveTarget?) {
         val latch = java.util.concurrent.CountDownLatch(1)
         target!!.whenMirrorIdle { latch.countDown() }
@@ -228,7 +230,9 @@ class SaveOpeningTest {
         val reopened = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
         assertArrayEquals(d2, reopened.data)
         assertArrayEquals(d2, s.load())
-        assertNull(reopened.warning)
+        // ND20 (c), H2: la versión restaurada no se pierde: queda apartada (no rota) y se avisa sin bloquear.
+        assertEquals(SaveLoadWarning.MirrorOlderSetAside(), reopened.warning)
+        assertArrayEquals(d1, File(s.backupsDirectory, s.setAside().single().name).readBytes())
         assertTrue(reopened.target!!.mirrorPending)
     }
 
@@ -247,7 +251,19 @@ class SaveOpeningTest {
         assertTrue(s.saveFile.setLastModified(old))
         mirror.snapshotValue = read(external, new)
         val conflicts = ArrayList<ByteArray>()
-        val reopened = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes, recordConflict = { conflicts += it; "c1" })
+        // ND20 (a): sin elección se pregunta y no se escribe nada.
+        val before = dirTree()
+        try {
+            SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes, recordConflict = { d, _ -> conflicts += d; "c1" })
+            fail("debía preguntar")
+        } catch (_: SaveOpening.Refusal.Divergence) {
+        }
+        assertEquals(before, dirTree())
+        assertTrue(conflicts.isEmpty())
+        val reopened = SaveOpening.prepare(
+            s, mirror, mirror.snapshot(), sizes, recordConflict = { d, _ -> conflicts += d; "c1" },
+            divergence = SaveOpening.DivergenceChoice.KEEP_LOCAL,
+        )
         assertArrayEquals("sigue la local", local, reopened.data)
         assertArrayEquals(local, s.load())
         assertEquals(SaveLoadWarning.Divergence("c1"), reopened.warning)
@@ -380,7 +396,8 @@ class SaveOpeningTest {
         assertArrayEquals(version(6), File(s.backupsDirectory, "dos.mirror-42-bbbbbbbb.sav").readBytes())
     }
 
-    @Test fun anOwnedMirrorOrAnEqualOneIsNeverSetAside() {
+    /** ND20 (c): una escritura nuestra anterior SÍ se aparta (una vez); un espejo igual a la local nunca. */
+    @Test fun anOwnedOlderMirrorIsSetAsideOnceAndAnEqualOneNever() {
         val s = store()
         val mirror = FakeSaveMirror()
         val target = SaveTarget(s, mirror)
@@ -388,9 +405,11 @@ class SaveOpeningTest {
         awaitIdle(target)
         s.save(version(2)) // la local avanza; el espejo es nuestra escritura anterior
         SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
+        assertArrayEquals(version(1), File(s.backupsDirectory, s.setAside().single().name).readBytes())
         mirror.snapshotValue = read(version(2), new)
         SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
-        assertTrue(s.setAside().isEmpty())
+        assertEquals(1, s.setAside().size)
     }
 
     @Test fun aMirrorOnlyOrAWrongSizedLocalIsNotSetAsideAsAMirrorLoser() {

@@ -81,6 +81,8 @@ class FaultInjectingFileOps(
 class FakeSaveMirror(
     @Volatile var snapshotValue: SaveMirror.Snapshot = SaveMirror.Snapshot.Absent,
     @Volatile var dateOnWrite: Long? = FAR_FUTURE_MS,
+    /** ND20 (m): ubicación simulada del espejo (`null` = desconocida, como los tests anteriores). */
+    override val location: String? = null,
 ) : SaveMirror {
     @Volatile var failWrites = false
     val writes = java.util.concurrent.CopyOnWriteArrayList<ByteArray>()

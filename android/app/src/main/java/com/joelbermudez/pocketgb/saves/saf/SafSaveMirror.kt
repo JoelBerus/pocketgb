@@ -75,6 +75,9 @@ class SafSaveMirror(
     private val mirrorName: String = "$base.sav"
     private val readCap: Int = (validSizes.maxOrNull() ?: 0) + 1
 
+    /** ND20 (m): carpeta del ROM + nombre del `.sav` (sin distinguir mayúsculas). */
+    override val location: String = "$folderDocumentId/${mirrorName.lowercase(Locale.ROOT)}"
+
     private val lock = Any()
 
     /** Qué había en el espejo la última vez que lo vimos o escribimos (para detectar cambios externos, J2). */

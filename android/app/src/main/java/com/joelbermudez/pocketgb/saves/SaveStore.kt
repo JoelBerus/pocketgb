@@ -245,7 +245,13 @@ class SaveStore(
     /** Escritura confirmada: contenido (hash) y fecha del espejo observada justo tras escribirlo. */
     private class Written(val hash: String, val dateMs: Long?)
 
-    private class MirrorHistory(val successful: List<Written>, val pending: List<String>, val received: List<String> = emptyList())
+    private class MirrorHistory(
+        val successful: List<Written>,
+        val pending: List<String>,
+        val received: List<String> = emptyList(),
+        /** ND20 (m): ubicación del espejo de la última escritura confirmada. */
+        val location: String? = null,
+    )
 
     /**
      * ¿Es este espejo (contenido + fecha) una escritura de PocketGB?
@@ -267,11 +273,11 @@ class SaveStore(
     fun recordMirrorAttempt(data: ByteArray) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
-        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT), h.received))
+        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT), h.received, h.location))
     }
 
     /** @param observedDateMs fecha de modificación del espejo leída justo después de escribirlo. */
-    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?) = lock.withLock {
+    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?, location: String? = null) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
         writeHistory(
@@ -279,6 +285,7 @@ class SaveStore(
                 (listOf(Written(hash, observedDateMs)) + h.successful.filter { it.hash != hash }).take(HISTORY_LIMIT),
                 h.pending.filter { it != hash },
                 h.received,
+                location ?: h.location,
             ),
         )
     }
@@ -290,11 +297,26 @@ class SaveStore(
     /** Huellas de nuestras escrituras del espejo (write-ahead y confirmadas), acotadas a las últimas [HISTORY_LIMIT]. */
     fun ownMirrorHashes(): List<String> = readHistory().let { (it.pending + it.successful.map { w -> w.hash }).distinct() }
 
-    /** La última escritura propia: la última intentada y la última confirmada (la local es una de ellas si no cambió). */
-    fun lastOwnMirrorHashes(): Set<String> = readHistory().let { setOfNotNull(it.pending.firstOrNull(), it.successful.firstOrNull()?.hash) }
+    /**
+     * La última partida «nuestra»: la última escritura intentada, la última confirmada y (ND20 b, H1) la última recibida de
+     * fuera. Si la local es una de ellas, no cambió desde entonces: abrir y cerrar sin jugar no crea una divergencia.
+     */
+    fun lastOwnMirrorHashes(): Set<String> =
+        readHistory().let { setOfNotNull(it.pending.firstOrNull(), it.successful.firstOrNull()?.hash, it.received.firstOrNull()) }
 
-    /** Huellas que este equipo ya tuvo: propias y recibidas (cambio externo, importación). */
-    fun knownHashes(): Set<String> = readHistory().let { h -> (h.pending + h.successful.map { it.hash } + h.received).toSet() }
+    /** ND20 (m): ubicación del espejo de la última escritura confirmada (`null` = historial antiguo o sin escrituras). */
+    fun mirrorLocation(): String? = readHistory().location
+
+    /**
+     * ND20 (d): huellas que este equipo ya tuvo: historial de escrituras, recibidas, copias de seguridad y apartadas. Un
+     * paquete o `.sav` con una de ellas «ya se conoce» y se pregunta antes de instalarlo.
+     */
+    fun knownHashes(): Set<String> {
+        val h = readHistory()
+        val files = backups().map { backupFile(it.index) } + setAside().map { File(backupsDirectory, it.name) }
+        val stored = files.mapNotNull { f -> try { contentHash(ops.readBytes(f, MAX_SAVE_BYTES)) } catch (_: IOException) { null } }
+        return (h.pending + h.successful.map { it.hash } + h.received + stored).toSet()
+    }
 
     /**
      * `base_sav_sha256` de un paquete que sale de aquí: la última partida que este equipo instaló o recibió de fuera
@@ -390,6 +412,7 @@ class SaveStore(
             })
             put("pending", buildJsonArray { history.pending.forEach { add(JsonPrimitive(it)) } })
             put("received", buildJsonArray { history.received.forEach { add(JsonPrimitive(it)) } })
+            if (history.location != null) put("location", history.location)
         }
         if (!ops.exists(directory)) ops.mkdirs(directory)
         val tmp = File(mirrorHistoryFile.path + ".tmp")
@@ -413,7 +436,7 @@ class SaveStore(
             }
             val pending = (root["pending"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             val received = (root["received"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            MirrorHistory(successful, pending, received)
+            MirrorHistory(successful, pending, received, (root["location"] as? JsonPrimitive)?.contentOrNull)
         }
     } catch (_: Exception) {
         MirrorHistory(emptyList(), emptyList())
