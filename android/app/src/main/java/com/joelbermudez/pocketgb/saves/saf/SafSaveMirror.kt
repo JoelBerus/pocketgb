@@ -75,6 +75,9 @@ class SafSaveMirror(
     private val mirrorName: String = "$base.sav"
     private val readCap: Int = (validSizes.maxOrNull() ?: 0) + 1
 
+    /** ND20 (m): carpeta del ROM + nombre del `.sav` (sin distinguir mayúsculas). */
+    override val location: String = "$folderDocumentId/${mirrorName.lowercase(Locale.ROOT)}"
+
     private val lock = Any()
 
     /** Qué había en el espejo la última vez que lo vimos o escribimos (para detectar cambios externos, J2). */
@@ -130,7 +133,9 @@ class SafSaveMirror(
                 // Ajustes › Partidas; nunca se leen, se instalan ni se borran. Mejor esfuerzo.
                 try {
                     store.recordProviderConflicts(
-                        children.filter { !it.isDirectory && com.joelbermudez.pocketgb.saves.SaveLineage.isProviderConflictCopy(base, it.name) }
+                        children.filter {
+                            !it.isDirectory && com.joelbermudez.pocketgb.saves.SaveLineage.isProviderConflictCopy(base, it.name, siblingRomBases(children))
+                        }
                             .map { SaveStore.ProviderConflict(it.name, it.lastModified) },
                     )
                 } catch (_: IOException) {
@@ -384,6 +389,11 @@ class SafSaveMirror(
 
     private fun savFiles(children: List<Child>): List<Child> =
         children.filter { !it.isDirectory && it.name.equals(mirrorName, ignoreCase = true) }
+
+    /** ND20 (l): bases de los otros ROMs de la carpeta: `X 2.sav` es la partida de `X 2.gb`, no una copia en conflicto. */
+    private fun siblingRomBases(children: List<Child>): Set<String> = children.filter { child ->
+        !child.isDirectory && child.name.substringAfterLast('.', "").lowercase(Locale.ROOT) in ROM_EXTENSIONS + "gba"
+    }.map { it.name.substringBeforeLast('.') }.toSet()
 
     /** Cuántas ROMs de la carpeta (contando esta) resolverían al mismo `<base>.sav`, sin distinguir mayúsculas. */
     private fun siblingRomsSharingBase(children: List<Child>): Int {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -39,6 +40,11 @@ import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
 /** Causa legible de un error del sistema para mostrarla junto a una acción de recuperación. */
 fun causeText(error: Throwable): String = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
 
+/** H12: el aviso de solo lectura no se pierde cuando hay otro aviso de linaje. */
+@Composable
+private fun withReadOnly(text: String, readOnly: Boolean): String =
+    if (readOnly) text + "\n\n" + stringResource(R.string.warning_mirror_read_only) else text
+
 @Composable
 fun saveLoadWarningText(warning: SaveLoadWarning): String = when (warning) {
     SaveLoadWarning.LocalWrongSize -> stringResource(R.string.warning_local_wrong_size)
@@ -50,8 +56,9 @@ fun saveLoadWarningText(warning: SaveLoadWarning): String = when (warning) {
     SaveLoadWarning.MirrorReadOnly -> stringResource(R.string.warning_mirror_read_only)
     SaveLoadWarning.LocalSetAside -> stringResource(R.string.n1_warning_local_set_aside)
     is SaveLoadWarning.Unreadable -> stringResource(R.string.warning_unreadable, warning.detail)
-    SaveLoadWarning.ExternalChange -> stringResource(R.string.n7_warning_external_change)
-    is SaveLoadWarning.Divergence -> stringResource(R.string.n7_warning_divergence)
+    is SaveLoadWarning.ExternalChange -> withReadOnly(stringResource(R.string.n7_warning_external_change), warning.readOnly)
+    is SaveLoadWarning.MirrorOlderSetAside -> withReadOnly(stringResource(R.string.n7_warning_mirror_older), warning.readOnly)
+    is SaveLoadWarning.Divergence -> withReadOnly(stringResource(R.string.n7_warning_divergence_done), warning.readOnly)
     is SaveLoadWarning.GameSettingsMismatch ->
         stringResource(if (warning.noSave) R.string.n8_warning_settings_no_save else R.string.n8_warning_settings_mismatch)
 }
@@ -72,6 +79,7 @@ fun openErrorText(error: OpenError): String = when (error) {
     OpenError.Unreadable -> stringResource(R.string.open_error_unreadable)
     is OpenError.Core -> stringResource(R.string.open_error_core, causeText(error.error))
     is OpenError.ResumeFailed -> resumeFailureText(error.reason)
+    is OpenError.SaveDivergence -> stringResource(R.string.n7_warning_divergence_title)
 }
 
 /** Por qué no se pudo continuar (A9); siempre con la partida intacta. */
@@ -108,6 +116,40 @@ fun ResumeFailedDialog(reason: ResumeFailure, onPlayFromStart: () -> Unit, onDis
             }
         },
         modifier = Modifier.testTag("resume-failed-dialog"),
+    )
+}
+
+/**
+ * ND20 (a): divergencia al abrir. Nada se ha escrito: «Cancelar» no abre el juego y deja las dos partidas como estaban.
+ * La que no se elige queda como momento «Conflicto», en las copias y apartada.
+ */
+@Composable
+fun SaveDivergenceDialog(localDateMs: Long?, mirrorDateMs: Long?, onKeepLocal: () -> Unit, onUseMirror: () -> Unit, onDismiss: () -> Unit) {
+    fun date(ms: Long?) = ms?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(it)) }
+    val unknown = stringResource(R.string.saves_backup_unknown_date)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.n7_warning_divergence_title)) },
+        text = {
+            // Con fuente grande el texto se desplaza: nunca se corta (los botones siguen visibles).
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                Text(stringResource(R.string.n7_divergence_ask, date(localDateMs) ?: unknown, date(mirrorDateMs) ?: unknown))
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onKeepLocal, modifier = Modifier.heightIn(min = 48.dp).testTag("divergence-keep-local")) {
+                    Text(stringResource(R.string.n7_divergence_keep_local))
+                }
+                TextButton(onClick = onUseMirror, modifier = Modifier.heightIn(min = 48.dp).testTag("divergence-use-mirror")) {
+                    Text(stringResource(R.string.n7_divergence_use_mirror))
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("divergence-cancel")) {
+                    Text(stringResource(R.string.dialog_cancel))
+                }
+            }
+        },
+        modifier = Modifier.testTag("save-divergence-dialog"),
     )
 }
 
@@ -168,7 +210,6 @@ fun SaveLoadWarningDialog(warning: SaveLoadWarning, onDismiss: () -> Unit) {
                     when {
                         warning is SaveLoadWarning.GameSettingsMismatch && warning.noSave -> R.string.n8_warning_settings_no_save_title
                         warning is SaveLoadWarning.GameSettingsMismatch -> R.string.n8_warning_settings_mismatch_title
-                        warning is SaveLoadWarning.Divergence -> R.string.n7_warning_divergence_title
                         else -> R.string.warning_title
                     },
                 ),
@@ -289,6 +330,13 @@ fun GameDialogs(viewModel: GameplayViewModel) {
         is GameDialog.ResumeFailed -> ResumeFailedDialog(
             reason = current.reason,
             onPlayFromStart = viewModel::playFromStartAfterResumeFailure,
+            onDismiss = viewModel::dismissDialog,
+        )
+        is GameDialog.SaveDivergence -> SaveDivergenceDialog(
+            localDateMs = current.localDateMs,
+            mirrorDateMs = current.mirrorDateMs,
+            onKeepLocal = { viewModel.resolveDivergence(com.joelbermudez.pocketgb.saves.SaveOpening.DivergenceChoice.KEEP_LOCAL) },
+            onUseMirror = { viewModel.resolveDivergence(com.joelbermudez.pocketgb.saves.SaveOpening.DivergenceChoice.USE_MIRROR) },
             onDismiss = viewModel::dismissDialog,
         )
     }

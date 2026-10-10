@@ -7,7 +7,6 @@ import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
 import java.io.File
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * N7b/N7c · exportar la partida de un juego: el `.sav` crudo (sirve en otros emuladores) o un `.pgbm` con la partida,
@@ -29,7 +28,7 @@ class SaveExporter(
         val alias: String? = null,
         val tags: List<String>? = null,
         val playTimeMs: Long? = null,
-        val config: Map<String, JsonPrimitive> = emptyMap(),
+        val config: PgbmConfig = PgbmConfig(),
         val milestones: List<PgbmMeta.Milestone>? = null,
     )
 

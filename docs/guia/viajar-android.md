@@ -27,7 +27,7 @@ En el detalle, la casilla **Partida** te dice de dónde viene la que tienes ahor
 - **Compartir partida…**: el `.pgbm` por la hoja de compartir de Android (Drive, correo, Bluetooth…).
 - **Guardar partida en…**: elige tú dónde guardar el `.pgbm`.
 - **Exportar .sav…**: la partida en crudo, la que entienden otros emuladores.
-- **Importar partida…**: elige un `.pgbm` o un `.sav`. También puedes abrir un `.pgbm` desde Drive o Archivos con **Abrir con › PocketGB**: PocketGB lo reconoce por su contenido y busca el juego solo. Un `.sav` suelto no dice de qué juego es, así que se importa desde el detalle de ese juego.
+- **Importar partida…**: elige un `.pgbm` o un `.sav`. También puedes abrir un `.pgbm` o un `.sav` desde Drive o Archivos con **Abrir con › PocketGB**: PocketGB lo reconoce por su contenido y busca el juego solo.
 
 El juego tiene que estar **cerrado** (no abierto ni en pausa) para importar.
 
@@ -40,10 +40,16 @@ PocketGB compara la partida que llega con la tuya:
 | No tienes partida de ese juego | La instala |
 | Es la misma que ya tienes | Nada |
 | Parte de la tuya (la jugaste en el otro equipo después de recibirla) | La instala; la tuya queda en las copias de seguridad |
-| Es más vieja que la tuya | Se queda la tuya; la que llega va a las copias |
+| Es una que este teléfono ya tuvo (más vieja que la tuya) | Te pregunta **«Ya tuviste esta partida»**; la que no elijas queda en Ajustes › Partidas |
 | Las dos cambiaron por separado | Te pregunta **«¿Con qué partida sigues?»**: la que no elijas queda como momento **«Conflicto · …»** (Momentos › Recuperar la partida) y en Ajustes › Partidas |
 
-Nunca se pierde nada: **antes de instalar, la partida que tenías pasa a las copias de seguridad** (Ajustes › Partidas).
+Nunca se pierde nada: **antes de instalar, la partida que tenías (con su punto de «Continuar») pasa a «Antes de importar»** en Momentos, a una copia apartada y a las copias de seguridad (Ajustes › Partidas). Si el paquete trae el punto de «Continuar» y tu partida no cambia, te pregunta antes de sustituir el tuyo.
+
+Un `.sav` suelto siempre se confirma: **«¿Importar este .sav? Se usará como partida de «Rojo»»**. Si lo abres con **Abrir con › PocketGB**, se busca el juego por el nombre del archivo (`Rojo (1).sav` vale para `Rojo.gb`); si hay varios con ese nombre, eliges.
+
+El alias, las etiquetas, los hitos y el tiempo de juego del otro equipo **se suman** a los tuyos: se juntan las etiquetas y los hitos (un hito marcado en cualquiera de los dos queda marcado), se conserva tu alias si ya tenías uno y el tiempo de juego es el mayor de los dos. Si el otro equipo jugaba con otra configuración (modelo de consola, tipo de partida, reloj o BIOS), te avisa de que la partida se importa pero el sitio exacto no.
+
+Puedes importar la partida de un juego que aún no has abierto en este teléfono: PocketGB mira su cabecera para saber qué tamaño de partida le corresponde.
 
 PocketGB **no toca tu partida** y te avisa si el archivo:
 
@@ -57,8 +63,12 @@ PocketGB **no toca tu partida** y te avisa si el archivo:
 Si el `.sav` que hay junto al ROM cambia por fuera (otro equipo que escribió en la misma carpeta), al abrir el juego:
 
 - si tu partida no había cambiado desde la última vez que PocketGB escribió ese `.sav`, se usa la de fuera y te avisa; la tuya queda en las copias;
-- si las dos cambiaron, se sigue con la de este teléfono y la otra queda como momento **«Conflicto · …»**, en las copias y apartada en Ajustes › Partidas. Recupérala desde Momentos si era la buena.
+- si las dos cambiaron, **te pregunta antes de abrir** con cuál sigues (**Seguir con la de este teléfono**, **Usar la del otro equipo** o **Cancelar**); hasta que eliges no se toca nada. La otra queda como momento **«Conflicto · …»**, en las copias y apartada en Ajustes › Partidas;
+- si el `.sav` es una versión anterior que ya escribió PocketGB (por ejemplo, la restauraste en Drive), se sigue con la de este teléfono y esa versión queda apartada en Ajustes › Partidas, con un aviso;
+- si es el `.sav` de otra copia del mismo juego en otra carpeta, gana el más nuevo y el otro queda apartado.
+
+Abrir y cerrar un juego sin jugar no cuenta como cambio: si después el otro equipo vuelve a jugar, su partida se instala sin preguntar.
 
 PocketGB decide por el **contenido** de las partidas, no por la hora, así que un reloj mal puesto en un equipo no hace ganar a una partida vieja.
 
-Si la nube crea copias como `Rojo 2.sav`, `Rojo (1).sav` o «conflicted copy», PocketGB las enseña en **Ajustes › Partidas › Copias en conflicto del proveedor**. No las borra nunca; si una es la buena, impórtala con **Importar partida…**.
+Si la nube crea copias como `Rojo 2.sav`, `Rojo (1).sav`, «conflicted copy» o «copia en conflicto», PocketGB las enseña en **Ajustes › Partidas › Copias en conflicto del proveedor**. No las borra nunca; si una es la buena, impórtala con **Importar partida…**.

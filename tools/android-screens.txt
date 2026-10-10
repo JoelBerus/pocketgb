@@ -333,3 +333,9 @@ n7-warning-divergence portrait light
 n7-warning-external portrait light
 n7-saves-conflicts portrait light
 n7-saves-conflicts portrait dark
+n7-divergence-ask portrait light
+n7-divergence-ask portrait dark
+n7-warning-mirror-older portrait light
+n7-known portrait light
+n7-raw-confirm portrait light
+n7-config-mismatch portrait light

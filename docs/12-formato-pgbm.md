@@ -97,6 +97,12 @@ Un paquete con todo al tope ocupa 1 507 480 B (≈ 1,4 MiB); los 4 MiB dejan sit
 | `milestones` | lista de objetos | No | Hitos, como máximo 256: `id` (cadena ≤ 64), `title` (cadena ≤ 256) y `done` (booleano), los tres obligatorios en cada hito |
 | `moment` | objeto | **Sí si el paquete exporta un momento** | `name` (cadena ≤ 256, obligatoria), `collection` (≤ 256), `note` (≤ 4096) y `created_ms` (cuándo se tomó el momento), los tres últimos opcionales |
 
+**Valores de `config` que escriben las apps** (ND20 h; iOS y Android igual):
+- `model`: el modelo con el que corre el juego, **`"dmg"` o `"cgb"`, nunca `"auto"`** (un ROM CGB, o un ROM de Game Boy con «Color en juegos de Game Boy» activado, = `"cgb"`). Al leer se acepta también `"auto"`.
+- `compat_palette`: el número de la paleta de compatibilidad como cadena (`"0"` = automática).
+- `gba_save_type`: `"auto"`, `"none"`, `"sram"`, `"flash64"`, `"flash128"`, `"eeprom512"`, `"eeprom8k"` (el orden de `gba_save_type` en `gba/include/pocketgba.h`); `gba_rtc`: `"auto"`, `"on"`, `"off"` (`GBA_RTC_*`); `gba_bios`: booleano.
+- Un valor de tipo o fuera de esa lista hace la `META` inválida. Al importar, si el estado del paquete es de otro `model` o de otra `gba_save_type`, `gba_rtc` o `gba_bios` (la paleta no cuenta), se avisa antes de descartar el estado.
+
 **Qué comprueba el importador** (todo antes de tocar nada; cualquier fallo = paquete rechazado sin cambios):
 1. **Sin `META`, o con una `META` inválida, el paquete se rechaza.** El contenedor C la admite opcional porque solo valida el formato; las apps no importan un `.pgbm` sin metadatos (no habría sha, ni linaje, ni forma de comprobar nada). Las apps **escriben siempre** `META`, también en «Enviar a otro dispositivo» y al exportar un momento.
 2. `format` = 1, los tipos y los límites de la tabla.

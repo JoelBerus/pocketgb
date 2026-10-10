@@ -37,6 +37,7 @@ object CrossVectors {
         "X5" to "8b1fb567aa21ffd5c907b59111c93eb4f67d7dba91bb57aff5e4b5804f30718a",
         "X6" to "c7f5650966a804b620f8d29a63766b2583d53a2a30384b030ceafe224b236a2e",
         "X7" to "6d8b3af30e6fe76adf7fef36fc21f80a3db0a86d4df1a8faa00d573b07a39880",
+        "X8" to "08c1ad1b5c7422765a54d1e2d0bc19276c5feeb9db8d1fe49f7aadc0ebf7c95b",
         "G2" to "5548b8cac9de16d52d17aec2907fd61832443bdebb4dc747499f726da9ef41c9",
         "G4" to "b6b3f3e96df34995d4bdf171e368acae20f5b72bb512b824fae509d3979a4a53",
     )
@@ -50,6 +51,9 @@ object CrossVectors {
         "X5" -> codec.encode(PgbmPackage(ROM, meta(sha(S1), null, "android", "Pixel de prueba", 1790000000000, format = 2), S1))
         "X6" -> codec.encode(PgbmPackage(ROM, null, S1))
         "X7" -> codec.encode(PgbmPackage(ROM, meta(sha(B), null, "android", "Pixel de prueba", 1790000000000), S1))
+        "X8" -> codec.encode(PgbmPackage(ROM, String(meta(sha(S1), null, "android", "Pixel de prueba", 1790000000000)).replace(
+            ",\"core\":", ",\"created_ms\":1790000000001,\"core\":",
+        ).toByteArray(), S1))
         "G2" -> codec.encode(PgbmPackage(ROM, null, pat(0x21, 16)))
         "G4" -> ReferencePgbmCodec.encodeRaw(listOf("ROMF" to ROM, "XTRA" to "hola!".toByteArray(), "SAVE" to pat(0x21, 16)))
         else -> error(name)

@@ -11,7 +11,11 @@ import com.joelbermudez.pocketgb.saves.StateStore
 import java.io.File
 import java.io.IOException
 
-/** El juego al que va la partida. [validSizes] `null` = no se conocen (el juego nunca se abrió): no se importa. */
+/**
+ * El juego al que va la partida. [validSizes]: tamaños de `.sav` del cartucho (los del índice o, si el juego nunca se
+ * abrió, los de la cabecera del ROM, ND20 j). [config]: configuración actual del juego en este equipo (para avisar si el
+ * estado del paquete es de otra, ND20 h).
+ */
 class ImportTarget(
     /** Huella SHA-256 completa del ROM, 64 hex en minúsculas (Android compara los 32 bytes). */
     val fingerprint: String,
@@ -19,13 +23,16 @@ class ImportTarget(
     val console: String,
     val hasBattery: Boolean,
     val validSizes: Set<Int>?,
+    val config: PgbmConfig? = null,
+    /** Nombre visible del juego (para confirmar un `.sav` crudo, ND20 e). */
+    val title: String = "",
 )
 
 /**
- * N7b · importar un `.pgbm` o un `.sav` crudo (docs/12-formato-pgbm.md §Lo que debe hacer el importador). Todas las
- * comprobaciones van ANTES de tocar nada; lo que toca la partida va bajo la propiedad exclusiva de la huella (no hay
- * sesión abierta o aparcada de ese juego, §3.3) y respalda lo actual: la escritura atómica de [SaveStore] deja la
- * anterior en `.1`, y lo que no se instala queda en backup y apartado (regla 6).
+ * N7b · importar un `.pgbm` o un `.sav` crudo (docs/12-formato-pgbm.md §Lo que debe hacer el importador; ND20). Todas las
+ * comprobaciones y preguntas van ANTES de tocar nada; lo que toca la partida va bajo la propiedad exclusiva de la huella
+ * (no hay sesión abierta o aparcada de ese juego, §3.3). Antes de instalar, la partida actual (con su estado automático)
+ * va al anillo «Antes de importar» y a una copia apartada (ND20 f); la escritura atómica la deja además en `.1` (regla 6).
  */
 class SaveImporter(
     private val savesDirectory: File,
@@ -34,8 +41,11 @@ class SaveImporter(
     private val codec: PgbmCodec = NativePgbmCodec,
     private val ops: SaveFileOps = PosixSaveFileOps,
     private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
-    /** Nombre del momento «Conflicto …» (recibe el equipo de la otra partida). */
+    /** Nombre del momento «Conflicto …» (recibe el equipo de la otra partida, o [thisDevice]). */
     private val conflictName: (device: String) -> String = { "Conflicto · $it" },
+    /** Nombre de la entrada del anillo con la partida de antes de importar (ND20 f). */
+    private val beforeImportName: String = "Antes de importar",
+    private val thisDevice: String = "este teléfono",
 ) {
     enum class Rejection {
         /** No es un `.pgbm` (mágico) ni un `.sav` que encaje. */
@@ -53,36 +63,60 @@ class SaveImporter(
         /** Es de otro juego (ROMF ≠ huella del juego) o de otra consola. */
         OTHER_GAME,
 
-        /** El juego aún no se abrió nunca aquí: no se conocen los tamaños válidos de su partida. */
+        /** No se conocen los tamaños válidos de la partida (ni índice ni cabecera legible). */
         UNKNOWN_SIZES,
 
         /** `.sav` crudo de un tamaño que el cartucho no acepta (no se toca nada). */
         WRONG_SIZE,
+
+        /** H7: la partida de aquí existe pero no se puede leer: no se instala nada encima. */
+        LOCAL_UNREADABLE,
     }
 
+    /** Respuesta a una pregunta de [Result.NeedsChoice]: con qué partida seguir, o confirmar ([USE_INCOMING]). */
     enum class Choice { KEEP_LOCAL, USE_INCOMING }
+
+    /** Qué hay que preguntar antes de tocar nada. */
+    enum class Ask {
+        /** Las dos cambiaron por separado (o el avance no se puede probar). Dos opciones. */
+        DIVERGENCE,
+
+        /** ND20 (d): la que llega ya la tuvo este equipo (historial, recibidas, copias o apartadas). Dos opciones. */
+        KNOWN,
+
+        /** ND20 (e): un `.sav` crudo siempre se confirma nombrando el juego. */
+        RAW_CONFIRM,
+
+        /** ND20 (f): el paquete trae un estado automático que sustituiría al de aquí sin cambiar la partida. */
+        REPLACE_STATE,
+
+        /** ND20 (h): el estado del paquete es de otra configuración del juego: se descartará. */
+        CONFIG_MISMATCH,
+    }
 
     sealed interface Result {
         data class Rejected(val reason: Rejection) : Result
 
         /**
          * El paquete trae una SAVE vacía o de un tamaño distinto al del cartucho (juego con batería): la partida no se
-         * toca y la actual queda además en las copias de seguridad.
+         * toca, la actual queda además en las copias y la entrante (si no está vacía) apartada (ND20 k).
          */
         data object SaveSizeMismatch : Result
 
-        /** Divergencia: las dos cambiaron por separado; no se tocó nada y hay que elegir ([Choice]). */
-        data class NeedsChoice(val otherDevice: String?) : Result
+        /** Hay que preguntar [ask]; no se tocó nada. Se vuelve a llamar con la respuesta. */
+        data class NeedsChoice(val ask: Ask, val otherDevice: String?) : Result
 
         /**
          * Hecho. [lineage] dice qué pasó con la partida; [continueFrom] = nombre del equipo si quedó el estado automático
-         * exacto del paquete («Continuar donde lo dejaste en <equipo>», ND6); [conflictMomentId] = la otra partida.
+         * exacto del paquete («Continuar donde lo dejaste en <equipo>», ND6); [conflictMomentId] = la otra partida;
+         * [meta] = los metadatos del paquete, para fusionarlos con los de aquí (ND20 i).
          */
         data class Done(
             val lineage: SaveLineage.Incoming,
             val installed: Boolean,
             val continueFrom: String?,
             val conflictMomentId: String? = null,
+            val meta: PgbmMeta? = null,
         ) : Result
     }
 
@@ -128,8 +162,11 @@ class SaveImporter(
         return Validated.Good(pkg, meta, romHex)
     }
 
-    /** Importa un `.pgbm`. Con divergencia y [choice] `null` devuelve [Result.NeedsChoice] sin tocar nada. */
-    fun importPackage(bytes: ByteArray, target: ImportTarget, choice: Choice? = null): Result {
+    /**
+     * Importa un `.pgbm`. Si hay algo que preguntar devuelve [Result.NeedsChoice] sin tocar nada; se vuelve a llamar con
+     * la respuesta: [choice] para elegir partida (divergencia o ya conocida) y [confirmed] con las confirmaciones dadas.
+     */
+    fun importPackage(bytes: ByteArray, target: ImportTarget, choice: Choice? = null, confirmed: Set<Ask> = emptySet()): Result {
         val v = when (val r = validate(bytes)) {
             is Validated.Bad -> return Result.Rejected(r.reason)
             is Validated.Good -> r
@@ -137,6 +174,13 @@ class SaveImporter(
         if (v.romHex != target.fingerprint.lowercase() || v.meta.coreName != target.console) return Result.Rejected(Rejection.OTHER_GAME)
         val sizes = target.validSizes
         if (target.hasBattery && sizes == null) return Result.Rejected(Rejection.UNKNOWN_SIZES)
+        val device = v.meta.deviceName
+        // ND20 (h): estado de otra configuración → se avisa antes de descartarlo.
+        var state = v.pkg.state?.takeIf { v.meta.stateMatchesSave }
+        if (state != null && target.config != null && v.meta.config.conflictsWith(target.config)) {
+            if (Ask.CONFIG_MISMATCH !in confirmed) return Result.NeedsChoice(Ask.CONFIG_MISMATCH, device)
+            state = null
+        }
         return ownership.withExclusive(target.fingerprint, "importación") {
             val store = SaveStore(savesDirectory, target.fingerprint, ops)
             if (sizes != null) store.recoverOrphans(sizes)
@@ -144,20 +188,28 @@ class SaveImporter(
             if (!target.hasBattery) {
                 // Sin batería no hay partida que instalar: la SAVE debe ir vacía; el estado se puede continuar igual.
                 if (sav.isNotEmpty()) return@withExclusive Result.SaveSizeMismatch
-                val cont = installState(target, v)
-                return@withExclusive Result.Done(SaveLineage.Incoming.ALREADY_CURRENT, installed = false, continueFrom = cont)
+                if (state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
+                    return@withExclusive Result.NeedsChoice(Ask.REPLACE_STATE, device)
+                }
+                val cont = state?.let { installState(target, store, null, it, device) }
+                return@withExclusive Result.Done(SaveLineage.Incoming.ALREADY_CURRENT, installed = false, continueFrom = cont, meta = v.meta)
             }
             if (sav.size !in sizes!!) {
-                // Regla 6: una SAVE vacía o de otro tamaño nunca sustituye la partida; la actual queda respaldada.
-                store.load()?.let(store::addBackup)
+                // Regla 6: una SAVE vacía o de otro tamaño nunca sustituye la partida; la actual queda respaldada y la
+                // entrante, si trae algo, apartada (ND20 k).
+                (store.inspectLocal() as? SaveStore.LocalSave.Present)?.let { store.addBackup(it.data) }
+                if (sav.isNotEmpty()) store.setAsideMirrorLoser(sav)
                 return@withExclusive Result.SaveSizeMismatch
             }
-            applyLineage(store, target, sav, v.meta.baseSavSha256, v.meta.deviceName, choice, v)
+            apply(store, target, sav, v.meta.baseSavSha256, device, choice, confirmed, v.meta, state)
         }
     }
 
-    /** Importa un `.sav` crudo (sin linaje propio: nunca trae base, así que con otra partida aquí se pregunta). */
-    fun importRawSave(bytes: ByteArray, target: ImportTarget, choice: Choice? = null): Result {
+    /**
+     * Importa un `.sav` crudo. Nunca trae base, así que con otra partida aquí se pregunta; y aunque no la haya, se
+     * confirma nombrando el juego (ND20 e): [Ask.RAW_CONFIRM].
+     */
+    fun importRawSave(bytes: ByteArray, target: ImportTarget, choice: Choice? = null, confirmed: Set<Ask> = emptySet()): Result {
         if (PgbmResult.hasMagic(bytes)) return Result.Rejected(Rejection.NOT_A_PACKAGE)
         if (!target.hasBattery) return Result.Rejected(Rejection.WRONG_SIZE)
         val sizes = target.validSizes ?: return Result.Rejected(Rejection.UNKNOWN_SIZES)
@@ -165,75 +217,128 @@ class SaveImporter(
         return ownership.withExclusive(target.fingerprint, "importación") {
             val store = SaveStore(savesDirectory, target.fingerprint, ops)
             store.recoverOrphans(sizes)
-            applyLineage(store, target, bytes, null, null, choice, null)
+            apply(store, target, bytes, null, null, choice, confirmed, null, null)
         }
     }
 
-    private fun applyLineage(
+    private fun apply(
         store: SaveStore,
         target: ImportTarget,
         sav: ByteArray,
         base: String?,
         device: String?,
         choice: Choice?,
-        pkg: Validated.Good?,
+        confirmed: Set<Ask>,
+        meta: PgbmMeta?,
+        state: ByteArray?,
     ): Result {
-        val current = try { store.load() } catch (_: IOException) { null }
+        // H7: una local ilegible no se trata como ausente; una demasiado grande se aparta (cuarentena) antes de instalar.
+        val localState = store.inspectLocal()
+        val current = when (localState) {
+            SaveStore.LocalSave.Absent, is SaveStore.LocalSave.Oversize -> null
+            is SaveStore.LocalSave.Present -> localState.data
+            is SaveStore.LocalSave.Unreadable -> return Result.Rejected(Rejection.LOCAL_UNREADABLE)
+        }
         val incomingHash = MomentStore.sha256(sav)
         val lineage = SaveLineage.classifyIncoming(current?.let(MomentStore::sha256), incomingHash, base, store.knownHashes())
-        if (lineage == SaveLineage.Incoming.DIVERGENCE && choice == null) return Result.NeedsChoice(device)
-        val moments = momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
-        fun keepAside(data: ByteArray, who: String?): String? {
-            store.setAsideMirrorLoser(data)
-            return try {
-                moments?.create(MomentStore.Capture(null, data, null), conflictName(who ?: "?"))?.id
-            } catch (_: Exception) {
-                null
-            }
+        // Preguntas, en este orden, sin tocar nada.
+        when (lineage) {
+            SaveLineage.Incoming.DIVERGENCE -> if (choice == null) return Result.NeedsChoice(Ask.DIVERGENCE, device)
+            SaveLineage.Incoming.STALE -> if (choice == null) return Result.NeedsChoice(Ask.KNOWN, device)
+            SaveLineage.Incoming.INSTALL, SaveLineage.Incoming.ADVANCE ->
+                if (meta == null && choice == null && Ask.RAW_CONFIRM !in confirmed) return Result.NeedsChoice(Ask.RAW_CONFIRM, device)
+            SaveLineage.Incoming.ALREADY_CURRENT -> Unit
         }
-        var conflict: String? = null
         val install = when (lineage) {
             SaveLineage.Incoming.INSTALL, SaveLineage.Incoming.ADVANCE -> true
             SaveLineage.Incoming.ALREADY_CURRENT -> false
-            SaveLineage.Incoming.STALE -> {
-                store.addBackup(sav) // ya la tuvimos: no se instala, pero tampoco se pierde
-                false
-            }
-            SaveLineage.Incoming.DIVERGENCE -> if (choice == Choice.USE_INCOMING) {
-                conflict = keepAside(current!!, null)
-                true
-            } else {
-                conflict = keepAside(sav, device)
-                store.addBackup(sav)
-                false
-            }
-        }
-        if (install) {
-            store.save(sav) // escritura atómica: la actual pasa a `.1`
-            store.recordReceived(sav)
-            if (pkg != null) {
-                store.recordOrigin(SaveStore.Origin(incomingHash, pkg.meta.devicePlatform, pkg.meta.deviceName, pkg.meta.createdMs))
-            }
+            SaveLineage.Incoming.STALE, SaveLineage.Incoming.DIVERGENCE -> choice == Choice.USE_INCOMING
         }
         val saveIsIncoming = install || lineage == SaveLineage.Incoming.ALREADY_CURRENT
-        val cont = if (pkg != null && saveIsIncoming) installState(target, pkg) else null
-        return Result.Done(lineage, install, cont, conflict)
+        // ND20 (f): el estado del paquete sustituiría al AUTO de aquí sin cambiar la partida → confirmar.
+        if (!install && saveIsIncoming && state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
+            return Result.NeedsChoice(Ask.REPLACE_STATE, device)
+        }
+        val moments = momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
+        var conflict: String? = null
+        if (!install) {
+            if (lineage == SaveLineage.Incoming.DIVERGENCE || lineage == SaveLineage.Incoming.STALE) {
+                // Se queda la de aquí: la que llega no se pierde (backup, apartada y, en divergencia, momento «Conflicto»).
+                store.addBackup(sav)
+                store.setAsideMirrorLoser(sav)
+                if (lineage == SaveLineage.Incoming.DIVERGENCE) conflict = conflictMoment(moments, sav, null, null, device ?: thisDevice)
+            }
+            val cont = if (saveIsIncoming && state != null && device != null) installState(target, store, current, state, device) else null
+            return Result.Done(lineage, installed = false, continueFrom = cont, conflictMomentId = conflict, meta = meta)
+        }
+        if (localState is SaveStore.LocalSave.Oversize) store.quarantineCurrent()
+        val auto = readAuto(StateStore(statesRoot, target.fingerprint, ops))
+        var pending: MomentStore.PendingPush? = null
+        if (current != null) {
+            // ND20 (f): la actual (con su AUTO) al anillo «Antes de importar» (las expulsadas se borran solo tras
+            // confirmar la instalación) y a una copia apartada que no rota.
+            pending = try {
+                moments?.pushBeforeLoadDeferred(MomentStore.Capture(auto?.first, current, auto?.second), beforeImportName)
+            } catch (_: Exception) {
+                null
+            }
+            store.setAsideMirrorLoser(current)
+            if (lineage == SaveLineage.Incoming.DIVERGENCE || lineage == SaveLineage.Incoming.STALE) {
+                conflict = conflictMoment(moments, current, auto?.first, auto?.second, thisDevice)
+            }
+        }
+        store.save(sav) // escritura atómica: la actual pasa a `.1`
+        pending?.commit()
+        store.recordReceived(sav)
+        if (meta != null) store.recordOrigin(SaveStore.Origin(incomingHash, meta.devicePlatform, meta.deviceName, meta.createdMs))
+        val cont = if (state != null && device != null) {
+            installState(target, store, null, state, device, alreadyRinged = current != null)
+        } else {
+            null
+        }
+        return Result.Done(lineage, installed = true, continueFrom = cont, conflictMomentId = conflict, meta = meta)
+    }
+
+    private fun hasAuto(target: ImportTarget) = ops.exists(StateStore(statesRoot, target.fingerprint, ops).stateFile(StateSlot.AUTO))
+
+    private fun readAuto(states: StateStore): Pair<ByteArray, ByteArray?>? {
+        if (!ops.exists(states.stateFile(StateSlot.AUTO))) return null
+        val state = try { states.load(StateSlot.AUTO) } catch (_: IOException) { return null }
+        val thumb = try { ops.readBytes(states.thumbnailFile(StateSlot.AUTO), StateStore.MAX_THUMBNAIL_BYTES) } catch (_: IOException) { null }
+        return state to thumb
+    }
+
+    /** ND20 (k): el momento «Conflicto» lleva la partida y, si es la de aquí, su estado y su miniatura. */
+    private fun conflictMoment(moments: MomentStore?, sram: ByteArray, state: ByteArray?, thumb: ByteArray?, who: String): String? = try {
+        moments?.create(MomentStore.Capture(state, sram, thumb), conflictName(who))?.id
+    } catch (_: Exception) {
+        null
     }
 
     /**
-     * Instala `STAT` como estado automático solo si es exactamente el de la partida que queda (ND6). El anterior se
-     * aparta (nunca se borra). El núcleo lo valida entero al continuar (`gb_state_load` / `gba_state_load`): si no vale,
-     * la partida sigue intacta y «Continuar» lo rechaza como cualquier estado obsoleto.
+     * Instala `STAT` como estado automático (solo se llama si es exactamente el de la partida que queda, ND6). El AUTO de
+     * aquí nunca se pisa sin copia (ND20 f): si no entró ya en el anillo con la partida, entra ahora junto con
+     * [currentSav]; además se aparta. El núcleo valida el estado entero al continuar.
      */
-    private fun installState(target: ImportTarget, v: Validated.Good): String? {
-        val state = v.pkg.state ?: return null
-        if (!v.meta.stateMatchesSave) return null
+    private fun installState(
+        target: ImportTarget,
+        store: SaveStore,
+        currentSav: ByteArray?,
+        state: ByteArray,
+        device: String,
+        alreadyRinged: Boolean = false,
+    ): String? {
         val states = StateStore(statesRoot, target.fingerprint, ops)
         return try {
+            val auto = readAuto(states)
+            if (auto != null && !alreadyRinged) {
+                momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
+                    ?.pushBeforeLoad(MomentStore.Capture(auto.first, currentSav ?: store.load(), auto.second), beforeImportName)
+            }
             states.setAsideAuto()
             states.save(state, null, StateSlot.AUTO)
-            v.meta.deviceName
-        } catch (_: IOException) {
+            device
+        } catch (_: Exception) {
             null
         }
     }

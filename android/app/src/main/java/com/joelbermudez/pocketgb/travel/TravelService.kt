@@ -13,6 +13,7 @@ import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.progress.ProgressService
+import com.joelbermudez.pocketgb.settings.GameplaySettingsRepository
 import com.joelbermudez.pocketgb.saves.SavesIndex
 import java.io.File
 import java.io.IOException
@@ -27,21 +28,76 @@ class TravelService(private val context: Context) {
     private val statesRoot = File(context.filesDir, "states")
     private val momentsRoot = File(context.filesDir, "moments")
 
-    val importer = SaveImporter(savesDirectory, statesRoot, momentsRoot, conflictName = { device ->
-        context.getString(R.string.n7_conflict_moment, device)
-    })
+    val importer = SaveImporter(
+        savesDirectory, statesRoot, momentsRoot,
+        conflictName = { device -> context.getString(R.string.n7_conflict_moment, device) },
+        beforeImportName = context.getString(R.string.n7_before_import),
+        thisDevice = context.getString(R.string.n7_this_device),
+    )
+
+    /** ND20 (i): fusiona los metadatos del paquete con los de aquí (etiquetas, alias, tiempo y hitos). */
+    fun mergeMetadata(entry: RomEntry, fingerprint: String, meta: PgbmMeta, library: com.joelbermudez.pocketgb.library.LibraryViewModel) {
+        val prefs = library.prefs.value
+        val store = ProgressService.shared(context).store
+        val merged = MetadataMerge.merge(prefs.aliasOf(entry), prefs.tagsOf(entry), store.load(fingerprint), meta)
+        if (merged.alias != null && prefs.aliasOf(entry) == null) library.setAlias(entry, merged.alias)
+        merged.tags.filter { t -> prefs.tagsOf(entry).none { it.equals(t, ignoreCase = true) } }.forEach { library.addTag(entry, it) }
+        store.update(fingerprint) { it.copy(playTimeMs = merged.playTimeMs, milestones = merged.milestones) }
+    }
     val exporter = SaveExporter(savesDirectory, statesRoot)
 
     fun target(entry: RomEntry, fingerprint: String): ImportTarget {
         val record = SavesIndex(savesDirectory).load()[fingerprint]
+        // ND20 (j): un juego que nunca se abrió aquí no tiene registro: los tamaños salen de la cabecera del ROM.
+        val fromHeader = if (record == null) headerSizes(entry) else null
+        val sizes = record?.validSizes?.toSet() ?: fromHeader?.takeIf { it.isNotEmpty() }
         return ImportTarget(
             fingerprint = fingerprint,
             console = consoleName(entry),
-            // Sin registro el juego no se abrió nunca: no se sabe si tiene batería ni sus tamaños, el importador lo rechaza.
-            hasBattery = record == null || record.validSizes != null,
-            validSizes = record?.validSizes?.toSet(),
+            hasBattery = if (record != null) record.validSizes != null else fromHeader?.isNotEmpty() ?: true,
+            validSizes = sizes,
+            config = config(entry, fingerprint),
+            title = entry.alias ?: entry.title,
         )
     }
+
+    /** Tamaños de `.sav` según la cabecera del ROM (cargándolo en un núcleo suelto, sin sesión); `null` si no se puede. */
+    private fun headerSizes(entry: RomEntry): Set<Int>? = try {
+        val rom = com.joelbermudez.pocketgb.library.ContentResolverRomSource(context.contentResolver)
+            .read(entry.uri, com.joelbermudez.pocketgb.library.LibraryScanner.romLimit(entry.console).toInt() + 1)
+        com.joelbermudez.pocketgb.emulator.CoreBridge(entry.console.core).use { core ->
+            val info = if (entry.console.core == Console.GBA) {
+                core.loadGbaRom(rom, GameplaySettingsRepository.shared(context).gbaOptionsProvider()(sha256(rom)))
+            } else {
+                core.loadRom(rom)
+            }
+            if (info.hasBattery || info.console == Console.GBA) com.joelbermudez.pocketgb.saves.SaveSizes.forInfo(info) else emptySet()
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** ND20 (h): la configuración del juego en este equipo, en los términos de META v1. */
+    fun config(entry: RomEntry, fingerprint: String): PgbmConfig = try {
+        val settings = GameplaySettingsRepository.shared(context)
+        if (entry.console.core == Console.GBA) {
+            val o = settings.gbaOptionsProvider()(fingerprint)
+            PgbmConfig(gbaSaveType = o.saveType.name.lowercase(), gbaRtc = o.rtc.name.lowercase(), gbaBios = o.useBios)
+        } else {
+            // Paridad con iOS: el modelo con el que corre de verdad, «dmg» o «cgb» (nunca «auto»): un ROM CGB o el color
+            // de Game Boy activado = «cgb». Hace falta el byte 0x143 de la cabecera.
+            val head = com.joelbermudez.pocketgb.library.ContentResolverRomSource(context.contentResolver).read(entry.uri, 0x150)
+            val isCgbRom = head.size > 0x143 && (head[0x143].toInt() and 0x80) != 0
+            val o = settings.emulationProvider()(fingerprint, isCgbRom)
+            val model = if (o.model == com.joelbermudez.pocketgb.emulator.GbModel.DMG) "dmg" else "cgb"
+            PgbmConfig(model = model, compatPalette = o.compatPalette.toString())
+        }
+    } catch (_: Exception) {
+        PgbmConfig()
+    }
+
+    private fun sha256(b: ByteArray) =
+        java.security.MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
 
     fun exportInfo(entry: RomEntry, fingerprint: String, prefs: LibraryPreferencesData): SaveExporter.Info {
         val progress = try { ProgressService.shared(context).store.load(fingerprint) } catch (_: Exception) { null }
@@ -55,6 +111,7 @@ class TravelService(private val context: Context) {
             tags = prefs.tagsOf(entry).takeIf { it.isNotEmpty() },
             playTimeMs = progress?.playTimeMs?.takeIf { it > 0 },
             milestones = progress?.milestones?.takeIf { it.isNotEmpty() }?.map { PgbmMeta.Milestone(it.id, it.title, it.done) },
+            config = config(entry, fingerprint),
         )
     }
 

@@ -24,7 +24,7 @@ data class PgbmMeta(
     val createdMs: Long,
     val coreName: String,
     val coreVersion: String,
-    val config: Map<String, JsonPrimitive> = emptyMap(),
+    val config: PgbmConfig = PgbmConfig(),
     val stateOfSavSha256: String? = null,
     val playTimeMs: Long? = null,
     val title: String? = null,
@@ -50,7 +50,7 @@ data class PgbmMeta(
         put("device", buildJsonObject { put("platform", devicePlatform); put("name", deviceName) })
         put("created_ms", createdMs)
         put("core", buildJsonObject { put("name", coreName); put("version", coreVersion) })
-        if (config.isNotEmpty()) put("config", JsonObject(config))
+        if (!config.isEmpty) put("config", config.toJson())
         stateOfSavSha256?.let { put("state_of_sav_sha256", it.lowercase(Locale.ROOT)) }
         playTimeMs?.let { put("play_time_ms", it) }
         title?.let { put("title", it) }
@@ -74,7 +74,7 @@ data class PgbmMeta(
     companion object {
         const val FORMAT = 1
         private const val MAX_INT = (1L shl 53) - 1
-        private val HEX64 = Regex("[0-9a-fA-F]{64}")
+        private val HEX64 = Regex("[0-9a-fA-F]{64}") // solo ASCII (ND20 h)
         private val INT = Regex("0|[1-9][0-9]{0,15}")
         private val PLATFORMS = setOf("ios", "android")
         private val CORES = setOf("gb", "gba")
@@ -84,11 +84,14 @@ data class PgbmMeta(
         fun parse(bytes: ByteArray): PgbmMeta {
             if (bytes.isEmpty() || bytes.size > 65_536) throw Invalid("longitud")
             if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) throw Invalid("BOM")
+            val text = bytes.toString(Charsets.UTF_8)
             val root = try {
-                json.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? JsonObject
+                json.parseToJsonElement(text) as? JsonObject
             } catch (_: Exception) {
                 null
             } ?: throw Invalid("no es un objeto JSON")
+            // ND20 (h): una clave repetida en cualquier objeto hace la META inválida (kotlinx se quedaría con la última).
+            if (hasDuplicateKeys(text)) throw Invalid("clave repetida")
             val format = int(root, "format") ?: throw Invalid("format")
             if (format != FORMAT.toLong()) throw Invalid("format $format", newerFormat = format > FORMAT)
             val rom = hex(root, "rom_sha256") ?: throw Invalid("rom_sha256")
@@ -106,8 +109,8 @@ data class PgbmMeta(
             val coreName = str(core, "name", 8)?.takeIf { it in CORES } ?: throw Invalid("core.name")
             val coreVersion = optStr(core, "version", 32) ?: ""
             val config = when (val c = root["config"]) {
-                null -> emptyMap()
-                is JsonObject -> c.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.let { k to it } }.toMap()
+                null -> PgbmConfig()
+                is JsonObject -> PgbmConfig.parse(c) ?: throw Invalid("config")
                 else -> throw Invalid("config")
             }
             val stateOf = when (root["state_of_sav_sha256"]) {
@@ -144,6 +147,38 @@ data class PgbmMeta(
                 playTimeMs = playTime, title = optStr(root, "title", 256), alias = optStr(root, "alias", 256), tags = tags,
                 milestones = milestones, moment = moment, format = format.toInt(),
             )
+        }
+
+        /**
+         * ¿Algún objeto repite una clave? Recorre el JSON (ya validado por kotlinx) con una pila de objetos y compara las
+         * claves YA decodificadas (`"a"` y `"\u0061"` son la misma).
+         */
+        internal fun hasDuplicateKeys(text: String): Boolean {
+            class Frame(val isObject: Boolean) { val keys = HashSet<String>(); var expectKey = isObject }
+            val stack = ArrayDeque<Frame>()
+            var i = 0
+            while (i < text.length) {
+                when (text[i]) {
+                    '{' -> stack.addLast(Frame(true))
+                    '[' -> stack.addLast(Frame(false))
+                    '}', ']' -> stack.removeLastOrNull()
+                    ',' -> stack.lastOrNull()?.let { if (it.isObject) it.expectKey = true }
+                    ':' -> stack.lastOrNull()?.expectKey = false
+                    '"' -> {
+                        var j = i + 1
+                        while (j < text.length && text[j] != '"') j += if (text[j] == '\\') 2 else 1
+                        val top = stack.lastOrNull()
+                        if (top != null && top.isObject && top.expectKey) {
+                            val key = json.decodeFromString(kotlinx.serialization.serializer<String>(), text.substring(i, j + 1))
+                            if (!top.keys.add(key)) return true
+                        }
+                        i = j
+                    }
+                    else -> Unit
+                }
+                i++
+            }
+            return false
         }
 
         private fun int(o: JsonObject, key: String): Long? {

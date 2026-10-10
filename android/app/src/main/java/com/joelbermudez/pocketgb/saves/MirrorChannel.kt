@@ -23,7 +23,7 @@ class MirrorChannelRegistry {
  * Portado de `MirrorChannel` de iOS.
  */
 class MirrorChannel internal constructor(fingerprint: String) {
-    class Request(val data: ByteArray, val store: SaveStore, val writer: (ByteArray) -> Long?)
+    class Request(val data: ByteArray, val store: SaveStore, val location: String? = null, val writer: (ByteArray) -> Long?)
 
     // Un solo hilo daemon por huella; se libera tras 5 s de inactividad.
     private val executor = ThreadPoolExecutor(1, 1, 5, TimeUnit.SECONDS, LinkedBlockingQueue()) { r ->
@@ -188,7 +188,7 @@ class MirrorChannel internal constructor(fingerprint: String) {
                 // próxima apertura aún reconoce el contenido como propio.
                 request.store.recordMirrorAttempt(request.data)
                 val observedDate = request.writer(request.data)
-                request.store.recordSuccessfulMirror(request.data, observedDate)
+                request.store.recordSuccessfulMirror(request.data, observedDate, request.location)
                 synchronized(lock) { inFlight = null }
             } catch (error: Throwable) {
                 // Throwable, no solo Exception: un Error (p. ej. OutOfMemoryError o un fallo del proveedor) no puede
