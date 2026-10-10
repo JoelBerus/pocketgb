@@ -21,7 +21,7 @@ PocketGB solo usa el estado automático si corresponde a tu partida actual. No l
 - el estado está dañado;
 - tu partida no se pudo leer o tiene un tamaño que el juego no acepta (en ese caso PocketGB ni siquiera lo compara y lo deja como está).
 
-En esos casos verás **«No se pudo continuar»** con el motivo y el botón **Jugar desde el inicio**. No se pierde nada: PocketGB no escribe tu partida al comprobarlo. En Android, si el estado ya no corresponde a tu partida, lo aparta en vez de borrarlo, y nunca pisa uno apartado antes.
+En esos casos verás **«No se pudo continuar»** con el motivo y el botón **Jugar desde el inicio**. No se pierde nada: PocketGB no escribe tu partida al comprobarlo. Si el estado ya no corresponde a tu partida, PocketGB lo aparta en vez de borrarlo (en iPhone y en Android), y nunca pisa uno apartado antes. Si es de otra configuración, se conserva tal cual.
 
 ## «Jugar desde el inicio»
 
