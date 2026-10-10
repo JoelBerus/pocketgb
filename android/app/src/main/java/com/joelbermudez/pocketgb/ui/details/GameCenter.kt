@@ -95,6 +95,10 @@ internal fun CenterSectionHeader(text: String) {
 @Composable
 internal fun GameCenterRows(center: GameCenterState) {
     CategoryRow(center)
+    com.joelbermudez.pocketgb.ui.tips.TipCard(
+        com.joelbermudez.pocketgb.tips.Tip.CATEGORY,
+        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+    )
     TagsRow(center)
     val cover = center.cover
     if (cover != null) {

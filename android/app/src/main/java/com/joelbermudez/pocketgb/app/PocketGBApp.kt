@@ -85,7 +85,12 @@ fun PocketGBApp(
             onMergeMetadata = { entry, fingerprint, meta -> service.mergeMetadata(entry, fingerprint, meta, library) },
         )
     }
-    androidx.compose.runtime.CompositionLocalProvider(com.joelbermudez.pocketgb.ui.travel.LocalTravelEnvironment provides travel) {
+    // N9: consejos descartables; el descarte se guarda en el dispositivo (`shared_prefs/tips.xml`).
+    val tips = remember(appContext) { com.joelbermudez.pocketgb.tips.TipsState(com.joelbermudez.pocketgb.tips.SharedPreferencesTipsStorage(appContext)) }
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.joelbermudez.pocketgb.ui.travel.LocalTravelEnvironment provides travel,
+        com.joelbermudez.pocketgb.tips.LocalTips provides tips,
+    ) {
         GameplayRoot(gameplay) {
             AppContent(navigationState, appearance, appearanceRepository, library, gameplay, gameplaySettings)
             IncomingRoute(incomingUri, library, onIncomingHandled)
@@ -308,6 +313,7 @@ private fun AppContent(
                             onLibrary = { navigationState.push(SettingsRoute.Library) },
                             onSaves = { navigationState.push(SettingsRoute.Saves) },
                             onAbout = { navigationState.push(SettingsRoute.About) },
+                            onGuide = { navigationState.push(SettingsRoute.Guide) },
                         )
                     }
                     SettingsRoute.Appearance -> NavEntry(route) {
@@ -365,6 +371,19 @@ private fun AppContent(
                     }
                     SettingsRoute.SettingsLicenses -> NavEntry(route) {
                         LicensesScreen(onBack = { navigationState.pop() })
+                    }
+                    SettingsRoute.Guide -> NavEntry(route) {
+                        com.joelbermudez.pocketgb.ui.guide.GuideScreen(
+                            onOpenSection = { id, anchor -> navigationState.push(SettingsRoute.GuideSection(id, anchor)) },
+                            onBack = { navigationState.pop() },
+                        )
+                    }
+                    is SettingsRoute.GuideSection -> NavEntry(route) {
+                        com.joelbermudez.pocketgb.ui.guide.GuideSectionScreen(
+                            route.sectionId, route.anchor,
+                            onOpenSection = { id, anchor -> navigationState.push(SettingsRoute.GuideSection(id, anchor)) },
+                            onBack = { navigationState.pop() },
+                        )
                     }
                 }
             },

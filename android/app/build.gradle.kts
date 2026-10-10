@@ -52,6 +52,35 @@ tasks.configureEach {
     if (name != "copyScreenManifest" && (name.contains("AndroidTest") || name.startsWith("lint"))) dependsOn(copyScreenManifest)
 }
 
+// N9: la guía de la app (Ajustes › Guía) sale de docs/guia, una sola fuente. Se empaqueta como assets/guide/*.md en
+// todas las variantes (Debug y Release) y se pinta de forma nativa; nada es remoto.
+abstract class CopyGuideTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val out = outputDir.get().asFile.resolve("guide")
+        out.deleteRecursively()
+        out.mkdirs()
+        sources.files.forEach { it.copyTo(out.resolve(it.name), overwrite = true) }
+    }
+}
+val copyGuideAssets = tasks.register<CopyGuideTask>("copyGuideAssets") {
+    sources.from(
+        fileTree(layout.projectDirectory.dir("../../docs/guia")) {
+            include("*-android.md", "partidas-continuar-y-renombrar.md")
+        },
+    )
+}
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(copyGuideAssets, CopyGuideTask::outputDir) }
+}
+
 // N8: ROMs libres de GBA para los instrumentados JNI, solo si ya están en disco (nunca se versionan, regla dura 1):
 // jsmolka/gba-tests (MIT, tools/fetch-gba-test-roms.sh --solo-jsmolka) y las homebrew propias de gba/tests/homebrew
 // (MIT, make -C gba homebrew). Los tests que las necesitan se saltan con un aviso si faltan.

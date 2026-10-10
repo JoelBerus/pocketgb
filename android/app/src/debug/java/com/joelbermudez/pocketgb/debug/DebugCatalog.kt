@@ -173,7 +173,8 @@ internal val catalogScreens: Map<String, @Composable (DebugIntent) -> Unit> =
         n4CatalogScreens + n8CatalogScreens +
         com.joelbermudez.pocketgb.debug.catalog.n5CatalogScreens +
         com.joelbermudez.pocketgb.debug.catalog.n6CatalogScreens +
-        com.joelbermudez.pocketgb.debug.catalog.n7CatalogScreens
+        com.joelbermudez.pocketgb.debug.catalog.n7CatalogScreens +
+        com.joelbermudez.pocketgb.debug.catalog.n9CatalogScreens
 
 @Composable
 internal fun DebugCatalog(intent: DebugIntent) {

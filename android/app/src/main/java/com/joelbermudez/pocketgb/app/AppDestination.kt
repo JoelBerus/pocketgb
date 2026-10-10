@@ -102,4 +102,12 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object SettingsLicenses : SettingsRoute
+
+    /** N9: Ajustes › Guía (buscador y secciones). */
+    @Serializable
+    data object Guide : SettingsRoute
+
+    /** N9: una sección de la guía; [anchor] = apartado al que abrir desplazada. */
+    @Serializable
+    data class GuideSection(val sectionId: String, val anchor: String? = null) : SettingsRoute
 }

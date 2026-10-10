@@ -82,6 +82,9 @@ fun ControlsSettingsContent(
                 tag = "controls-dpad",
             )
         }
+        if (data.dpadStyle == DpadStyle.ARROWS) {
+            com.joelbermudez.pocketgb.ui.tips.TipCard(com.joelbermudez.pocketgb.tips.Tip.ARROWS)
+        }
         DiagonalsGroup(data, onUpdate)
         SettingsGroup(header = stringResource(R.string.controls_group_header)) {
             ChoiceRow(

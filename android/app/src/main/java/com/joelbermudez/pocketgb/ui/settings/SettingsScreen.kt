@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.StayCurrentPortrait
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -49,6 +50,8 @@ fun SettingsScreen(
     onAudio: () -> Unit = {},
     onDisplay: () -> Unit = {},
     onStorage: () -> Unit = {},
+    /** N9: Ajustes › Guía. */
+    onGuide: () -> Unit = {},
 ) {
     val groups = listOf(
         R.string.settings_group_game to listOf(
@@ -64,6 +67,7 @@ fun SettingsScreen(
         ),
         null to listOf(
             SettingEntry(R.string.settings_appearance, Icons.Outlined.Palette, onAppearance),
+            SettingEntry(R.string.n9_settings_guide, Icons.AutoMirrored.Outlined.MenuBook, onGuide),
             SettingEntry(R.string.settings_about, Icons.Outlined.Info, onAbout),
         ),
     )
