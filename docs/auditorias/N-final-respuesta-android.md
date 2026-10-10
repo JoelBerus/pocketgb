@@ -81,3 +81,6 @@ Primera pasada (`dfcaa88`, árbol limpio `nfin/clean`): JVM 834/834, lint 0 erro
 - [05-android-spec](../05-android-spec.md): resumen de estos cambios en «Partidas que viajan».
 - [viajar-android](../guia/viajar-android.md): «Continuar donde lo dejaste en…» en el detalle, «Mantener el mío», búsqueda por nombre exacto en «Abrir con», cabecera siempre, copias en conflicto al escanear (con el formato inglés de Dropbox).
 - [carpetas-android](../guia/carpetas-android.md): `Juego.gb` + `Juego.gba` también comparten `.sav`.
+
+## Añadido: AUTO idéntico (`888e2d9`)
+Desde limpio (`git archive` de `888e2d9`, `scratchpad/nfin/clean3`): `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest` → BUILD SUCCESSFUL; JVM 835/835; lint 0 errores, 20 avisos. Instrumentadas de viaje: `TravelUiTest` OK (4 tests), `PgbmNativeTest` OK (3 tests).
