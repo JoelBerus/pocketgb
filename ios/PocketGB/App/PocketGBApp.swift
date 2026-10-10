@@ -95,11 +95,11 @@ struct RootView: View {
             Text(state.alertMessage ?? "")
         }
         // N7a · divergencia: se pregunta antes de cargar nada; las dos partidas se conservan.
-        .confirmationDialog("Dos partidas distintas", isPresented: Binding(
-            get: { state.divergencePrompt != nil }, set: { if !$0 { state.divergencePrompt = nil } }),
-                            titleVisibility: .visible) {
+        // Alerta (no hoja de acciones) para que «Cancelar» se vea siempre, como en Android: no abre el juego.
+        .alert("Dos partidas distintas", isPresented: Binding(
+            get: { state.divergencePrompt != nil }, set: { if !$0 { state.divergencePrompt = nil } })) {
             Button("Seguir con la de este iPhone") { state.resolveDivergence(.keepLocal) }
-            Button("Usar la de junto al juego") { state.resolveDivergence(.useOther) }
+            Button("Usar la del otro equipo") { state.resolveDivergence(.useOther) }
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text(state.divergencePrompt?.message ?? "")

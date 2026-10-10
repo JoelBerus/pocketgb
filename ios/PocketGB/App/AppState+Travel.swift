@@ -199,7 +199,7 @@ extension AppState {
             default: break
             }
             // ND20 (h): un estado de otra configuración puede no cargar; se avisa (el estado no se borra).
-            let differences = plan.meta?.config?.differences(from: PackageConfig(emulationOptions(entry), console: entry.console)) ?? []
+            let differences = plan.meta?.config?.differences(from: PackageConfig(emulationOptions(entry), console: entry.console, isColorROM: entry.isColor)) ?? []
             let configNote = plan.continuation != nil && !differences.isEmpty
                 ? " Ojo: en \(plan.origin ?? "el otro equipo") se jugó con otra configuración (\(differences.joined(separator: ", "))). Cámbiala en los ajustes del juego para continuar justo donde lo dejaste; si no, el punto para continuar puede no cargar (tu partida sí)."
                 : ""
@@ -262,6 +262,7 @@ extension AppState {
         let savesDirectory = storageDirectories.saves
         let meta = libraryPrefs.data.metadata(entry)
         let title = entry.title
+        let isColor = entry.isColor
         let fingerprint = libraryPrefs.fingerprint(of: entry)
         let progress = progress.progress(fingerprint)
         let device = SaveExport.deviceName
@@ -274,7 +275,7 @@ extension AppState {
                                        alias: meta.alias, tags: meta.tags,
                                        playTime: progress.playTime > 0 ? progress.playTime : nil,
                                        milestones: progress.milestones.map { .init(id: $0.id, title: $0.title, done: $0.done) },
-                                       config: PackageConfig(emulation, console: console))
+                                       config: PackageConfig(emulation, console: console, isColorROM: isColor))
             return try SaveExport.package(game, store: store, states: states, deviceName: device)
         }.value
     }

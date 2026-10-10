@@ -237,6 +237,7 @@ enum SaveImport {
                     case nil:
                         return .needsStateChoice
                     case .keepLocal?:
+                        if let current { try store.keepMirrorLoser(current, now: now) }   // decisión Android (4)
                         _ = try? moments?.create(.init(state: state, sram: current, thumbnail: plan.thumbnail),
                                                  name: SaveOpening.conflictName(now))
                         return .keptLocal
@@ -244,6 +245,8 @@ enum SaveImport {
                         break
                     }
                 }
+                // Decisión Android (4): al importar, la partida actual siempre queda apartada.
+                if let current { try store.keepMirrorLoser(current, now: now) }
                 let c = try installContinuation()
                 if let current, !plan.batteryless { try? store.recordReceived(current) }   // ND20 (b, g)
                 recordOrigin(c)
@@ -252,7 +255,10 @@ enum SaveImport {
             }
             guard let incoming = plan.save else {
                 // Partida vacía o de otro tamaño: el `.sav` no se toca; lo actual queda además como copia.
-                if let current { try store.addBackup(current) }
+                if let current {
+                    try store.addBackup(current)
+                    try store.keepMirrorLoser(current, now: now)   // decisión Android (4)
+                }
                 if !plan.incoming.isEmpty { try store.keepMirrorLoser(plan.incoming, now: now) }
                 return .saveNotTouched
             }
@@ -262,11 +268,14 @@ enum SaveImport {
                     return .needsChoice
                 case .keepLocal?:
                     try store.keepMirrorLoser(incoming, now: now)
+                    if let current { try store.keepMirrorLoser(current, now: now) }   // decisión Android (4)
+                    // Decisión Android (5): una partida ya conocida («más antigua») va a copias, sin «Conflicto».
+                    guard plan.relation != .older else { return .keptLocal }
                     _ = try? moments?.create(.init(state: plan.continuation, sram: incoming, thumbnail: plan.thumbnail),
                                              name: SaveOpening.conflictName(now))
                     return .keptLocal
                 case .useOther?:
-                    if let current, !plan.raw {
+                    if let current, !plan.raw, plan.relation != .older {
                         let thumb = ownAuto == nil ? nil : states.flatMap { try? Data(contentsOf: $0.thumbnailURL(.auto)) }
                         _ = try? moments?.create(.init(state: ownAuto, sram: current, thumbnail: thumb),
                                                  name: SaveOpening.conflictName(now))

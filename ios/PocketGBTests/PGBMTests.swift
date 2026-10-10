@@ -461,4 +461,41 @@ struct PGBMTests {
         let m2 = MetadataMerge.merge(kept, with: meta)
         #expect(m2.alias == "Mío" && m2.playTime == 99_999)
     }
+
+    // MARK: Decisiones comunes con Android (integración de N7 Android)
+
+    /// (5) Paquete ya conocido («más antiguo»): la no elegida va a copias apartadas, sin momento «Conflicto».
+    /// (4) La partida actual siempre queda apartada.
+    @Test func knownOlderPackageGoesToCopiesWithoutConflictMoment() throws {
+        let e = env()
+        try e.store.save(S1)
+        try e.store.save(S2)                      // S1 queda en backups: ya conocida
+        #expect(try run(try x1, e) == .needsChoice)
+        #expect(try run(try x1, e, choice: .keepLocal) == .keptLocal)
+        #expect(try e.store.load() == S2)
+        #expect(((try? e.moments.snapshot().moments) ?? []).isEmpty)
+        let kept = e.store.keptCopies().compactMap { try? Data(contentsOf: $0.url) }
+        #expect(kept.contains(S1) && kept.contains(S2))
+    }
+
+    @Test func importAlwaysKeepsCurrentAside() throws {
+        let e = env()
+        try e.store.save(S1)
+        #expect(try run(try x1, e) == .alreadyCurrent(continuation: true))   // misma partida
+        #expect(e.store.keptCopies().contains { (try? Data(contentsOf: $0.url)) == S1 })
+        let f = env()
+        try f.store.save(S1)
+        #expect(try run(try x3, f) == .saveNotTouched)
+        #expect(f.store.keptCopies().contains { (try? Data(contentsOf: $0.url)) == S1 })
+    }
+
+    /// (3) Solo cuentan model, gba_save_type, gba_rtc y gba_bios; un ROM CGB es siempre "cgb".
+    @Test func configConflictIgnoresPaletteAndUsesCGBFlag() {
+        let dmgOpts = EmulationOptions(colorForGameBoy: false, compatPalette: 0)
+        #expect(PackageConfig(dmgOpts, console: .gameBoy).model == "dmg")
+        #expect(PackageConfig(dmgOpts, console: .gameBoy, isColorROM: true).model == "cgb")
+        let a = PackageConfig(EmulationOptions(colorForGameBoy: true, compatPalette: 1), console: .gameBoy)
+        let b = PackageConfig(EmulationOptions(colorForGameBoy: true, compatPalette: 5), console: .gameBoy)
+        #expect(a.differences(from: b).isEmpty)
+    }
 }

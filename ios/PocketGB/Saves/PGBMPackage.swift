@@ -187,6 +187,10 @@ struct PackageMeta: Equatable, Sendable {
         if let config = root["config"], !(config is NSNull) {
             guard let c = config as? [String: Any] else { throw Invalid.field("config") }
             // Tipos del esquema (ND20 h): un tipo o valor erróneo hace la META inválida; las claves desconocidas se ignoran.
+            // Como Android: una clave de `config` presente con `null` es un tipo erróneo.
+            for (key, value) in c where value is NSNull && ["model", "compat_palette", "gba_save_type", "gba_rtc", "gba_bios"].contains(key) {
+                throw Invalid.field("config.\(key)")
+            }
             func choice(_ key: String, _ allowed: [String]) throws -> String? {
                 guard let v = try string(c[key], "config.\(key)", max: 16) else { return nil }
                 guard allowed.contains(v) else { throw Invalid.field("config.\(key)") }
@@ -290,10 +294,12 @@ struct PackageConfig: Equatable, Sendable {
     init() {}
 
     /// La configuración efectiva de un juego en este iPhone, en los términos del esquema.
-    init(_ options: EmulationOptions, console: Console) {
+    /// - Parameter isColorROM: ROM de Game Boy Color (bit 7 de 0x143). Con él, o con «Color en juegos de Game Boy»,
+    ///   el modelo es `"cgb"`; si no, `"dmg"` (docs/12 «Valores de config»; nunca `"auto"`).
+    init(_ options: EmulationOptions, console: Console, isColorROM: Bool = false) {
         switch console {
         case .gameBoy:
-            model = options.colorForGameBoy ? "cgb" : "dmg"
+            model = isColorROM || options.colorForGameBoy ? "cgb" : "dmg"
             compatPalette = String(options.compatPalette)
         case .gameBoyAdvance:
             gbaSaveType = Self.gbaSaveTypes[safe: Int(options.gbaSaveType)] ?? "auto"
@@ -317,7 +323,7 @@ struct PackageConfig: Equatable, Sendable {
     func differences(from local: PackageConfig) -> [String] {
         var out: [String] = []
         if let model, model != "auto", let l = local.model, l != model { out.append("el color de Game Boy") }
-        if let compatPalette, let l = local.compatPalette, l != compatPalette { out.append("la paleta") }
+        // La paleta no cambia la máquina: no cuenta (decisión Android (3), docs/12 «Valores de config»).
         if let gbaSaveType, gbaSaveType != "auto", let l = local.gbaSaveType, l != gbaSaveType { out.append("el tipo de partida") }
         if let gbaRTC, gbaRTC != "auto", let l = local.gbaRTC, l != gbaRTC { out.append("el reloj") }
         if let gbaBIOS, let l = local.gbaBIOS, l != gbaBIOS { out.append("la BIOS") }
