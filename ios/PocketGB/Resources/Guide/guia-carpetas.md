@@ -1,5 +1,4 @@
-# Guía · Organizar tus juegos por carpetas
-
+<!-- Generado por tools/ios-guide-sync.py desde docs/guia/carpetas.md: no editar aquí. -->
 PocketGB lee los juegos de **una carpeta que eliges tú** (en el iPhone, en iCloud Drive o en Archivos). Dentro de ella puedes crear subcarpetas para ordenarlos: PocketGB las recorre solo, sin copiar, mover ni cambiar nada.
 
 ## Cómo organizarlos
@@ -24,7 +23,7 @@ Roms/                                   ← la carpeta que eliges en la app
   _Revisar/                             ← apartada: no se escanea
 ```
 
-La portada junto al ROM se explica en [Portadas](portadas.md). La carpeta `PocketGB/` es de la app: en el iPhone las partidas viajan con la hoja de compartir ([Partidas que viajan](viajar.md)), así que puede quedarse vacía.
+La portada junto al ROM se explica en [Portadas](guia:portadas). La carpeta `PocketGB/` es de la app: en el iPhone las partidas viajan con la hoja de compartir ([Partidas que viajan](guia:viajar)), así que puede quedarse vacía.
 
 ## Nombres especiales
 | Nombre | Qué hace PocketGB |

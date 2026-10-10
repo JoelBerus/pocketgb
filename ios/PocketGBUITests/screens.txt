@@ -306,3 +306,27 @@ n7-divergence               portrait  light -screen n7-divergence -demoLibrary n
 n7-import-prompt            portrait  dark  -screen n7-import-prompt -demoLibrary n5 -demoMoments rich
 n7-import-done              portrait  light -screen n7-import-done -demoLibrary n5 -demoMoments rich
 n7-settings-conflicts       portrait  light -screen n7-settings-conflicts -demoLibrary n5 -demoConflicts
+
+# ---- N9 · Guía y consejos (iOS). La guía sale del bundle (Resources/Guide, copiada de docs/guia con
+# tools/ios-guide-sync.py). `-guideSection <id>` elige la sección; `-guideSearch <texto>` rellena la búsqueda.
+# `-showTips` muestra los consejos de TipKit (las demás capturas los ocultan).
+n9-settings                 portrait  light -screen n9-settings
+n9-guide                    portrait  light -screen n9-guide
+n9-guide                    portrait  dark  -screen n9-guide
+n9-guide                    landscape light -screen n9-guide
+n9-guide-ax5                portrait  light -screen n9-guide-ax5 -contentSizeCategory accessibility5
+n9-guide-search             portrait  light -screen n9-guide-search -guideSearch momento
+n9-guide-search             portrait  dark  -screen n9-guide-search -guideSearch categoria
+n9-guide-section            portrait  light -screen n9-guide-section -guideSection carpetas
+n9-guide-section            portrait  dark  -screen n9-guide-section -guideSection controles -uiSwipeUp
+n9-guide-section            landscape light -screen n9-guide-section -guideSection viajar
+n9-guide-section-ax5        portrait  light -screen n9-guide-section-ax5 -guideSection carpetas -contentSizeCategory accessibility5
+n9-guide-section-ax5        portrait  dark  -screen n9-guide-section-ax5 -guideSection controles -contentSizeCategory accessibility5 -uiSwipeUp
+n9-guide-focus              portrait  light -screen n9-guide-focus
+n9-tip-pause                portrait  dark  -screen n9-tip-pause -rom $FIXTURES/dmg-acid2.gb -paused -showTips
+n9-tip-game-center          portrait  light -screen n9-tip-game-center -demoLibrary n4 -showTips
+n9-tip-send                 portrait  light -screen n9-tip-send -demoLibrary n5 -demoMoments rich -showTips -uiDrag 0.5,0.85,0.5,0.15 -uiDragTimes 2
+n9-tip-controls             portrait  light -screen n9-tip-controls -showTips
+n9-tip-controls             portrait  dark  -screen n9-tip-controls -showTips
+n9-tip-controls-ax5         portrait  light -screen n9-tip-controls-ax5 -showTips -contentSizeCategory accessibility5 -scrollTo settings-tip-arrows
+n9-progress-details-ax5     portrait  light -screen n9-progress-details-ax5 -demoLibrary n5 -demoMoments rich -contentSizeCategory accessibility5 -uiDrag 0.5,0.85,0.5,0.15 -uiDragTimes 5

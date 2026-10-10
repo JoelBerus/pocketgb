@@ -258,6 +258,7 @@ extension AppState {
 
     /// El `.pgbm` de la partida actual de `entry` (para «Enviar a otro dispositivo» y «Guardar en Archivos»).
     func exportPackage(_ entry: RomEntry) async throws -> Data {
+        SendToDeviceTip().invalidate(reason: .actionPerformed)   // N9: ya sabe enviarla
         let url = entry.url, console = entry.console, emulation = emulationOptions(entry)
         let savesDirectory = storageDirectories.saves
         let meta = libraryPrefs.data.metadata(entry)

@@ -36,6 +36,8 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 | `gb_audio_read(gb, out, max_frames)` | emulación | Estéreo intercalado `int16`, a la frecuencia pedida en `opts.sample_rate`. |
 | `gb_sram` / `gb_sram_dirty` / `gb_sram_clear_dirty` | emulación | Para la política de guardado ([04](04-ios-spec.md) §Saves). |
 | `gb_state_size` / `gb_state_save` / `gb_state_load` | emulación | Formato versionado con CRC32 y huella del ROM. |
+| `pgb_progress_identify` / `pgb_progress_read` (N6-C, `pocketgb_progress.h`) | cualquiera | Lector del progreso de Pokémon Gen 1/2 desde la cabecera y la partida; función pura, sin instancia. |
+| `pgbm_parse` / `pgbm_encoded_size` / `pgbm_encode` (N7-C, `pocketgb_pgbm.h`) | cualquiera | Contenedor `.pgbm` de las partidas que viajan ([12](12-formato-pgbm.md)); puro, sin reservas, con fuzzer. |
 
 **Una instancia no es thread-safe.** Todo se llama desde un único hilo de emulación. El resto de hilos se comunica con colas o atómicos.
 
@@ -48,6 +50,7 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 - **Pacing por audio.** El reloj maestro es la tarjeta de sonido. Los 59,7275 fps del GB contra los 60/120 Hz de la pantalla: se dibuja el último frame completo y se aceptan frames repetidos u omitidos ocasionales. El audio no se corta.
 - **Avance rápido ×N.** Se ejecutan N frames por ciclo y se descarta el audio sobrante (o se remuestrea), para que no se desincronice.
 - **Cable link virtual (M9).** Las dos instancias `gb` y `gb_link*` viven en **el mismo hilo de emulación**: `LinkedPair` (un `ConsoleCore`) se crea y se conecta en el hilo principal antes de arrancar el hilo, avanza con `gb_link_run_frame` en lugar de `gb_run_frame`, y se desconecta (`gb_link_detach`) en ese mismo hilo al final de `run()`, tras el último flush de las dos SRAM. El lado activo lo fija el hilo principal con un `Atomic<Int>` (`LinkSideSelector`) que `LinkedPair` lee una vez por frame; el framebuffer del otro lado sale por un segundo `FrameBuffers` (`peerFrames`). Cada lado tiene su `SRAMPersistence` y su cola de guardado. Detalle: [04-ios-spec](04-ios-spec.md) §Cable link virtual.
+- **Trabajo de fondo de la app (N1–N7):** la huella de los ROMs se calcula en una cola `utility` cancelable que se pausa con un juego abierto y nunca fuerza una descarga de iCloud; el lector Pokémon, el `.pgbm` y la decodificación de portadas corren fuera del hilo principal. Las escrituras de partida siguen en la cola serie de guardado de cada `SRAMPersistence`, y lo que toca la partida desde fuera del juego (importar, instalar un momento) pasa por la exclusión por huella (`FingerprintOwnership`).
 - **Callback de audio** (tiempo real): solo lee del ring buffer SPSC lock-free. Sin locks, sin alloc, sin Swift runtime pesado. Si hay underrun, rellena con la última muestra (sin clic) y cuenta el underrun para diagnóstico.
 - **Render** (`MTKView`, `preferredFramesPerSecond = 60`): sube el último buffer listo a una `MTLTexture` del tamaño del frame (160×144 en GB, 240×160 en GBA) y la dibuja con sampler `nearest`.
 
@@ -71,10 +74,20 @@ La fuente de verdad es [`core/include/pocketgb.h`](../core/include/pocketgb.h). 
 | Partida (SRAM) | `Application Support/Saves/<huella>.sav` + espejo `<rom>.sav` junto al ROM | Bytes crudos de la RAM del cartucho (compatible con otros emuladores) |
 | Partida GBA | Igual que la GB (mismo `.sav`, ruta atómica, backups y espejo) | Medio de guardado + 16 bytes de RTC al final si el cartucho tiene reloj |
 | Backups | `Application Support/Saves/backups/<huella>.<n>.sav` (n = 1…5) | Igual |
-| Save states | `Application Support/States/<huella>.<slot>.state` | Formato propio versionado |
-| Ajustes | `UserDefaults` | Opacidad de controles, escala, etc. |
+| Estado automático | `Application Support/States/<huella>/auto.state` (+ miniatura `auto.png`; en Android `states/`) | Formato propio versionado |
+| Momentos (N6) | `Application Support/Moments/<huella>/`: `m-<id>.{state,sav,png}`, anillo «Antes de cargar» `b-<id>.*` e `index.json` | Estado + RAM del cartucho + miniatura; el índice es el punto de confirmación |
+| Progreso (N6) | `Application Support/Progress/<huella>.json` | Tiempo, sesiones, hitos, cabecera del ROM para el lector |
+| Linaje del espejo (N7) | `Saves/<huella>.mirror-history.json` (últimas 8 escrituras propias) y `<huella>.origin.json` (última partida recibida de fuera) | JSON |
+| Copias apartadas | `Saves/backups/<huella>.mirror-<unix>-<id>.sav` | No rotan nunca (regla dura 6) |
+| Preferencias de la biblioteca (N1a, N4) | `Application Support/Library/preferences.json` (formato 3, por huella) y `fingerprint-cache.json` | JSON; dañado → `.corrupt-<fecha>.json` |
+| Portadas (N5) | `Application Support/Artwork/`, `ArtworkPinned/`, `Covers/Imported/`, `Covers/Folder/` y `Covers/settings.json` | PNG reducidos (≤ 1024 px) y ajustes por dispositivo |
+| Guía (N9) | Dentro del bundle: `guia-<id>.md` (solo lectura) | Markdown copiado de `docs/guia` |
+| Consejos (N9) | Almacén local de TipKit (`.applicationDefault`) | Gestionado por el sistema; sin CloudKit |
+| Ajustes | `UserDefaults` | Opacidad de controles, estilo de cruceta, disposiciones, etc. |
 
-`<huella>` = primeros 32 caracteres hex (128 bits) del SHA-256 de **todo** el ROM (`gb_rom_info.fingerprint`). Así, renombrar el archivo del ROM no pierde la partida, y dos ROMs distintos con la misma cabecera no comparten partida.
+`<huella>` = primeros 32 caracteres hex (128 bits) del SHA-256 del ROM (`gb_rom_info.fingerprint`; en Game Boy, de los bytes que declara la cabecera; en GBA, del archivo entero). Así, renombrar o mover el archivo del ROM no pierde la partida ni sus metadatos (N1a), y dos ROMs distintos con la misma cabecera no comparten partida.
+
+**Por dispositivo (ND12):** momentos, progreso, preferencias, inicio y portadas no se sincronizan solos; lo que viaja entre equipos va dentro del paquete `.pgbm` (partida, estado automático y metadatos fusionables). La app no tiene red (regla dura 5): mover archivos entre equipos lo hacen la hoja de compartir y el proveedor de la carpeta.
 
 ## Compilación
 - `core/Makefile`: clang, `-std=c11 -Wall -Wextra -Werror -pedantic`. Targets: `lib`, `test`, `asan`, `fuzz`, `oracle`.

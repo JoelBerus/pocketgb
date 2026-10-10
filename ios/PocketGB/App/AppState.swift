@@ -70,6 +70,9 @@ enum SettingsRoute: Hashable {
     /// N4 · Ajustes › Biblioteca › Inicio.
     case libraryHome
     case backups(fingerprint: String)
+    /// N9 · Ajustes › Guía y una de sus secciones (`focus` = bloque al que desplazarse desde la búsqueda).
+    case guide
+    case guideSection(id: String, focus: Int?)
 }
 
 enum GameLaunchMode: Sendable {
@@ -1038,6 +1041,7 @@ final class AppState {
         do {
             try MomentActions(moments: momentStore, saves: saves)
                 .create(from: session, name: name, config: currentMomentConfig, playTime: playClock?.total)
+            MomentsTip().invalidate(reason: .actionPerformed)   // N9: ya sabe crear momentos
             showGameToast("Momento guardado")
         } catch {
             momentNotice = MomentNotice("No se pudo guardar el momento", Self.describe(error))

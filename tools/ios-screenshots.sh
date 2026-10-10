@@ -20,6 +20,8 @@ pick=[d for v,d in devs if d["name"]==want] or [d for v,d in devs if "Pro" in d[
 print(pick[0]["udid"]+" "+pick[0]["name"])
 ')"
 echo "Simulador: $UDID"
+# N9: la guía empaquetada en la app tiene que coincidir con docs/guia.
+python3 "$ROOT/tools/ios-guide-sync.py" --check
 UDID="${UDID%% *}"
 # ROMs de prueba fuera de ~/Documents: macOS (TCC) bloquea ahí al simulador.
 FIX="$(mktemp -d)"; trap 'rm -rf "$FIX"' EXIT

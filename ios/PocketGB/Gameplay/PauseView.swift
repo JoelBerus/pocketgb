@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Sheet de pausa (SPEC §9, `gameplay-pause`): la emulación ya está parada al mostrarse.
 /// "Continuar" es la acción dominante; "Salir del juego" va separada. Material del sistema,
@@ -59,6 +60,7 @@ struct PauseView: View {
                     }
                 } else {
                     Section {
+                        TipView(MomentsTip())   // N9
                         NavigationLink(value: PauseRoute.moments) {
                             Label("Momentos", systemImage: "bookmark")
                         }

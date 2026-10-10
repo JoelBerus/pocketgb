@@ -1,5 +1,4 @@
-# Guía: los controles en pantalla
-
+<!-- Generado por tools/ios-guide-sync.py desde docs/guia/controles.md: no editar aquí. -->
 ## La cruceta
 Puedes elegir entre dos estilos en **Ajustes › Controles › Cruceta**:
 

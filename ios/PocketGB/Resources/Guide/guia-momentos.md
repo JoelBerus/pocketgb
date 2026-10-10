@@ -1,6 +1,5 @@
-# Momentos y progreso en el iPhone
-
-Un **momento** es una foto completa del juego en un instante: la posición exacta (el estado del emulador), **la partida del cartucho de ese instante**, una miniatura y la configuración con la que jugabas (color de Game Boy y paleta; en GBA, tipo de partida, reloj y BIOS). Sirve para experimentar sin miedo y para no perder progreso en juegos que no dejan guardar donde quieres. Los momentos son **de este iPhone**: no viajan a otros equipos. Lo que viaja es la partida y el punto exacto donde la dejaste ([Partidas que viajan](viajar.md)).
+<!-- Generado por tools/ios-guide-sync.py desde docs/guia/momentos.md: no editar aquí. -->
+Un **momento** es una foto completa del juego en un instante: la posición exacta (el estado del emulador), **la partida del cartucho de ese instante**, una miniatura y la configuración con la que jugabas (color de Game Boy y paleta; en GBA, tipo de partida, reloj y BIOS). Sirve para experimentar sin miedo y para no perder progreso en juegos que no dejan guardar donde quieres. Los momentos son **de este iPhone**: no viajan a otros equipos. Lo que viaja es la partida y el punto exacto donde la dejaste ([Partidas que viajan](guia:viajar)).
 
 ## Crear un momento
 

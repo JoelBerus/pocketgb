@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Pantallas dentro del centro de ajustes del juego.
 enum GameCenterRoute: Hashable {
@@ -197,6 +198,7 @@ struct GameCenterView: View {
             if !canOrganize {
                 confirmationRow
             }
+            TipView(MoveCategoryTip())   // N9
             VStack(alignment: .leading, spacing: PocketSpacing.xs) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {
@@ -576,6 +578,7 @@ struct CategoryPickerView: View {
 
     private func pick(_ path: [String], _ entry: RomEntry) {
         if prefs.moveToCategory(path, entry: entry) {
+            MoveCategoryTip().invalidate(reason: .actionPerformed)   // N9
             fieldFocused = false
             dismiss()
         } else {

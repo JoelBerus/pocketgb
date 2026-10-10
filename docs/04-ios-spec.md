@@ -16,18 +16,25 @@ iOS 26.0+ (decisión 2026-09-29: Liquid Glass nativo), Swift 6 (strict concurren
 
 ## Estructura de fuentes (`ios/PocketGB/`)
 ```
-App/        PocketGBApp.swift, AppState.swift
-Library/    LibraryView.swift, LibraryStore.swift (bookmark + escaneo), RomEntry.swift
-Emulator/   EmulatorSession.swift (hilo), CoreBridge.swift (wrapper seguro de pocketgb.h),
-            FrameBuffers.swift (triple buffer), RingBuffer.swift (SPSC int16)
-Video/      GameMetalView.swift (UIViewRepresentable), Renderer.swift, Shaders.swift (fuente MSL compilada en runtime:
-            así no hace falta el Metal Toolchain, que en Xcode 26 es una descarga aparte)
-Audio/      AudioOutput.swift (AVAudioEngine + AVAudioSourceNode)
-Input/      ControlsOverlayView.swift (UIView multitouch), ControlsLayout.swift,
-            GamepadInput.swift (GameController), Haptics.swift
-Saves/      SaveStore.swift, StateStore.swift, AtomicFile.swift
-Settings/   SettingsView.swift, Settings.swift
-Resources/  Assets.xcassets, Info.plist
+App/          PocketGBApp.swift, AppState.swift (+Travel: N7), DebugScreenRouter.swift y DebugArguments.swift (solo DEBUG)
+Library/      LibraryView.swift, LibraryStore.swift (bookmark + escaneo), LibraryScanner.swift, RomEntry.swift,
+              RomFingerprint.swift y LibraryPreferences.swift (N1a), AdaptiveLayout.swift y LibraryLandscapeTools.swift (N3),
+              LibraryOrganization.swift, LibraryHomeViews.swift, CategoryView.swift y GameCenterView.swift (N4),
+              Covers.swift, CoverStore.swift y CoverCenterView.swift (N5), GameSaveTravelSection.swift (N7)
+Emulator/     EmulatorSession.swift (hilo), ConsoleCore.swift, CoreBridge.swift y GBACoreBridge.swift (wrappers seguros),
+              FrameBuffers.swift (triple buffer), RingBuffer.swift (SPSC int16), LinkCable/LinkSession/LinkedPair (M9)
+Video/        GameMetalView.swift (UIViewRepresentable), Renderer.swift, Shaders.swift (fuente MSL compilada en runtime:
+              así no hace falta el Metal Toolchain, que en Xcode 26 es una descarga aparte)
+Audio/        AudioOutput.swift (AVAudioEngine + AVAudioSourceNode)
+Input/        ControlsOverlayView.swift (UIView multitouch), ControlsLayout.swift, ControlPalette.swift,
+              GamepadInput.swift (GameController), Haptics.swift
+Saves/        SaveStore.swift, SRAMPersistence.swift, SaveMirror.swift, AtomicFile.swift, StateStore.swift (estado automático),
+              MomentStore.swift, MomentActions.swift y MomentsView.swift (N6), FingerprintOwnership.swift (N6),
+              SaveLineage.swift, PGBMPackage.swift, SaveImport.swift y SaveExport.swift (N7)
+Progress/     ProgressStore.swift, ProgressLibrary.swift, ProgressViews.swift (N6)
+Guide/        Guide.swift, GuideView.swift, PocketTips.swift (N9)
+Settings/     SettingsView.swift, Settings.swift y una vista por pantalla de Ajustes
+Resources/    Assets.xcassets, Info.plist, Guide/guia-*.md (N9, copiados de docs/guia)
 ```
 
 ## Info.plist (claves exigidas)
@@ -64,23 +71,24 @@ Una sola `UIView` (`ControlsOverlayView`) con `isMultipleTouchEnabled = true` ge
 | Menú | Esquina superior central, 36 pt | Icono ☰; abre pausa |
 | Avance rápido | Junto a Menú | Mantener = ×N; doble toque = fijo |
 
-- **Opacidad:** en reposo 0.30 y 0.60 al pulsar (animación de 80 ms). Configurable en Ajustes entre 0.10 y 0.80. La opacidad se aplica al **dibujo**, no a la vista, así el hit-testing sigue igual.
+- **Opacidad:** en horizontal, 30, 50, 70 o 100 % (Ajustes › Controles; en vertical siempre 100 %), con velo oscuro y sombra para leerse sobre escenas blancas; al pulsar se marca el control (animación de 70–90 ms). Se aplica al **dibujo**, no a la vista, así el hit-testing sigue igual. Con «Reducir transparencia», superficie sólida con borde blanco.
 - **Estilo:** relleno blanco con la opacidad indicada, borde de 1,5 pt al doble de opacidad y letras (A, B, START, SELECT) con la misma opacidad que el borde. Se dibuja con `CAShapeLayer` y no con imágenes, para que no se pixele.
 - **D-pad por ángulo:** vector del toque al centro. Si la distancia es menor que el 30 % del radio (zona muerta), no se pulsa nada. Si no, se toma el ángulo: con diagonales «Reducidas» (por defecto, N2) la diagonal solo cuenta a ±15° de 45° y las rectas ocupan 60°; «Normales» son 8 sectores de 45° y «Desactivadas», 4 rectas. Histéresis: un dedo que ya pulsa mantiene su dirección hasta 8° más allá del borde de su sector y se suelta por debajo del 24 % del radio. Con flechas separadas, todo el disco de cada flecha pulsa su dirección (sin diagonal) y la zona muerta acaba 2 pt antes de su borde interior. **Nunca** llegan direcciones opuestas al núcleo: se quitan arriba+abajo e izquierda+derecha en la máscara táctil (dos dedos) y otra vez tras el OR con el mando (`EmulatorSession.combinedButtons`). El dibujo recibe la máscara: solo se marca el brazo o la flecha pulsada, con contraste ≥ 3:1 frente al resto.
 - **Seguimiento de toques:** `[UITouch: Control]`. En `touchesMoved` se recalcula el control bajo cada toque, lo que permite deslizar de B a A o rodar el pulgar en el D-pad. El D-pad "captura" el toque que empezó en él hasta que se levanta, aunque salga de su radio (ampliado ×1,5).
 - **Salida:** máscara `UInt8`, publicada con `OSAllocatedUnfairLock` (M4, iOS 17; `Synchronization.Atomic<UInt8>` exige iOS 18) que el hilo de emulación lee cada frame.
 - **Háptica:** `UIImpactFeedbackGenerator(style: .light)` al pasar de no pulsado a pulsado. Desactivable.
-- **Editor de disposición (M7):** en Ajustes se pueden arrastrar los controles y guardar sus posiciones relativas por orientación.
+- **Editor de disposición (M7, N2):** desde Pausa › Personalizar controles se arrastran los controles y se cambia su tamaño (60–160 %). Hay **cuatro disposiciones** independientes: Game Boy y GBA, cada una en vertical y horizontal (restablecibles en Ajustes › Controles › Disposición).
+- **Estilo de cruceta (N2):** «Game Boy» (cruz con flecha en cada brazo; se hunde solo el brazo pulsado) o «Flechas separadas» (cuatro discos en rombo; la pulsada se invierte). Con flechas separadas el editor ajusta la **separación** del grupo (70–150 %; el grupo se mueve entero y siempre alineado, ND10) y la zona táctil crece o encoge con ella. Diagonales «Reducidas» (por defecto), «Normales» o «Desactivadas». Háptica solo al activarse una dirección nueva. Guía: [guia/controles.md](guia/controles.md).
 
 ## Mandos físicos
-`GameController`: `GCController.controllers()` más las notificaciones de conexión. Mapeo: cruceta y stick izquierdo → D-pad; A/B siguiendo la **posición** del GB (botón derecho = A, inferior = B, configurable); Menu → Start; Options → Select. Con un mando conectado, la superposición se oculta. La máscara del mando se combina (OR) con la táctil.
+`GameController`: `GCController.controllers()` más las notificaciones de conexión. Mapeo: cruceta y stick izquierdo → D-pad; A/B siguiendo la **posición** del GB (botón derecho = A, inferior = B); Menu → Start; Options → Select; hombros izquierdo/derecho → L/R en GBA. Con un mando conectado, la superposición se oculta. La máscara del mando se combina (OR) con la táctil.
 
 ## Biblioteca (iCloud Drive sin capability iCloud)
 1. En el primer arranque, "Elegir carpeta de juegos" abre `UIDocumentPickerViewController(forOpeningContentTypes: [.folder])`.
 2. Con la URL elegida: `startAccessingSecurityScopedResource()`, se crea `bookmarkData(options: .minimalBookmark)` y se guarda en `UserDefaults`.
 3. En cada arranque o regreso a foreground, se resuelve el bookmark (si `isStale`, se regenera) y se enumeran los `.gb`/`.gbc`/`.gba` de la carpeta y sus subcarpetas hasta `LibraryScanner.maxFolderDepth` = 5 niveles (N1b), con un tope de `maxEntries` = 5 000 juegos y `maxVisitedItems` = 50 000 elementos recorridos (aviso persistente en Ajustes › Biblioteca). Nombres reservados (ND11): lo que empieza por `.` se ignora, `PocketGB/` en la raíz es de la app y las carpetas que empiezan por `_` quedan apartadas; los enlaces simbólicos a carpetas no se siguen. Cada juego tiene `folderPath` (carpetas desde la raíz; el primer nivel es la categoría). Guía para Joel: [guia/carpetas.md](guia/carpetas.md).
 4. Los archivos de iCloud aún no descargados (`.icloud` placeholder, `ubiquitousItemDownloadingStatus != .current`) se muestran con icono de nube. Al tocarlos se llama `FileManager.startDownloadingUbiquitousItem(at:)` y se espera con `NSFileCoordinator`.
-5. Cada ROM se lee completo en memoria con `NSFileCoordinator(readingItemAt:)` y se pasa a `gb_load_rom`. Se rechazan archivos de más de 8 MiB.
+5. Cada ROM se lee completo en memoria con `NSFileCoordinator(readingItemAt:)` y se pasa a `gb_load_rom` (o `gba_load_rom`). Se rechazan archivos de más de 8 MiB (GB/GBC) o 32 MiB (GBA).
 6. Cada entrada muestra el título de la cabecera, CGB sí/no, el tipo de MBC, un aviso si el checksum no coincide (A15) y la fecha del último save.
 7. **Identidad (N1a).** Favoritos, último juego, ocultos, alias y ajustes por juego van por **huella** (`LibraryPreferences`, formato 3 desde N4, `Application Support/Library/preferences.json`); la ruta solo es clave provisional mientras no se conoce la huella. La huella se calcula sin abrir el juego con `RomFingerprint` (idéntica a la del núcleo: en Game Boy solo los bytes que declara la cabecera; en GBA el archivo entero), en segundo plano, con lectura coordinada y solo de archivos locales o ya descargados (nunca fuerza una descarga), y se recuerda en la caché (ruta, tamaño, fecha de modificación, fecha de cambio) → huella (`fingerprint-cache.json`); la fecha de cambio (ctime) no la puede fijar `utimes`. El cálculo se pausa con un juego abierto. Misma huella en varias rutas = duplicado («Duplicado», «También en: …»). El formato 1 y los ajustes por juego de `UserDefaults` (`gameplaySettings.perGame`, por ruta) se migran sin perder nada; el JSON que no se entiende se aparta como `preferences.corrupt-<fecha>.json` y se avisa, y nunca se sobrescribe un archivo que no se pudo leer.
 
@@ -129,8 +137,25 @@ Dos juegos de Game Boy en el mismo iPhone, unidos por el cable de `core/src/link
 - **Sin save states** (tampoco el automático al salir): cargar un estado reescribe la SRAM de un lado y rompe el protocolo con el otro. `AppState.stateStore` queda en `nil`; los estados que ya tenía cada juego no se tocan. Al salir, `didRestoreSave` de los dos juegos (D8.1); al abrir, si alguno tiene continuación válida se avisa.
 - **Riesgo conocido.** Si iOS mata la app entre el guardado de un lado y el del otro, puede quedar un lado con el intercambio y el otro sin él, igual que al tirar del cable de verdad. Lo mitigan los cinco backups por juego.
 
-## Save states (M7)
-4 slots por juego más un slot "auto" al salir. Se guardan en `Application Support/States/` con `AtomicFile`. Un save state **nunca** sustituye a la SRAM: al cargar un estado, la SRAM del estado pasa a ser la actual y se guarda con la ruta normal, con su backup.
+## Estado automático, momentos y progreso (M7, N6)
+- **Estado automático:** un slot «auto» por juego al salir o pasar a segundo plano, en `Application Support/States/` con `AtomicFile`, siempre **después** del flush de la SRAM. «Continuar» solo lo usa si corresponde a la partida actual (misma SRAM y configuración); si no, «No se pudo continuar» y «Jugar desde el inicio». Un estado **nunca** sustituye a la SRAM sin pasar por la ruta normal de guardado con backup.
+- **Momentos (N6):** sustituyen a las ranuras 1–4 (migradas sin pérdida la primera vez). Cada momento guarda estado + RAM del cartucho del instante + miniatura (proporción de la consola) + configuración (modelo/paleta; en GBA, tipo de partida, RTC y BIOS) + nombre, etiquetas, colección, nota, fecha y tiempo jugado. Disco: `Application Support/Moments/<huella>/` con `m-<id>.{state,sav,png}`, `b-<id>.*` del anillo e `index.json` (punto de confirmación; ilegible → se aparta y se reconstruye, nunca se borra nada).
+- **Cargar un momento** cambia la partida: la posición actual entra antes en el anillo **«Antes de cargar»** (3 entradas por orden de inserción, fuera de la rotación de 5 backups), después `session.loadState` guarda la SRAM con backup `.1`; el AUTO no se toca. «Recuperar» deshace en un toque. Desde el detalle, «Recuperar partida» instala solo la SRAM con el juego cerrado.
+- **Exclusión por huella** (`FingerprintOwnership`): instalar o cargar desde el detalle, importar o instalar una partida que llega de otro equipo solo ocurre sin sesión abierta o aparcada de esa huella (la sesión la retiene hasta `whenMirrorIdle`).
+- **Cable link:** sin momentos ni estado automático (rompería el protocolo con el otro lado).
+- **Progreso:** `Application Support/Progress/<huella>.json` (tiempo de juego solo con el juego corriendo, checkpoint cada 30 s; sesiones; primera y última vez; hitos con plantilla «Pokémon» o libre; porcentaje opcional en tarjeta y detalle). Panel «Leído de la partida» con `pgb_progress_read` del núcleo ([03](03-core-spec.md) §Lector de progreso Pokémon), solo lectura. Guía: [guia/momentos.md](guia/momentos.md).
+
+## Portadas (N5)
+Fuentes por juego: **imagen importada** (`PhotosPicker` sin permiso de fototeca o `fileImporter`; PNG/JPEG/WebP, **sin HEIC**, ND18), **imagen de la carpeta** (mismo nombre que el ROM con `.png/.jpg/.jpeg/.webp`, o `portada.*`/`cover.*` si la carpeta tiene un solo juego), **captura** (última escena no lisa al salir, o fijada con Pausa › «Usar como portada») y **generada**. Elección por juego (Automática / Imagen / Captura / Generada) y preferencia global (Preferir imágenes o capturas) en `Application Support/Covers/settings.json` (por dispositivo, escritura atómica, dañado → `.corrupt-*`). Toda imagen es **entrada no confiable**: firma real, ≤ 15 MiB, ≤ 16 384 px de lado y ≤ 100 MP leídos de la cabecera con ImageIO antes de decodificar; se guarda reducida a 1024 px (PNG). El escáner solo mira nombres; la imagen de la carpeta se lee la primera vez que se ve (descarga de iCloud solo esa imagen, como mucho tres a la vez) y se cachea por ruta + sello. Tarjetas rellenan su marco 10:9; el detalle muestra la imagen entera; capturas sin suavizar. Guía: [guia/portadas.md](guia/portadas.md).
+
+## Partidas que viajan (N7)
+- **Linaje del espejo** (`SaveLineage`, `mirror-history.json`): espejo = local → nada; = una escritura o recepción nuestra anterior → gana la local, se reescribe y el contenido del espejo se aparta; desconocido con la local sin cambios → cambio externo, se instala con backup y aviso; desconocido con la local cambiada → **divergencia**: se pregunta sin escribir nada (ND20 a); la otra queda como momento «Conflicto» y copia apartada. Sin historial: por fecha con backup. Espejo borrado: se recrea. Copias en conflicto del proveedor (`X 2.sav`, `X (1).sav`, `.sync-conflict-`, «conflicted copy») se listan en Ajustes › Partidas y nunca se borran.
+- **Paquete `.pgbm`** ([12-formato-pgbm](12-formato-pgbm.md); parser y codificador en C, `pgbm_*`): `.sav`, estado automático si es de esa partida, META (sha, sha base, equipo, versión del núcleo, configuración y metadatos del juego). «Enviar a otro dispositivo» lo comparte con `ShareLink` (Drive, AirDrop, Archivos); «Exportar .sav» y «Guardar paquete en Archivos…» también. Se importa con «Abrir con PocketGB» (UTI propio declarado en Info.plist) o «Importar partida…» del detalle.
+- **Al importar:** avance (`base == local`) se instala sin preguntar; más antiguo, divergente o con base desconocida → se pregunta; la actual va antes a «Antes de cargar», a copia apartada y a backup. `SAVE` vacía o de otro tamaño, META inválida o paquete de otro juego → rechazo sin tocar nada. Metadatos se fusionan (ND20 i). Si el estado coincide con la partida, el detalle ofrece «Continuar donde lo dejaste en <equipo>». `.sav` crudo: tamaño exacto y confirmación nombrando el juego. Guía: [guia/viajar.md](guia/viajar.md).
+
+## Guía y consejos (N9)
+- **Ajustes › Guía:** las secciones de `docs/guia` que aplican al iPhone (carpetas, biblioteca, categorías, portadas, jugar y continuar, momentos, viajar, controles y GBA), copiadas al bundle como `Resources/Guide/guia-<id>.md` por `tools/ios-guide-sync.py` (que quita los enlaces a Android y al repo y convierte los enlaces entre secciones en `guia:<id>`). `tools/ios-screenshots.sh` falla si la copia no está al día (`--check`). Se dibuja con vistas nativas (`GuideParser` → bloques; texto en línea con `AttributedString(markdown:)`): títulos con rasgo de encabezado para el rotor de VoiceOver, tablas como fichas apiladas que se leen bien con AX5, el ejemplo de carpetas en un bloque desplazable. Búsqueda local sin mayúsculas ni acentos; un resultado abre la sección en su bloque, resaltado. `OpenURLAction` solo atiende `guia:`; nada sale de la app.
+- **Consejos (TipKit):** cuatro, en línea (`TipView`): «Momentos» en la pausa, «Cambiar de categoría» en los ajustes del juego, «Enviar a otro dispositivo» en el detalle y «Flechas separadas» en Ajustes › Controles. `Tips.configure` con `.datastoreLocation(.applicationDefault)` y `.displayFrequency(.daily)` (como mucho uno al día); sin contenedor de CloudKit, así que TipKit no usa red. Cada consejo se invalida al usar lo que explica. En DEBUG, las pruebas de UI (`-uiStyle`) los ocultan y `-showTips` los muestra para sus capturas.
 
 ## Audio
 `AVAudioSession` en categoría `.ambient`, para respetar el interruptor de silencio (configurable a `.playback`). `AVAudioEngine` + `AVAudioSourceNode` a 48 kHz en estéreo `Float32`. El callback convierte `int16` a float desde el `RingBuffer`. Las interrupciones (llamadas, Siri) pausan la emulación y al terminar se reanuda en pausa, no jugando.

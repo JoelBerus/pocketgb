@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import UniformTypeIdentifiers
 
 /// N7b · la partida del juego en el detalle: exportar el `.sav` crudo o el paquete `.pgbm`, e importar uno u otro.
@@ -22,6 +23,7 @@ struct GameSaveTravelSection: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("game-save-status")
             }
+            TipView(SendToDeviceTip())   // N9
             GlassEffectContainer(spacing: PocketSpacing.xs) {
                 VStack(spacing: PocketSpacing.xs) {
                     // N7c · en iOS no hay carpeta común con Android (ND2): el paquete va por la hoja de compartir
