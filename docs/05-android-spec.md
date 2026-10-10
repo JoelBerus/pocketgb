@@ -1,13 +1,13 @@
 # 05 · Implementación Android nativa
 
-> La especificación vigente y aprobada está en [diseno-android/SPEC.md](diseno-android/SPEC.md). Este documento describe la implementación real (estado A1–A7 implementados, A8 en curso) y las equivalencias técnicas con iOS.
+> La especificación vigente y aprobada está en [diseno-android/SPEC.md](diseno-android/SPEC.md). Este documento describe la implementación real (A1–A9 y el plan «siguiente nivel» N1–N9, ver [hitos/N-README](hitos/N-README.md)) y las equivalencias técnicas con iOS. La guía de uso para Android está en `docs/guia/*-android.md` y dentro de la app (Ajustes › Guía, N9).
 
 Objetivo: la **misma app** que [04](04-ios-spec.md), con UI 100 % nativa en Kotlin/Compose y el **mismo `core/`** compilado con el NDK. No se usan Flutter, React Native, KMP UI ni WebView.
 
 ## Requisitos
 - Android Studio, JDK 17, SDK Platform 37, Build Tools 37.0.0, NDK 27.3.13750724 y CMake 3.22.1.
 - minSdk 26 (AAudio), targetSdk 37, Kotlin 2.x, Jetpack Compose (BOM 2026.09.00), Navigation 3. Solo AndroidX y kotlinx-serialization en runtime.
-- Paquete `com.joelbermudez.pocketgb`. Sin permiso `INTERNET`: se verifica con `aapt2 dump permissions` sobre el APK Release.
+- Paquete `com.joelbermudez.pocketgb`. Sin permiso `INTERNET` ni `ACCESS_NETWORK_STATE`: se verifica con `aapt2 dump permissions` sobre los APK Debug y Release. El único `FileProvider` (N7) es privado (`exported=false`) y solo sirve `cache/exports/`.
 - Versión actual: `versionName 1.0.0`, `versionCode 2`.
 
 ## Estructura real
@@ -21,7 +21,7 @@ android/
     audio_output.c        # salida AAudio (callback de tiempo real)
     audio_ring.c          # ring buffer SPSC lock-free
   app/src/main/java/com/joelbermudez/pocketgb/
-    app/ emulator/ video/ audio/ input/ game/ saves/ library/ settings/ ui/
+    app/ emulator/ video/ audio/ input/ game/ saves/ library/ settings/ progress/ travel/ guide/ tips/ ui/
   app/src/{debug,release,test,androidTest}/
 ```
 Mapa de paquetes en [android/README.md](../android/README.md).
@@ -38,8 +38,12 @@ Mapa de paquetes en [android/README.md](../android/README.md).
 - **Carpetas** (N1b): `LibraryScanner` recorre hasta `MAX_FOLDER_DEPTH = 5` niveles por niveles, con tope `MAX_SCAN_ENTRIES = 5000`; ignora lo que empieza por `.`, no escanea `PocketGB/` de la raíz ni las carpetas que empiezan por `_` (ND11). `RomEntry.folderPath`; `ScanStats` cuenta las consultas SAF (`adb logcat -s PocketGB/Library`).
 - **Biblioteca y detalle adaptables** (N3, `ui/library/LibraryAdaptive.kt`, `LibraryLandscapeTools.kt`, `ui/details/DetailLayout.kt`, `library/LibraryCategory.kt`): el carril «Continuar jugando» solo muestra reanudables (ND15), tengan o no portada (ND17, sustituye a K10), y mide las columnas de la cuadrícula (`railMetricsFor`); con el espacio más ancho que alto la biblioteca pliega la barra superior, fija el título de sección y muestra una barra flotante propia (Buscar, Filtros, Categorías = carpetas de primer nivel, Vista/Orden) cuyos paneles se abren hacia arriba; el detalle pasa a dos columnas si ancho > alto o ≥ 600 dp, con la proporción de la consola. Detalle en [diseno-android/SPEC.md](diseno-android/SPEC.md) §3.3 y guía [biblioteca-android](guia/biblioteca-android.md).
 - **Categorías, etiquetas, inicio y centro de ajustes del juego** (N4, `library/LibraryOrganization.kt`, `LibraryCategory.kt`, `ui/library/HomeShelves.kt`, `CategoryScreen.kt`, `ui/details/GameCenter*.kt`, `ui/settings/HomeSettingsScreen.kt`, `app/LibraryRoutes.kt`): inicio con Favoritos y una estantería por categoría de primer nivel; pantalla de categoría (`LibraryRoute.Category`, migas, subcategorías, vista por categoría); etiquetas y categoría virtual (ND3) por huella y solo con la huella confirmada; Ajustes › Biblioteca › Inicio (por dispositivo, ND12); `preferences.json` formato 4. Reglas: [11-biblioteca-carpetas](11-biblioteca-carpetas.md); guía [categorias-android](guia/categorias-android.md).
+- **Portadas** (N5, `library/artwork/`): fuentes por prioridad con caída a la siguiente ante cualquier fallo (elección por huella en `filesDir/covers/settings.json`: automática, imagen, captura o generada; imagen junto al ROM `<ROM>.png|jpg|jpeg|webp` o `portada.*`/`cover.*`, copiada por sello a `covers/folder/`; importada con Photo Picker u `OpenDocument` a `covers/imported/`; captura fijada desde la pausa en `artwork-pinned/`; capturas del último fotograma en `artwork/`; al final, la generada). Las imágenes son entrada no confiable (`CoverDecoder`: tope 15 MiB, firma PNG/JPEG/WebP, lado ≤ 16 384 y ≤ 100 MP, reducción a ≤ 1024 px). Sin red: la app no descarga portadas (ND4). Guía [portadas-android](guia/portadas-android.md).
+- **Momentos y progreso** (N6, `saves/MomentStore.kt`, `MomentLibrary.kt`, `progress/`, `ui/moments/`, `ui/progress/`): `files/moments/<huella>/` con `m-<id>.{state,sav,png}` (momento: estado + RAM del cartucho del instante, ND13), `b-<id>.*` (anillo «Antes de cargar», 3) e `index.json` como punto de confirmación (último al crear, primero al borrar; uno ilegible se aparta y se reconstruye). Cargar un momento guarda antes la posición actual en el anillo (si falla, no carga nada) y no toca el AUTO; recuperar sin sesión exige la exclusión por huella. Ranuras 1–4 y RESCUE se migran sin perder nada. `files/progress/<huella>.json`: tiempo de juego (solo con el juego corriendo), hitos, plantillas y el lector Pokémon Gen 1/2 por JNI (`progress_pokemon.c`, ND5). Guía [momentos-android](guia/momentos-android.md).
+- **Partidas que viajan** (N7, `saves/SaveLineage.kt`, `travel/`): linaje solo por huellas de contenido (nunca por fecha) para el espejo y los paquetes; `.pgbm` ([12-formato-pgbm](12-formato-pgbm.md)) leído y escrito por el C de `core/src/pgbm.c` vía JNI (copia de tamaño exacto, tope 4 MiB); importador que valida todo antes de tocar nada y aparta lo que reemplaza (anillo «Antes de importar», copia apartada, backup); «Enviar a otro dispositivo» escribe en `PocketGB/Intercambio/` por SAF y la bandeja ofrece los paquetes recibidos tras cada escaneo; intents `VIEW`/`SEND` solo `content://`, validados por cabecera. Comportamiento común con iOS: ND20. Guía [viajar-android](guia/viajar-android.md).
+- **Guía y consejos** (N9, `guide/`, `ui/guide/`, `tips/`, `ui/tips/`): Ajustes › Guía muestra `docs/guia/*-android.md` y `partidas-continuar-y-renombrar.md`, empaquetadas en el APK por la tarea `copyGuideAssets` (`assets/guide/`, una sola fuente) y pintadas en Compose sin WebView: títulos como encabezados de TalkBack, tablas como fichas (nada se corta al 200 %), enlaces entre secciones con `LinkAnnotation` y búsqueda sin acentos por apartado. Cuatro tarjetas de consejo descartables (pausa › Momentos, ajustes del juego › Categoría, detalle › Enviar a otro dispositivo, Ajustes › Controles con flechas separadas) con el descarte en `shared_prefs/tips.xml`; la guía los vuelve a mostrar. Equivale a TipKit en iOS.
 - **`GameplaySettings*`** (`settings/`): ajustes globales y por juego (color, paleta, controles, mando) con persistencia atómica en `filesDir/gameplay-settings.json`.
-- **`ArtworkStore`** (`library/artwork/`): portadas capturadas del último frame al cerrar, en caché con recorte de memoria (`onTrimMemory`).
+- **`ArtworkStore`** (`library/artwork/`): capturas del último frame al cerrar (una fuente más de portada desde N5), en caché con recorte de memoria (`onTrimMemory`).
 - **`GamepadInput`**, `GamepadMonitor`, `GamepadRouter` (`input/`): mapeo por posición, hat y stick; acciones configurables (menú, velocidad).
 - **`ControlsAccessibilityHelper`** (`input/`): `ExploreByTouchHelper` con un nodo virtual por control para TalkBack.
 
@@ -70,10 +74,12 @@ Una sola `libpocketgb.so` con los dos núcleos y una sesión nativa que no sabe 
 | Mandos | `GameController` | `GamepadInput` sobre `KeyEvent`/`MotionEvent` (botones, hat `AXIS_HAT_X/Y`, stick); mapeo por posición y reasignable |
 | Biblioteca | Document picker + bookmark | `ACTION_OPEN_DOCUMENT_TREE` + permisos persistentes (lectura y escritura); detección de revocación |
 | Escritura atómica | `replaceItemAt` | temporal + `fsync` + rename en `filesDir/saves`; espejo SAF junto a la ROM |
-| Ciclo de vida | `scenePhase` | observador de lifecycle: pausa y vaciado de SRAM; sin reanudación automática; rotación sin pausa (`configChanges`) |
+| Ciclo de vida | `scenePhase` | observador de lifecycle: pausa, vaciado de SRAM y estado automático (A9); sin reanudación automática; rotación sin pausa (`configChanges`) |
+| Compartir y recibir partidas (N7) | hoja de compartir, «Abrir con» | `ACTION_SEND` con `FileProvider` privado, `ACTION_CREATE_DOCUMENT`, `OpenDocument`, intents `VIEW`/`SEND` (`content://`) |
+| Guía y consejos (N9) | Ajustes › Guía, TipKit | Ajustes › Guía (assets + Compose) y tarjetas descartables (`TipCard`, `shared_prefs/tips.xml`) |
 
 ## Estado por hito
-A1 a A5 cerrados y probados (A5 con prueba manual pendiente); A6 cerrado y auditado; A7 implementado y en auditoría; A8 en curso. Detalle y evidencia: [hitos/README.md](hitos/README.md) y `auditorias/A*-android-evidencia.md`. Las pruebas reales pendientes están en [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md). La UI del cable virtual no forma parte de Android v1.
+A1–A7 cerrados y auditados; A8 cerrado salvo pruebas manuales; A9 (continuar exacto y renombrar) cerrado. Plan «siguiente nivel» en Android: N1 (identidad y carpetas), N2 (cruceta), N3 (biblioteca y detalle adaptables), N4 (categorías, etiquetas e inicio), N5 (portadas), N6 (momentos y progreso), N7 (partidas que viajan) y N8 (GBA) integrados en `siguiente-nivel` tras su auditoría; N9 (guía y consejos) en auditoría. Detalle y evidencia: [hitos/README.md](hitos/README.md), [hitos/N-README.md](hitos/N-README.md) y `auditorias/{A,N}*-android-evidencia.md`. Las pruebas reales pendientes están en [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md). La UI del cable virtual no forma parte de Android v1.
 
 ## Instalación
 Debug por USB con `./gradlew :app:installDebug`, o Release firmado con un almacén de claves propio fuera del repo. Pasos en [07-instalacion-android.md](07-instalacion-android.md). El repositorio no define `signingConfigs`: el APK Release sale sin firmar.
