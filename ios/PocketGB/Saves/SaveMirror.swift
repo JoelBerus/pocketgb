@@ -274,10 +274,13 @@ enum SaveOpening {
         var divergence: DivergenceChoice?
         /// Donde queda la perdedora de una divergencia como momento «Conflicto …» (nil = solo copia apartada).
         var conflictMoments: MomentStore?
+        /// ND20 (k): estados del juego, para que el «Conflicto» con la partida local lleve su estado y miniatura.
+        var states: StateStore?
 
-        init(divergence: DivergenceChoice? = nil, conflictMoments: MomentStore? = nil) {
+        init(divergence: DivergenceChoice? = nil, conflictMoments: MomentStore? = nil, states: StateStore? = nil) {
             self.divergence = divergence
             self.conflictMoments = conflictMoments
+            self.states = states
         }
     }
 
@@ -320,7 +323,7 @@ enum SaveOpening {
             && mirrorCandidate.map { validSizes.contains($0.data.count) } == true
         let relation: SaveLineage.MirrorRelation? = sizesValid
             ? SaveLineage.relation(local: SaveLineage.sha256(local!.data), mirror: SaveLineage.sha256(mirrorCandidate!.data),
-                                   history: store.lineageHistory())
+                                   history: store.lineageHistory(mirror: mirror?.url))
             : nil
         switch SaveResolution.resolve(local: local, mirror: mirrorCandidate, mirrorIsOwned: mirrorIsOwned,
                                       lineage: relation, divergence: options.divergence,
@@ -339,12 +342,20 @@ enum SaveOpening {
             }
             // N7a · divergencia resuelta: la que pierde queda además como momento «Conflicto …» (solo partida).
             if relation == .divergent, let local, let mirrorCandidate, let moments = options.conflictMoments {
-                let loser = data == mirrorCandidate.data ? local.data : mirrorCandidate.data
-                _ = try? moments.create(.init(state: nil, sram: loser, thumbnail: nil), name: conflictName())
+                let localLoses = data == mirrorCandidate.data
+                let loser = localLoses ? local.data : mirrorCandidate.data
+                // ND20 (k): si pierde la local, el «Conflicto» lleva también su estado automático y su miniatura.
+                let state = localLoses ? try? options.states?.load(.auto) : nil
+                let thumb = state == nil ? nil : options.states.flatMap { try? Data(contentsOf: $0.thumbnailURL(.auto)) }
+                _ = try? moments.create(.init(state: state, sram: loser, thumbnail: thumb), name: conflictName())
             }
             if let backupOther { try store.addBackup(backupOther) }
             if quarantineLocal { try store.quarantineCurrent() }
-            if installLocal { try store.save(data) }
+            if installLocal {
+                try store.save(data)
+                // ND20 (b, g): la partida llegó de fuera (cambio externo o primera instalación desde el espejo).
+                try? store.recordReceived(data)
+            }
             let target = makeTarget(mirrorIgnored ? nil : usableMirror, pending: updateMirror)
             let warning: SaveLoadWarning? = mirrorIgnored ? .mirrorIgnored
                 : relation == .external && data != local?.data ? .externalChange
@@ -471,7 +482,7 @@ private final class MirrorChannel: @unchecked Sendable {
             do {
                 // Write-ahead local: si el proceso muere después del replace remoto y
                 // antes de confirmarlo, la próxima apertura aún reconoce el contenido.
-                try request.store.recordMirrorAttempt(request.data)
+                try request.store.recordMirrorAttempt(request.data, mirror: request.mirrorURL)
                 try request.writer(request.data)
                 try request.store.recordSuccessfulMirror(
                     request.data, observedDate: request.mirrorURL.flatMap(SaveStore.modificationDate))

@@ -245,6 +245,7 @@ enum SaveImport {
                     }
                 }
                 let c = try installContinuation()
+                if let current, !plan.batteryless { try? store.recordReceived(current) }   // ND20 (b, g)
                 recordOrigin(c)
                 trimRing()
                 return .alreadyCurrent(continuation: c)
@@ -266,17 +267,59 @@ enum SaveImport {
                     return .keptLocal
                 case .useOther?:
                     if let current, !plan.raw {
-                        _ = try? moments?.create(.init(state: ownAuto, sram: current, thumbnail: nil),
+                        let thumb = ownAuto == nil ? nil : states.flatMap { try? Data(contentsOf: $0.thumbnailURL(.auto)) }
+                        _ = try? moments?.create(.init(state: ownAuto, sram: current, thumbnail: thumb),
                                                  name: SaveOpening.conflictName(now))
                     }
                 }
             }
             try keepCurrent()
             try store.save(incoming)
+            try? store.recordReceived(incoming)   // ND20 (b, g)
             let c = try installContinuation()
             recordOrigin(c)
             trimRing()
             return .installed(continuation: c)
         }
+    }
+}
+
+/// ND20 (i) · fusión de los metadatos que trae un paquete con los de este iPhone (P9/ND12). Pura, para probarla.
+/// - etiquetas: unión; alias: el local si existe, si no el del paquete; tiempo de juego: el máximo;
+/// - hitos: unión por `id`, y un hito marcado en cualquiera de los dos queda marcado.
+enum MetadataMerge {
+    struct Local: Equatable {
+        var alias: String?
+        var tags: [String]
+        var playTime: TimeInterval
+        var milestones: [Milestone]
+    }
+
+    static func merge(_ local: Local, with meta: PackageMeta, now: Date = Date()) -> Local {
+        var out = local
+        if out.alias?.isEmpty ?? true, let alias = meta.alias?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !alias.isEmpty {
+            out.alias = String(alias.prefix(80))
+        }
+        for tag in meta.tags ?? [] {
+            guard out.tags.count < Tags.maxPerGame, let t = Tags.normalize(tag),
+                  !out.tags.contains(where: { Tags.same($0, t) }) else { continue }
+            out.tags.append(t)
+        }
+        out.tags = Tags.sorted(out.tags)
+        if let ms = meta.playTimeMs { out.playTime = max(out.playTime, TimeInterval(ms) / 1000) }
+        for m in meta.milestones ?? [] {
+            if let i = out.milestones.firstIndex(where: { $0.id == m.id }) {
+                if m.done && !out.milestones[i].done {
+                    out.milestones[i].done = true
+                    out.milestones[i].doneAt = now
+                }
+            } else if out.milestones.count < GameProgress.maxMilestones {
+                let title = String(m.title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(GameProgress.maxTitle))
+                out.milestones.append(Milestone(id: m.id, title: title.isEmpty ? m.id : title, done: m.done,
+                                                doneAt: m.done ? now : nil))
+            }
+        }
+        return out
     }
 }

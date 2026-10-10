@@ -97,7 +97,7 @@ extension AppState {
         return (SaveImport.Cartridge(info: info, validSizes: EmulatorSession.validSaveSizes(info)), digest, info)
     }
 
-    private func emulationOptions(_ entry: RomEntry) -> EmulationOptions {
+    func emulationOptions(_ entry: RomEntry) -> EmulationOptions {
         gameplay.data.emulation(with: libraryPrefs.overrides(fingerprint: libraryPrefs.fingerprint(of: entry), path: entry.id))
     }
 
@@ -195,6 +195,15 @@ extension AppState {
                                                moments: momentStoreFor(plan.fingerprint), ownership: ownership)
             let from = plan.origin.map { " de \($0)" } ?? ""
             switch outcome {
+            case .installed, .alreadyCurrent, .keptLocal: applyMetadata(plan, to: entry)
+            default: break
+            }
+            // ND20 (h): un estado de otra configuración puede no cargar; se avisa (el estado no se borra).
+            let differences = plan.meta?.config?.differences(from: PackageConfig(emulationOptions(entry), console: entry.console)) ?? []
+            let configNote = plan.continuation != nil && !differences.isEmpty
+                ? " Ojo: en \(plan.origin ?? "el otro equipo") se jugó con otra configuración (\(differences.joined(separator: ", "))). Cámbiala en los ajustes del juego para continuar justo donde lo dejaste; si no, el punto para continuar puede no cargar (tu partida sí)."
+                : ""
+            switch outcome {
             case .needsChoice:
                 importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: libraryPrefs.displayTitle(entry))
                 return
@@ -204,11 +213,11 @@ extension AppState {
                 return
             case .installed(let c):
                 notify("Partida importada", "Se ha instalado la partida\(from). La anterior quedó en «Antes de cargar» y en las copias de seguridad."
-                       + (c ? " Puedes continuar justo donde lo dejaste." : ""))
+                       + (c ? " Puedes continuar justo donde lo dejaste." : "") + configNote)
             case .alreadyCurrent(let c):
                 notify(c ? "Listo para continuar" : "Ya tienes esta partida",
                        c ? "La partida ya era la misma; ahora puedes continuar justo donde lo dejaste\(from.isEmpty ? "" : " en \(plan.origin!)")."
-                         : "La partida del paquete es la misma que ya tienes. No se ha cambiado nada.")
+                         : "La partida del paquete es la misma que ya tienes. No se ha cambiado nada." + configNote)
             case .keptLocal:
                 notify("Se mantiene tu partida", "La partida\(from) no se ha perdido: está en Momentos como «Conflicto» y en las copias apartadas.")
             case .saveNotTouched:
@@ -217,6 +226,25 @@ extension AppState {
             didRestoreSave(fingerprint: plan.fingerprint)
         } catch {
             notify("No se pudo importar", error.localizedDescription)
+        }
+    }
+
+    /// ND20 (i): fusiona alias, etiquetas, tiempo de juego e hitos del paquete con los de este iPhone.
+    private func applyMetadata(_ plan: SaveImport.Plan, to entry: RomEntry) {
+        guard let meta = plan.meta else { return }
+        let p = progress.progress(plan.fingerprint)
+        let local = MetadataMerge.Local(alias: libraryPrefs.data.metadata(entry).alias, tags: libraryPrefs.tags(entry),
+                                        playTime: p.playTime, milestones: p.milestones)
+        let merged = MetadataMerge.merge(local, with: meta)
+        if merged.alias != local.alias, let alias = merged.alias { libraryPrefs.setAlias(alias, for: entry) }
+        for tag in merged.tags where !local.tags.contains(tag) { libraryPrefs.addTag(tag, to: entry) }
+        if merged.playTime != local.playTime || merged.milestones != local.milestones {
+            progress.change(plan.fingerprint) { store in
+                try store.update(plan.fingerprint) {
+                    $0.playTime = merged.playTime
+                    $0.milestones = merged.milestones
+                }
+            }
         }
     }
 
@@ -245,7 +273,8 @@ extension AppState {
             let game = SaveExport.Game(fingerprint: fp, romDigest: read.digest, console: console, title: title,
                                        alias: meta.alias, tags: meta.tags,
                                        playTime: progress.playTime > 0 ? progress.playTime : nil,
-                                       milestones: progress.milestones.map { .init(id: $0.id, title: $0.title, done: $0.done) })
+                                       milestones: progress.milestones.map { .init(id: $0.id, title: $0.title, done: $0.done) },
+                                       config: PackageConfig(emulation, console: console))
             return try SaveExport.package(game, store: store, states: states, deviceName: device)
         }.value
     }

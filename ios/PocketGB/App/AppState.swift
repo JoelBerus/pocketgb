@@ -649,12 +649,17 @@ final class AppState {
             let savesDirectory = try SaveStore.defaultDirectory()
             let emulation = gameplay.data.emulation(with: overrides)
             let choice = PendingDivergence.take(&pendingDivergence, entryID: entryID)
-            let conflictMoments = RomFingerprint.compute(data: romData, console: console).flatMap(momentStoreFor)
+            let romFingerprint = RomFingerprint.compute(data: romData, console: console)
+            let conflictMoments = romFingerprint.flatMap(momentStoreFor)
+            let conflictStates = romFingerprint.flatMap { fp in
+                (try? StateStore.defaultRoot()).map { StateStore(root: $0, fingerprint: fp) }
+            }
             let session = try EmulatorSession(romData: romData, savesDirectory: savesDirectory,
                                               mirror: mirror, mirrorSnapshot: snapshot,
                                               emulation: emulation,
                                               console: console, bios: bios,
-                                              lineage: .init(divergence: choice, conflictMoments: conflictMoments)) { [weak self] in
+                                              lineage: .init(divergence: choice, conflictMoments: conflictMoments,
+                                                             states: conflictStates)) { [weak self] in
                 self?.enterBackground()
             }
             session.applyAudioPreferences(audioPreferences)

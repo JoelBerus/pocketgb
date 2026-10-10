@@ -106,7 +106,7 @@ struct PackageMeta: Equatable, Sendable {
     var coreName: String
     var coreVersion: String?
     var stateOfSavSHA256: String?
-    var configModel: String?
+    var config: PackageConfig?
     var playTimeMs: Int?
     var title: String?
     var alias: String?
@@ -128,7 +128,9 @@ struct PackageMeta: Equatable, Sendable {
     static let maxInt = (1 << 53) - 1
 
     static func parse(_ json: Data) throws -> PackageMeta {
-        guard json.count <= 65_536, json.prefix(3) != Data([0xEF, 0xBB, 0xBF]),
+        // ND20 (h): antes de `JSONSerialization` (que se queda con una de las claves repetidas y acepta 1.0 o 1e3), un
+        // recorrido de tokens rechaza claves repetidas y números con fracción o exponente.
+        guard json.count <= 65_536, json.prefix(3) != Data([0xEF, 0xBB, 0xBF]), StrictJSON.isStrict(json),
               let object = try? JSONSerialization.jsonObject(with: json), let root = object as? [String: Any]
         else { throw Invalid.notJSON }
         func int(_ value: Any?, _ key: String) throws -> Int? {
@@ -141,12 +143,15 @@ struct PackageMeta: Equatable, Sendable {
         }
         func string(_ value: Any?, _ key: String, max: Int) throws -> String? {
             guard let value, !(value is NSNull) else { return nil }
-            guard let s = value as? String, s.count <= max else { throw Invalid.field(key) }
+            // Longitudes en code points de Unicode (ND20 h), no en grafemas.
+            guard let s = value as? String, s.unicodeScalars.count <= max else { throw Invalid.field(key) }
             return s
         }
         func hex(_ value: Any?, _ key: String) throws -> String? {
             guard let s = try string(value, key, max: 64) else { return nil }
-            guard s.count == 64, s.allSatisfy(\.isHexDigit) else { throw Invalid.field(key) }
+            // Solo hex ASCII (ND20 h): `isHexDigit` aceptaría dígitos de ancho completo.
+            guard s.utf8.count == 64, s.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x41...0x46).contains($0)
+                                                          || (0x61...0x66).contains($0) }) else { throw Invalid.field(key) }
             return s.lowercased()
         }
         func bool(_ value: Any?, _ key: String) throws -> Bool {
@@ -179,9 +184,21 @@ struct PackageMeta: Equatable, Sendable {
             coreName: coreName,
             coreVersion: try string(core["version"], "core.version", max: 32),
             stateOfSavSHA256: try hex(root["state_of_sav_sha256"], "state_of_sav_sha256"))
-        if let config = root["config"] {
-            guard let config = config as? [String: Any] else { throw Invalid.field("config") }
-            meta.configModel = try string(config["model"], "config.model", max: 8)
+        if let config = root["config"], !(config is NSNull) {
+            guard let c = config as? [String: Any] else { throw Invalid.field("config") }
+            // Tipos del esquema (ND20 h): un tipo o valor erróneo hace la META inválida; las claves desconocidas se ignoran.
+            func choice(_ key: String, _ allowed: [String]) throws -> String? {
+                guard let v = try string(c[key], "config.\(key)", max: 16) else { return nil }
+                guard allowed.contains(v) else { throw Invalid.field("config.\(key)") }
+                return v
+            }
+            var cfg = PackageConfig()
+            cfg.model = try choice("model", ["auto", "dmg", "cgb"])
+            cfg.compatPalette = try string(c["compat_palette"], "config.compat_palette", max: 64)
+            cfg.gbaSaveType = try choice("gba_save_type", PackageConfig.gbaSaveTypes)
+            cfg.gbaRTC = try choice("gba_rtc", ["auto", "on", "off"])
+            if let b = c["gba_bios"], !(b is NSNull) { cfg.gbaBIOS = try bool(b, "config.gba_bios") }
+            meta.config = cfg
         }
         meta.playTimeMs = try int(root["play_time_ms"], "play_time_ms")
         meta.title = try string(root["title"], "title", max: 256)
@@ -217,7 +234,7 @@ struct PackageMeta: Equatable, Sendable {
             "device": ["platform": platform, "name": deviceName], "created_ms": createdMs,
             "core": ["name": coreName, "version": coreVersion ?? ""] as [String: Any],
         ]
-        if let configModel { root["config"] = ["model": configModel] }
+        if let config, !config.dictionary.isEmpty { root["config"] = config.dictionary }
         if let stateOfSavSHA256 { root["state_of_sav_sha256"] = stateOfSavSHA256 }
         if let playTimeMs { root["play_time_ms"] = playTimeMs }
         if let title { root["title"] = String(title.prefix(256)) }
@@ -255,5 +272,133 @@ extension PackageMeta {
         self.coreName = coreName
         self.coreVersion = coreVersion
         self.stateOfSavSHA256 = stateOfSavSHA256
+    }
+}
+
+/// `config` de META v1 (docs/12): la configuración con la que se jugó. Todo opcional.
+struct PackageConfig: Equatable, Sendable {
+    var model: String?
+    var compatPalette: String?
+    var gbaSaveType: String?
+    var gbaRTC: String?
+    var gbaBIOS: Bool?
+
+    /// Orden de `gba_save_type` (`GBA_SAVE_AUTO`… `GBA_SAVE_EEPROM8K` en `gba/include`).
+    static let gbaSaveTypes = ["auto", "none", "sram", "flash64", "flash128", "eeprom512", "eeprom8k"]
+    static let gbaRTCs = ["auto", "on", "off"]
+
+    init() {}
+
+    /// La configuración efectiva de un juego en este iPhone, en los términos del esquema.
+    init(_ options: EmulationOptions, console: Console) {
+        switch console {
+        case .gameBoy:
+            model = options.colorForGameBoy ? "cgb" : "dmg"
+            compatPalette = String(options.compatPalette)
+        case .gameBoyAdvance:
+            gbaSaveType = Self.gbaSaveTypes[safe: Int(options.gbaSaveType)] ?? "auto"
+            gbaRTC = Self.gbaRTCs[safe: Int(options.gbaRTC)] ?? "auto"
+            gbaBIOS = options.gbaUseBIOS
+        }
+    }
+
+    var dictionary: [String: Any] {
+        var d: [String: Any] = [:]
+        if let model { d["model"] = model }
+        if let compatPalette { d["compat_palette"] = compatPalette }
+        if let gbaSaveType { d["gba_save_type"] = gbaSaveType }
+        if let gbaRTC { d["gba_rtc"] = gbaRTC }
+        if let gbaBIOS { d["gba_bios"] = gbaBIOS }
+        return d
+    }
+
+    /// Claves que el paquete trae y que difieren de `local` (vacío = coinciden o no se sabe). ND20 (h): con un estado
+    /// de otra configuración se avisa antes de que el estado deje de servir.
+    func differences(from local: PackageConfig) -> [String] {
+        var out: [String] = []
+        if let model, model != "auto", let l = local.model, l != model { out.append("el color de Game Boy") }
+        if let compatPalette, let l = local.compatPalette, l != compatPalette { out.append("la paleta") }
+        if let gbaSaveType, gbaSaveType != "auto", let l = local.gbaSaveType, l != gbaSaveType { out.append("el tipo de partida") }
+        if let gbaRTC, gbaRTC != "auto", let l = local.gbaRTC, l != gbaRTC { out.append("el reloj") }
+        if let gbaBIOS, let l = local.gbaBIOS, l != gbaBIOS { out.append("la BIOS") }
+        return out
+    }
+}
+
+private extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+/// ND20 (h): recorrido de tokens JSON (RFC 8259) que solo comprueba lo que `JSONSerialization` deja pasar: claves
+/// repetidas en un objeto (comparadas ya decodificadas) y números con fracción o exponente.
+enum StrictJSON {
+    static func isStrict(_ data: Data) -> Bool {
+        let b = [UInt8](data)
+        var i = 0
+        func ws() { while i < b.count, [0x20, 0x09, 0x0A, 0x0D].contains(b[i]) { i += 1 } }
+        func string() -> String? {
+            guard i < b.count, b[i] == 0x22 else { return nil }
+            let start = i
+            i += 1
+            while i < b.count, b[i] != 0x22 {
+                if b[i] == 0x5C { i += 1 }
+                i += 1
+            }
+            guard i < b.count else { return nil }
+            i += 1
+            return (try? JSONSerialization.jsonObject(with: Data(b[start..<i]), options: .fragmentsAllowed)) as? String
+        }
+        func value(_ depth: Int) -> Bool {
+            guard depth < 64 else { return false }
+            ws()
+            guard i < b.count else { return false }
+            switch b[i] {
+            case 0x7B: // {
+                i += 1; ws()
+                var keys = Set<String>()
+                if i < b.count, b[i] == 0x7D { i += 1; return true }
+                while true {
+                    ws()
+                    guard let key = string(), keys.insert(key).inserted else { return false }
+                    ws()
+                    guard i < b.count, b[i] == 0x3A else { return false }
+                    i += 1
+                    guard value(depth + 1) else { return false }
+                    ws()
+                    guard i < b.count else { return false }
+                    if b[i] == 0x2C { i += 1; continue }
+                    if b[i] == 0x7D { i += 1; return true }
+                    return false
+                }
+            case 0x5B: // [
+                i += 1; ws()
+                if i < b.count, b[i] == 0x5D { i += 1; return true }
+                while true {
+                    guard value(depth + 1) else { return false }
+                    ws()
+                    guard i < b.count else { return false }
+                    if b[i] == 0x2C { i += 1; continue }
+                    if b[i] == 0x5D { i += 1; return true }
+                    return false
+                }
+            case 0x22:
+                return string() != nil
+            case 0x2D, 0x30...0x39:
+                while i < b.count, (0x30...0x39).contains(b[i]) || [0x2D, 0x2B, 0x2E, 0x65, 0x45].contains(b[i]) {
+                    if [0x2E, 0x65, 0x45].contains(b[i]) { return false }   // fracción o exponente
+                    i += 1
+                }
+                return true
+            default:
+                for lit in ["true", "false", "null"] where b[i...].starts(with: Array(lit.utf8)) {
+                    i += lit.utf8.count
+                    return true
+                }
+                return false
+            }
+        }
+        guard value(0) else { return false }
+        ws()
+        return i == b.count
     }
 }

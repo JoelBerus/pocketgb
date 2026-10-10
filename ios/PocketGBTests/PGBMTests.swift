@@ -383,4 +383,82 @@ struct PGBMTests {
                              sizeBytes: 0, headerChecksumOK: true, cloud: .current, problem: nil, mirrorSaveDate: nil)
         #expect(ImportPrompt(entry: entry, plan: plan, gameTitle: "Pokémon Rojo").title.contains("Pokémon Rojo"))
     }
+
+    // MARK: ND20 (h, i, g)
+
+    var x8: Data { get throws { try package(meta: meta(#"{"format":1,"rom_sha256":"R","sav_sha256":"S1","base_sav_sha256":null,"device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790000000000,"created_ms":1790000000001,"core":{"name":"gb","version":"1.0.0"}}"#), save: S1) } }
+
+    @Test func x8DuplicateKeyIsRejectedWithoutTouchingAnything() throws {
+        #expect(meta(#"{"format":1,"rom_sha256":"R","sav_sha256":"S1","base_sav_sha256":null,"device":{"platform":"android","name":"Pixel de prueba"},"created_ms":1790000000000,"created_ms":1790000000001,"core":{"name":"gb","version":"1.0.0"}}"#).utf8.count == 345)
+        expect(try x8, length: 33185, sha256: "08c1ad1b5c7422765a54d1e2d0bc19276c5feeb9db8d1fe49f7aadc0ebf7c95b", "X8")
+        let e = env()
+        try e.store.save(B)
+        let before = snapshot(e)
+        #expect(throws: SaveImport.Rejection.meta(.notJSON)) { try run(try x8, e) }
+        #expect(snapshot(e) == before)
+    }
+
+    @Test func metaIsStrictPerND20h() throws {
+        let ok = meta(#"{"format":1,"rom_sha256":"R","sav_sha256":"S1","device":{"platform":"ios","name":"x"},"created_ms":1,"core":{"name":"gb"},"config":{"model":"cgb","compat_palette":"3","extra":1}}"#)
+        let parsed = try PackageMeta.parse(Data(ok.utf8))
+        #expect(parsed.config?.model == "cgb" && parsed.config?.compatPalette == "3")
+        let fullwidthHex = sha(S1).replacingOccurrences(of: "e", with: "\u{FF45}")
+        let bad = [
+            ok.replacingOccurrences(of: #""created_ms":1"#, with: #""created_ms":1.0"#),
+            ok.replacingOccurrences(of: #""created_ms":1"#, with: #""created_ms":1e3"#),
+            ok.replacingOccurrences(of: #""created_ms":1"#, with: #""created_ms":10E0"#),
+            ok.replacingOccurrences(of: #""name":"x""#, with: #""name":"x","name":"y""#),
+            ok.replacingOccurrences(of: #""name":"x""#, with: #""name":"x","n\u0061me":"y""#),   // repetida tras decodificar
+            ok.replacingOccurrences(of: sha(S1), with: fullwidthHex),
+            ok.replacingOccurrences(of: #""model":"cgb""#, with: #""model":"gbc""#),
+            ok.replacingOccurrences(of: #""model":"cgb""#, with: #""model":1"#),
+            ok.replacingOccurrences(of: #""compat_palette":"3""#, with: #""compat_palette":3"#),
+            ok.replacingOccurrences(of: #""config":{"#, with: #""config":{"gba_bios":"si","#),
+            ok.replacingOccurrences(of: #""config":{"#, with: #""config":{"gba_save_type":"flash","#),
+            ok.replacingOccurrences(of: #""name":"x""#, with: "\"name\":\"\(String(repeating: "x", count: 129))\""),
+        ]
+        for json in bad { #expect(throws: PackageMeta.Invalid.self, "\(json)") { try PackageMeta.parse(Data(json.utf8)) } }
+        // Longitud en code points: 128 «é» (256 bytes UTF-8, 128 code points) caben en `device.name` (≤ 128).
+        let accents = ok.replacingOccurrences(of: #""name":"x""#, with: "\"name\":\"\(String(repeating: "é", count: 128))\"")
+        #expect(throws: Never.self) { try PackageMeta.parse(Data(accents.utf8)) }
+        // Un grafema de varios code points cuenta por sus code points: 65 banderas = 130 code points > 128.
+        let flags = ok.replacingOccurrences(of: #""name":"x""#, with: "\"name\":\"\(String(repeating: "🇪🇸", count: 65))\"")
+        #expect(throws: PackageMeta.Invalid.self) { try PackageMeta.parse(Data(flags.utf8)) }
+    }
+
+    @Test func exportCarriesConfigAndLastReceivedBase() throws {
+        let a = env()
+        try a.store.save(S1)
+        try a.store.recordReceived(B)   // p. ej. un cambio externo anterior
+        var game = SaveExport.Game(fingerprint: cartridge.fingerprint, romDigest: rom, console: .gameBoy)
+        game.config = PackageConfig(EmulationOptions(colorForGameBoy: true, compatPalette: 2), console: .gameBoy)
+        let data = try SaveExport.package(game, store: a.store, states: nil, deviceName: "iPhone")
+        let m = try PackageMeta.parse(try #require(try PGBMPackage.parse(data).meta))
+        #expect(m.baseSavSHA256 == sha(B))
+        #expect(m.config == PackageConfig(EmulationOptions(colorForGameBoy: true, compatPalette: 2), console: .gameBoy))
+        #expect(m.config?.differences(from: PackageConfig(EmulationOptions(colorForGameBoy: false, compatPalette: 2),
+                                                           console: .gameBoy)) == ["el color de Game Boy"])
+    }
+
+    @Test func metadataIsMergedPerND20i() {
+        var meta = PackageMeta(romSHA256: R, savSHA256: sha(S1), baseSavSHA256: nil, platform: "android", deviceName: "P",
+                               createdMs: 1, coreName: "gb", coreVersion: nil, stateOfSavSHA256: nil)
+        meta.alias = "Del Pixel"
+        meta.tags = ["rpg", "Pixel"]
+        meta.playTimeMs = 7_200_000
+        meta.milestones = [.init(id: "a", title: "A", done: true), .init(id: "c", title: "C", done: false)]
+        let local = MetadataMerge.Local(alias: nil, tags: ["RPG", "mío"], playTime: 3600,
+                                        milestones: [Milestone(id: "a", title: "A", done: false), Milestone(id: "b", title: "B", done: true)])
+        let merged = MetadataMerge.merge(local, with: meta)
+        #expect(merged.alias == "Del Pixel")
+        #expect(Set(merged.tags.map { $0.lowercased() }) == ["rpg", "mío", "pixel"])
+        #expect(merged.playTime == 7200)
+        #expect(merged.milestones.map(\.id) == ["a", "b", "c"])
+        #expect(merged.milestones.map(\.done) == [true, true, false])
+        var kept = local
+        kept.alias = "Mío"
+        kept.playTime = 99_999
+        let m2 = MetadataMerge.merge(kept, with: meta)
+        #expect(m2.alias == "Mío" && m2.playTime == 99_999)
+    }
 }

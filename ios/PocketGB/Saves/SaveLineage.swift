@@ -16,11 +16,15 @@ enum SaveLineage {
     struct History: Equatable, Sendable {
         var written: [String] = []
         var pending: [String] = []
+        /// ND20 (b): partidas recibidas de fuera, de la más reciente a la más antigua.
+        var received: [String] = []
 
-        var isEmpty: Bool { written.isEmpty && pending.isEmpty }
+        var isEmpty: Bool { written.isEmpty && pending.isEmpty && received.isEmpty }
         /// La última partida que PocketGB mandó al espejo (en curso o confirmada).
         var lastOwnWrite: String? { pending.first ?? written.first }
-        func contains(_ hash: String) -> Bool { written.contains(hash) || pending.contains(hash) }
+        func contains(_ hash: String) -> Bool { written.contains(hash) || pending.contains(hash) || received.contains(hash) }
+        /// ¿La local no cambió desde la última escritura propia o desde la última recibida? (ND20 b)
+        func isUnchanged(_ local: String) -> Bool { local == lastOwnWrite || local == received.first }
     }
 
     /// Relación del espejo con la partida local (las dos existen y tienen un tamaño válido).
@@ -41,7 +45,7 @@ enum SaveLineage {
         if local == mirror { return .same }
         if history.contains(mirror) { return .ownEarlier }
         if history.isEmpty { return .noHistory }
-        if local == history.lastOwnWrite { return .external }
+        if history.isUnchanged(local) { return .external }
         return .divergent
     }
 

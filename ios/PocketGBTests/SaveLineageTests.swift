@@ -235,4 +235,62 @@ struct SaveLineageTests {
         #expect(pending == nil)
         #expect(PendingDivergence.take(&pending, entryID: "a.gb") == nil)
     }
+
+    // MARK: ND20
+
+    /// ND20 (b): iPhone → Android → iPhone sin jugar → Android otra vez. La partida recibida cuenta como «la local no
+    /// cambió»: el segundo cambio de Android es un cambio externo, no una divergencia falsa.
+    @Test func receivedSaveIsUnchangedLocalAfterOpenCloseWithoutPlaying() throws {
+        let (store, mirror) = try setup("nd20b")
+        try play(d1, store, mirror)                    // el iPhone escribe d1
+        try d2.write(to: mirror.url)                   // Android escribe d2
+        let first = try open(store, mirror)
+        #expect(first.data == d2 && first.warning == .externalChange)
+        _ = try open(store, mirror)                    // abrir y cerrar sin jugar: nada cambia
+        try d3.write(to: mirror.url)                   // Android vuelve a escribir
+        let second = try open(store, mirror)           // sin (b) sería divergencia
+        #expect(second.data == d3 && second.warning == .externalChange)
+        #expect(store.lastReceived == SaveLineage.sha256(d3))
+    }
+
+    /// ND20 (g): la primera instalación desde el espejo también cuenta como recibida.
+    @Test func firstInstallFromMirrorIsReceived() throws {
+        let (store, mirror) = try setup("nd20g")
+        try d2.write(to: mirror.url)
+        #expect(try open(store, mirror).data == d2)
+        #expect(store.lastReceived == SaveLineage.sha256(d2))
+    }
+
+    /// ND20 (m): el historial es del espejo en el que se escribió; un duplicado del mismo ROM en otra carpeta usa la
+    /// regla de N1 (fecha + copia apartada), sin divergencias ni linaje.
+    @Test func historyOfAnotherMirrorLocationIsNotUsed() throws {
+        let (store, mirror) = try setup("nd20m")
+        try play(d1, store, mirror)
+        try store.save(d2)
+        try setDate(farPast, store.saveURL)
+        let other = SaveMirror(url: dir.appendingPathComponent("otra-carpeta-\(store.fingerprint).sav"))
+        try d3.write(to: other.url)
+        let outcome = try open(store, other)            // con el historial de `mirror` sería divergencia
+        #expect(outcome.data == d3)
+        #expect(store.keptCopies().contains { (try? Data(contentsOf: $0.url)) == d2 })
+        #expect(outcome.warning == nil)
+    }
+
+    /// ND20 (k): si pierde la local, el «Conflicto» lleva su estado automático y su miniatura.
+    @Test func conflictMomentCarriesLocalAutoState() throws {
+        let (store, mirror) = try setup("nd20k")
+        try play(d1, store, mirror)
+        try store.save(d2)
+        try d3.write(to: mirror.url)
+        let states = StateStore(root: dir.appendingPathComponent("states"), fingerprint: store.fingerprint)
+        let auto = Data("PGBS".utf8) + Data(repeating: 7, count: 16)
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        try states.save(auto, thumbnail: png, to: .auto)
+        let moments = MomentStore(root: dir.appendingPathComponent("mk"), fingerprint: store.fingerprint)
+        _ = try open(store, mirror, .init(divergence: .useOther, conflictMoments: moments, states: states))
+        let conflict = try #require(try moments.snapshot().moments.first)
+        #expect(try moments.loadSRAM(.moment, conflict.id) == d2)
+        #expect(try moments.loadState(.moment, conflict.id) == auto)
+        #expect(conflict.hasThumbnail)
+    }
 }

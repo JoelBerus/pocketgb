@@ -23,6 +23,8 @@ enum SaveExport {
         var tags: [String] = []
         var playTime: TimeInterval?
         var milestones: [PackageMeta.Milestone] = []
+        /// ND20 (h): la configuración con la que se juega ahora.
+        var config: PackageConfig?
     }
 
     enum ExportError: Error, LocalizedError {
@@ -50,9 +52,10 @@ enum SaveExport {
         let thumb = auto == nil ? nil : (try? Data(contentsOf: states!.thumbnailURL(.auto))).flatMap {
             $0.count <= 262_144 && $0.prefix(8) == Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) ? $0 : nil
         }
-        let base = SaveImport.Origin.load(store).map(\.savSHA256)
+        // ND20 (g): la última partida recibida de fuera (paquete, cambio externo o primera instalación desde el espejo).
+        let base = store.lastReceived
         var meta = PackageMeta(romSHA256: game.romDigest.map { String(format: "%02x", $0) }.joined(),
-                               savSHA256: savSHA, baseSavSHA256: base == savSHA ? nil : base,
+                               savSHA256: savSHA, baseSavSHA256: base,
                                platform: "ios", deviceName: String(deviceName.prefix(128)),
                                createdMs: Int(now.timeIntervalSince1970 * 1000),
                                coreName: game.console == .gameBoyAdvance ? "gba" : "gb",
@@ -63,6 +66,7 @@ enum SaveExport {
         meta.tags = game.tags.isEmpty ? nil : game.tags
         meta.playTimeMs = game.playTime.map { Int($0 * 1000) }
         meta.milestones = game.milestones.isEmpty ? nil : game.milestones
+        meta.config = game.config
         return try PGBMPackage(romFingerprint: game.romDigest, meta: try meta.encoded(), save: save,
                                state: auto, thumbnail: thumb).encoded()
     }
