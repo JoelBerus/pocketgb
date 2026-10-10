@@ -12,8 +12,8 @@ import java.io.File
 import java.io.IOException
 
 /**
- * El juego al que va la partida. [validSizes]: tamaños de `.sav` del cartucho (los del índice o, si el juego nunca se
- * abrió, los de la cabecera del ROM, ND20 j). [config]: configuración actual del juego en este equipo (para avisar de qué
+ * El juego al que va la partida. [validSizes]: tamaños de `.sav` del cartucho (los de la cabecera del ROM y, si no se
+ * puede leer, los del índice: ND20 j, [sizing]). [config]: configuración actual del juego en este equipo (para avisar de qué
  * ajuste cambiar si el estado del paquete es de otra, ND20 h, ND21).
  */
 class ImportTarget(
@@ -26,7 +26,21 @@ class ImportTarget(
     val config: PgbmConfig? = null,
     /** Nombre visible del juego (para confirmar un `.sav` crudo, ND20 e). */
     val title: String = "",
-)
+) {
+    companion object {
+        /**
+         * ND20 (j), = iOS: los tamaños de la partida salen de la cabecera del ROM ([headerSizes]: vacío = sin batería,
+         * `null` = no se pudo leer) con prioridad sobre el índice ([indexed], lo que se anotó la última vez que se abrió:
+         * puede estar desfasado tras cambiar el tipo de partida GBA). Solo sin cabecera se usa el índice. Devuelve
+         * (tiene batería, tamaños válidos).
+         */
+        fun sizing(headerSizes: Set<Int>?, indexed: com.joelbermudez.pocketgb.saves.SavesIndex.Record?): Pair<Boolean, Set<Int>?> = when {
+            headerSizes != null -> headerSizes.isNotEmpty() to headerSizes.takeIf { it.isNotEmpty() }
+            indexed != null -> (indexed.validSizes != null) to indexed.validSizes?.toSet()
+            else -> true to null
+        }
+    }
+}
 
 /**
  * N7b · importar un `.pgbm` o un `.sav` crudo (docs/12-formato-pgbm.md §Lo que debe hacer el importador; ND20). Todas las
@@ -176,6 +190,8 @@ class SaveImporter(
         if (target.hasBattery && sizes == null) return Result.Rejected(Rejection.UNKNOWN_SIZES)
         val device = v.meta.deviceName
         val state = v.pkg.state?.takeIf { v.meta.stateMatchesSave }
+        // La miniatura del estado (PNG del paquete, entrada no confiable): acotada como las de aquí; si sobra, sin miniatura.
+        val thumbnail = v.pkg.thumbnail?.takeIf { state != null && it.size <= StateStore.MAX_THUMBNAIL_BYTES }
         // ND21 (como iOS): un estado de otra configuración NO se descarta; se instala igual (con las protecciones de
         // ND20 f) y el resultado dice qué ajuste cambiar. Si al continuar no carga, el núcleo lo rechaza sin tocar la
         // partida, el estado se conserva y se juega desde la partida (ExactContinuation, INCOMPATIBLE).
@@ -189,10 +205,13 @@ class SaveImporter(
             if (!target.hasBattery) {
                 // Sin batería no hay partida que instalar: la SAVE debe ir vacía; el estado se puede continuar igual.
                 if (sav.isNotEmpty()) return@withExclusive Result.SaveSizeMismatch
-                if (state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
-                    return@withExclusive Result.NeedsChoice(Ask.REPLACE_STATE, device)
+                if (state != null && autoDiffers(target, state) && Ask.REPLACE_STATE !in confirmed) {
+                    if (choice != Choice.KEEP_LOCAL) return@withExclusive Result.NeedsChoice(Ask.REPLACE_STATE, device)
+                    // H6: no se sustituye el estado de aquí, pero el del paquete tampoco se descarta.
+                    val kept = keepIncomingState(target, null, state, thumbnail, device)
+                    return@withExclusive Result.Done(SaveLineage.Incoming.ALREADY_CURRENT, installed = false, continueFrom = null, conflictMomentId = kept, meta = v.meta)
                 }
-                val cont = state?.let { installState(target, store, null, it, device) }
+                val cont = state?.let { installState(target, store, null, it, thumbnail, device) }
                 return@withExclusive Result.Done(SaveLineage.Incoming.ALREADY_CURRENT, installed = false, continueFrom = cont, meta = v.meta)
             }
             if (sav.size !in sizes!!) {
@@ -202,7 +221,7 @@ class SaveImporter(
                 if (sav.isNotEmpty()) store.setAsideMirrorLoser(sav)
                 return@withExclusive Result.SaveSizeMismatch
             }
-            apply(store, target, sav, v.meta.baseSavSha256, device, choice, confirmed, v.meta, state)
+            apply(store, target, sav, v.meta.baseSavSha256, device, choice, confirmed, v.meta, state, thumbnail)
         }.withDifferences()
     }
 
@@ -218,7 +237,7 @@ class SaveImporter(
         return ownership.withExclusive(target.fingerprint, "importación") {
             val store = SaveStore(savesDirectory, target.fingerprint, ops)
             store.recoverOrphans(sizes)
-            apply(store, target, bytes, null, null, choice, confirmed, null, null)
+            apply(store, target, bytes, null, null, choice, confirmed, null, null, null)
         }
     }
 
@@ -232,6 +251,8 @@ class SaveImporter(
         confirmed: Set<Ask>,
         meta: PgbmMeta?,
         state: ByteArray?,
+        /** Miniatura del paquete (la del estado [state]). */
+        thumbnail: ByteArray?,
     ): Result {
         // H7: una local ilegible no se trata como ausente; una demasiado grande se aparta (cuarentena) antes de instalar.
         val localState = store.inspectLocal()
@@ -257,19 +278,31 @@ class SaveImporter(
         }
         val saveIsIncoming = install || lineage == SaveLineage.Incoming.ALREADY_CURRENT
         // ND20 (f): el estado del paquete sustituiría al AUTO de aquí sin cambiar la partida → confirmar.
-        if (!install && saveIsIncoming && state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
-            return Result.NeedsChoice(Ask.REPLACE_STATE, device)
+        if (!install && saveIsIncoming && state != null && autoDiffers(target, state) && Ask.REPLACE_STATE !in confirmed) {
+            if (choice != Choice.KEEP_LOCAL) return Result.NeedsChoice(Ask.REPLACE_STATE, device)
+            // H6 (= iOS): se rechaza sustituir el estado con la misma partida. El de aquí se queda, pero el del paquete no
+            // se descarta: queda como momento «Conflicto» (con su miniatura) y la partida actual, apartada.
+            current?.let(store::setAsideMirrorLoser)
+            val kept = keepIncomingState(target, current, state, thumbnail, device)
+            return Result.Done(lineage, installed = false, continueFrom = null, conflictMomentId = kept, meta = meta)
         }
         val moments = momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
         var conflict: String? = null
         if (!install) {
             if (lineage == SaveLineage.Incoming.DIVERGENCE || lineage == SaveLineage.Incoming.STALE) {
-                // Se queda la de aquí: la que llega no se pierde (backup, apartada y, en divergencia, momento «Conflicto»).
+                // Se queda la de aquí: la que llega no se pierde (backup, apartada y, en divergencia, momento «Conflicto»
+                // con el estado y la miniatura del paquete, H6 = iOS).
                 store.addBackup(sav)
                 store.setAsideMirrorLoser(sav)
-                if (lineage == SaveLineage.Incoming.DIVERGENCE) conflict = conflictMoment(moments, sav, null, null, device ?: thisDevice)
+                if (lineage == SaveLineage.Incoming.DIVERGENCE) conflict = conflictMoment(moments, sav, state, thumbnail, device ?: thisDevice)
             }
-            val cont = if (saveIsIncoming && state != null && device != null) installState(target, store, current, state, device) else null
+            if (lineage == SaveLineage.Incoming.ALREADY_CURRENT && current != null) {
+                // Paridad con iOS: la actual queda apartada y entra en el linaje como recibida (ND20 b, g).
+                store.setAsideMirrorLoser(current)
+                store.recordReceived(current)
+            }
+            val cont = if (saveIsIncoming && state != null && device != null) installState(target, store, current, state, thumbnail, device) else null
+            if (lineage == SaveLineage.Incoming.ALREADY_CURRENT) recordOrigin(store, incomingHash, meta, state.takeIf { cont != null })
             return Result.Done(lineage, installed = false, continueFrom = cont, conflictMomentId = conflict, meta = meta)
         }
         if (localState is SaveStore.LocalSave.Oversize) store.quarantineCurrent()
@@ -278,11 +311,8 @@ class SaveImporter(
         if (current != null) {
             // ND20 (f): la actual (con su AUTO) al anillo «Antes de importar» (las expulsadas se borran solo tras
             // confirmar la instalación) y a una copia apartada que no rota.
-            pending = try {
-                moments?.pushBeforeLoadDeferred(MomentStore.Capture(auto?.first, current, auto?.second), beforeImportName)
-            } catch (_: Exception) {
-                null
-            }
+            // H8: si el anillo falla, no se instala (la excepción sale): nunca se sustituye la partida sin su copia.
+            pending = moments?.pushBeforeLoadDeferred(MomentStore.Capture(auto?.first, current, auto?.second), beforeImportName)
             store.setAsideMirrorLoser(current)
             if (lineage == SaveLineage.Incoming.DIVERGENCE || lineage == SaveLineage.Incoming.STALE) {
                 conflict = conflictMoment(moments, current, auto?.first, auto?.second, thisDevice)
@@ -291,16 +321,55 @@ class SaveImporter(
         store.save(sav) // escritura atómica: la actual pasa a `.1`
         pending?.commit()
         store.recordReceived(sav)
-        if (meta != null) store.recordOrigin(SaveStore.Origin(incomingHash, meta.devicePlatform, meta.deviceName, meta.createdMs))
         val cont = if (state != null && device != null) {
-            installState(target, store, null, state, device, alreadyRinged = current != null)
+            installState(target, store, null, state, thumbnail, device, alreadyRinged = current != null)
         } else {
             null
         }
+        recordOrigin(store, incomingHash, meta, state.takeIf { cont != null })
         return Result.Done(lineage, installed = true, continueFrom = cont, conflictMomentId = conflict, meta = meta)
     }
 
-    private fun hasAuto(target: ImportTarget) = ops.exists(StateStore(statesRoot, target.fingerprint, ops).stateFile(StateSlot.AUTO))
+    /**
+     * De qué equipo llegó la partida (y, si se instaló su estado automático, cuál: «Continuar donde lo dejaste en
+     * <equipo>» en el detalle mientras ese estado siga siendo el automático). Mejor esfuerzo: no impide la importación.
+     */
+    private fun recordOrigin(store: SaveStore, savHash: String, meta: PgbmMeta?, installedState: ByteArray?) {
+        if (meta == null) return
+        try {
+            store.recordOrigin(
+                SaveStore.Origin(savHash, meta.devicePlatform, meta.deviceName, meta.createdMs, installedState?.let(MomentStore::sha256)),
+            )
+        } catch (_: IOException) {
+        }
+    }
+
+    /**
+     * H6: el estado del paquete que no sustituye al de aquí se guarda como momento «Conflicto» (con [sram] y la miniatura
+     * del paquete); si no se puede, en el anillo «Antes de importar». Si tampoco, la importación falla (se lanza) y el
+     * paquete sigue intacto donde estaba: nunca se descarta en silencio.
+     */
+    private fun keepIncomingState(target: ImportTarget, sram: ByteArray?, state: ByteArray, thumbnail: ByteArray?, device: String?): String? {
+        val moments = momentsRoot?.let { MomentStore(it, target.fingerprint, ops) } ?: return null
+        val capture = MomentStore.Capture(state, sram, thumbnail)
+        return try {
+            moments.create(capture, conflictName(device ?: thisDevice)).id
+        } catch (_: Exception) {
+            moments.pushBeforeLoad(capture, beforeImportName)
+            null
+        }
+    }
+
+    /**
+     * ¿Hay un estado automático aquí DISTINTO de [state]? (= iOS `ownAuto != state`). Si es idéntico (mismo SHA-256) no hay
+     * nada que sustituir y no se pregunta. Un AUTO que existe pero no se puede leer cuenta como distinto (se pregunta).
+     */
+    private fun autoDiffers(target: ImportTarget, state: ByteArray): Boolean {
+        val states = StateStore(statesRoot, target.fingerprint, ops)
+        if (!ops.exists(states.stateFile(StateSlot.AUTO))) return false
+        val auto = try { states.load(StateSlot.AUTO) } catch (_: IOException) { return true }
+        return MomentStore.sha256(auto) != MomentStore.sha256(state)
+    }
 
     private fun readAuto(states: StateStore): Pair<ByteArray, ByteArray?>? {
         if (!ops.exists(states.stateFile(StateSlot.AUTO))) return null
@@ -326,18 +395,20 @@ class SaveImporter(
         store: SaveStore,
         currentSav: ByteArray?,
         state: ByteArray,
+        thumbnail: ByteArray?,
         device: String,
         alreadyRinged: Boolean = false,
     ): String? {
         val states = StateStore(statesRoot, target.fingerprint, ops)
         return try {
             val auto = readAuto(states)
-            if (auto != null && !alreadyRinged) {
+            // Un AUTO idéntico al que llega no se copia otra vez al anillo (= iOS).
+            if (auto != null && !alreadyRinged && !auto.first.contentEquals(state)) {
                 momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
                     ?.pushBeforeLoad(MomentStore.Capture(auto.first, currentSav ?: store.load(), auto.second), beforeImportName)
             }
             states.setAsideAuto()
-            states.save(state, null, StateSlot.AUTO)
+            states.save(state, thumbnail, StateSlot.AUTO)
             device
         } catch (_: Exception) {
             null

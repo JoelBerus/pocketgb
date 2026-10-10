@@ -294,8 +294,14 @@ class SaveStore(
 
     // MARK: N7a · linaje (N-README §3.4)
 
-    /** Huellas de nuestras escrituras del espejo (write-ahead y confirmadas), acotadas a las últimas [HISTORY_LIMIT]. */
-    fun ownMirrorHashes(): List<String> = readHistory().let { (it.pending + it.successful.map { w -> w.hash }).distinct() }
+    /**
+     * Huellas que cuentan como historial propio del linaje: escrituras del espejo (write-ahead y confirmadas) y, ND20 (b′)
+     * como iOS, las partidas recibidas de fuera e instaladas (importación, cambio externo). Así un espejo que es una
+     * recibida anterior es OWN_OLDER (gana la local) y un historial con solo recibidas decide por linaje, no por fecha.
+     * Cada lista va acotada a las últimas [HISTORY_LIMIT].
+     */
+    fun ownMirrorHashes(): List<String> =
+        readHistory().let { (it.pending + it.successful.map { w -> w.hash } + it.received).distinct() }
 
     /**
      * La última partida «nuestra»: la última escritura intentada, la última confirmada y (ND20 b, H1) la última recibida de
@@ -329,15 +335,20 @@ class SaveStore(
 
     fun recordReceivedHash(hash: String) = lock.withLock {
         val h = readHistory()
-        writeHistory(MirrorHistory(h.successful, h.pending, (listOf(hash) + h.received.filter { it != hash }).take(HISTORY_LIMIT)))
+        // H3: la ubicación del espejo (ND20 m) se conserva; perderla desactivaba la comprobación de duplicados.
+        writeHistory(MirrorHistory(h.successful, h.pending, (listOf(hash) + h.received.filter { it != hash }).take(HISTORY_LIMIT), h.location))
     }
 
     // MARK: N7b/N7c · origen de la partida («Partida: iPhone · hace 2 h»)
 
     val originFile: File get() = File(directory, "$fingerprint.origin.json")
 
-    /** De qué equipo llegó la partida [hash] y cuándo la escribió (`created_ms` del paquete). */
-    data class Origin(val hash: String, val platform: String, val deviceName: String, val createdMs: Long)
+    /**
+     * De qué equipo llegó la partida [hash] y cuándo la escribió (`created_ms` del paquete). [stateHash]: SHA-256 del estado
+     * automático que llegó con ella y se instaló (para «Continuar donde lo dejaste en <equipo>» mientras siga siendo el
+     * automático; `null` = no llegó ninguno).
+     */
+    data class Origin(val hash: String, val platform: String, val deviceName: String, val createdMs: Long, val stateHash: String? = null)
 
     fun recordOrigin(origin: Origin) = lock.withLock {
         val json = buildJsonObject {
@@ -345,6 +356,7 @@ class SaveStore(
             put("platform", origin.platform)
             put("name", origin.deviceName)
             put("created", origin.createdMs)
+            origin.stateHash?.let { put("state", it) }
         }
         if (!ops.exists(directory)) ops.mkdirs(directory)
         val tmp = File(originFile.path + ".tmp")
@@ -361,6 +373,7 @@ class SaveStore(
             val origin = Origin(
                 hash ?: "", (o["platform"] as? JsonPrimitive)?.contentOrNull ?: "",
                 (o["name"] as? JsonPrimitive)?.contentOrNull ?: "", (o["created"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                (o["state"] as? JsonPrimitive)?.contentOrNull,
             )
             origin.takeIf { hash == currentHash && it.deviceName.isNotEmpty() }
         }

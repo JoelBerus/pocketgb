@@ -30,7 +30,8 @@ object SaveLineage {
     }
 
     /**
-     * @param ownHashes huellas de nuestras escrituras del espejo (confirmadas y write-ahead), las más recientes primero.
+     * @param ownHashes historial propio: escrituras del espejo (confirmadas y write-ahead) y, ND20 (b′) como iOS, partidas
+     *   recibidas e instaladas ([SaveStore.ownMirrorHashes]). Vacío = sin historial (regla por fecha).
      * @param lastOwn huellas de nuestra ÚLTIMA escritura (la última confirmada y la última intentada): si la local es una
      *   de ellas, la local no cambió desde entonces.
      */
@@ -41,6 +42,16 @@ object SaveLineage {
         if (mirrorHash in ownHashes) return Mirror.OWN_OLDER
         return if (localHash in lastOwn) Mirror.EXTERNAL_CHANGE else Mirror.DIVERGENCE
     }
+
+    /**
+     * H9: el espejo SAF se reescribe con `"wt"` (no atómico). Si el proceso muere a mitad, queda un prefijo estricto de la
+     * escritura intentada. Si el espejo es un prefijo estricto de la local y la local es la última escritura intentada
+     * ([pendingFirst]), es nuestra escritura cortada: OWN_OLDER (gana la local), nunca un «cambio externo» que instale el
+     * prefijo.
+     */
+    fun isTruncatedOwnWrite(local: ByteArray, mirror: ByteArray, localHash: String, pendingFirst: String?): Boolean =
+        pendingFirst != null && pendingFirst == localHash && mirror.size < local.size &&
+            mirror.indices.all { mirror[it] == local[it] }
 
     /** Resultado de aplicar el linaje a una partida que llega en un paquete (`.pgbm`, N7b) o un `.sav` importado. */
     enum class Incoming {
@@ -104,14 +115,34 @@ object SaveLineage {
         return if (m.groupValues[2].isNotEmpty()) n >= 2 else n >= 1
     }
 
-    /** ND20 (l): el nombre de juego de una copia en conflicto (para buscar el juego de un `.sav` abierto con «Abrir con»). */
+    /** `X (… conflicted copy …)` / `X (copia en conflicto …)` de Dropbox, con lo que haya antes de la frase («Joel's»). */
+    private val DROPBOX = Regex("""^(.+?) \([^()]*(?:conflicted copy|copia en conflicto)[^()]*\)$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * ND20 (l): el nombre de juego de una copia en conflicto (para buscar el juego de un `.sav` abierto con «Abrir con»):
+     * `X 2`, `X (1)`, `X.sync-conflict-…`, `X (conflicted copy …)` y `X (Joel's conflicted copy …)` → `X` (= iOS
+     * `ConflictCopies.originalStem`). Otro nombre se devuelve tal cual.
+     */
     fun stripConflictSuffix(stem: String): String {
-        val s = stem.substringBefore(".sync-conflict-")
-        PHRASES.forEach { p ->
-            val i = s.lowercase(Locale.ROOT).indexOf(" ($p")
-            if (i > 0) return s.substring(0, i)
-        }
-        val m = ORDINAL.matchEntire(s) ?: return s
-        return m.groupValues[1]
+        val i = stem.lowercase(Locale.ROOT).indexOf(".sync-conflict-")
+        if (i > 0) return stem.substring(0, i)
+        DROPBOX.matchEntire(stem)?.let { return it.groupValues[1] }
+        val m = ORDINAL.matchEntire(stem) ?: return stem
+        val n = (m.groupValues[2].ifEmpty { m.groupValues[3] }).toIntOrNull() ?: return stem
+        val ok = if (m.groupValues[2].isNotEmpty()) n >= 2 else n >= 1
+        return if (ok) m.groupValues[1] else stem
+    }
+
+    /**
+     * H5: los juegos de un `.sav` crudo abierto con «Abrir con»: primero los que se llaman EXACTAMENTE como el archivo; solo
+     * si no hay ninguno, los que se llaman como el archivo sin el sufijo de copia en conflicto (`X 2.sav` es la partida de
+     * `X 2.gb` si existe; si no, una copia en conflicto de `X`). Sin distinguir mayúsculas.
+     */
+    fun <T> gamesForRawSave(fileStem: String, games: List<T>, gameStem: (T) -> String): List<T> {
+        val exact = games.filter { gameStem(it).equals(fileStem, ignoreCase = true) }
+        if (exact.isNotEmpty()) return exact
+        val original = stripConflictSuffix(fileStem)
+        if (original == fileStem) return emptyList()
+        return games.filter { gameStem(it).equals(original, ignoreCase = true) }
     }
 }

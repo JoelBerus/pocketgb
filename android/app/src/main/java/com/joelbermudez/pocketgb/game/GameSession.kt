@@ -641,8 +641,15 @@ class GameSession(
                 protect = id.takeIf { kind == MomentStore.Kind.BEFORE_LOAD },
             )
         }
-        applyLoadedState(data, previous)
-        try { onSaveThread { pending.commit() } } catch (_: Exception) {} // huérfanas: las retira recoverOrphans
+        try {
+            applyLoadedState(data, previous)
+        } catch (error: StateError.Core) {
+            // El núcleo rechazó el estado antes de tocar nada: la entrada nueva sobra y el anillo queda como estaba (H8).
+            try { onSaveThread { pending.rollback() } } catch (_: Exception) {}
+            throw error
+        }
+        // H8: si el commit falla, las expulsadas siguen en el índice (nada se pierde) y el siguiente push recorta el anillo.
+        try { onSaveThread { pending.commit() } } catch (_: Exception) {}
     }
 
     fun deleteMoment(kind: MomentStore.Kind, id: String) = onSaveThread { momentStore().delete(kind, id) }

@@ -56,8 +56,8 @@ class TravelActions(
 
 /**
  * N7b · un archivo recibido por «Abrir con» o «Compartir» (intent genérico): se valida por cabecera (H11: fuera del hilo
- * principal). Un `.pgbm` busca su juego por la huella (`ROMF`, los 32 bytes); un `.sav` crudo, por el nombre del archivo
- * sin el sufijo de copia en conflicto (ND20 e, l): si coincide con varios juegos, se elige. [onImported] se llama solo si
+ * principal). Un `.pgbm` busca su juego por la huella (`ROMF`, los 32 bytes); un `.sav` crudo, por el nombre exacto del
+ * archivo y, si ninguno coincide, sin el sufijo de copia en conflicto (ND20 e, l; H5): si coincide con varios, se elige. [onImported] se llama solo si
  * la importación terminó (H6).
  */
 @Composable
@@ -79,10 +79,11 @@ fun IncomingPackageHost(
     when (val p = peek) {
         null -> Unit
         SaveImporter.Peek.RawSave -> {
-            val stem = displayName?.substringBeforeLast('.')?.let(com.joelbermudez.pocketgb.saves.SaveLineage::stripConflictSuffix)
-            val matches = if (stem == null) emptyList() else entries.filter {
-                it.isPlayable && prefs.fingerprints[it.id] != null && it.fileName.substringBeforeLast('.').equals(stem, ignoreCase = true)
-            }.distinctBy { prefs.fingerprints[it.id] }
+            // H5: primero el nombre exacto (`X 2.sav` es de `X 2.gb` si existe); si no hay, sin el sufijo de conflicto.
+            val stem = displayName?.substringBeforeLast('.')
+            val playable = entries.filter { it.isPlayable && prefs.fingerprints[it.id] != null }
+            val matches = if (stem == null) emptyList() else SaveLineage.gamesForRawSave(stem, playable) { it.fileName.substringBeforeLast('.') }
+                .distinctBy { prefs.fingerprints[it.id] }
             var chosen by remember(bytes) { mutableStateOf(matches.singleOrNull()) }
             val entry = chosen
             when {
@@ -298,7 +299,13 @@ fun rememberTravelActions(
                 onLocal = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL, d.confirmed) },
                 onDismiss = { close() },
             )
-            else -> ConfirmImportDialog(
+            SaveImporter.Ask.REPLACE_STATE -> ConfirmImportDialog(
+                d.ask, d.device ?: res.getString(R.string.n7_other_device), entry.alias ?: entry.title,
+                onConfirm = { dialog = null; runImport(d.bytes, d.raw, d.choice, d.confirmed + d.ask) },
+                // H6 (= iOS): rechazar no descarta el estado del paquete: se guarda como momento «Conflicto».
+                onDismiss = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL, d.confirmed) },
+            )
+            SaveImporter.Ask.RAW_CONFIRM -> ConfirmImportDialog(
                 d.ask, d.device ?: res.getString(R.string.n7_other_device), entry.alias ?: entry.title,
                 onConfirm = { dialog = null; runImport(d.bytes, d.raw, d.choice, d.confirmed + d.ask) },
                 onDismiss = { close() },
@@ -334,7 +341,7 @@ internal fun rejectionText(reason: SaveImporter.Rejection): Int = when (reason) 
 
 internal fun doneText(r: SaveImporter.Result.Done): Int = when (r.lineage) {
     SaveLineage.Incoming.INSTALL, SaveLineage.Incoming.ADVANCE -> R.string.n7_import_installed
-    SaveLineage.Incoming.ALREADY_CURRENT -> R.string.n7_import_same
+    SaveLineage.Incoming.ALREADY_CURRENT -> if (r.conflictMomentId != null) R.string.n7_import_state_kept_local else R.string.n7_import_same
     SaveLineage.Incoming.STALE -> R.string.n7_import_stale
     SaveLineage.Incoming.DIVERGENCE -> if (r.installed) R.string.n7_import_used_incoming else R.string.n7_import_kept_local
 }
@@ -439,7 +446,9 @@ internal fun ConfirmImportDialog(ask: SaveImporter.Ask, device: String, game: St
             TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-confirm")) { Text(stringResource(confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-cancel")) { Text(stringResource(R.string.dialog_cancel)) }
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-cancel")) {
+                Text(stringResource(if (ask == SaveImporter.Ask.REPLACE_STATE) R.string.n7_replace_state_keep else R.string.dialog_cancel))
+            }
         },
         modifier = Modifier.testTag("travel-confirm-dialog"),
     )

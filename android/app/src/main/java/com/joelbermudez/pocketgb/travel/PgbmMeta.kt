@@ -118,10 +118,11 @@ data class PgbmMeta(
                 else -> hex(root, "state_of_sav_sha256") ?: throw Invalid("state_of_sav_sha256")
             }
             val playTime = if (root.containsKey("play_time_ms")) int(root, "play_time_ms") ?: throw Invalid("play_time_ms") else null
+            // H13: como el resto de textos de META, el tope de cada etiqueta va en code points (= iOS), no en UTF-16.
             val tags = (root["tags"])?.let { t ->
                 val arr = t as? JsonArray ?: throw Invalid("tags")
                 if (arr.size > 64) throw Invalid("tags")
-                arr.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString && p.content.length <= 64 }?.content ?: throw Invalid("tags") }
+                arr.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString && p.content.codePointCount(0, p.content.length) <= 64 }?.content ?: throw Invalid("tags") }
             }
             val milestones = root["milestones"]?.let { t ->
                 val arr = t as? JsonArray ?: throw Invalid("milestones")

@@ -216,7 +216,9 @@ object SaveStress {
         try {
             moments.recoverOrphans()
             val snap = moments.snapshot()
-            if (snap.beforeLoad.size > MomentStore.RING_SIZE) problems += "anillo con ${snap.beforeLoad.size} entradas"
+            // H8 (auditoría final N): un cierre entre el push y su commit deja a lo sumo una entrada de más (la que iba a
+            // expulsarse sigue recuperable); el siguiente push la recorta.
+            if (snap.beforeLoad.size > MomentStore.RING_SIZE + 1) problems += "anillo con ${snap.beforeLoad.size} entradas"
             for (m in snap.moments + snap.beforeLoad) {
                 val kind = if (m in snap.moments) MomentStore.Kind.MOMENT else MomentStore.Kind.BEFORE_LOAD
                 val ram = moments.loadSram(kind, m.id)

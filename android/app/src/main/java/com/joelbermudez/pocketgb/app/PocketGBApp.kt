@@ -218,8 +218,18 @@ private fun AppContent(
     }
     val context = LocalContext.current
     val savesBrowser = remember(context) { SavesBrowser(File(context.filesDir, "saves")) }
+    // Copias en conflicto vistas al escanear (= iOS): por huella, juntando las copias del mismo ROM.
+    val libraryState by library.state.collectAsStateWithLifecycle()
+    val scannedConflicts = remember(libraryState, prefs.fingerprints) {
+        val entries = when (val st = libraryState) {
+            is com.joelbermudez.pocketgb.library.LibraryState.Ready -> st.entries
+            is com.joelbermudez.pocketgb.library.LibraryState.Scanning -> st.previous
+            else -> emptyList()
+        }
+        com.joelbermudez.pocketgb.library.scannedConflictsByFingerprint(entries, prefs.fingerprints)
+    }
     val gameSaves: @Composable (String, () -> Unit) -> Unit = { fingerprint, onBack ->
-        SavesScreen(savesBrowser, gameplay, onBack = onBack, onlyFingerprint = fingerprint)
+        SavesScreen(savesBrowser, gameplay, onBack = onBack, onlyFingerprint = fingerprint, scannedConflicts = scannedConflicts)
     }
     val momentLibrary = remember(context) {
         com.joelbermudez.pocketgb.saves.MomentLibrary(
@@ -339,7 +349,7 @@ private fun AppContent(
                         HomeSettingsScreen(library, onBack = { navigationState.pop() })
                     }
                     SettingsRoute.Saves -> NavEntry(route) {
-                        SavesScreen(savesBrowser, gameplay, onBack = { navigationState.pop() })
+                        SavesScreen(savesBrowser, gameplay, onBack = { navigationState.pop() }, scannedConflicts = scannedConflicts)
                     }
                     SettingsRoute.About -> NavEntry(route) {
                         AboutScreen(

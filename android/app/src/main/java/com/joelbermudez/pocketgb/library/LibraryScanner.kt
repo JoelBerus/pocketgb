@@ -205,6 +205,7 @@ object LibraryScanner {
         val folderPath: List<String>,
         /** N5: imagen junto al ROM ([com.joelbermudez.pocketgb.library.artwork.SidecarCover]), sin leerla. */
         val cover: TreeNode? = null,
+        val conflictCopies: List<Pair<String, Long?>> = emptyList(),
     )
 
     private class Folder(val id: String?, val path: List<String>)
@@ -239,6 +240,7 @@ object LibraryScanner {
             val depth = folder.path.size
             val folderDocumentId = folder.id ?: tree.rootId
             val romsHere = children.count { !it.isDirectory && isRom(it.name) }
+            val romBasesHere = children.filter { !it.isDirectory && isRom(it.name) }.map { it.name.substringBeforeLast('.') }.toSet()
             // Orden estable por nombre: con el tope, qué se queda fuera no depende del orden del proveedor.
             for (item in children.sortedWith(compareBy<TreeNode>({ it.name }, { it.id }))) {
                 if (stats.documentsSeen >= MAX_SCAN_ENTRIES) {
@@ -262,11 +264,19 @@ object LibraryScanner {
                         saveDate = saveDateOf(children, item.name),
                         folderPath = folder.path,
                         cover = com.joelbermudez.pocketgb.library.artwork.SidecarCover.find(item.name, children, romsHere),
+                        conflictCopies = conflictCopiesOf(children, item.name, romBasesHere),
                     )
                 }
             }
         }
         return result
+    }
+
+    /** Copias en conflicto del `.sav` del ROM entre sus hermanos (ND20 l: `X 2.sav` junto a `X 2.gb` es de otro juego). */
+    private fun conflictCopiesOf(siblings: List<TreeNode>, romName: String, romBases: Set<String>): List<Pair<String, Long?>> {
+        val base = romName.substringBeforeLast('.')
+        return siblings.filter { !it.isDirectory && com.joelbermudez.pocketgb.saves.SaveLineage.isProviderConflictCopy(base, it.name, romBases) }
+            .sortedBy { it.name }.take(32).map { it.name to it.lastModified?.takeIf { d -> d > 0 } }
     }
 
     /** K20: fecha del `<base>.sav` hermano del ROM (sin distinguir mayúsculas), sin abrir el archivo. */
@@ -336,6 +346,7 @@ object LibraryScanner {
             headerKey = headerKey,
             coverUri = candidate.cover?.let(tree::uriOf),
             coverStamp = candidate.cover?.let(com.joelbermudez.pocketgb.library.artwork.SidecarCover::stamp),
+            conflictCopies = candidate.conflictCopies,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)

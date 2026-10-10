@@ -25,16 +25,22 @@ class SavesBrowser(
     private val ops: SaveFileOps = PosixSaveFileOps,
     private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
 ) {
-    fun list(): List<SavedGameUi> {
+    /**
+     * @param scannedConflicts copias en conflicto vistas en el último escaneo de la biblioteca, por huella (= iOS, que las
+     *   busca al abrir Partidas). Para una huella escaneada mandan sobre las anotadas al abrir el juego (son más recientes):
+     *   así se listan aunque el juego no se haya abierto desde que aparecieron.
+     */
+    fun list(scannedConflicts: Map<String, List<SaveStore.ProviderConflict>> = emptyMap()): List<SavedGameUi> {
         val index = SavesIndex(directory, ops)
         return index.savedGames().map { game ->
+            val store = SaveStore(directory, game.fingerprint, ops)
             SavedGameUi(
                 fingerprint = game.fingerprint,
                 title = game.record?.title,
                 fileName = game.record?.fileName,
-                backups = SaveStore(directory, game.fingerprint, ops).backups(),
-                setAside = SaveStore(directory, game.fingerprint, ops).setAside(),
-                providerConflicts = SaveStore(directory, game.fingerprint, ops).providerConflicts(),
+                backups = store.backups(),
+                setAside = store.setAside(),
+                providerConflicts = scannedConflicts[game.fingerprint] ?: store.providerConflicts(),
             )
         }
     }

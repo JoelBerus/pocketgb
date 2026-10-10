@@ -47,14 +47,12 @@ class TravelService(private val context: Context) {
     val exporter = SaveExporter(savesDirectory, statesRoot)
 
     fun target(entry: RomEntry, fingerprint: String): ImportTarget {
-        val record = SavesIndex(savesDirectory).load()[fingerprint]
-        // ND20 (j): un juego que nunca se abrió aquí no tiene registro: los tamaños salen de la cabecera del ROM.
-        val fromHeader = if (record == null) headerSizes(entry) else null
-        val sizes = record?.validSizes?.toSet() ?: fromHeader?.takeIf { it.isNotEmpty() }
+        // ND20 (j), = iOS: la cabecera del ROM manda; el índice solo si no se puede leer.
+        val (hasBattery, sizes) = ImportTarget.sizing(headerSizes(entry), SavesIndex(savesDirectory).load()[fingerprint])
         return ImportTarget(
             fingerprint = fingerprint,
             console = consoleName(entry),
-            hasBattery = if (record != null) record.validSizes != null else fromHeader?.isNotEmpty() ?: true,
+            hasBattery = hasBattery,
             validSizes = sizes,
             config = config(entry, fingerprint),
             title = entry.alias ?: entry.title,

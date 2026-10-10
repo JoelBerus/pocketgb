@@ -87,9 +87,7 @@
     <string name="storage_artwork">Portadas</string>
     <string name="storage_footer">Los juegos (ROM) están en tu carpeta y PocketGB no los copia, así que no ocupan espacio de la app. La copia de cada partida junto al ROM tampoco se cuenta.</string>
     <string name="storage_clear_artwork">Borrar portadas</string>
-    <string name="storage_clear_footer">Las portadas son capturas de la última escena jugada; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.</string>
     <string name="storage_clear_title">¿Borrar las portadas?</string>
-    <string name="storage_clear_body">Las partidas, las copias y los estados se conservan.</string>
     <string name="storage_cleared">Portadas borradas</string>
 
     <!-- Biblioteca -->
