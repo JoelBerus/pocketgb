@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.content.edit
 
 /**
  * N9 · Consejos descartables en puntos clave (el equivalente Android de TipKit en iOS). El [id] es estable: es la clave
@@ -38,7 +39,7 @@ class SharedPreferencesTipsStorage(context: Context) : TipsStorage {
     private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
     override fun dismissed(): Set<String> = runCatching { prefs.getStringSet(KEY, emptySet()).orEmpty().toSet() }.getOrDefault(emptySet())
     override fun save(dismissed: Set<String>) {
-        prefs.edit().putStringSet(KEY, dismissed).apply()
+        prefs.edit { putStringSet(KEY, dismissed) }
     }
 
     companion object {
