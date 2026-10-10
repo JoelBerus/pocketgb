@@ -193,7 +193,6 @@ extension AppState {
         do {
             let outcome = try SaveImport.apply(plan, choice: choice, store: store, states: states,
                                                moments: momentStoreFor(plan.fingerprint), ownership: ownership)
-            let from = plan.origin.map { " de \($0)" } ?? ""
             switch outcome {
             case .installed, .alreadyCurrent, .keptLocal: applyMetadata(plan, to: entry)
             default: break
@@ -211,21 +210,37 @@ extension AppState {
                 importPrompt = ImportPrompt(entry: entry, plan: plan, gameTitle: libraryPrefs.displayTitle(entry),
                                             stateOnly: true)
                 return
-            case .installed(let c):
-                notify("Partida importada", "Se ha instalado la partida\(from). La anterior quedó en «Antes de cargar» y en las copias de seguridad."
-                       + (c ? " Puedes continuar justo donde lo dejaste." : "") + configNote)
-            case .alreadyCurrent(let c):
-                notify(c ? "Listo para continuar" : "Ya tienes esta partida",
-                       c ? "La partida ya era la misma; ahora puedes continuar justo donde lo dejaste\(from.isEmpty ? "" : " en \(plan.origin!)")."
-                         : "La partida del paquete es la misma que ya tienes. No se ha cambiado nada." + configNote)
-            case .keptLocal:
-                notify("Se mantiene tu partida", "La partida\(from) no se ha perdido: está en Momentos como «Conflicto» y en las copias apartadas.")
-            case .saveNotTouched:
-                notify("Partida no sustituida", "La partida del paquete está vacía o no tiene el tamaño de la de este juego, así que no se ha tocado. La actual quedó además en las copias de seguridad.")
+            case .installed, .alreadyCurrent, .keptLocal, .saveNotTouched:
+                if let text = Self.importNotice(outcome, origin: plan.origin, configNote: configNote) {
+                    notify(text.title, text.message)
+                }
             }
             didRestoreSave(fingerprint: plan.fingerprint)
         } catch {
             notify("No se pudo importar", error.localizedDescription)
+        }
+    }
+
+    /// Título y texto del aviso al terminar una importación (`nil` si hay que preguntar). `configNote` (ND20 h) se
+    /// añade a todo aviso con estado para continuar, también a «Listo para continuar» (auditoría N-final H7: antes la
+    /// precedencia del ternario solo lo añadía a la rama sin continuación).
+    nonisolated static func importNotice(_ outcome: SaveImport.Outcome, origin: String?,
+                                         configNote: String) -> (title: String, message: String)? {
+        let from = origin.map { " de \($0)" } ?? ""
+        switch outcome {
+        case .needsChoice, .needsStateChoice:
+            return nil
+        case .installed(let c):
+            return ("Partida importada", "Se ha instalado la partida\(from). La anterior quedó en «Antes de cargar» y en las copias de seguridad."
+                    + (c ? " Puedes continuar justo donde lo dejaste." : "") + configNote)
+        case .alreadyCurrent(let c):
+            return (c ? "Listo para continuar" : "Ya tienes esta partida",
+                    (c ? "La partida ya era la misma; ahora puedes continuar justo donde lo dejaste\(origin.map { " en \($0)" } ?? "")."
+                       : "La partida del paquete es la misma que ya tienes. No se ha cambiado nada.") + configNote)
+        case .keptLocal:
+            return ("Se mantiene tu partida", "La partida\(from) no se ha perdido: está en Momentos como «Conflicto» y en las copias apartadas.")
+        case .saveNotTouched:
+            return ("Partida no sustituida", "La partida del paquete está vacía o no tiene el tamaño de la de este juego, así que no se ha tocado. La actual quedó además en las copias de seguridad.")
         }
     }
 

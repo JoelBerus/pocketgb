@@ -293,4 +293,38 @@ struct SaveLineageTests {
         #expect(try moments.loadState(.moment, conflict.id) == auto)
         #expect(conflict.hasThumbnail)
     }
+
+    // MARK: Auditoría N-final, H4 (se adopta la regla de iOS; Android replica este caso con el mismo nombre)
+
+    /// H4: una partida recibida cuenta como historial propio. (a) Un espejo que vuelve a ser una partida recibida
+    /// antes es `ownEarlier`: gana la local aunque el espejo tenga fecha más nueva. (b) Con un historial que solo tiene
+    /// recibidas se decide por linaje, no por fecha.
+    @Test func receivedCountsAsOwnHistory() throws {
+        let onlyReceived = SaveLineage.History(received: ["r"])
+        #expect(SaveLineage.relation(local: "l", mirror: "r", history: onlyReceived) == .ownEarlier)
+        #expect(SaveLineage.relation(local: "r", mirror: "z", history: onlyReceived) == .external)
+        #expect(SaveLineage.relation(local: "l", mirror: "z", history: onlyReceived) == .divergent)
+
+        // (a) d1 llega por el espejo (recibida, sin escrituras propias); la local avanza a d2 sin espejo; el espejo
+        // sigue siendo d1 con el reloj adelantado.
+        let (store, mirror) = try setup("h4a")
+        try d1.write(to: mirror.url)
+        #expect(try open(store, mirror).data == d1)
+        #expect(store.lastReceived == SaveLineage.sha256(d1))
+        try store.save(d2)
+        try setDate(farFuture, mirror.url)
+        let a = try open(store, mirror)
+        #expect(a.data == d2 && a.warning == .mirrorOlderKept)
+        #expect(try store.load() == d2)
+
+        // (b) Solo recibidas y la local sin cambios: otra partida en el espejo, con el reloj atrasado, es un cambio
+        // externo (por fecha ganaría la local).
+        let (s2, m2) = try setup("h4b")
+        try d1.write(to: m2.url)
+        _ = try open(s2, m2)
+        try d3.write(to: m2.url)
+        try setDate(farPast, m2.url)
+        let b = try open(s2, m2)
+        #expect(b.data == d3 && b.warning == .externalChange)
+    }
 }

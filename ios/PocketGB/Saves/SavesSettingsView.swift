@@ -180,27 +180,15 @@ struct SaveBackupsView: View {
         title = SavesIndex(directory: store.directory).load()[fingerprint]?.title ?? ""
     }
 
+    /// H11 (N-final): la restauración va con la huella en exclusiva (se rechaza con el juego abierto o aún guardando)
+    /// y aparta el AUTO que deja de ser vigente (H10). Ver `SaveRestoration`.
     private func restore(_ n: Int) {
-        guard let store = store() else { return }
-        do {
-            try store.restore(backup: n)
-            state.didRestoreSave(fingerprint: fingerprint)
-            message = "Copia restaurada. La partida anterior quedó como copia más reciente."
-        } catch {
-            message = "No se pudo restaurar: \(error.localizedDescription). No se ha cambiado nada."
-        }
+        message = state.restoreSave(fingerprint: fingerprint, backup: n)
         reload()
     }
 
     private func restore(_ copy: SaveStore.KeptCopy) {
-        guard let store = store() else { return }
-        do {
-            try store.restore(kept: copy)
-            state.didRestoreSave(fingerprint: fingerprint)
-            message = "Copia restaurada. La partida anterior quedó como copia más reciente."
-        } catch {
-            message = "No se pudo restaurar: \(error.localizedDescription). No se ha cambiado nada."
-        }
+        message = state.restoreSave(fingerprint: fingerprint, kept: copy)
         reload()
     }
 }

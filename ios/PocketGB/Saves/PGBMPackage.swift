@@ -130,19 +130,25 @@ struct PackageMeta: Equatable, Sendable {
     static func parse(_ json: Data) throws -> PackageMeta {
         // ND20 (h): antes de `JSONSerialization` (que se queda con una de las claves repetidas y acepta 1.0 o 1e3), un
         // recorrido de tokens rechaza claves repetidas y números con fracción o exponente.
-        guard json.count <= 65_536, json.prefix(3) != Data([0xEF, 0xBB, 0xBF]), StrictJSON.isStrict(json),
+        // Las fracciones solo cuentan en las claves enteras del esquema: una clave desconocida se ignora aunque lleve
+        // `1.5` (docs/12 «Claves desconocidas se ignoran»; auditoría N-final H13).
+        guard json.count <= 65_536, json.prefix(3) != Data([0xEF, 0xBB, 0xBF]),
+              let fractional = StrictJSON.scan(json),
               let object = try? JSONSerialization.jsonObject(with: json), let root = object as? [String: Any]
         else { throw Invalid.notJSON }
+        // `null` solo vale en `base_sav_sha256` (docs/12): en cualquier otra clave conocida es un tipo erróneo. Las
+        // desconocidas no se leen, así que su `null` se ignora (auditoría N-final H13).
         func int(_ value: Any?, _ key: String) throws -> Int? {
-            guard let value, !(value is NSNull) else { return nil }
-            guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { throw Invalid.field(key) }
+            guard let value else { return nil }
+            guard !fractional.contains(key), let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID()
+            else { throw Invalid.field(key) }
             let d = n.doubleValue
             guard d.rounded() == d, d >= 0, d <= Double(maxInt)
             else { throw Invalid.field(key) }
             return n.intValue
         }
         func string(_ value: Any?, _ key: String, max: Int) throws -> String? {
-            guard let value, !(value is NSNull) else { return nil }
+            guard let value else { return nil }
             // Longitudes en code points de Unicode (ND20 h), no en grafemas.
             guard let s = value as? String, s.unicodeScalars.count <= max else { throw Invalid.field(key) }
             return s
@@ -177,20 +183,17 @@ struct PackageMeta: Equatable, Sendable {
         var meta = PackageMeta(
             romSHA256: try required(try hex(root["rom_sha256"], "rom_sha256"), "rom_sha256"),
             savSHA256: try required(try hex(root["sav_sha256"], "sav_sha256"), "sav_sha256"),
-            baseSavSHA256: try hex(root["base_sav_sha256"], "base_sav_sha256"),
+            baseSavSHA256: root["base_sav_sha256"] is NSNull ? nil : try hex(root["base_sav_sha256"], "base_sav_sha256"),
             platform: platform,
             deviceName: try required(try string(device["name"], "device.name", max: 128), "device.name"),
             createdMs: try required(try int(root["created_ms"], "created_ms"), "created_ms"),
             coreName: coreName,
             coreVersion: try string(core["version"], "core.version", max: 32),
             stateOfSavSHA256: try hex(root["state_of_sav_sha256"], "state_of_sav_sha256"))
-        if let config = root["config"], !(config is NSNull) {
+        if let config = root["config"] {
             guard let c = config as? [String: Any] else { throw Invalid.field("config") }
-            // Tipos del esquema (ND20 h): un tipo o valor erróneo hace la META inválida; las claves desconocidas se ignoran.
-            // Como Android: una clave de `config` presente con `null` es un tipo erróneo.
-            for (key, value) in c where value is NSNull && ["model", "compat_palette", "gba_save_type", "gba_rtc", "gba_bios"].contains(key) {
-                throw Invalid.field("config.\(key)")
-            }
+            // Tipos del esquema (ND20 h): un tipo o valor erróneo (también `null`) hace la META inválida; las claves
+            // desconocidas se ignoran.
             func choice(_ key: String, _ allowed: [String]) throws -> String? {
                 guard let v = try string(c[key], "config.\(key)", max: 16) else { return nil }
                 guard allowed.contains(v) else { throw Invalid.field("config.\(key)") }
@@ -201,17 +204,17 @@ struct PackageMeta: Equatable, Sendable {
             cfg.compatPalette = try string(c["compat_palette"], "config.compat_palette", max: 64)
             cfg.gbaSaveType = try choice("gba_save_type", PackageConfig.gbaSaveTypes)
             cfg.gbaRTC = try choice("gba_rtc", ["auto", "on", "off"])
-            if let b = c["gba_bios"], !(b is NSNull) { cfg.gbaBIOS = try bool(b, "config.gba_bios") }
+            if let b = c["gba_bios"] { cfg.gbaBIOS = try bool(b, "config.gba_bios") }
             meta.config = cfg
         }
         meta.playTimeMs = try int(root["play_time_ms"], "play_time_ms")
         meta.title = try string(root["title"], "title", max: 256)
         meta.alias = try string(root["alias"], "alias", max: 256)
-        if let tags = root["tags"], !(tags is NSNull) {
+        if let tags = root["tags"] {
             guard let list = tags as? [Any], list.count <= 64 else { throw Invalid.field("tags") }
             meta.tags = try list.map { try required(try string($0, "tags", max: 64), "tags") }
         }
-        if let list = root["milestones"], !(list is NSNull) {
+        if let list = root["milestones"] {
             guard let list = list as? [Any], list.count <= 256 else { throw Invalid.field("milestones") }
             meta.milestones = try list.map { item in
                 guard let m = item as? [String: Any] else { throw Invalid.field("milestones") }
@@ -220,7 +223,7 @@ struct PackageMeta: Equatable, Sendable {
                                  done: try bool(m["done"], "milestones.done"))
             }
         }
-        if let m = root["moment"], !(m is NSNull) {
+        if let m = root["moment"] {
             guard let m = m as? [String: Any] else { throw Invalid.field("moment") }
             meta.moment = Moment(name: try required(try string(m["name"], "moment.name", max: 256), "moment.name"),
                                  collection: try string(m["collection"], "moment.collection", max: 256),
@@ -336,11 +339,14 @@ private extension Array {
 }
 
 /// ND20 (h): recorrido de tokens JSON (RFC 8259) que solo comprueba lo que `JSONSerialization` deja pasar: claves
-/// repetidas en un objeto (comparadas ya decodificadas) y números con fracción o exponente.
+/// repetidas en un objeto (comparadas ya decodificadas) y números con fracción o exponente. `scan` devuelve `nil` si el
+/// JSON no vale (o repite claves) y, si vale, las rutas (`clave.subclave`, `lista[]`) cuyos números llevan fracción o
+/// exponente: solo hacen inválida la META si la ruta es una clave entera del esquema (auditoría N-final H13).
 enum StrictJSON {
-    static func isStrict(_ data: Data) -> Bool {
+    static func scan(_ data: Data) -> Set<String>? {
         let b = [UInt8](data)
         var i = 0
+        var fractional = Set<String>()
         func ws() { while i < b.count, [0x20, 0x09, 0x0A, 0x0D].contains(b[i]) { i += 1 } }
         func string() -> String? {
             guard i < b.count, b[i] == 0x22 else { return nil }
@@ -354,7 +360,7 @@ enum StrictJSON {
             i += 1
             return (try? JSONSerialization.jsonObject(with: Data(b[start..<i]), options: .fragmentsAllowed)) as? String
         }
-        func value(_ depth: Int) -> Bool {
+        func value(_ depth: Int, _ path: String) -> Bool {
             guard depth < 64 else { return false }
             ws()
             guard i < b.count else { return false }
@@ -369,7 +375,7 @@ enum StrictJSON {
                     ws()
                     guard i < b.count, b[i] == 0x3A else { return false }
                     i += 1
-                    guard value(depth + 1) else { return false }
+                    guard value(depth + 1, path.isEmpty ? key : "\(path).\(key)") else { return false }
                     ws()
                     guard i < b.count else { return false }
                     if b[i] == 0x2C { i += 1; continue }
@@ -380,7 +386,7 @@ enum StrictJSON {
                 i += 1; ws()
                 if i < b.count, b[i] == 0x5D { i += 1; return true }
                 while true {
-                    guard value(depth + 1) else { return false }
+                    guard value(depth + 1, "\(path)[]") else { return false }
                     ws()
                     guard i < b.count else { return false }
                     if b[i] == 0x2C { i += 1; continue }
@@ -391,7 +397,7 @@ enum StrictJSON {
                 return string() != nil
             case 0x2D, 0x30...0x39:
                 while i < b.count, (0x30...0x39).contains(b[i]) || [0x2D, 0x2B, 0x2E, 0x65, 0x45].contains(b[i]) {
-                    if [0x2E, 0x65, 0x45].contains(b[i]) { return false }   // fracción o exponente
+                    if [0x2E, 0x65, 0x45].contains(b[i]) { fractional.insert(path) }   // fracción o exponente
                     i += 1
                 }
                 return true
@@ -403,8 +409,8 @@ enum StrictJSON {
                 return false
             }
         }
-        guard value(0) else { return false }
+        guard value(0, "") else { return nil }
         ws()
-        return i == b.count
+        return i == b.count ? fractional : nil
     }
 }

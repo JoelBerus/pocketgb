@@ -116,6 +116,51 @@ struct StateStore: Sendable {
         try? fm.removeItem(at: thumbnailURL(slot))
     }
 
+    // MARK: AUTO apartado (auditoría N-final, H1/H10)
+
+    static let setAsidePrefix = "auto.obsolete-"
+
+    /// Aparta el estado automático en `auto.obsolete-<unix>-<id>.state` (mismo directorio, rename atómico + fsync) en
+    /// vez de borrarlo: «Continuar» deja de ofrecerlo, pero el archivo se conserva (como Android
+    /// `StateStore.setAsideAuto`). Ninguna ranura lo lee. Sin AUTO no hace nada y devuelve `nil`.
+    @discardableResult
+    func setAsideAuto(now: Date = Date()) throws -> URL? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: stateURL(.auto).path) else { return nil }
+        var target: URL
+        repeat {
+            target = directory.appendingPathComponent(
+                "\(Self.setAsidePrefix)\(Int(now.timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).state")
+        } while fm.fileExists(atPath: target.path)
+        try AtomicFile.rename(stateURL(.auto), target)
+        try AtomicFile.syncDirectory(directory)
+        try? fm.removeItem(at: thumbnailURL(.auto))
+        return target
+    }
+
+    /// Estados automáticos apartados (`setAsideAuto`), sin orden.
+    func setAsideAutos() -> [URL] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.filter { $0.hasPrefix(Self.setAsidePrefix) && $0.hasSuffix(".state") }
+            .map { directory.appendingPathComponent($0) }
+    }
+
+    /// Aparta el AUTO solo si ya no es vigente por fecha: es anterior a la partida (`saveDate`), así que «Continuar» no
+    /// lo ofrece y la próxima salida del juego lo pisaría. Uno dañado o vigente se queda en su ranura.
+    @discardableResult
+    func setAsideAutoIfStale(saveDate: Date?) throws -> URL? {
+        guard let saveDate, let entry = entry(.auto, withThumbnail: false), !entry.corrupt,
+              entry.date < saveDate else { return nil }
+        return try setAsideAuto()
+    }
+
+    /// Devuelve a su ranura un AUTO apartado por una operación que después falló (si la ranura sigue libre).
+    func unsetAside(_ url: URL) {
+        guard !FileManager.default.fileExists(atPath: stateURL(.auto).path) else { return }
+        try? AtomicFile.rename(url, stateURL(.auto))
+        try? AtomicFile.syncDirectory(directory)
+    }
+
     /// tmp completo + fsync → rename → fsync del directorio (primitivas de `AtomicFile`).
     private static func replace(_ url: URL, with data: Data) throws {
         let tmp = url.appendingPathExtension("tmp")

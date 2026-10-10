@@ -210,6 +210,8 @@ final class AppState {
     var alertMessage: String?
     /// Permite recuperarse explícitamente de un autoestado ausente, dañado o ajeno.
     var resumeFallbackEntry: RomEntry?
+    /// El último «Continuar» fallido conservó el AUTO (otra configuración, ND21): «Jugar desde el inicio» lo aparta.
+    private var resumeFallbackKeepsAuto = false
     private(set) var resumableFingerprints: Set<String> = []
     /// Huellas cuya continuación ya se comprobó (una huella nueva vuelve a comprobar).
     @ObservationIgnored private var checkedFingerprints: Set<String> = []
@@ -617,16 +619,25 @@ final class AppState {
         alertMessage = message
     }
 
-    private func discardStaleAutomaticState(of entry: RomEntry) {
-        guard let fingerprint = libraryPrefs.fingerprint(of: entry) else { return }
-        resumableFingerprints.remove(fingerprint)
-        if let root = try? StateStore.defaultRoot() {
-            try? StateStore(root: root, fingerprint: fingerprint).delete(.auto)
-        }
+    /// «Continuar» rechazado por el núcleo: qué se hace con el AUTO (auditoría N-final H1). Nunca se borra:
+    /// - `.notCurrent` (su RAM no es la de la partida): se **aparta** (`auto.obsolete-*`) para que «Continuar» deje
+    ///   de ofrecerse y fallar en cada intento (D81V2-H2), como Android `ExactContinuation`.
+    /// - `.otherConfiguration` (modelo, tipo de partida, reloj, BIOS): se queda en su ranura (ND21); al volver al
+    ///   ajuste de entonces, carga.
+    /// Devuelve `true` si el AUTO dejó de estar en su ranura.
+    nonisolated static func retireAutomaticState(after error: EmulatorSession.StateError, in states: StateStore) -> Bool {
+        guard error == .notCurrent else { return false }
+        return (try? states.setAsideAuto()) != nil
     }
 
-    private func showResumeFailure(_ entry: RomEntry, message: String) {
+    private func retireAutomaticState(of entry: RomEntry, after error: EmulatorSession.StateError) {
+        guard let fingerprint = libraryPrefs.fingerprint(of: entry), let states = stateStoreFor(fingerprint) else { return }
+        if Self.retireAutomaticState(after: error, in: states) { resumableFingerprints.remove(fingerprint) }
+    }
+
+    private func showResumeFailure(_ entry: RomEntry, message: String, keepsAutomaticState: Bool = false) {
         resumeFallbackEntry = entry
+        resumeFallbackKeepsAuto = keepsAutomaticState
         showAlert("No se pudo continuar", "\(message) Puedes conservar tu partida y jugar desde el inicio.")
     }
 
@@ -635,6 +646,12 @@ final class AppState {
         resumeFallbackEntry = nil
         alertTitle = nil
         alertMessage = nil
+        // H1 (ND21): el AUTO de otra configuración se conserva; jugar desde la partida lo pisaría al salir, así que
+        // antes se aparta (sigue en disco como `auto.obsolete-*`).
+        if resumeFallbackKeepsAuto, let fingerprint = libraryPrefs.fingerprint(of: entry) {
+            if (try? stateStoreFor(fingerprint)?.setAsideAuto()) != nil { resumableFingerprints.remove(fingerprint) }
+        }
+        resumeFallbackKeepsAuto = false
         open(entry: entry, mode: .fresh)
     }
 
@@ -666,6 +683,14 @@ final class AppState {
                 self?.enterBackground()
             }
             session.applyAudioPreferences(audioPreferences)
+            if automaticState == nil, let statesRoot = try? StateStore.defaultRoot() {
+                let fp = session.info.fingerprint
+                // H10 (N-final): ya abierta la partida, un AUTO anterior a ella no es vigente («Continuar» no lo
+                // ofrece) y la salida de esta sesión lo pisaría sin copia: se aparta antes (restaurar fuera de la app,
+                // cable link, importación sin estado…).
+                try? StateStore(root: statesRoot, fingerprint: fp).setAsideAutoIfStale(
+                    saveDate: SaveStore(directory: savesDirectory, fingerprint: fp).modificationDate)
+            }
             try session.start(restoring: automaticState)
             // Game Boy Advance sin tipo ni reloj forzados: lo detectado se recuerda para los ajustes.
             let forced = emulation.gbaSaveType != 0 || emulation.gbaRTC != 0
@@ -709,14 +734,16 @@ final class AppState {
         } catch SaveOpening.Refusal.mirrorNotDownloaded {
             showAlert("Partida de iCloud sin descargar",
                       "La partida de “\(fileName)” está en iCloud y no se pudo descargar. Para no empezar de cero ni pisarla, el juego no se abre. Vuelve a intentarlo con conexión.")
-        } catch EmulatorSession.StateError.notCurrent {
-            // El .auto quedó obsoleto (partida más nueva): se retira para que «Continuar»
-            // deje de ofrecerse y fallar en cada intento (D81V2-H2). La partida no se toca.
+        } catch let refusal as EmulatorSession.StateError where refusal == .notCurrent || refusal == .otherConfiguration {
+            // El .auto quedó obsoleto (partida más nueva): se aparta, no se borra, para que «Continuar» deje de
+            // ofrecerse y fallar en cada intento (D81V2-H2). Uno de otra configuración se conserva (ND21, N-final H1).
+            // La partida no se toca.
             if let resumeFallback {
-                discardStaleAutomaticState(of: resumeFallback)
-                showResumeFailure(resumeFallback, message: EmulatorSession.StateError.notCurrent.localizedDescription)
+                retireAutomaticState(of: resumeFallback, after: refusal)
+                showResumeFailure(resumeFallback, message: refusal.localizedDescription,
+                                  keepsAutomaticState: refusal == .otherConfiguration)
             } else {
-                showAlert("No se puede abrir “\(fileName)”", EmulatorSession.StateError.notCurrent.localizedDescription)
+                showAlert("No se puede abrir “\(fileName)”", refusal.localizedDescription)
             }
         } catch let e as CoreError {
             if let resumeFallback { showResumeFailure(resumeFallback, message: e.description) }
@@ -792,7 +819,14 @@ final class AppState {
             if !paused && !editingControls { session.pause() }
             session.stop()
             saveArtwork(link)
-            for info in link.infos { didRestoreSave(fingerprint: info.fingerprint) }
+            for info in link.infos {
+                // H10 (N-final): el cable no guarda estados; si cambió la partida, el AUTO de antes ya no es vigente
+                // y se aparta para que la próxima salida del juego no lo pise sin copia.
+                if let saves = saveStoreFor(info.fingerprint) {
+                    try? stateStoreFor(info.fingerprint)?.setAsideAutoIfStale(saveDate: saves.modificationDate)
+                }
+                didRestoreSave(fingerprint: info.fingerprint)
+            }
             releaseLeases(after: session)
             self.link = nil
         } else if let session {
@@ -1018,6 +1052,31 @@ final class AppState {
         (storageDirectories.saves ?? (try? SaveStore.defaultDirectory())).map { SaveStore(directory: $0, fingerprint: fingerprint) }
     }
 
+    private func stateStoreFor(_ fingerprint: String) -> StateStore? {
+        (storageDirectories.states ?? (try? StateStore.defaultRoot())).map { StateStore(root: $0, fingerprint: fingerprint) }
+    }
+
+    /// Ajustes › Partidas: restaura un backup o una copia apartada con la huella en exclusiva y el AUTO no vigente
+    /// apartado (auditoría N-final H10/H11). Devuelve el mensaje para la alerta.
+    func restoreSave(fingerprint: String, backup n: Int? = nil, kept copy: SaveStore.KeptCopy? = nil) -> String {
+        guard let saves = saveStoreFor(fingerprint) else { return "No se pudo restaurar. No se ha cambiado nada." }
+        // H5: mientras se abre un juego aún no se sabe su huella ni tiene dueño: no se toca ninguna partida.
+        guard !opening else {
+            return "No se pudo restaurar: \(FingerprintOwnership.Busy(owner: "apertura").localizedDescription) No se ha cambiado nada."
+        }
+        do {
+            if let n {
+                try SaveRestoration.restore(backup: n, saves: saves, states: stateStoreFor(fingerprint), ownership: ownership)
+            } else if let copy {
+                try SaveRestoration.restore(kept: copy, saves: saves, states: stateStoreFor(fingerprint), ownership: ownership)
+            }
+            didRestoreSave(fingerprint: fingerprint)
+            return "Copia restaurada. La partida anterior quedó como copia más reciente."
+        } catch {
+            return "No se pudo restaurar: \(error.localizedDescription) No se ha cambiado nada."
+        }
+    }
+
     /// Configuración actual del juego abierto (para guardarla en un momento y avisar al cargar).
     var currentMomentConfig: [String: String] {
         guard let session, let sessionEmulation else { return [:] }
@@ -1090,7 +1149,8 @@ final class AppState {
             return
         }
         do {
-            try MomentActions(moments: store, saves: saves).installSRAM(kind, moment, ownership: ownership)
+            try MomentActions(moments: store, saves: saves, states: stateStoreFor(fingerprint))
+                .installSRAM(kind, moment, ownership: ownership)
             didRestoreSave(fingerprint: fingerprint)
             momentNotice = MomentNotice("Partida recuperada", "Se ha instalado la partida de «\(moment.name)». La de antes quedó en «Antes de cargar» y en las copias de seguridad.")
         } catch {

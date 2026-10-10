@@ -875,10 +875,11 @@ enum LibraryQuery {
     }
 
     /// Carril «Continuar jugando»: los recientes jugables con estado automático vigente (ND15). No mira
-    /// la portada (decisión de Joel 2026-10-07, sustituye a K10).
+    /// la portada (decisión de Joel 2026-10-07, sustituye a K10). Primero se filtran los reanudables y después se toman
+    /// `limit` (como Android): un reciente sin continuación no deja fuera a uno más antiguo que sí la tiene (N-final).
     static func continuePlaying(_ entries: [RomEntry], prefs: LibraryPreferencesData, limit: Int = 5,
                                 canResume: (RomEntry) -> Bool) -> [RomEntry] {
-        recent(entries, prefs: prefs, limit: limit).filter { $0.isPlayable && canResume($0) }
+        recent(entries.filter { $0.isPlayable && canResume($0) }, prefs: prefs, limit: limit)
     }
 }
 
