@@ -6,11 +6,16 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
 import android.view.View
@@ -41,10 +46,19 @@ class DebugCatalogTest {
     fun libraryCatalogScreensShowTheirStates() {
         launch("library-empty").use { compose.onNodeWithText("Elegir carpeta").assertIsDisplayed() }
         launch("library-error").use { compose.onNodeWithText("Volver a elegir").assertIsDisplayed() }
-        launch("library-search").use { compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
-            compose.onNodeWithText("Buscar en todos").assertIsDisplayed() }
+        launch("library-search").use {
+            // H9 (N3): con «mostrar teclado con teclado físico» activado, el teclado empujaba el botón fuera de la vista.
+            Espresso.closeSoftKeyboard()
+            compose.onNodeWithText("Sin resultados", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Buscar en todos").assertIsDisplayed()
+        }
         launch("library-list").use {
-            compose.onAllNodesWithTag("game-list-item").assertCountEquals(5)
+            // N4: delante de «Todos los juegos» van la fila de Favoritos y las estanterías: se desplaza hasta cada fila.
+            for (title in listOf("POKÉMON RED", "POKÉMON YELLOW", "DEMO ADVENTURE", "COLOR DEMO", "ROTO")) {
+                compose.onNodeWithTag("library-collection")
+                    .performScrollToNode(hasTestTag("game-list-item") and hasText(title, substring = true))
+            }
+            compose.onAllNodesWithTag("game-card").assertCountEquals(0)
         }
         launch("library-detail").use { compose.onNodeWithTag("game-details-play").assertIsEnabled() }
         launch("library-detail-problem").use {
@@ -63,10 +77,10 @@ class DebugCatalogTest {
             compose.onNodeWithTag("pause-exit").assertIsDisplayed()
         }
         launch("pause-dialog").use { compose.onNodeWithTag("pause-continue").assertIsDisplayed() }
+        // N6: los ids antiguos de estados muestran la hoja «Momentos».
         launch("states-sheet").use {
-            compose.onNodeWithTag("state-row-auto").assertIsDisplayed()
-            compose.onNodeWithTag("state-save-slot1").assertIsDisplayed()
-            compose.onNodeWithText("Dañado").assertExists()
+            compose.onNodeWithTag("moments-new").assertIsDisplayed()
+            compose.onNodeWithTag("moments-ring").assertExists()
         }
         launch("exit-save-failed").use {
             compose.onNodeWithText("No se pudo guardar la partida en este teléfono").assertIsDisplayed()
@@ -75,16 +89,23 @@ class DebugCatalogTest {
         }
         launch("exit-risk").use { compose.onNodeWithTag("exit-risk-confirm").assertIsDisplayed() }
         launch("saves-settings").use { compose.onNodeWithText("POKÉMON RED").assertIsDisplayed() }
-        launch("library-detail-played").use { compose.onNodeWithText("Continuar").assertIsDisplayed() }
+        // A9 (cambia J8): jugado sin estado automático vigente = «Jugar»; con él, «Continuar» y «Jugar desde el inicio».
+        launch("library-detail-played").use { compose.onNodeWithText("Jugar").assertIsDisplayed() }
+        launch("details-resume-exact").use {
+            compose.onNodeWithText("Continuar").assertIsDisplayed()
+            compose.onNodeWithText("Jugar desde el inicio").assertIsDisplayed()
+            compose.onNodeWithTag("game-details-title").assertTextEquals("Rojo de Joel")
+        }
+        launch("details-rename").use { compose.onNodeWithTag("rename-field").assertTextContains("Rojo de Joel") }
+        launch("resume-failed").use { compose.onNodeWithTag("resume-failed-play").assertIsDisplayed() }
         launch("save-warning").use { compose.onNodeWithTag("warning-ok").assertIsDisplayed() }
         launch("save-problem").use {
             compose.onNodeWithTag("save-problem-indicator").assertIsDisplayed()
             compose.onNodeWithText("Guardado pendiente", substring = true).assertExists()
         }
         launch("states-rescue").use {
-            compose.onNodeWithTag("state-row-rescue").assertExists()
-            compose.onNodeWithTag("state-load-rescue").assertExists()
-            compose.onNodeWithText("estado de rescate", substring = true).assertExists()
+            compose.onNodeWithTag("moment-r1").assertExists()
+            compose.onNodeWithText("momento «Rescate»", substring = true).assertExists()
         }
         launch("open-error").use { compose.onNodeWithTag("open-error-ok").assertIsDisplayed() }
     }

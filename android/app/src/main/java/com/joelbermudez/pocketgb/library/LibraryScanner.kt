@@ -12,12 +12,62 @@ data class TreeNode(
     val sizeBytes: Long,
     /** El proveedor marca el documento como virtual: no tiene bytes locales. */
     val isVirtual: Boolean = false,
-    /** Fecha de modificación (epoch ms) si el proveedor la da; solo se usa para el `.sav` junto al ROM (K20). */
+    /**
+     * Fecha de modificación (epoch ms) si el proveedor la da. Sirve para la fecha del `.sav` junto al ROM (K20) y,
+     * en el ROM, para su sello de documento (N1a: detectar que se movió sin leerlo).
+     */
     val lastModified: Long? = null,
 )
 
 /** Fallo de lectura de un documento; distingue "no disponible aún" de "ilegible". */
 class DocumentReadException(val remote: Boolean, cause: Throwable? = null) : IOException(cause)
+
+/**
+ * N1-H4: el proveedor devolvió la carpeta a medias (`EXTRA_LOADING`: aún cargando; `EXTRA_ERROR`: con error). [nodes]
+ * es lo que sí listó; el escaneo lo usa pero queda incompleto (no poda ni traslada nada).
+ */
+class PartialListingException(
+    val nodes: List<TreeNode>,
+    reason: String,
+    /** `EXTRA_LOADING`: se puede volver a mirar en unos segundos (N1-V2). */
+    val loading: Boolean = false,
+) : IOException(reason)
+
+/**
+ * N1-H6: cabeceras ya leídas, por documento sin cambios (id de documento, tamaño y fecha del proveedor). Un ROM que
+ * sigue igual no se vuelve a abrir en cada escaneo (en Drive, abrirlo puede descargarlo).
+ */
+class HeaderCache private constructor(private val byKey: Map<Key, String>) {
+    private data class Key(val documentId: String, val size: Long, val lastModified: Long)
+
+    /**
+     * Cabecera (GB: 0x150 bytes, solo 0x134–0x14F con datos; GBA: 0xC0, solo 0xA0–0xBF) si [node] no cambió desde que
+     * se leyó; si no, `null`.
+     */
+    fun lookup(node: TreeNode): ByteArray? {
+        val modified = node.lastModified ?: return null
+        if (node.sizeBytes <= 0) return null
+        return byKey[Key(node.id, node.sizeBytes, modified)]?.let(RomHeader::fromAnyIdentity)
+    }
+
+    companion object {
+        val EMPTY = HeaderCache(emptyMap())
+
+        /** Desde los sellos guardados: solo los que tienen id de documento, tamaño, fecha y cabecera. */
+        fun from(stamps: Collection<DocumentStamp>): HeaderCache {
+            val map = HashMap<Key, String>()
+            for (stamp in stamps) {
+                val id = stamp.documentId ?: continue
+                val size = stamp.size?.takeIf { it > 0 } ?: continue
+                val modified = stamp.lastModified?.takeIf { it > 0 } ?: continue
+                if (stamp.headerCarried) continue // N1-V2-H1: no se leyó con esa fecha: no vale como caché
+                val header = stamp.header ?: continue
+                if (RomHeader.fromAnyIdentity(header) != null) map[Key(id, size, modified)] = header
+            }
+            return HeaderCache(map)
+        }
+    }
+}
 
 interface DocumentTree {
     /**
@@ -36,51 +86,197 @@ interface DocumentTree {
 }
 
 /**
- * Enumera los ROMs de la carpeta: solo `.gb`/`.gbc`, en la raíz y en sus subcarpetas
- * directas (profundidad 1), sin abrir ni modificar los ROMs.
+ * Cuánto costó un escaneo (N1b). En SAF cada carpeta listada es una consulta al proveedor (en Google Drive, una
+ * llamada de red) y cada cabecera leída abre el documento.
+ */
+data class ScanStats(
+    /** Carpetas listadas (consultas `children`), incluida la raíz. */
+    val folderQueries: Int = 0,
+    /** Cabeceras leídas (aperturas de documento). */
+    val headReads: Int = 0,
+    /** Documentos vistos (archivos y carpetas), hasta [LibraryScanner.MAX_SCAN_ENTRIES]. */
+    val documentsSeen: Int = 0,
+    /** Archivos y carpetas que empiezan por `.` (ND11: se ignoran). */
+    val hiddenSkipped: Int = 0,
+    /** `PocketGB/` en la raíz (ND11: es de la app). */
+    val reservedSkipped: Int = 0,
+    /** Carpetas que empiezan por `_` (ND11: apartadas). */
+    val setAsideSkipped: Int = 0,
+    /** Carpetas más allá de [LibraryScanner.MAX_FOLDER_DEPTH] niveles (no se listan). */
+    val tooDeepSkipped: Int = 0,
+    /**
+     * Carpetas que no se pudieron listar o que el proveedor dio a medias (`EXTRA_LOADING`/`EXTRA_ERROR`), y subcarpetas
+     * sin acceso con el permiso del árbol aún vigente (el resto sigue).
+     */
+    val folderErrors: Int = 0,
+    /** Se alcanzó [LibraryScanner.MAX_SCAN_ENTRIES]: hay documentos sin ver. */
+    val truncated: Boolean = false,
+    /** N1-H6: cabeceras tomadas de la caché ([HeaderCache]) sin abrir el ROM. */
+    val headerCacheHits: Int = 0,
+    /** N1-V2: carpetas que el proveedor aún estaba cargando (`EXTRA_LOADING`), incluidas en [folderErrors]. */
+    val loadingFolders: Int = 0,
+) {
+    /** Todas las carpetas a su alcance se listaron: lo que no aparece es que no está (N1a poda y traslada solo así). */
+    val complete: Boolean get() = folderErrors == 0 && !truncated
+
+    /** Consultas al proveedor en total. */
+    val providerCalls: Int get() = folderQueries + headReads
+}
+
+class ScanResult(val entries: List<RomEntry>, val stats: ScanStats)
+
+/**
+ * Enumera los ROMs de la carpeta: solo `.gb`/`.gbc`/`.gba` (N8), en la raíz y en sus subcarpetas hasta [MAX_FOLDER_DEPTH]
+ * niveles (N1b), sin abrir ni modificar los ROMs (solo se lee su cabecera). Nombres reservados (ND11): lo que empieza
+ * por `.` se ignora, `PocketGB/` en la raíz es de la app y las carpetas que empiezan por `_` quedan apartadas.
  */
 object LibraryScanner {
+    /** Límite de un ROM de Game Boy (8 MiB). */
     const val MAX_ROM_BYTES = 8L * 1024 * 1024
-    private val extensions = setOf("gb", "gbc")
 
-    fun scan(tree: DocumentTree, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): List<RomEntry> {
-        val candidates = uniqueIds(candidates(tree))
-        val entries = candidates.mapIndexed { index, (relative, node, folderId, saveDate) ->
-            entry(tree, relative, node, folderId, saveDate).also { progress(index + 1, candidates.size) }
+    /** N8: límite de un ROM de Game Boy Advance (32 MiB, = iOS `GBACoreBridge.maxROMBytes`). */
+    const val MAX_GBA_ROM_BYTES = 32L * 1024 * 1024
+
+    /** Límite de tamaño por consola: 8 MiB en Game Boy y 32 MiB en Game Boy Advance (= iOS `romLimit(for:)`). */
+    fun romLimit(console: RomConsole): Long = if (console == RomConsole.GBA) MAX_GBA_ROM_BYTES else MAX_ROM_BYTES
+
+    /** Niveles de carpeta bajo la raíz que se recorren (la raíz es el nivel 0; `a/b/c/d/e/x.gb` es el último). */
+    const val MAX_FOLDER_DEPTH = 5
+
+    /** Documentos (archivos y carpetas) que se miran como mucho en un escaneo: una carpeta enorme no lo eterniza. */
+    const val MAX_SCAN_ENTRIES = 5_000
+
+    /** Carpeta de la app en la raíz (ND11): intercambio y exportados; no se escanea. */
+    const val APP_FOLDER = "PocketGB"
+
+    private val extensions = setOf("gb", "gbc", "gba")
+
+    fun scan(
+        tree: DocumentTree,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        checkCancelled: () -> Unit = {},
+    ): List<RomEntry> = scanDetailed(tree, progress, checkCancelled).entries
+
+    /**
+     * Como [scan], con lo que costó ([ScanStats]). [checkCancelled] se llama antes de listar cada carpeta y de leer
+     * cada cabecera: si lanza (cancelación), el escaneo se corta ahí sin más consultas. [headerCache] evita reabrir los
+     * ROMs que no cambiaron (N1-H6).
+     */
+    fun scanDetailed(
+        tree: DocumentTree,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        checkCancelled: () -> Unit = {},
+        headerCache: HeaderCache = HeaderCache.EMPTY,
+    ): ScanResult {
+        val stats = StatsBuilder()
+        val candidates = uniqueIds(candidates(tree, stats, checkCancelled))
+        val entries = candidates.mapIndexed { index, candidate ->
+            checkCancelled()
+            entry(tree, candidate, stats, headerCache).also { progress(index + 1, candidates.size) }
         }
-        return entries.sortedWith(titleOrder)
+        return ScanResult(entries.sortedWith(titleOrder), stats.build())
     }
 
-    /** Ruta relativa, documento y carpeta que lo contiene (id de documento; `null` si se desconoce la raíz). */
+    private class StatsBuilder {
+        var folderQueries = 0
+        var headReads = 0
+        var documentsSeen = 0
+        var hiddenSkipped = 0
+        var reservedSkipped = 0
+        var setAsideSkipped = 0
+        var tooDeepSkipped = 0
+        var folderErrors = 0
+        var truncated = false
+        var headerCacheHits = 0
+        var loadingFolders = 0
+
+        fun build() = ScanStats(
+            folderQueries, headReads, documentsSeen, hiddenSkipped, reservedSkipped, setAsideSkipped,
+            tooDeepSkipped, folderErrors, truncated, headerCacheHits, loadingFolders,
+        )
+    }
+
+    /** Ruta relativa, documento, carpeta que lo contiene (id de documento; `null` si se desconoce la raíz) y su ruta. */
     private data class Candidate(
         val relative: String,
         val node: TreeNode,
         val folderId: String?,
-        val saveDate: Long? = null,
+        val saveDate: Long?,
+        val folderPath: List<String>,
+        /** N5: imagen junto al ROM ([com.joelbermudez.pocketgb.library.artwork.SidecarCover]), sin leerla. */
+        val cover: TreeNode? = null,
+        val conflictCopies: List<Pair<String, Long?>> = emptyList(),
     )
 
-    private fun candidates(tree: DocumentTree): List<Candidate> {
+    private class Folder(val id: String?, val path: List<String>)
+
+    /** Recorrido por niveles (los juegos menos profundos primero si se llega al tope). */
+    private fun candidates(tree: DocumentTree, stats: StatsBuilder, checkCancelled: () -> Unit): List<Candidate> {
         val result = mutableListOf<Candidate>()
-        val rootItems = tree.children(null)
-        for (item in rootItems) {
-            if (item.name.startsWith(".")) continue
-            if (item.isDirectory) {
-                // Una subcarpeta que falla de forma recuperable no tira el escaneo entero, pero perder el
-                // permiso sí lo es: la biblioteca parcial sería engañosa.
-                val inner = try {
-                    tree.children(item.id)
-                } catch (error: TreePermissionException) {
-                    throw error
-                } catch (_: IOException) {
-                    continue
+        val queue = ArrayDeque<Folder>()
+        val enqueued = HashSet<String>()
+        tree.rootId?.let(enqueued::add)
+        queue += Folder(null, emptyList())
+        while (queue.isNotEmpty() && !stats.truncated) {
+            val folder = queue.removeFirst()
+            checkCancelled()
+            stats.folderQueries++
+            val children = try {
+                tree.children(folder.id)
+            } catch (partial: PartialListingException) {
+                // N1-H4: lo listado vale, pero el escaneo queda incompleto (Drive aún cargando o con error).
+                stats.folderErrors++
+                if (partial.loading) stats.loadingFolders++
+                partial.nodes
+            } catch (error: TreePermissionException) {
+                // Perder el permiso tumba el escaneo: la biblioteca parcial sería engañosa.
+                throw error
+            } catch (error: IOException) {
+                // La raíz que falla tumba el escaneo (no hay biblioteca que mostrar); una subcarpeta, no.
+                if (folder.id == null) throw error
+                stats.folderErrors++
+                continue
+            }
+            val depth = folder.path.size
+            val folderDocumentId = folder.id ?: tree.rootId
+            val romsHere = children.count { !it.isDirectory && isRom(it.name) }
+            val romBasesHere = children.filter { !it.isDirectory && isRom(it.name) }.map { it.name.substringBeforeLast('.') }.toSet()
+            // Orden estable por nombre: con el tope, qué se queda fuera no depende del orden del proveedor.
+            for (item in children.sortedWith(compareBy<TreeNode>({ it.name }, { it.id }))) {
+                if (stats.documentsSeen >= MAX_SCAN_ENTRIES) {
+                    stats.truncated = true
+                    break
                 }
-                inner.filter { !it.isDirectory && isRom(it.name) }
-                    .forEach { result += Candidate("${item.name}/${it.name}", it, item.id, saveDateOf(inner, it.name)) }
-            } else if (isRom(item.name)) {
-                result += Candidate(item.name, item, tree.rootId, saveDateOf(rootItems, item.name))
+                stats.documentsSeen++
+                when {
+                    item.name.startsWith(".") -> stats.hiddenSkipped++
+                    item.isDirectory -> when {
+                        depth == 0 && item.name.equals(APP_FOLDER, ignoreCase = true) -> stats.reservedSkipped++
+                        item.name.startsWith("_") -> stats.setAsideSkipped++
+                        depth + 1 > MAX_FOLDER_DEPTH -> stats.tooDeepSkipped++
+                        // Drive deja que una carpeta tenga dos padres: se lista una sola vez.
+                        enqueued.add(item.id) -> queue += Folder(item.id, folder.path + item.name)
+                    }
+                    isRom(item.name) -> result += Candidate(
+                        relative = (folder.path + item.name).joinToString("/"),
+                        node = item,
+                        folderId = folderDocumentId,
+                        saveDate = saveDateOf(children, item.name),
+                        folderPath = folder.path,
+                        cover = com.joelbermudez.pocketgb.library.artwork.SidecarCover.find(item.name, children, romsHere),
+                        conflictCopies = conflictCopiesOf(children, item.name, romBasesHere),
+                    )
+                }
             }
         }
         return result
+    }
+
+    /** Copias en conflicto del `.sav` del ROM entre sus hermanos (ND20 l: `X 2.sav` junto a `X 2.gb` es de otro juego). */
+    private fun conflictCopiesOf(siblings: List<TreeNode>, romName: String, romBases: Set<String>): List<Pair<String, Long?>> {
+        val base = romName.substringBeforeLast('.')
+        return siblings.filter { !it.isDirectory && com.joelbermudez.pocketgb.saves.SaveLineage.isProviderConflictCopy(base, it.name, romBases) }
+            .sortedBy { it.name }.take(32).map { it.name to it.lastModified?.takeIf { d -> d > 0 } }
     }
 
     /** K20: fecha del `<base>.sav` hermano del ROM (sin distinguir mayúsculas), sin abrir el archivo. */
@@ -94,7 +290,8 @@ object LibraryScanner {
      * Garantiza ids únicos (se usan como clave en favoritos, ocultos y listas Lazy*). Si varias entradas
      * comparten ruta relativa (proveedores remotos permiten nombres repetidos), TODAS reciben un sufijo
      * `#<hash del id de documento>`: así el id no depende del orden en que el proveedor las liste.
-     * El sufijo va tras el nombre de archivo, por lo que `subfolder` no cambia.
+     * El sufijo va tras el nombre de archivo, por lo que `subfolder` y `folderPath` no cambian. Vale igual con rutas
+     * profundas (N1b): la ruta relativa completa es la que se compara.
      */
     private fun uniqueIds(items: List<Candidate>): List<Candidate> {
         val counts = items.groupingBy { it.relative }.eachCount()
@@ -120,48 +317,63 @@ object LibraryScanner {
     private fun isRom(name: String): Boolean =
         !name.startsWith(".") && name.substringAfterLast('.', "").lowercase() in extensions
 
-    private fun entry(
-        tree: DocumentTree,
-        relative: String,
-        node: TreeNode,
-        folderId: String?,
-        saveDate: Long?,
-    ): RomEntry {
+    private fun entry(tree: DocumentTree, candidate: Candidate, stats: StatsBuilder, cache: HeaderCache): RomEntry {
+        val node = candidate.node
         val fallbackTitle = node.name.substringBeforeLast('.')
-        val colorByName = node.name.substringAfterLast('.').equals("gbc", ignoreCase = true)
+        val byName = RomConsole.fromFileName(node.name)
+        val isGba = byName == RomConsole.GBA
 
         fun make(
             problem: RomProblem?,
             title: String = fallbackTitle,
-            isColor: Boolean = colorByName,
+            console: RomConsole = byName,
             checksumOk: Boolean = true,
+            headerKey: String? = null,
         ) = RomEntry(
-            id = relative,
+            id = candidate.relative,
             uri = tree.uriOf(node),
             fileName = node.name,
             title = title.ifEmpty { fallbackTitle },
-            isColor = isColor,
+            console = console,
             sizeBytes = node.sizeBytes,
             headerChecksumOk = checksumOk,
             problem = problem,
-            folderDocumentId = folderId,
-            mirrorSaveDate = saveDate,
+            folderDocumentId = candidate.folderId,
+            mirrorSaveDate = candidate.saveDate,
+            folderPath = candidate.folderPath,
+            lastModified = node.lastModified,
+            documentId = node.id,
+            headerKey = headerKey,
+            coverUri = candidate.cover?.let(tree::uriOf),
+            coverStamp = candidate.cover?.let(com.joelbermudez.pocketgb.library.artwork.SidecarCover::stamp),
+            conflictCopies = candidate.conflictCopies,
         )
 
         if (node.isVirtual) return make(RomProblem.REMOTE_UNAVAILABLE)
-        if (node.sizeBytes > MAX_ROM_BYTES) return make(RomProblem.TOO_LARGE)
-        val head = try {
-            tree.readHead(node, RomHeader.MINIMUM_BYTES)
+        if (node.sizeBytes > romLimit(byName)) return make(if (isGba) RomProblem.TOO_LARGE_GBA else RomProblem.TOO_LARGE)
+        // Una caché de la otra consola (el archivo cambió de extensión sin cambiar de sello) no vale: se relee.
+        val cached = cache.lookup(node)?.takeIf { it.size == if (isGba) RomHeader.GBA_MINIMUM_BYTES else RomHeader.MINIMUM_BYTES }
+        if (cached != null) stats.headerCacheHits++
+        val head = cached ?: try {
+            stats.headReads++
+            tree.readHead(node, if (isGba) RomHeader.GBA_MINIMUM_BYTES else RomHeader.MINIMUM_BYTES)
         } catch (error: DocumentReadException) {
             return make(if (error.remote) RomProblem.REMOTE_UNAVAILABLE else RomProblem.UNREADABLE)
         } catch (_: IOException) {
             return make(RomProblem.UNREADABLE)
         }
-        val info = RomHeader.parse(head) ?: return make(RomProblem.INVALID_HEADER)
-        return make(null, info.title, info.isColor, info.checksumOk)
+        if (isGba) {
+            val key = RomHeader.gbaIdentity(head)
+            val info = RomHeader.parseGba(head) ?: return make(RomProblem.INVALID_HEADER_GBA, headerKey = key)
+            return make(null, info.title, RomConsole.GBA, info.checksumOk, key)
+        }
+        val key = RomHeader.identity(head)
+        val info = RomHeader.parse(head) ?: return make(RomProblem.INVALID_HEADER, headerKey = key)
+        return make(null, info.title, RomConsole.gameBoy(info.isColor), info.checksumOk, key)
     }
 
-    val titleOrder: Comparator<RomEntry> = Comparator { a, b -> NaturalOrder.compare(a.title, b.title) }
+    /** Orden por el nombre visible (el alias si lo hay, A9; el título de la cabecera si no). */
+    val titleOrder: Comparator<RomEntry> = Comparator { a, b -> NaturalOrder.compare(a.displayTitle, b.displayTitle) }
 }
 
 /** Orden "natural": ignora mayúsculas y acentos y compara los números por valor ("Juego 2" < "Juego 10"). */

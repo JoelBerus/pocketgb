@@ -1,7 +1,11 @@
 package com.joelbermudez.pocketgb.settings
 
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.EmulationOptions
 import com.joelbermudez.pocketgb.emulator.GbModel
+import com.joelbermudez.pocketgb.emulator.GbaOptions
+import com.joelbermudez.pocketgb.emulator.GbaRtc
+import com.joelbermudez.pocketgb.emulator.GbaSaveType
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlLayout
 import com.joelbermudez.pocketgb.input.ControlsOrientation
@@ -26,6 +30,11 @@ const val MAX_CONTROL_SCALE = 1.6f
 const val MIN_SIZE_SCALE = 0.85f
 const val MAX_SIZE_SCALE = 1.15f
 
+/** Separación de las flechas separadas (N2, ND10): 1,0 = la distribución de fábrica; se guarda por orientación. */
+const val MIN_DPAD_SEPARATION = 0.7f
+const val MAX_DPAD_SEPARATION = 1.5f
+const val DPAD_SEPARATION_STEP = 0.1f
+
 private val FINGERPRINT = Regex("^[0-9a-f]{64}$")
 
 fun isValidFingerprint(value: String): Boolean = FINGERPRINT.matches(value)
@@ -35,6 +44,13 @@ enum class ControlsVisibility { ALWAYS, ON_TOUCH, HIDDEN }
 
 @Serializable
 enum class DpadStyle { CROSS, ARROWS }
+
+/**
+ * Cuánto cuentan las diagonales de la cruceta (N2). [NORMAL]: ocho sectores de 45° (las diagonales ocupan la mitad del
+ * ángulo). [REDUCED]: la diagonal solo vale a ±15° de los 45°. [DISABLED]: solo cuatro direcciones.
+ */
+@Serializable
+enum class DiagonalMode { NORMAL, REDUCED, DISABLED }
 
 /**
  * Mapeo del mando físico (A7): `bindings` va de `PadAction.name` a `KeyEvent.KEYCODE_*`. Lo que no esté en `bindings`
@@ -95,21 +111,45 @@ data class ControllerMappingData(val bindings: Map<String, Int> = emptyMap()) {
     }
 }
 
-/** Espejo serializable de `ControlLayout`: posiciones 0..1 relativas a la zona de controles y escalas 0,6..1,6. */
+/**
+ * Espejo serializable de `ControlLayout`: posiciones 0..1 relativas a la zona de controles, escalas 0,6..1,6 y la
+ * separación de las flechas separadas 0,7..1,5 (N2; los archivos anteriores no la traen y valen 1,0).
+ */
 @Serializable
 data class StoredControlLayout(
     val positions: Map<ControlId, NormalizedPoint> = emptyMap(),
     val scales: Map<ControlId, Float> = emptyMap(),
+    val separation: Float = 1f,
 )
 
-/** Ajustes de un juego; `null` = usa el ajuste global. */
+/** Ajustes de un juego; `null` = usa el ajuste global (o lo detectado, en GBA). */
 @Serializable
 data class GameOverrides(
     val colorForGameBoy: Boolean? = null,
     /** 0 = automática; 1..12. */
     val compatPalette: Int? = null,
+    /**
+     * N8 (GBA, = iOS `gbaSaveType`): medio forzado con el valor nativo de [GbaSaveType] (1 «Sin partida» … 6 «EEPROM
+     * 8 KiB»); `null` = «Detectado». Se guarda como número para que un valor desconocido no tumbe el archivo.
+     */
+    val gbaSaveType: Int? = null,
+    /** N8 (GBA, = iOS `gbaRTC`): 1 «Con reloj», 2 «Sin reloj»; `null` = «Detectado». */
+    val gbaRtc: Int? = null,
+    /** N8 (GBA, = iOS `gbaUseBIOS`): `false` = «Emulada»; `null` = «Global» (la del usuario si existe y es la oficial). */
+    val gbaUseBios: Boolean? = null,
 ) {
-    val isEmpty get() = colorForGameBoy == null && compatPalette == null
+    val isEmpty get() = colorForGameBoy == null && compatPalette == null && gbaSaveType == null && gbaRtc == null &&
+        gbaUseBios == null
+
+    /** GBA: hay tipo de partida o reloj forzado (iOS `GameSettingsSaveWarning.check(forced:)`). */
+    val gbaForced: Boolean get() = gbaSaveType != null || gbaRtc != null
+
+    /** Las opciones del núcleo de GBA: lo forzado o AUTO, y la BIOS del usuario salvo «Emulada». */
+    fun gbaOptions(): GbaOptions = GbaOptions(
+        saveType = gbaSaveType?.let { value -> GbaSaveType.entries.firstOrNull { it.native == value } } ?: GbaSaveType.AUTO,
+        rtc = gbaRtc?.let { value -> GbaRtc.entries.firstOrNull { it.native == value } } ?: GbaRtc.AUTO,
+        useBios = gbaUseBios != false,
+    )
 }
 
 enum class SelectedModel { AUTO, DMG, CGB }
@@ -137,8 +177,16 @@ data class GameplaySettingsData(
     val sizeScale: Float = 1f,
     val portraitLayout: StoredControlLayout = StoredControlLayout(),
     val landscapeLayout: StoredControlLayout = StoredControlLayout(),
+    /**
+     * N8: disposición propia de los juegos de GBA por orientación (con L y R; = iOS `ControlsLayout.defaults(_,
+     * shoulders:)`). Se guarda aparte de la de Game Boy: consola × orientación.
+     */
+    val gbaPortraitLayout: StoredControlLayout = StoredControlLayout(),
+    val gbaLandscapeLayout: StoredControlLayout = StoredControlLayout(),
     val integerScaleLandscape: Boolean = true,
     val dpadStyle: DpadStyle = DpadStyle.CROSS,
+    /** Diagonales de la cruceta (N2). Por defecto «Reducidas»: la diagonal solo vale cerca de los 45°. */
+    val diagonalMode: DiagonalMode = DiagonalMode.REDUCED,
     /** 0..1, ganancia lineal. */
     val volume: Float = 1f,
     val colorForGameBoy: Boolean = false,
@@ -155,6 +203,8 @@ data class GameplaySettingsData(
         sizeScale = sizeScale.finiteOr(1f).coerceIn(MIN_SIZE_SCALE, MAX_SIZE_SCALE),
         portraitLayout = portraitLayout.sanitized(),
         landscapeLayout = landscapeLayout.sanitized(),
+        gbaPortraitLayout = gbaPortraitLayout.sanitized(),
+        gbaLandscapeLayout = gbaLandscapeLayout.sanitized(),
         volume = volume.finiteOr(1f).coerceIn(0f, 1f),
         compatPalette = if (compatPalette in 0..MAX_COMPAT_PALETTE) compatPalette else 0,
         controllerMapping = controllerMapping?.sanitized(),
@@ -168,39 +218,67 @@ data class GameplaySettingsData(
     fun update(change: (GameplaySettingsData) -> GameplaySettingsData): GameplaySettingsData =
         change(this).sanitized()
 
-    fun layout(orientation: ControlsOrientation): StoredControlLayout =
-        if (orientation == ControlsOrientation.PORTRAIT) portraitLayout else landscapeLayout
+    /** La disposición guardada de [console] (N8: GB y GBA por separado) en [orientation]. */
+    fun layout(orientation: ControlsOrientation, console: Console = Console.GB): StoredControlLayout = when (console) {
+        Console.GB -> if (orientation == ControlsOrientation.PORTRAIT) portraitLayout else landscapeLayout
+        Console.GBA -> if (orientation == ControlsOrientation.PORTRAIT) gbaPortraitLayout else gbaLandscapeLayout
+    }
 
-    private fun withLayout(orientation: ControlsOrientation, layout: StoredControlLayout) =
-        if (orientation == ControlsOrientation.PORTRAIT) copy(portraitLayout = layout) else copy(landscapeLayout = layout)
+    /** La disposición resuelta (guardada sobre la de fábrica de esa consola) que dibujan los controles. */
+    fun controlLayout(orientation: ControlsOrientation, console: Console = Console.GB): ControlLayout =
+        ControlLayout.from(layout(orientation, console), orientation, shoulders = console == Console.GBA)
 
-    /** Guarda un control movido, solo en esa orientación. */
-    fun move(orientation: ControlsOrientation, id: ControlId, point: NormalizedPoint): GameplaySettingsData {
+    private fun withLayout(orientation: ControlsOrientation, console: Console, layout: StoredControlLayout) = when (console) {
+        Console.GB -> if (orientation == ControlsOrientation.PORTRAIT) copy(portraitLayout = layout) else copy(landscapeLayout = layout)
+        Console.GBA ->
+            if (orientation == ControlsOrientation.PORTRAIT) copy(gbaPortraitLayout = layout) else copy(gbaLandscapeLayout = layout)
+    }
+
+    /** Guarda un control movido, solo en esa orientación y consola. */
+    fun move(
+        orientation: ControlsOrientation,
+        id: ControlId,
+        point: NormalizedPoint,
+        console: Console = Console.GB,
+    ): GameplaySettingsData {
         val clamped = NormalizedPoint(point.x.finiteOr(0.5f).coerceIn(0f, 1f), point.y.finiteOr(0.5f).coerceIn(0f, 1f))
-        val current = layout(orientation)
-        return withLayout(orientation, current.copy(positions = current.positions + (id to clamped)))
+        val current = layout(orientation, console)
+        return withLayout(orientation, console, current.copy(positions = current.positions + (id to clamped)))
     }
 
-    /** Cambia el tamaño de un control en pasos de 0,1 (recorte 0,6..1,6), solo en esa orientación. */
-    fun resize(orientation: ControlsOrientation, id: ControlId, delta: Float): GameplaySettingsData {
-        val current = layout(orientation)
-        val base = current.scales[id] ?: 1f
+    /**
+     * Cambia el tamaño de un control en pasos de 0,1 (recorte 0,6..1,6), solo en esa orientación y consola. Sin escala
+     * guardada parte de la de fábrica de esa consola (en GBA horizontal la cruceta nace al 0,6 y L/R al 0,9).
+     */
+    fun resize(orientation: ControlsOrientation, id: ControlId, delta: Float, console: Console = Console.GB): GameplaySettingsData {
+        val current = layout(orientation, console)
+        val base = current.scales[id] ?: ControlLayout.defaults(orientation, console == Console.GBA).scales[id] ?: 1f
         val next = (((base + delta) * 10f).roundToInt() / 10f).coerceIn(MIN_CONTROL_SCALE, MAX_CONTROL_SCALE)
-        return withLayout(orientation, current.copy(scales = current.scales + (id to next)))
+        return withLayout(orientation, console, current.copy(scales = current.scales + (id to next)))
     }
 
-    fun resetLayout(orientation: ControlsOrientation): GameplaySettingsData =
-        withLayout(orientation, StoredControlLayout())
+    /** Cambia la separación de las flechas separadas en pasos de 0,1 (recorte 0,7..1,5), solo en esa orientación y consola. */
+    fun adjustSeparation(orientation: ControlsOrientation, delta: Float, console: Console = Console.GB): GameplaySettingsData {
+        val current = layout(orientation, console)
+        val next = (((current.separation.finiteOr(1f) + delta) * 10f).roundToInt() / 10f)
+            .coerceIn(MIN_DPAD_SEPARATION, MAX_DPAD_SEPARATION)
+        return withLayout(orientation, console, current.copy(separation = next))
+    }
 
-    /** `true` si la disposición de esa orientación equivale a la de fábrica (aunque haya entradas guardadas). */
-    fun isFactoryLayout(orientation: ControlsOrientation): Boolean {
-        val stored = layout(orientation)
-        val defaults = ControlLayout.defaults(orientation)
+    /** Devuelve la disposición de esa orientación y consola a la de fábrica: posiciones, tamaños y separación (1,0). */
+    fun resetLayout(orientation: ControlsOrientation, console: Console = Console.GB): GameplaySettingsData =
+        withLayout(orientation, console, StoredControlLayout())
+
+    /** `true` si la disposición de esa orientación y consola equivale a la de fábrica (aunque haya entradas guardadas). */
+    fun isFactoryLayout(orientation: ControlsOrientation, console: Console = Console.GB): Boolean {
+        val stored = layout(orientation, console)
+        val defaults = ControlLayout.defaults(orientation, console == Console.GBA)
         val positionsMatch = stored.positions.all { (id, point) ->
             val factory = defaults.centers[id]
             factory != null && abs(factory.x - point.x) < EPSILON && abs(factory.y - point.y) < EPSILON
         }
-        return positionsMatch && stored.scales.all { (_, scale) -> abs(scale - 1f) < EPSILON }
+        return positionsMatch && stored.scales.all { (id, scale) -> abs(scale - (defaults.scales[id] ?: 1f)) < EPSILON } &&
+            abs(stored.separation - 1f) < EPSILON
     }
 
     /** Ajustes de un juego; al quedar todo en «Global» se borra la entrada. */
@@ -226,6 +304,8 @@ data class GameplaySettingsData(
         return EmulationSelection(model, palette)
     }
 
+    /** N8: opciones de un juego de GBA (tipo de partida, reloj y BIOS) por huella; sin ajustes, todo detectado. */
+    fun gbaOptions(fingerprint: String?): GbaOptions = (fingerprint?.let { perGame[it] } ?: GameOverrides()).gbaOptions()
 }
 
 /**
@@ -239,10 +319,15 @@ private const val EPSILON = 1e-4f
 
 private fun Float.finiteOr(default: Float) = if (isFinite()) this else default
 
-private fun GameOverrides.sanitized() =
-    copy(compatPalette = compatPalette?.takeIf { it in 0..MAX_COMPAT_PALETTE })
+private fun GameOverrides.sanitized() = copy(
+    compatPalette = compatPalette?.takeIf { it in 0..MAX_COMPAT_PALETTE },
+    gbaSaveType = gbaSaveType?.takeIf { value -> value != GbaSaveType.AUTO.native && GbaSaveType.entries.any { it.native == value } },
+    gbaRtc = gbaRtc?.takeIf { it == GbaRtc.ON.native || it == GbaRtc.OFF.native },
+    gbaUseBios = gbaUseBios?.takeIf { !it },
+)
 
 private fun StoredControlLayout.sanitized() = StoredControlLayout(
     positions = positions.filterValues { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f },
     scales = scales.filterValues { it.isFinite() }.mapValues { it.value.coerceIn(MIN_CONTROL_SCALE, MAX_CONTROL_SCALE) },
+    separation = separation.finiteOr(1f).coerceIn(MIN_DPAD_SEPARATION, MAX_DPAD_SEPARATION),
 )

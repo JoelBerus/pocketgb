@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -20,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.library.LibraryLayout
 import com.joelbermudez.pocketgb.library.LibraryPreferencesData
@@ -38,6 +43,14 @@ class GameActions(
     val onPlay: ((RomEntry) -> Unit)? = null,
     /** Abre los ajustes del juego (hoja por juego); sin valor, el menú no los ofrece. */
     val onGameSettings: ((RomEntry) -> Unit)? = null,
+    /** A9: «Jugar desde el inicio» (solo la partida, sin el estado automático); se ofrece si [canResume]. */
+    val onPlayFromStart: ((RomEntry) -> Unit)? = null,
+    /** A9: «Renombrar» (alias visual); sin valor, el menú no lo ofrece. */
+    val onRename: ((RomEntry) -> Unit)? = null,
+    /** A9: el juego tiene «Continuar» exacto (estado automático vigente). */
+    val canResume: (RomEntry) -> Boolean = { false },
+    /** N6: «Momentos» del menú; sin valor, el menú abre el detalle (que tiene «Momentos»). */
+    val onOpenMoments: ((RomEntry) -> Unit)? = null,
 )
 
 /**
@@ -51,14 +64,20 @@ class GameMenuController internal constructor(private val actions: GameActions) 
     var hideCandidate by mutableStateOf<RomEntry?>(null)
         internal set
 
-    fun open(entry: RomEntry) {
-        menuFor = entry.id
+    /**
+     * Abre el menú de [entry] en [place] (N4: el mismo juego puede salir en una estantería del inicio y en la cuadrícula;
+     * solo se abre el menú del sitio que se pulsó). `""` = la cuadrícula o la lista.
+     */
+    fun open(entry: RomEntry, place: String = "") {
+        menuFor = key(entry, place)
     }
 
+    private fun key(entry: RomEntry, place: String) = if (place.isEmpty()) entry.id else "$place|${entry.id}"
+
     @Composable
-    fun Menu(entry: RomEntry, favorite: Boolean) {
+    fun Menu(entry: RomEntry, favorite: Boolean, place: String = "") {
         GameContextMenu(
-            expanded = menuFor == entry.id,
+            expanded = menuFor == key(entry, place),
             onDismiss = { menuFor = null },
             entry = entry,
             favorite = favorite,
@@ -67,6 +86,10 @@ class GameMenuController internal constructor(private val actions: GameActions) 
             onToggleFavorite = { actions.onToggleFavorite(entry) },
             onGameSettings = actions.onGameSettings?.let { settings -> { settings(entry) } },
             onHide = { hideCandidate = entry },
+            canResume = actions.canResume(entry),
+            onPlayFromStart = actions.onPlayFromStart?.let { play -> { play(entry) } },
+            onRename = actions.onRename?.let { rename -> { rename(entry) } },
+            onOpenMoments = { (actions.onOpenMoments ?: actions.onOpenDetails)(entry) },
         )
     }
 }
@@ -81,7 +104,7 @@ fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController)
     content(controller)
     controller.hideCandidate?.let { entry ->
         HideGameDialog(
-            title = entry.title,
+            title = entry.displayTitle,
             onConfirm = {
                 controller.hideCandidate = null
                 actions.onHide(entry)
@@ -91,9 +114,15 @@ fun GameMenuHost(actions: GameActions, content: @Composable (GameMenuController)
     }
 }
 
+/** N4: una fila completa con clave propia antes del título de sección (Favoritos, estanterías del inicio…). */
+class CollectionItem(val key: String, val content: @Composable (GameMenuController) -> Unit)
+
 /**
  * Cuadrícula o lista de juegos con su menú de pulsación larga. Compartida con Favoritos. [header] y [footer]
- * ocupan una fila completa al principio y al final y se desplazan con el contenido.
+ * ocupan una fila completa al principio y al final y se desplazan con el contenido. [leadingItems] (N4) van tras
+ * [header], cada una en su fila. [pinnedHeader] (N3b, horizontal) va después y se queda fijo arriba al desplazar
+ * (título de sección). [gridState]/[listState] permiten conservar la posición al volver de una búsqueda;
+ * [bottomPadding] deja aire bajo la última fila (barra flotante).
  */
 @Composable
 fun GameCollection(
@@ -104,6 +133,11 @@ fun GameCollection(
     modifier: Modifier = Modifier,
     header: (@Composable (GameMenuController) -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
+    pinnedHeader: (@Composable () -> Unit)? = null,
+    gridState: LazyGridState? = null,
+    listState: LazyListState? = null,
+    bottomPadding: Dp = 16.dp,
+    leadingItems: List<CollectionItem> = emptyList(),
 ) {
     GameMenuHost(actions) { menu ->
         when (layout) {
@@ -113,12 +147,21 @@ fun GameCollection(
               LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize().testTag("library-collection"),
-                contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                state = gridState ?: rememberLazyGridState(),
+                contentPadding = PaddingValues(
+                    start = GRID_MARGIN_DP.dp, top = 12.dp, end = GRID_MARGIN_DP.dp, bottom = bottomPadding,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(GRID_SPACING_DP.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (header != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "header") { header(menu) }
+                }
+                leadingItems.forEach { leading ->
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "leading-${leading.key}") { leading.content(menu) }
+                }
+                if (pinnedHeader != null) {
+                    stickyHeader(key = "pinned-header") { pinnedHeader() }
                 }
                 items(entries.size, key = { entries[it].id }) { index ->
                     val entry = entries[index]
@@ -143,10 +186,19 @@ fun GameCollection(
             }
             LibraryLayout.LIST -> LazyColumn(
                 modifier = modifier.fillMaxSize().testTag("library-collection"),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+                state = listState ?: rememberLazyListState(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding),
             ) {
                 if (header != null) {
-                    item(key = "header") { Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { header(menu) } }
+                    item(key = "header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp, vertical = 8.dp)) { header(menu) } }
+                }
+                leadingItems.forEach { leading ->
+                    item(key = "leading-${leading.key}") {
+                        Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp, vertical = 8.dp)) { leading.content(menu) }
+                    }
+                }
+                if (pinnedHeader != null) {
+                    stickyHeader(key = "pinned-header") { Box(Modifier.padding(horizontal = GRID_MARGIN_DP.dp)) { pinnedHeader() } }
                 }
                 items(entries.size, key = { entries[it].id }) { index ->
                     val entry = entries[index]

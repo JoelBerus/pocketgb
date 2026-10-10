@@ -50,6 +50,8 @@ set_rotation() {
   if [[ "$rotation" != "$1" ]]; then
     "$adb_bin" shell settings put system accelerometer_rotation 0
     "$adb_bin" shell settings put system user_rotation "$1"
+    # N3: además la orden de WindowManager (Android 12+), que el emulador respeta aunque esté en mitad de una transición.
+    "$adb_bin" shell wm user-rotation lock "$1" >/dev/null 2>&1 || true
     rotation="$1"
     wait_for_rotation
   fi
@@ -58,8 +60,13 @@ set_rotation() {
 wait_for_rotation() {
   local want="ROTATION_0"
   [[ "$rotation" == 1 ]] && want="ROTATION_90"
-  for _ in $(seq 1 20); do
+  for i in $(seq 1 20); do
     if "$adb_bin" shell dumpsys window displays | grep -q "mDisplayRotation=$want"; then return; fi
+    # N3: a mitad de la espera se vuelve a pedir el giro (a veces el primer cambio se pierde al lanzar la app).
+    if [[ "$i" == 10 && -n "$rotation" ]]; then
+      "$adb_bin" shell settings put system user_rotation "$rotation"
+      "$adb_bin" shell wm user-rotation lock "$rotation" >/dev/null 2>&1 || true
+    fi
     sleep 0.5
   done
   echo "Aviso: la pantalla no giró a $want" >&2
@@ -75,6 +82,7 @@ set_window() {
     # Con el AVD en 1280x800 la rotación 0 ya es horizontal: no se gira más.
     "$adb_bin" shell settings put system accelerometer_rotation 0
     "$adb_bin" shell settings put system user_rotation 0
+    "$adb_bin" shell wm user-rotation lock 0 >/dev/null 2>&1 || true
     rotation=0
   else
     "$adb_bin" shell wm size reset
@@ -104,6 +112,7 @@ cleanup() {
   "$adb_bin" shell wm density reset >/dev/null 2>&1 || true
   "$adb_bin" shell cmd overlay disable --user 0 "$cutout_overlay" >/dev/null 2>&1 || true
   "$adb_bin" shell settings put system user_rotation 0 || true
+  "$adb_bin" shell wm user-rotation lock 0 >/dev/null 2>&1 || true
   "$adb_bin" shell settings delete secure theme_customization_overlay_packages >/dev/null 2>&1 || true
   if [[ "$previous_ime" == "null" || -z "$previous_ime" ]]; then
     "$adb_bin" shell settings delete secure show_ime_with_hard_keyboard >/dev/null 2>&1 || true

@@ -33,7 +33,7 @@ fun AboutScreen(onBack: () -> Unit, onLicenses: () -> Unit = {}) {
                 Modifier.testTag("about-version"),
             )
             ValueRow(stringResource(R.string.about_core), stringResource(R.string.about_core_value))
-            ValueRow(stringResource(R.string.about_consoles), stringResource(R.string.about_consoles_value))
+            ValueRow(stringResource(R.string.about_consoles), stringResource(R.string.n8_about_consoles_value))
         }
         SettingsGroup(header = stringResource(R.string.about_privacy_header)) {
             ListItem(

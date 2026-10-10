@@ -99,6 +99,13 @@ sealed interface SaveResolution {
 
 /** Aviso al abrir un juego sobre su partida. Los textos viven en recursos de la UI; aquí solo el tipo. */
 sealed interface SaveLoadWarning {
+    /**
+     * N8 (= iOS `GameSettingsSaveWarning`, G8-H5): el `.sav` (local o junto al ROM) no coincide con el tipo de partida o
+     * el reloj fijados en los ajustes del juego de GBA. Ese `.sav` no se toca. [noSave]: los ajustes fuerzan «Sin
+     * partida» (sin reloj), así que el juego no guarda.
+     */
+    data class GameSettingsMismatch(val noSave: Boolean) : SaveLoadWarning
+
     /** La partida local tiene un tamaño incorrecto y no hay otra: no se toca y no se guarda. */
     data object LocalWrongSize : SaveLoadWarning
 
@@ -120,6 +127,43 @@ sealed interface SaveLoadWarning {
     /** La carpeta solo permite lectura: se importó el `.sav` si había, pero nunca se escribirá. */
     data object MirrorReadOnly : SaveLoadWarning
 
+    /**
+     * N1-H5: el `.sav` junto al juego (más nuevo y no escrito por PocketGB) sustituyó a la partida local, que quedó
+     * apartada en Ajustes › Partidas › Apartadas.
+     */
+    data object LocalSetAside : SaveLoadWarning
+
+    /**
+     * N7a: el `.sav` junto al juego cambió por fuera (otro equipo) y la partida de aquí no había cambiado desde la última
+     * vez que PocketGB lo escribió: se instaló el de fuera; la anterior quedó en las copias de seguridad.
+     */
+    data class ExternalChange(val readOnly: Boolean = false) : SaveLoadWarning
+
+    /**
+     * ND20 (c): el `.sav` junto al juego era una versión anterior escrita por PocketGB; gana la de aquí y esa versión
+     * quedó apartada en Ajustes › Partidas. [readOnly]: además la carpeta es de solo lectura (H12).
+     */
+    data class MirrorOlderSetAside(val readOnly: Boolean = false) : SaveLoadWarning
+
+    /**
+     * N7a: la partida cambió aquí y también en el otro equipo. Se sigue con la de aquí; la otra quedó en las copias,
+     * apartada y como momento «Conflicto …» ([conflictMomentId], null si no se pudo crear) para recuperarla.
+     */
+    data class Divergence(val conflictMomentId: String?, val readOnly: Boolean = false) : SaveLoadWarning
+
     /** Error al leer la partida local; [detail] viene del sistema. */
     data class Unreadable(val detail: String) : SaveLoadWarning
+}
+
+/** N8 (= iOS `GameSettingsSaveWarning.check`): ¿hay que avisar de que los ajustes forzados no casan con un `.sav`? */
+object GameSettingsSaveCheck {
+    /**
+     * [validSizes]: los que acepta el cartucho con los ajustes forzados (vacío con «Sin partida» y sin reloj).
+     * [existingSizes]: los de los `.sav` que existen (local y espejo; -1 = existe pero no se sabe su tamaño).
+     * `null` si no hay ajustes forzados o todo `.sav` existente coincide.
+     */
+    fun check(forced: Boolean, validSizes: Set<Int>, existingSizes: List<Int>): SaveLoadWarning.GameSettingsMismatch? {
+        if (!forced || existingSizes.none { it !in validSizes }) return null
+        return SaveLoadWarning.GameSettingsMismatch(noSave = validSizes.isEmpty())
+    }
 }

@@ -180,4 +180,46 @@ class SavesBrowserTest {
     @Test fun emptyDirectoryListsNothing() {
         assertTrue(SavesBrowser(dir()).list().isEmpty())
     }
+
+    @Test fun setAsideSavesAreListedAndRestorableWithoutBeingDeleted() {
+        val d = dir()
+        val store = SaveStore(d, TEST_FP)
+        store.save(version(1))
+        store.setAsideMirrorLoser(version(7))
+        SavesIndex(d).record(TEST_FP, "POKEMON", "Pokemon.gb", setOf(4))
+        val game = SavesBrowser(d).list().single()
+        val aside = game.setAside.single()
+        assertTrue(aside.name.startsWith("$TEST_FP.mirror-"))
+        assertThrows(IllegalStateException::class.java) {
+            SavesBrowser(d).restoreSetAside(TEST_FP, aside.name, openFingerprint = TEST_FP)
+        }
+        SavesBrowser(d).restoreSetAside(TEST_FP, aside.name, openFingerprint = null)
+        assertArrayEquals(version(7), store.load())
+        assertArrayEquals("la actual pasó a ser la copia 1", version(1), store.backupFile(1).readBytes())
+        assertEquals(1, SavesBrowser(d).list().single().setAside.size)
+    }
+
+    @Test fun aSetAsideSaveOfTheWrongSizeIsNotRestored() {
+        val d = dir()
+        val store = SaveStore(d, TEST_FP)
+        store.save(version(1))
+        store.setAsideMirrorLoser(version(7, size = 3))
+        SavesIndex(d).record(TEST_FP, "POKEMON", "Pokemon.gb", setOf(4))
+        val name = store.setAside().single().name
+        assertThrows(SaveStore.InvalidBackupException::class.java) { SavesBrowser(d).restoreSetAside(TEST_FP, name, null) }
+        assertArrayEquals(version(1), store.load())
+    }
+
+    /** Auditoría final N (paridad con iOS): las copias vistas al escanear se listan aunque el juego no se haya abierto. */
+    @Test fun scannedConflictCopiesWinOverTheOnesRecordedAtOpening() {
+        val d = dir()
+        val store = SaveStore(d, TEST_FP)
+        store.save(version(1))
+        store.recordProviderConflicts(listOf(SaveStore.ProviderConflict("Viejo 2.sav", 1L)))
+        assertEquals(listOf("Viejo 2.sav"), SavesBrowser(d).list().single().providerConflicts.map { it.name })
+        val scanned = mapOf(TEST_FP to listOf(SaveStore.ProviderConflict("Juego (Joel's conflicted copy 2026-10-08).sav", 7L)))
+        val game = SavesBrowser(d).list(scanned).single()
+        assertEquals(listOf("Juego (Joel's conflicted copy 2026-10-08).sav"), game.providerConflicts.map { it.name })
+        assertEquals(listOf("Viejo 2.sav"), SavesBrowser(d).list(mapOf("otra" to emptyList())).single().providerConflicts.map { it.name })
+    }
 }

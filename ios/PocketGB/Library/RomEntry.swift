@@ -35,7 +35,7 @@ struct RomEntry: Identifiable, Hashable, Sendable {
         }
     }
 
-    /// Ruta relativa a la carpeta (p. ej. "Pokemon Red.gb" o "Rojo/Pokemon Red.gb").
+    /// Ruta relativa a la carpeta (p. ej. "Pokemon Red.gb" o "Pokémon/1ª generación/Pokemon Red.gb").
     let id: String
     let url: URL
     let fileName: String
@@ -50,11 +50,50 @@ struct RomEntry: Identifiable, Hashable, Sendable {
     let mirrorSaveDate: Date?
     /// Apareció en este escaneo por primera vez.
     var isNew = false
+    /// Fecha de modificación del archivo: con el tamaño, valida la caché de huellas (N1a).
+    var modificationDate: Date?
+    /// Fecha del último cambio de atributos (ctime): `utimes`, `touch -r` o `cp -p` pueden fijar
+    /// la de modificación, pero esta la pone siempre el sistema (auditoría N1, H3).
+    var attributeModificationDate: Date?
+    /// Huella del ROM (los 32 hex del SHA-256 del núcleo) si ya se conoce: de la caché, del
+    /// cálculo en segundo plano o de la última apertura. Partidas, estados, portadas y
+    /// metadatos van por ella; la ruta (`id`) solo identifica el archivo.
+    var fingerprint: String?
+    /// N4: `fingerprint` está confirmada (caché verificada por tamaño y fechas, calculada de los bytes o
+    /// dada por el núcleo al abrir). Una huella de caché obsoleta es solo una pista: con ella se ven los
+    /// metadatos, pero no se escriben etiquetas ni categoría virtual (`LibraryPreferences.confirmedFingerprint`).
+    var fingerprintVerified = false
+    /// Otras rutas de la carpeta con la misma huella (duplicados, N1a). Comparten metadatos,
+    /// partida, estados y portada.
+    var duplicatePaths: [String] = []
+
+    var isDuplicate: Bool { !duplicatePaths.isEmpty }
+
+    /// N5: imagen junto al ROM (`<nombre>.png|jpg|jpeg|webp`, o `portada.*`/`cover.*` si es el único juego
+    /// de su carpeta). El escaneo solo la ve en el listado: nunca la lee ni la descarga.
+    var coverURL: URL?
+    /// Sello de esa imagen (nombre, tamaño y fecha): si cambia, se vuelve a leer.
+    var coverStamp: String?
+
+    /// Carpetas desde la raíz hasta el archivo, sin el archivo (N1b). `[]` = en la raíz (sin
+    /// categoría); el primer nivel es la categoría y los siguientes, subcategorías.
+    var folderPath: [String] { Self.folders(of: id) }
 
     /// Carpeta relativa en la que está ("" si está en la raíz).
-    var subfolder: String {
-        let parts = id.split(separator: "/")
-        return parts.count > 1 ? parts.dropLast().joined(separator: "/") : ""
+    var subfolder: String { folderPath.joined(separator: "/") }
+
+    /// «Pokémon › 2ª generación · archivo.gb», o solo el archivo en la raíz.
+    var locationText: String {
+        folderPath.isEmpty ? fileName : "\(folderPath.joined(separator: " › ")) · \(fileName)"
+    }
+
+    static func folders(of path: String) -> [String] {
+        Array(path.split(separator: "/").dropLast().map(String.init))
+    }
+
+    /// Una ruta relativa para leer: «Pokémon › 2ª generación › archivo.gb».
+    static func displayPath(_ path: String) -> String {
+        path.split(separator: "/").joined(separator: " › ")
     }
 
     var isPlayable: Bool { problem == nil && cloud == .current }

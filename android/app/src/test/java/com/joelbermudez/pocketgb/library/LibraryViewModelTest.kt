@@ -143,7 +143,7 @@ class LibraryViewModelTest {
         folders = folders,
         openTree = { tree },
         roms = RomSource { uri, limit -> romBytes(uri, limit) },
-        inspector = { inspector(it) },
+        inspector = { rom, _ -> inspector(rom) },
         preferencesFile = store,
         io = Dispatchers.IO,
         scope = scope,
@@ -358,7 +358,7 @@ class LibraryViewModelTest {
         store.loadHook = { loading.countDown() }
         store.loadGate = gate
         val vm = viewModel()
-        val entry = RomEntry("nuevo.gb", "content://x", "nuevo.gb", "N", false, 1, true, null)
+        val entry = RomEntry("nuevo.gb", "content://x", "nuevo.gb", "N", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null)
         assertTrue("la carga debe estar en curso", loading.await(5, TimeUnit.SECONDS))
         vm.toggleFavorite(entry)
         // Con la carga todavía bloqueada, la memoria ya refleja el cambio y el disco no se ha tocado.
@@ -397,7 +397,7 @@ class LibraryViewModelTest {
                 folders = folders,
                 openTree = { tree },
                 roms = RomSource { uri, limit -> romBytes(uri, limit) },
-                inspector = { inspector(it) },
+                inspector = { rom, _ -> inspector(rom) },
                 preferencesFile = flaky,
                 io = Dispatchers.IO,
                 scope = scope,
@@ -407,7 +407,7 @@ class LibraryViewModelTest {
                 Thread {
                     start.await()
                     repeat(10) { i ->
-                        vm.toggleFavorite(RomEntry("w$worker-$i", "u", "f", "t", false, 1, true, null))
+                        vm.toggleFavorite(RomEntry("w$worker-$i", "u", "f", "t", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null))
                         if (i % 3 == 0) Thread.yield()
                     }
                 }.also { it.start() }
@@ -424,7 +424,7 @@ class LibraryViewModelTest {
     fun preferenceWriteFailureStaysPendingAndFlushReportsIt() {
         val vm = viewModel()
         assertEquals(PersistResult.Saved, await { vm.flushPreferences() })
-        val entry = RomEntry("x.gb", "u", "x.gb", "X", false, 1, true, null)
+        val entry = RomEntry("x.gb", "u", "x.gb", "X", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null)
         // Dos intentos fallan: el de la señal del propio cambio y el del flush.
         store.saveFailures = 2
         vm.toggleFavorite(entry)
@@ -455,7 +455,7 @@ class LibraryViewModelTest {
         prefsFile.save(LibraryPreferencesData(favorites = setOf("viejo.gb")))
         store.loadFailures = 3 // carga inicial, señal del cambio y flush
         val vm = viewModel()
-        vm.toggleFavorite(RomEntry("nuevo.gb", "u", "n", "N", false, 1, true, null))
+        vm.toggleFavorite(RomEntry("nuevo.gb", "u", "n", "N", com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null))
         assertTrue(await { vm.flushPreferences() } is PersistResult.Failed)
         assertEquals("el archivo no se toca", setOf("viejo.gb"), prefsFile.load().favorites)
         // Cuando el disco responde, se carga lo que había y se le suma el cambio pendiente.
@@ -584,22 +584,33 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun aRemovedGameIsForgottenSoItIsNewAgainIfItReappears() {
+    fun aRemovedGameIsForgottenSoAnotherGameAtItsPathIsNewButTheSameOneComingBackIsNot() {
         val vm = viewModel()
         vm.rescan()
         vm.awaitSettled()
-        // B desaparece de la carpeta (borrado o renombrado): el escaneo completo lo olvida.
+        // B desaparece de la carpeta (borrado o apartado): el escaneo completo lo olvida y deja una lápida (N1-H4).
         tree = FakeTree(listOf(node("a.gb")), mapOf("a.gb" to rom("ALPHA")))
         vm.rescan()
         await { vm.state.first { it is LibraryState.Ready && it.entries.size == 1 } }
-        // Reaparece: ya no estaba en el escaneo anterior, así que es «Nuevo».
+        // Vuelve el mismo B (mismo tamaño y cabecera): se reconoce por su lápida y no es «Nuevo».
         tree = FakeTree(
             listOf(node("b.gb"), node("a.gb")),
             mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("BETA")),
         )
         vm.rescan()
         val back = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 2 } } as LibraryState.Ready
-        assertEquals(listOf("BETA"), back.entries.filter { it.isNew }.map { it.title })
+        assertEquals(emptyList<String>(), back.entries.filter { it.isNew }.map { it.title })
+        // Desaparece otra vez y en su lugar aparece otro juego con el mismo nombre: ese sí es «Nuevo» (A6-H8).
+        tree = FakeTree(listOf(node("a.gb")), mapOf("a.gb" to rom("ALPHA")))
+        vm.rescan()
+        await { vm.state.first { it is LibraryState.Ready && it.entries.size == 1 } }
+        tree = FakeTree(
+            listOf(node("b.gb"), node("a.gb")),
+            mapOf("a.gb" to rom("ALPHA"), "b.gb" to rom("GAMMA")),
+        )
+        vm.rescan()
+        val other = await { vm.state.first { it is LibraryState.Ready && it.entries.size == 2 } } as LibraryState.Ready
+        assertEquals(listOf("GAMMA"), other.entries.filter { it.isNew }.map { it.title })
     }
 
     @Test
@@ -611,5 +622,34 @@ class LibraryViewModelTest {
         vm.chooseFolder("content://tree/Otra")
         val ready = await { vm.state.first { it is LibraryState.Ready && it.entries.any { e -> e.title == "ZETA" } } } as LibraryState.Ready
         assertTrue("el primer escaneo de otra carpeta no marca nada", ready.entries.none { it.isNew })
+    }
+
+    // ---- A9: renombrar ----
+
+    @Test
+    fun aliasIsPersistedAndMigratesToTheFingerprintWhenTheGameIsOpened() {
+        val (vm, entry) = readyVm()
+        vm.setAlias(entry, "  Mi partida  ")
+        await { vm.flushPreferences() }
+        assertEquals(mapOf(entry.id to "Mi partida"), prefsFile.load().aliasesByPath)
+        vm.recordPlayed(entry, "%064x".format(9), at = 10)
+        await { vm.flushPreferences() }
+        val saved = prefsFile.load()
+        assertEquals(mapOf("%064x".format(9) to "Mi partida"), saved.aliasesByFingerprint)
+        assertTrue(saved.aliasesByPath.isEmpty())
+        assertEquals("Mi partida", vm.prefs.value.displayTitle(entry))
+        vm.setAlias(entry, "")
+        await { vm.flushPreferences() }
+        assertTrue(prefsFile.load().aliasesByFingerprint.isEmpty())
+        assertEquals(entry.title, vm.prefs.value.displayTitle(entry))
+    }
+
+    @Test
+    fun openingTheDetailsMigratesAProvisionalAlias() {
+        val (vm, entry) = readyVm()
+        vm.setAlias(entry, "Alfa")
+        await { vm.loadDetails(entry.id) }
+        await { vm.flushPreferences() }
+        assertEquals(mapOf("07".repeat(32) to "Alfa"), prefsFile.load().aliasesByFingerprint)
     }
 }

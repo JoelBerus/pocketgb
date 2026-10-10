@@ -98,7 +98,14 @@ class CatalogCoverageTest {
     fun scriptOnlyArgumentsNeverReachTheApp() {
         // `window` y `cutout` los consume tools/android-screenshots.sh; `DebugIntent` no los conoce.
         val ids = manifest().filter { "window" in it.args || "cutout" in it.args }.map { it.id }.toSet()
-        assertEquals(setOf("library-wide-rail", "library-list-detail", "gameplay-cutout-landscape"), ids)
+        assertEquals(
+            setOf(
+                "library-wide-rail", "library-list-detail", "gameplay-cutout-landscape",
+                // N3: ventana ancha (853 dp) para la biblioteca horizontal y el detalle a dos columnas.
+                "n3-library-wide", "n3-library-wide-filters", "n3-details-wide",
+            ),
+            ids,
+        )
     }
 
     @Test

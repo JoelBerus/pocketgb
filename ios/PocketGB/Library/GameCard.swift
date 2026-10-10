@@ -7,13 +7,16 @@ struct GameCard: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let entry: RomEntry
     let zoom: Namespace.ID
+    /// Origen del zoom al detalle; nil = el id del juego (cuadrícula). N4: las estanterías y la
+    /// pantalla de categoría usan el suyo (el mismo juego puede estar dos veces en pantalla).
+    var sourceID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PocketSpacing.xs) {
             GameArtworkView(entry: entry)
                 .opacity(entry.problem == nil ? 1 : 0.45)
                 .overlay(alignment: .topTrailing) { statusBadge }
-                .matchedTransitionSource(id: entry.id, in: zoom)
+                .matchedTransitionSource(id: sourceID ?? entry.id, in: zoom)
             Text(state.libraryPrefs.displayTitle(entry))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(entry.problem == nil ? .primary : .secondary)
@@ -27,6 +30,8 @@ struct GameCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(GameAccessibility.label(entry, prefs: state.libraryPrefs))
         .accessibilityHint(GameAccessibility.hint(entry))
+        .accessibilityValue(state.progress.progress(state.libraryPrefs.confirmedFingerprint(of: entry)).visiblePercent
+            .map { "Progreso \($0) por ciento" } ?? "")
     }
 
     /// Estado que impide jugar ya: nube o error. Símbolo sobre fondo oscuro fijo para
@@ -73,11 +78,36 @@ struct GameMetaLine: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(PocketColor.accent)
             }
+            if entry.isDuplicate { DuplicateBadge() }
+            // N4: insignia discreta (solo el símbolo; el texto va en la etiqueta de VoiceOver).
+            if state.libraryPrefs.isMovedInApp(entry) { MovedBadge(compact: true) }
+            // N6: porcentaje de hitos, solo si el usuario lo activó en Progreso.
+            if let percent = state.progress.progress(state.libraryPrefs.confirmedFingerprint(of: entry)).visiblePercent {
+                Text("\(percent) %")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(PocketColor.accent)
+                    .accessibilityLabel("Progreso \(percent) por ciento")
+            }
             Text(GameStatus.detail(entry, lastPlayed: state.libraryPrefs.lastPlayed(entry)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
         }
+    }
+}
+
+/// Insignia «Duplicado» (N1a): el mismo ROM está en otra carpeta. Discreta y con texto,
+/// nunca solo color (SPEC §13).
+struct DuplicateBadge: View {
+    var body: some View {
+        Text("Duplicado")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, PocketSpacing.xxs + 2)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
+            .fixedSize()
+            .accessibilityLabel("Duplicado")
     }
 }
 
@@ -136,6 +166,8 @@ enum GameAccessibility {
         var parts = [prefs.displayTitle(entry), entry.badge.name]
         if prefs.isFavorite(entry) { parts.append("Favorito") }
         if entry.isNew { parts.append("Nuevo") }
+        if entry.isDuplicate { parts.append("Duplicado") }
+        if prefs.isMovedInApp(entry) { parts.append("Movido en la app") }
         if let problem = entry.problem {
             parts.append(problem.message)
         } else {

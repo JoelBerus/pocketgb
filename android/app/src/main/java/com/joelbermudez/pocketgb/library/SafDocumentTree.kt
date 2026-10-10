@@ -16,10 +16,16 @@ class TreeMissingException(cause: Throwable? = null) : IOException("La carpeta y
 /**
  * [DocumentTree] sobre el Storage Access Framework. Solo consulta y lee: nunca crea,
  * renombra, escribe ni borra documentos.
+ *
+ * @param treeStillGranted el permiso persistido del árbol sigue vigente (N1-H7): una `SecurityException` en una
+ *   subcarpeta con el árbol aún concedido es un fallo de esa carpeta, no una revocación.
  */
 class SafDocumentTree(
     private val resolver: ContentResolver,
     private val treeUri: Uri,
+    private val treeStillGranted: () -> Boolean = {
+        resolver.persistedUriPermissions.any { it.uri == treeUri && it.isReadPermission }
+    },
 ) : DocumentTree {
     override val rootId: String = DocumentsContract.getTreeDocumentId(treeUri)
 
@@ -27,15 +33,25 @@ class SafDocumentTree(
         try {
             return queryChildren(directoryId)
         } catch (error: IOException) {
-            throw error // incluye TreePermissionException y TreeMissingException
+            throw error // incluye TreePermissionException, TreeMissingException y PartialListingException
         } catch (error: CancellationException) {
             throw error
         } catch (error: SecurityException) {
-            throw TreePermissionException(error)
+            throw denied(directoryId, error)
         } catch (error: RuntimeException) {
             // Proveedor mal portado (IllegalStateException, UnsupportedOperationException, ...).
             throw IOException("El proveedor falló al listar la carpeta", error)
         }
+    }
+
+    /** Sin acceso a [directoryId]: revocación si es la raíz o si el árbol ya no está concedido; si no, fallo de carpeta. */
+    private fun denied(directoryId: String?, error: SecurityException): IOException {
+        val granted = directoryId != null && try {
+            treeStillGranted()
+        } catch (_: RuntimeException) {
+            false
+        }
+        return if (granted) IOException("Sin acceso a una subcarpeta con el permiso del árbol vigente", error) else TreePermissionException(error)
     }
 
     private fun queryChildren(directoryId: String?): List<TreeNode> {
@@ -44,7 +60,7 @@ class SafDocumentTree(
         val cursor = try {
             resolver.query(uri, CHILD_COLUMNS, null, null, null)
         } catch (error: SecurityException) {
-            throw TreePermissionException(error)
+            throw denied(directoryId, error)
         } catch (error: IllegalArgumentException) {
             throw TreeMissingException(error)
         }
@@ -72,6 +88,17 @@ class SafDocumentTree(
                     sizeBytes = knownSize(it, sizeColumn),
                     isVirtual = flagsColumn >= 0 && safeInt(it, flagsColumn) and DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT != 0,
                     lastModified = knownTime(it, modifiedColumn),
+                )
+            }
+            // N1-H4: un listado aún cargando (Drive) o con error no es el contenido completo de la carpeta.
+            val extras = it.extras
+            val loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
+            val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
+            if (loading || providerError != null) {
+                throw PartialListingException(
+                    result,
+                    if (loading) "El proveedor aún está cargando la carpeta" else "El proveedor informó un error",
+                    loading = loading,
                 )
             }
             return result

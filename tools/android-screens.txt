@@ -135,3 +135,226 @@ library-wide-rail landscape light window=wide
 library-wide-rail landscape dark window=wide
 library-list-detail landscape light window=wide
 gameplay-cutout-landscape landscape dark cutout=tall
+# A9 · renombrar y continuación exacta («Continuar» / «Jugar desde el inicio»)
+details-resume-exact portrait light
+details-resume-exact portrait dark
+details-rename portrait light
+details-rename portrait dark
+details-more-menu portrait light
+details-more-menu portrait dark
+game-context-menu-resume portrait light
+game-context-menu-resume portrait dark
+library-renamed portrait light
+library-renamed portrait dark
+game-settings-rename portrait light
+game-settings-rename portrait dark
+resume-failed portrait light
+resume-failed portrait dark
+# N1 · identidad y carpetas: ruta profunda en el detalle e insignia «Duplicado» / «También en»
+details-deep-path portrait light
+details-deep-path portrait dark
+details-deep-path-ax5 portrait light fontScale=2.0
+details-duplicate portrait light
+details-duplicate portrait dark
+library-duplicates portrait light
+library-duplicates portrait dark
+library-duplicates-list portrait light
+saves-set-aside portrait light
+saves-set-aside portrait dark
+# N2 · controles: cruceta con la estructura de iOS, diagonales y separación de las flechas (pressed= solo dibuja la pulsación)
+n2-cross-up portrait dark pressed=up
+n2-cross-up-landscape landscape dark pressed=up
+n2-cross-diagonal portrait dark pressed=upright
+n2-cross-up-light-frame landscape dark pressed=up rom=light scaleMode=fill
+n2-cross-up-opacity30 landscape dark pressed=up rom=light scaleMode=fill opacity=30
+n2-cross-up-high-contrast portrait dark pressed=up contrast=high
+n2-arrows-up portrait dark dpad=arrows pressed=up
+n2-arrows-up-landscape landscape dark dpad=arrows pressed=up
+n2-arrows-diagonal portrait dark dpad=arrows pressed=upright
+n2-arrows-up-light-frame landscape dark dpad=arrows pressed=up rom=light scaleMode=fill
+n2-arrows-up-opacity30 landscape dark dpad=arrows pressed=up rom=light scaleMode=fill opacity=30
+n2-arrows-up-high-contrast portrait dark dpad=arrows pressed=up contrast=high
+n2-arrows-separation-min portrait dark dpad=arrows separation=0.7 pressed=up
+n2-arrows-separation-max portrait dark dpad=arrows separation=1.5 pressed=up
+n2-arrows-separation-max-landscape landscape dark dpad=arrows separation=1.5 pressed=up
+n2-editor-arrows portrait dark dpad=arrows separation=1.3
+n2-editor-arrows-landscape landscape dark dpad=arrows separation=1.3
+n2-editor-cross portrait dark
+n2-settings-controls portrait light
+n2-settings-controls portrait dark
+n2-settings-controls-scrolled portrait light swipe=up
+n2-settings-controls-scrolled portrait dark swipe=up
+n2-settings-controls-ax5 portrait light fontScale=2.0 swipe=up
+n2-settings-diagonals-ax5 portrait light fontScale=2.0
+n2-settings-diagonals-ax5 portrait dark fontScale=2.0
+# N1 · respuesta a la auditoría: preferencias de otra versión (H2) y aviso de partida apartada (H5)
+library-prefs-read-only portrait light
+library-prefs-read-only portrait dark
+save-warning-set-aside portrait dark
+# N3 · biblioteca y detalle adaptables: carril con el ancho de la cuadrícula (solo reanudables), herramientas arriba en reposo y barra flotante al desplazar en horizontal, y detalle a dos columnas
+n3-rail-portrait portrait light
+n3-rail-portrait portrait dark
+n3-rail-portrait-ax5 portrait light fontScale=2.0
+n3-library-landscape landscape light
+n3-library-landscape landscape dark
+n3-library-landscape-ax5 landscape light fontScale=2.0
+n3-library-landscape-scrolled landscape light
+n3-library-landscape-scrolled landscape dark
+n3-library-landscape-filters landscape light
+n3-library-landscape-filters landscape dark
+n3-library-landscape-categories landscape light
+n3-library-landscape-view landscape light
+n3-library-landscape-scrolled-filters landscape light
+n3-library-landscape-scrolled-filters landscape dark
+n3-library-landscape-scrolled-categories landscape light
+n3-library-landscape-scrolled-view landscape light
+n3-library-landscape-white landscape light
+n3-library-landscape-white-scrolled landscape light
+n3-library-landscape-search landscape light
+n3-library-landscape-search-results landscape light
+n3-library-landscape-category landscape light
+n3-library-landscape-list landscape dark
+n3-library-portrait-category portrait light
+n3-library-wide landscape light window=wide
+n3-library-wide-filters landscape dark window=wide
+n3-details-portrait portrait light
+n3-details-portrait portrait dark
+n3-details-portrait-ax5 portrait light fontScale=2.0
+n3-details-portrait-long portrait light
+n3-details-landscape landscape light
+n3-details-landscape landscape dark
+n3-details-landscape-resume landscape light
+n3-details-landscape-long landscape light
+n3-details-landscape-ax5 landscape light fontScale=2.0
+n3-details-landscape-scrolled landscape light
+n3-details-wide landscape light window=wide
+# N4 · categorías, etiquetas, inicio y centro de ajustes del juego: árbol demo de varias carpetas y niveles (Pokémon › 1ª/2ª generación › Johto, Aventuras, Puzles, Pruebas, un juego en la raíz y «Para jugar» virtual)
+n4-home portrait light
+n4-home portrait dark
+n4-home-scrolled portrait light swipe=up
+n4-home-ax5 portrait light fontScale=2.0
+n4-home-ax5-scrolled portrait light fontScale=2.0
+n4-home-landscape landscape light
+n4-home-landscape landscape dark
+n4-home-landscape-scrolled landscape light
+n4-home-landscape-categories landscape light
+n4-home-landscape-filters landscape light
+n4-home-tag portrait light
+n4-home-arranged portrait light swipe=up
+n4-category portrait light
+n4-category portrait dark
+n4-category-nested-list portrait light
+n4-category-landscape landscape light
+n4-category-ax5 portrait light fontScale=2.0
+n4-category-virtual portrait light
+n4-category-root portrait dark
+n4-details-moved portrait light
+n4-game-center portrait light
+n4-game-center portrait dark
+n4-game-center-moved portrait light
+n4-game-center-scrolled portrait light
+n4-game-center-scrolled portrait dark
+n4-game-center-reading portrait light
+n4-game-center-ax5 portrait light fontScale=2.0
+n4-game-center-landscape landscape light
+n4-tag-editor portrait light
+n4-tag-editor portrait dark
+n4-move-category portrait light
+n4-move-category portrait dark
+n4-move-category-scrolled portrait light swipe=up
+n4-move-category-ax5 portrait light fontScale=2.0
+n4-settings-library portrait light swipe=up
+n4-settings-home portrait light
+n4-settings-home portrait dark
+n4-settings-home-ax5 portrait light fontScale=2.0
+n8-library portrait light
+n8-library portrait dark
+n8-library-filter-gba portrait light
+n8-library-landscape-filters landscape light
+n8-details portrait light
+n8-details portrait dark
+n8-details-landscape landscape light
+n8-game-center portrait light
+n8-game-center portrait dark
+n8-game-center-custom portrait light
+n8-settings-emulation portrait light
+n8-controller-mapping portrait light swipe=up
+n8-gameplay portrait dark
+n8-gameplay-landscape landscape dark
+n8-gameplay-landscape-fill landscape dark scaleMode=fill
+n8-editor portrait dark
+n8-editor-landscape landscape dark
+n8-states portrait dark
+n8-settings-warning portrait dark
+n8-details-technical portrait light
+n5-library portrait light
+n5-library portrait dark
+n5-library-list portrait light
+n5-library-prefer-captures portrait light
+n5-details-imported portrait light
+n5-details-imported portrait dark
+n5-details-folder portrait light
+n5-details-capture portrait light
+n5-details-generated portrait light
+n5-details-landscape landscape light
+n5-game-center portrait light
+n5-cover-dialog portrait light
+n5-cover-dialog portrait dark
+n5-cover-dialog-failed portrait light
+n5-pause portrait dark
+n5-settings-library portrait light swipe=up
+n5-cover-dialog-actions portrait light swipe=up
+n6-moments portrait light
+n6-moments portrait dark
+n6-moments-empty portrait light
+n6-moments-load portrait light
+n6-moments-recover portrait light
+n6-moments-edit portrait light
+n6-moments-ax5 portrait light fontScale=2.0
+n6-pause portrait dark
+n6-pause-moments portrait dark
+n6-pause-create portrait dark
+n6-pause-load-config portrait dark
+n6-pause-recover portrait dark
+n6-details-progress portrait light
+n6-details-progress portrait dark
+n6-game-center portrait light
+n6-progress-editor portrait light
+n6-progress-editor portrait dark
+n7-details-menu portrait light
+n7-details-menu portrait dark
+n7-details-status portrait light
+n7-details-status-here portrait light
+n7-imported-continue portrait light
+n7-choose portrait light
+n7-choose portrait dark
+n7-inbox portrait light
+n7-warning-divergence portrait light
+n7-warning-external portrait light
+n7-saves-conflicts portrait light
+n7-saves-conflicts portrait dark
+n7-divergence-ask portrait light
+n7-divergence-ask portrait dark
+n7-warning-mirror-older portrait light
+n7-known portrait light
+n7-raw-confirm portrait light
+n7-config-mismatch portrait light
+n9-settings portrait light swipe=up
+n9-guide portrait light
+n9-guide portrait dark
+n9-guide-ax5 portrait light fontScale=2.0
+n9-guide-search portrait light
+n9-guide-search portrait dark
+n9-guide-search-empty portrait light
+n9-guide-section portrait light
+n9-guide-section portrait dark
+n9-guide-section-ax5 portrait light fontScale=2.0
+n9-guide-section-anchor portrait light
+n9-guide-section-table portrait light
+n9-guide-section-landscape landscape light
+n9-tip-pause portrait dark
+n9-tip-category portrait light
+n9-tip-send portrait light
+n9-tip-send portrait dark
+n9-tip-arrows portrait light
+n9-tip-arrows-ax5 portrait light fontScale=2.0

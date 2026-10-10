@@ -19,14 +19,17 @@ struct StorageUsage: Equatable, Sendable {
         return total
     }
 
-    static func measure(saves: URL?, states: URL?, artwork: URL?) -> StorageUsage {
-        StorageUsage(saves: saves.map(size) ?? 0, states: states.map(size) ?? 0, artwork: artwork.map(size) ?? 0)
+    /// N5: `artwork` son las carpetas de portadas (capturas, fijadas, importadas y copias de la carpeta);
+    /// el archivo de ajustes de portada no cuenta (N5A-3: tras «Borrar portadas» vuelve a 0 B).
+    static func measure(saves: URL?, states: URL?, artwork: [URL]) -> StorageUsage {
+        StorageUsage(saves: saves.map(size) ?? 0, states: states.map(size) ?? 0,
+                     artwork: artwork.reduce(0) { $0 + size(of: $1) })
     }
 }
 
 /// Ajustes › Almacenamiento (SPEC §9, `settings-storage`): partidas, estados y portadas por
-/// separado. Solo se ofrece borrar las portadas (se regeneran al jugar). Sin opción de
-/// borrar ROMs.
+/// separado. Solo se ofrece borrar las portadas (N5: capturas, fijadas e importadas; nunca las imágenes de
+/// la carpeta del usuario). Sin opción de borrar ROMs.
 struct StorageSettingsView: View {
     @Environment(AppState.self) private var state
     @State private var usage: StorageUsage?
@@ -47,7 +50,7 @@ struct StorageSettingsView: View {
                 Button("Borrar portadas", systemImage: "trash", role: .destructive) { confirmClear = true }
                     .disabled((usage?.artwork ?? 0) == 0)
             } footer: {
-                Text("Las portadas son capturas del último momento jugado; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.")
+                Text("Las portadas son las capturas de los juegos, las capturas fijadas y las copias reducidas de tus imágenes. Las capturas se vuelven a crear al jugar. Borrarlas no toca partidas, estados ni las imágenes de tu carpeta.")
             }
         }
         .scrollContentBackground(.hidden)
@@ -56,12 +59,12 @@ struct StorageSettingsView: View {
         .task { await refresh() }
         .alert("¿Borrar las portadas?", isPresented: $confirmClear) {
             Button("Borrar portadas", role: .destructive) {
-                state.artwork.removeAll()
+                state.covers.removeAll()
                 Task { await refresh() }
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("Las partidas, las copias y los estados se conservan.")
+            Text("Se borran las capturas, las capturas fijadas y las imágenes importadas (habrá que volver a elegirlas). Las partidas, las copias, los estados y las imágenes de tu carpeta se conservan.")
         }
     }
 

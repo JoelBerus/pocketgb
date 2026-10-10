@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N5 Android: portadas (imagen importada, imagen de la carpeta, captura y generada). Textos nuevos de este lote, solo aquí. -->
+<resources>
+    <!-- Fuentes -->
+    <string name="n5_cover_kind_imported">Imagen importada</string>
+    <string name="n5_cover_kind_folder">Imagen de la carpeta</string>
+    <string name="n5_cover_kind_capture">Captura del juego</string>
+    <string name="n5_cover_kind_generated">Generada</string>
+
+    <!-- Elección por juego -->
+    <string name="n5_cover_choice_auto">Automática</string>
+    <string name="n5_cover_choice_image">Imagen</string>
+    <string name="n5_cover_choice_capture">Captura</string>
+    <string name="n5_cover_choice_generated">Generada</string>
+    <string name="n5_cover_choice_auto_summary">Según Ajustes › Biblioteca › Portadas</string>
+    <string name="n5_cover_choice_image_summary">La importada o la de la carpeta</string>
+    <string name="n5_cover_choice_capture_summary">La fijada desde la pausa o la última escena</string>
+    <string name="n5_cover_choice_generated_summary">Color e iniciales del juego</string>
+    <string name="n5_cover_choice_missing">No hay: se verá la generada</string>
+
+    <!-- Centro de ajustes del juego -->
+    <string name="n5_center_cover_value">%1$s · se ve: %2$s</string>
+    <string name="n5_center_cover_change">Cambiar</string>
+    <string name="n5_center_cover_change_description">Cambiar la portada</string>
+
+    <!-- Diálogo de portada -->
+    <string name="n5_cover_dialog_title">Portada de %1$s</string>
+    <string name="n5_cover_import_photos">Elegir de Fotos</string>
+    <string name="n5_cover_import_file">Elegir archivo</string>
+    <string name="n5_cover_remove_imported">Quitar imagen importada</string>
+    <string name="n5_cover_unpin">Soltar captura fijada</string>
+    <string name="n5_cover_importing">Preparando la imagen…</string>
+    <string name="n5_cover_import_failed">No se pudo usar esa imagen. Elige un PNG, JPG o WebP de menos de 15 MB.</string>
+    <string name="n5_cover_dialog_tip">Consejo: pon en la carpeta del juego una imagen con el mismo nombre que el ROM (por ejemplo «Pokemon Red.png») y se usará sola. La imagen que importas se guarda reducida en este dispositivo; tu foto original no cambia.</string>
+    <string name="n5_cover_done">Listo</string>
+
+    <!-- Pausa -->
+    <string name="n5_pause_use_as_cover">Usar como portada</string>
+    <string name="n5_notice_cover_pinned">Esta escena es ahora la portada</string>
+    <string name="n5_notice_cover_failed">No se pudo usar esta escena como portada</string>
+
+    <!-- Ajustes › Biblioteca -->
+    <string name="n5_settings_covers">Portadas</string>
+    <string name="n5_settings_covers_images">Preferir imágenes</string>
+    <string name="n5_settings_covers_captures">Preferir capturas</string>
+    <string name="n5_settings_covers_footer">En «Automática», qué se usa si un juego tiene imagen y captura. Cada juego puede elegir la suya en sus ajustes.</string>
+
+    <!-- Ajustes › Almacenamiento -->
+    <string name="n5_storage_clear_footer">Las portadas son las capturas, las capturas fijadas y las copias reducidas de tus imágenes. Las capturas se vuelven a crear al jugar. Borrarlas no toca partidas, estados ni las imágenes de tu carpeta.</string>
+    <string name="n5_storage_clear_body">Las partidas, las copias y los estados se conservan. Las imágenes importadas habrá que volver a elegirlas.</string>
+</resources>

@@ -14,6 +14,8 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 adb devices                       # debe aparecer el teléfono
 ./gradlew :app:installDebug
 ```
+El código nativo (núcleos GB y GBA y la sesión) se compila con `-O2` también en Debug (N8-H1): el rendimiento que se ve y se mide con `installDebug` es el real, el mismo que en Release.
+
 Instala encima de la versión previa y conserva los datos. Para actualizar, repite el comando. **No desinstales** la app para «instalar limpio»: borraría `filesDir/saves` (las partidas locales); quedaría solo el espejo `<rom>.sav` junto a la ROM, si la carpeta lo permite.
 
 ## Elegir la carpeta de juegos (SAF)

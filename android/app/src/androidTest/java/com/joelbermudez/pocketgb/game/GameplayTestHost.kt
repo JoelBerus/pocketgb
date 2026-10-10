@@ -17,7 +17,7 @@ object GameplayTestHost {
         uri = "content://prueba/Contador.gb",
         fileName = "Contador.gb",
         title = "CONTADOR",
-        isColor = false,
+        console = com.joelbermudez.pocketgb.library.RomConsole.GB,
         sizeBytes = 32L * 1024,
         headerChecksumOk = true,
         problem = null,
@@ -39,5 +39,7 @@ object GameplayTestHost {
         registry = MirrorChannelRegistry(),
         ownership = ownership,
         emulationFor = emulationFor,
+        momentsRoot = File(root, "moments"),
+        progress = com.joelbermudez.pocketgb.progress.ProgressStore(File(root, "progress")),
     )
 }

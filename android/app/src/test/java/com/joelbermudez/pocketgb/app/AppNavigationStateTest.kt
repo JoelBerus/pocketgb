@@ -103,4 +103,34 @@ class AppNavigationStateTest {
     fun navigationItemsCoverEveryTopLevelDestinationOnce() {
         assertEquals(TopLevelDestination.entries, topLevelNavigationItems.map { it.destination })
     }
+
+    @Test
+    fun nestedCategoriesAndTheGameSurviveTheSavedStateAsJson() {
+        // N4: inicio → «Ver todo» Pokémon → 2ª generación → juego; tras recrear la actividad la pila es la misma.
+        val original = AppNavigationState().apply {
+            push(LibraryRoute.Category(listOf("Pokémon")))
+            push(LibraryRoute.Category(listOf("Pokémon", "2ª generación")))
+            push(LibraryRoute.Details("Pokémon/2ª generación/Pokemon Gold.gbc"))
+        }
+        val json = kotlinx.serialization.json.Json.encodeToString(original.snapshot())
+        val restored = AppNavigationState(kotlinx.serialization.json.Json.decodeFromString<NavigationSnapshot>(json))
+        assertEquals(original.snapshot(), restored.snapshot())
+        assertTrue(restored.pop())
+        assertEquals(LibraryRoute.Category(listOf("Pokémon", "2ª generación")), restored.currentBackStack.last())
+        assertEquals("Sin categoría es la ruta vacía", LibraryRoute.Category(emptyList()), LibraryRoute.Category(listOf()))
+    }
+
+    @Test
+    fun aBreadcrumbPopsBackToItsLevelOrSaysItIsNotThere() {
+        val state = AppNavigationState().apply {
+            push(LibraryRoute.Category(listOf("Pokémon")))
+            push(LibraryRoute.Category(listOf("Pokémon", "2ª generación")))
+            push(LibraryRoute.Category(listOf("Pokémon", "2ª generación", "Johto")))
+        }
+        assertTrue(state.popTo(LibraryRoute.Category(listOf("Pokémon"))))
+        assertEquals(listOf(LibraryRoute.Root, LibraryRoute.Category(listOf("Pokémon"))), state.currentBackStack.toList())
+        assertFalse(state.popTo(LibraryRoute.Category(listOf("Kirby"))))
+        assertTrue(state.popTo(LibraryRoute.Root))
+        assertEquals(listOf<AppRoute>(LibraryRoute.Root), state.currentBackStack.toList())
+    }
 }

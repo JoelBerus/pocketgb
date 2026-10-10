@@ -51,4 +51,26 @@ class SavesSettingsUiTest {
         compose.onNodeWithTag("restore-${fp.take(8)}-1").assertIsNotEnabled()
         compose.onNodeWithText("No se puede restaurar mientras el juego está abierto.").assertIsDisplayed()
     }
+
+    @Test fun aSetAsideSaveIsListedApartAndRestoresAfterConfirming() {
+        val name = "$fp.mirror-1700000000-0a1b2c3d.sav"
+        val withAside = listOf(
+            SavedGameUi(fp, "POKEMON RED", "Pokemon Red.gb", emptyList(), listOf(SaveStore.SetAsideInfo(name, 1_700_000_000_000))),
+        )
+        val restoredAside = mutableListOf<Pair<String, String>>()
+        compose.setContent {
+            PocketGBTheme {
+                SavesSettingsContent(
+                    withAside, null, SnackbarHostState(), { f, n -> restored += f to n }, {},
+                    onRestoreSetAside = { f, n -> restoredAside += f to n },
+                )
+            }
+        }
+        compose.onNodeWithText("Apartadas (no se borran solas)").assertIsDisplayed()
+        compose.onNodeWithTag("restore-set-aside-${fp.take(8)}-${name.takeLast(12)}").assertIsEnabled().performClick()
+        compose.onNodeWithText("¿Restaurar la partida apartada?").assertIsDisplayed()
+        compose.onNodeWithTag("restore-confirm").performClick()
+        assertEquals(listOf(fp to name), restoredAside)
+        assertEquals(emptyList<Pair<String, Int>>(), restored)
+    }
 }

@@ -61,7 +61,7 @@ struct LibraryPreferencesTests {
         prefs.waitForPendingWrites()
 
         let reopened = LibraryPreferences(fileURL: prefsURL)
-        #expect(reopened.data.hiddenFingerprints == ["huella-juego"])
+        #expect(reopened.data.games["huella-juego"]?.hidden == true)
         #expect(reopened.isHidden(game))
         // Si el ROM se mueve de subcarpeta, sigue oculto por su huella.
         reopened.recordPlayed(id: "otra/juego.gb", fingerprint: "huella-juego", at: Date())
@@ -80,7 +80,7 @@ struct LibraryPreferencesTests {
     @Test func neverOpenedGameIsHiddenByPath() {
         let prefs = LibraryPreferences(fileURL: nil)
         prefs.hide(entries[2])
-        #expect(prefs.data.hiddenPaths == ["sub/c.gb"])
+        #expect(prefs.data.pendingByPath["sub/c.gb"]?.hidden == true)
         #expect(prefs.visible(entries, filter: .all, query: "").map(\.id) == ["a.gbc", "b.gb", "d.gbc"])
     }
 
@@ -133,8 +133,8 @@ struct LibraryPreferencesTests {
 
         // Al conocer la huella, el alias deja de depender de la ruta.
         prefs.recordPlayed(id: beta.id, fingerprint: "fp-beta", at: Date())
-        #expect(prefs.data.aliasesByPath[beta.id] == nil)
-        #expect(prefs.data.aliasesByFingerprint["fp-beta"] == "Zelda")
+        #expect(prefs.data.pendingByPath[beta.id] == nil)
+        #expect(prefs.data.games["fp-beta"]?.alias == "Zelda")
         let moved = Self.entry("otra/b.gb", "Beta", color: false)
         prefs.recordPlayed(id: moved.id, fingerprint: "fp-beta", at: Date())
         #expect(prefs.displayTitle(moved) == "Zelda")

@@ -124,7 +124,13 @@ final class LinkSession {
             do {
                 opened = try SRAMPersistence.open(core: cores[i], info: infos[i], savesDirectory: savesDirectory,
                                                   mirror: game.mirror, snapshot: game.mirrorSnapshot,
-                                                  mirrorWriter: nil)
+                                                  mirrorWriter: nil,
+                                                  // N7a · con el cable no se pregunta: sigue la de este iPhone y la
+                                                  // otra queda como momento «Conflicto» y apartada.
+                                                  lineage: .init(divergence: .keepLocal,
+                                                                 conflictMoments: (try? MomentStore.defaultRoot()).map {
+                                                                     MomentStore(root: $0, fingerprint: infos[i].fingerprint)
+                                                                 }))
             } catch SaveOpening.Refusal.mirrorNotDownloaded {
                 throw Refusal.saveNotDownloaded(title: titles[i])
             }

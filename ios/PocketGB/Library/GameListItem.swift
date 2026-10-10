@@ -6,6 +6,8 @@ struct GameListItem: View {
     @Environment(AppState.self) private var state
     let entry: RomEntry
     var zoom: Namespace.ID?
+    /// Origen del zoom al detalle; nil = el id del juego.
+    var sourceID: String?
 
     var body: some View {
         HStack(spacing: PocketSpacing.sm) {
@@ -41,7 +43,7 @@ struct GameListItem: View {
             .frame(width: 56)
             .opacity(entry.problem == nil ? 1 : 0.45)
         if let zoom {
-            art.matchedTransitionSource(id: entry.id, in: zoom)
+            art.matchedTransitionSource(id: sourceID ?? entry.id, in: zoom)
         } else {
             art
         }

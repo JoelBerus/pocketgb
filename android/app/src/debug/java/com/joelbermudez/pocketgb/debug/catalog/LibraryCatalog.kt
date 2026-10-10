@@ -27,7 +27,12 @@ import com.joelbermudez.pocketgb.ui.library.LibraryContent
 import com.joelbermudez.pocketgb.ui.library.LocalAutoFocusSearch
 import com.joelbermudez.pocketgb.ui.library.LocalInitialMenuFor
 
-private val actions = GameActions({}, {}, {}, onPlay = {}, onGameSettings = {})
+// A9: «Renombrar» está en el menú contextual de la app; el catálogo lo muestra igual. N3 (ND15): el carril solo muestra
+// juegos que se pueden continuar; los tres recientes del catálogo lo son.
+private val actions = GameActions(
+    {}, {}, {}, onPlay = {}, onGameSettings = {}, onRename = {},
+    canResume = { CatalogData.fingerprint(it.id) in CatalogData.coveredFingerprints },
+)
 
 @Composable
 private fun CatalogLibrary(
@@ -53,7 +58,6 @@ private fun CatalogLibrary(
             onRescan = {},
             actions = actions,
             newGamesSummary = newGamesSummary,
-            artworkFingerprints = CatalogData.coveredFingerprints,
         )
     }
 }
@@ -131,7 +135,7 @@ internal val libraryCatalogScreens: Map<String, @Composable (DebugIntent) -> Uni
             CatalogLibrary(ready, prefs)
             GameSettingsSheet(
                 title = CatalogData.games[0].title,
-                isColor = false,
+                console = com.joelbermudez.pocketgb.library.RomConsole.GB,
                 global = GameplaySettingsData(),
                 overrides = GameOverrides(colorForGameBoy = true, compatPalette = 5),
                 onOverridesChange = {},
@@ -152,6 +156,7 @@ internal val libraryCatalogScreens: Map<String, @Composable (DebugIntent) -> Uni
             onBack = {},
             fingerprint = CatalogData.fingerprint(entry.id),
             onOpenSettings = {},
+            onRename = {},
         )
     }
     put("favorites") { FavoritesContent(ready, remember { CatalogData.prefs() }, actions) }

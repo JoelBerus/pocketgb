@@ -71,11 +71,43 @@ class EmulatorSessionTest {
     }
 
     @Test
+    fun oppositeDirectionsFromTouchAndPadCancelEachOtherInTheCombination() {
+        EmulatorSession().use { session ->
+            val up = GameBoyButton.UP.mask
+            val down = GameBoyButton.DOWN.mask
+            val left = GameBoyButton.LEFT.mask
+            val right = GameBoyButton.RIGHT.mask
+            // Táctil ↑ y mando ↓: ninguna de las dos llega al núcleo.
+            session.setTouchButtons(up)
+            session.setPhysicalButtons(down)
+            assertEquals(0, session.requestedButtons)
+            // Lo demás se conserva: A del táctil y → del mando.
+            session.setTouchButtons(up or GameBoyButton.A.mask)
+            session.setPhysicalButtons(down or right)
+            assertEquals(GameBoyButton.A.mask or right, session.requestedButtons)
+            session.setTouchButtons(left)
+            session.setPhysicalButtons(right or up)
+            assertEquals(up, session.requestedButtons)
+            // Sin opuestos no cambia nada.
+            session.setTouchButtons(up)
+            session.setPhysicalButtons(right)
+            assertEquals(up or right, session.requestedButtons)
+        }
+    }
+
+    @Test
     fun buttonMasksAndSpeedAreNormalized() {
         EmulatorSession().use { session ->
             session.setTouchButtons(0x1FF)
             session.setPhysicalButtons(-1)
-            assertEquals(0xFF, session.requestedButtons)
+            // A 8 bits y, ya combinados, sin direcciones opuestas (N2): quedan A, B, Select y Start.
+            assertEquals(0x0F, session.requestedButtons)
+            session.setTouchButtons(0x1FF)
+            session.setPhysicalButtons(0)
+            assertEquals(0x0F, session.requestedButtons)
+            session.setTouchButtons(0)
+            session.setPhysicalButtons(0x1F0)
+            assertEquals(0x00, session.requestedButtons)
 
             session.setSpeed(3)
             assertEquals(1, session.speed)

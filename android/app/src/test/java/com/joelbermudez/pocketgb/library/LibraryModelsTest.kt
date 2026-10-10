@@ -22,7 +22,7 @@ class LibraryModelsTest {
 
     @Test
     fun hiddenListsOnlyHiddenEntriesInTitleOrder() {
-        fun entry(id: String) = RomEntry(id, "u/$id", id, id, false, 1, true, null)
+        fun entry(id: String) = RomEntry(id, "u/$id", id, id, com.joelbermudez.pocketgb.library.RomConsole.GB, 1, true, null)
         val a = entry("B.gb")
         val b = entry("A.gb")
         val c = entry("C.gb")

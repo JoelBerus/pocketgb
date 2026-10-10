@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Rechaza ROMs, partidas y binarios con cabecera de cartucho Game Boy o Game Boy Advance.
+# Rechaza ROMs, partidas, paquetes .pgbm y binarios con cabecera de cartucho Game Boy o Game Boy Advance.
 # Activar una vez: git config core.hooksPath .githooks
 # Las rutas se procesan delimitadas por NUL (soporta espacios y saltos de línea).
 fail=0
 while IFS= read -r -d '' f; do
   lower="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
-    *.gb|*.gbc|*.sgb|*.gba|*.agb|*.srl|*.sav|*.rtc|*.state|*.zip|*.7z)
-      printf 'pre-commit: bloqueado %q (ROM/partida/archivo comprimido)\n' "$f"; fail=1; continue;;
+    *.gb|*.gbc|*.sgb|*.gba|*.agb|*.srl|*.sav|*.rtc|*.state|*.pgbm|*.zip|*.7z)
+      printf 'pre-commit: bloqueado %q (ROM/partida/paquete .pgbm/archivo comprimido)\n' "$f"; fail=1; continue;;
   esac
-  # Logo de Nintendo en 0x104: firma de cualquier ROM de Game Boy, sin importar la extensión.
   sz=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+  # Paquete .pgbm (lleva una partida y quizá un estado): mágico «PGBM» al principio, sin importar la extensión.
+  if [ "$sz" -ge 16 ]; then
+    sig=$(git cat-file blob ":$f" | dd bs=1 count=4 2>/dev/null | xxd -p)
+    if [ "$sig" = "5047424d" ]; then
+      printf 'pre-commit: bloqueado %q (paquete .pgbm: contiene una partida)\n' "$f"; fail=1
+    fi
+  fi
+  # Logo de Nintendo en 0x104: firma de cualquier ROM de Game Boy, sin importar la extensión.
   if [ "$sz" -ge 336 ]; then
     sig=$(git cat-file blob ":$f" | dd bs=1 skip=260 count=4 2>/dev/null | xxd -p)
     if [ "$sig" = "ceed6666" ]; then

@@ -37,6 +37,17 @@ void unit_link(struct ut *t);
  * lo escribe en `out` y devuelve su longitud (0 si no cabe). */
 size_t ut_link_exchange_prog(uint8_t *out, size_t cap, bool double_speed, uint8_t sc, uint8_t key);
 void unit_ppu(struct ut *t);
+void unit_pgbm(struct ut *t);
+/* Semillas de fuzz_pgbm (paquetes sintéticos): escribe la entrada nº `which`
+ * (0..UT_PGBM_SEEDS-1) en `out` y devuelve su longitud (0 si no cabe). */
+#define UT_PGBM_SEEDS 7u
+size_t ut_pgbm_seed(unsigned which, uint8_t *out, size_t cap);
+void unit_pgbm_cross(struct ut *t);
+void unit_progress(struct ut *t);
+/* Semillas de fuzz_progress (partidas sintéticas): escribe la entrada nº `which`
+ * (0..UT_PROGRESS_SEEDS-1) en `out` y devuelve su longitud (0 si no cabe). */
+#define UT_PROGRESS_SEEDS 7u
+size_t ut_progress_seed(unsigned which, uint8_t *out, size_t cap);
 void unit_sha256(struct ut *t);
 void unit_state(struct ut *t);
 void unit_timer(struct ut *t);

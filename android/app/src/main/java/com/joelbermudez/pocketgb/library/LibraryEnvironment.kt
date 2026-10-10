@@ -3,8 +3,10 @@ package com.joelbermudez.pocketgb.library
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.emulator.CoreBridge
 import com.joelbermudez.pocketgb.emulator.RomInfo
 import java.io.ByteArrayOutputStream
@@ -46,10 +48,25 @@ class ContentResolverRomSource(private val resolver: ContentResolver) : RomSourc
     }
 }
 
-/** Metadatos con el núcleo real: se crea una instancia efímera y se cierra al terminar. */
+/** Metadatos con el núcleo real de cada consola: se crea una instancia efímera y se cierra al terminar. */
 class CoreRomInspector : RomInspector {
-    override fun inspect(rom: ByteArray): RomInfo = CoreBridge().use { it.loadRom(rom) }
+    override fun inspect(rom: ByteArray, console: Console): RomInfo = CoreBridge(console).use {
+        when (console) {
+            Console.GB -> it.loadRom(rom)
+            Console.GBA -> it.loadGbaRom(rom)
+        }
+    }
 }
+
+/** N1b: una línea por escaneo en el registro del sistema (`adb logcat -s PocketGB/Library`), sin rutas ni nombres. */
+internal fun describe(stats: ScanStats): String =
+    "escaneo: ${stats.folderQueries} carpetas listadas + ${stats.headReads} cabeceras = ${stats.providerCalls} consultas SAF " +
+        "(${stats.headerCacheHits} cabeceras de la caché); " +
+        "${stats.documentsSeen} documentos; ocultos ${stats.hiddenSkipped}, PocketGB ${stats.reservedSkipped}, " +
+        "apartadas ${stats.setAsideSkipped}, demasiado hondas ${stats.tooDeepSkipped}, errores ${stats.folderErrors}" +
+        if (stats.truncated) ", TOPE ALCANZADO" else ""
+
+private const val SCAN_TAG = "PocketGB/Library"
 
 class LibraryViewModelFactory(context: Context) : ViewModelProvider.Factory {
     private val appContext = context.applicationContext
@@ -64,6 +81,7 @@ class LibraryViewModelFactory(context: Context) : ViewModelProvider.Factory {
             roms = ContentResolverRomSource(resolver),
             inspector = CoreRomInspector(),
             preferencesFile = LibraryPreferencesFile(File(appContext.filesDir, "library/preferences.json")),
+            scanLog = { stats -> Log.i(SCAN_TAG, describe(stats)) },
         ) as T
     }
 }

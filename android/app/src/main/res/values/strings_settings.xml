@@ -87,9 +87,7 @@
     <string name="storage_artwork">Portadas</string>
     <string name="storage_footer">Los juegos (ROM) están en tu carpeta y PocketGB no los copia, así que no ocupan espacio de la app. La copia de cada partida junto al ROM tampoco se cuenta.</string>
     <string name="storage_clear_artwork">Borrar portadas</string>
-    <string name="storage_clear_footer">Las portadas son capturas de la última escena jugada; se vuelven a crear al jugar. Borrarlas no toca partidas ni estados.</string>
     <string name="storage_clear_title">¿Borrar las portadas?</string>
-    <string name="storage_clear_body">Las partidas, las copias y los estados se conservan.</string>
     <string name="storage_cleared">Portadas borradas</string>
 
     <!-- Biblioteca -->
@@ -120,7 +118,6 @@
     <string name="about_core">Núcleo</string>
     <string name="about_core_value">PocketGB core (C11)</string>
     <string name="about_consoles">Consolas</string>
-    <string name="about_consoles_value">Game Boy y Game Boy Color</string>
     <string name="about_privacy_header">Privacidad</string>
     <string name="about_privacy_body">PocketGB no se conecta a internet: sin telemetría, sin anuncios y sin descargar portadas. Tus juegos y partidas se quedan en tu teléfono y en la carpeta que elijas.</string>
     <string name="about_games_header">Juegos</string>

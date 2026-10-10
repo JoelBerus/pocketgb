@@ -9,6 +9,7 @@ import com.joelbermudez.pocketgb.saves.CloseResult
 import com.joelbermudez.pocketgb.saves.FingerprintOwnership
 import com.joelbermudez.pocketgb.saves.FlushResult
 import com.joelbermudez.pocketgb.saves.FramePng
+import com.joelbermudez.pocketgb.saves.MomentStore
 import com.joelbermudez.pocketgb.saves.SaveCoordinator
 import com.joelbermudez.pocketgb.saves.SaveLoadWarning
 import com.joelbermudez.pocketgb.saves.SaveTarget
@@ -39,6 +40,9 @@ sealed class StateError(message: String, cause: Throwable? = null) : Exception(m
 
     /** El núcleo rechazó el estado (dañado, de otro ROM, versión) o falló al guardarlo. */
     class Core(val error: CoreError) : StateError(error.message ?: "El núcleo rechazó el estado.", error)
+
+    /** N6: el momento no tiene estado del núcleo (migrado sin él o solo partida): se recupera su partida desde el detalle. */
+    class NoState : StateError("Este momento no tiene un estado que cargar.")
 
     /** No se pudo leer o escribir el archivo del estado. */
     class Io(cause: Throwable) : StateError("No se pudo acceder al estado guardado: ${cause.message}", cause)
@@ -159,6 +163,18 @@ class GameSession(
     /** Fábrica del hilo de reparación; inyectable en pruebas para simular un fallo al arrancarlo (A5V6-H3). */
     private val repairThreadFactory: (Runnable, String) -> Thread =
         { body, name -> Thread(body, name).apply { isDaemon = true } },
+    /** Nombre del juego en la pausa: el alias si el usuario lo renombró (A9), o el título de la cabecera. */
+    val title: String = info.title,
+    /**
+     * Hay partida que guardar pero esta sesión no la cargó ni la guarda (`.sav` de tamaño incorrecto o ilegible, J10).
+     * El AUTO que hubiera antes puede ser la única copia de un progreso: la primera escritura del AUTO de esta sesión
+     * lo aparta en vez de pisarlo (A9-H2).
+     */
+    private val unsavedCartridge: Boolean = false,
+    /** N6: momentos y anillo «Antes de cargar» de esta huella (`null` en pruebas antiguas sin momentos). */
+    private val moments: MomentStore? = null,
+    /** N6 (ND13): configuración con la que se abrió (modelo, paleta; en GBA, tipo de partida, reloj y BIOS). */
+    val momentConfig: Map<String, String> = emptyMap(),
 ) : AutoCloseable {
     private val mutableProblem = MutableStateFlow<Throwable?>(null)
 
@@ -204,9 +220,38 @@ class GameSession(
     /** `true` si la SRAM de esta sesión se persiste. */
     val persists: Boolean get() = coordinator.hasTarget
 
+    /**
+     * El núcleo es de fiar para guardar un estado AUTO: hay destino y su persistencia no se desactivó tras un rollback
+     * fallido (o la sesión nunca tuvo destino). Con un núcleo dudoso no se escribe AUTO (A9-H4).
+     */
+    private val coreTrusted: Boolean get() = target == null || coordinator.hasTarget
+
+    /** Esta sesión ya escribió su propio AUTO (los siguientes lo sustituyen; ver [unsavedCartridge]). */
+    @Volatile private var autoWritten = false
+
+    /**
+     * El AUTO es ahora el «deshacer» de un «Guardar actual y cargar» (A9-H3): hasta salir, el AUTO de segundo plano no
+     * lo pisa. La salida lo escribe como antes de A9 (el anillo «Antes de cargar» llegará en N6).
+     */
+    @Volatile var autoHoldsLoadUndo = false
+        private set
+
+    /**
+     * N8: tamaño del `.sav` al abrir. Una EEPROM de GBA sin ajuste mide 512 B hasta que el `.sav` o la primera DMA
+     * confirman 8 KiB; si la DMA lo confirma solo leyendo, el juego no «guarda» y no habría `.sav` de 8 KiB, así que el
+     * estado automático de esa sesión (ya con 8 KiB) daría `StateConfig` al continuar (nota de la auditoría N8 nativo).
+     * Por eso un cambio de tamaño cuenta como un guardado más: se escribe la partida con su tamaño nuevo.
+     */
+    private val openedSaveSize: Int = try { session.sramSaveSize } catch (_: RuntimeException) { 0 }
+    // Invariante (auditoría N8 Kotlin, H1): dentro de una sesión el tamaño solo crece (EEPROM 512 B → 8 KiB, una vez;
+    // confirmado, el núcleo no lo vuelve a cambiar), así que el salto de `dirtySeq` es un único escalón y la secuencia
+    // nunca retrocede. Si algún día el tamaño pudiera volver al de apertura, el escalón se desharía y el coordinador lo
+    // vería como «otro cambio» (sigue siendo seguro: solo provoca un guardado de más, nunca uno de menos).
+
     private val coordinator = SaveCoordinator(
         source = object : SramSource {
-            override fun dirtySeq(): Long = session.sramDirtySequence()
+            override fun dirtySeq(): Long =
+                session.sramDirtySequence() + if (session.sramSaveSize != openedSaveSize) SIZE_CHANGE_SEQ else 0L
             override fun copy(): ByteArray = session.copySram()
         },
         target = target,
@@ -307,13 +352,18 @@ class GameSession(
         } catch (error: CoreError) {
             throw StateError.Core(error)
         }
+        val preserveForeignAuto = slot == StateSlot.AUTO && unsavedCartridge && !autoWritten
         try {
-            coordinator.runOnSaveThread { states.save(saved.bytes, FramePng.encode(saved.pixels), slot) }
+            coordinator.runOnSaveThread {
+                if (preserveForeignAuto) states.setAsideAuto() // A9-H2: el AUTO de antes de esta sesión no se pisa
+                states.save(saved.bytes, FramePng.encode(saved.pixels), slot)
+            }
         } catch (error: IOException) {
             throw StateError.Io(error)
         } catch (error: TimeoutException) {
             throw StateError.Io(error)
         }
+        if (slot == StateSlot.AUTO) autoWritten = true
     }
 
     /**
@@ -330,7 +380,10 @@ class GameSession(
         } catch (error: TimeoutException) {
             throw StateError.Io(error)
         }
-        if (saveCurrentToAuto && slot != StateSlot.AUTO) saveState(StateSlot.AUTO)
+        if (saveCurrentToAuto && slot != StateSlot.AUTO) {
+            saveState(StateSlot.AUTO)
+            autoHoldsLoadUndo = true // A9-H3: desde aquí el AUTO es el «deshacer» de esta carga
+        }
         val previous = try {
             session.saveState()
         } catch (_: SessionError.NotParked) {
@@ -338,6 +391,14 @@ class GameSession(
         } catch (error: CoreError) {
             throw StateError.Core(error)
         }
+        applyLoadedState(data, previous)
+    }
+
+    /**
+     * Aplica [data] (sesión en pausa) y persiste la SRAM que trae; si no se puede, vuelve a [previous] con la semántica
+     * transaccional de SPEC §5.4 (rollback, barrera y reparación). Común a [loadState] y [loadMoment].
+     */
+    private fun applyLoadedState(data: ByteArray, previous: com.joelbermudez.pocketgb.emulator.SavedState) {
         // Copia INDEPENDIENTE en memoria de la partida (SRAM) de antes de cargar nada: si el rollback del núcleo falla,
         // es lo único fiable con lo que reponer la partida principal en disco (A5V2-H3).
         val sramBefore = if (coordinator.hasTarget) {
@@ -511,6 +572,91 @@ class GameSession(
         }
     }
 
+    // ------------------------------------------------------------------ momentos (N6)
+
+    private fun momentStore(): MomentStore = moments ?: throw StateError.Io(IOException("Sin almacén de momentos"))
+
+    private inline fun <T> onSaveThread(crossinline block: () -> T): T = try {
+        coordinator.runOnSaveThread { block() }
+    } catch (error: IOException) {
+        throw StateError.Io(error)
+    } catch (error: TimeoutException) {
+        throw StateError.Io(error)
+    }
+
+    /** Momentos y anillo «Antes de cargar». Bloquea: fuera del hilo principal. */
+    fun moments(): MomentStore.Snapshot = onSaveThread { momentStore().snapshot() }
+
+    fun momentThumbnail(kind: MomentStore.Kind, id: String): ByteArray? = onSaveThread { momentStore().thumbnail(kind, id) }
+
+    /** La RAM del cartucho de ahora mismo (sin destino de guardado también), o `null` si el juego no tiene. */
+    private fun currentSram(): ByteArray? = try {
+        if (session.sramSaveSize > 0) session.copySram() else null
+    } catch (_: CoreError) {
+        null
+    }
+
+    /**
+     * Crea un momento con la sesión en pausa: estado + RAM del cartucho del instante + miniatura + configuración (ND13).
+     * No toca la partida ni el AUTO.
+     */
+    fun createMoment(name: String, playTimeMs: Long?): MomentStore.Moment {
+        val saved = try {
+            session.saveState()
+        } catch (_: SessionError.NotParked) {
+            throw StateError.NotParked()
+        } catch (error: CoreError) {
+            throw StateError.Core(error)
+        }
+        val sram = currentSram()
+        return onSaveThread {
+            momentStore().create(MomentStore.Capture(saved.bytes, sram, FramePng.encode(saved.pixels)), name, momentConfig, playTimeMs)
+        }
+    }
+
+    /**
+     * Carga un momento (o una entrada del anillo: «Recuperar») con la sesión en pausa (§3.3). Antes guarda la posición
+     * actual en el anillo «Antes de cargar» (3 entradas, fuera de la rotación de backups); si eso falla, no se carga nada.
+     * Después aplica el estado y persiste su SRAM como [loadState] (la partida anterior queda en el backup `.1`). El AUTO
+     * NO se toca (unificado con iOS: cargar no lo pisa). La exclusión por huella la da la propia sesión, dueña del lease.
+     */
+    fun loadMoment(kind: MomentStore.Kind, id: String, label: String, playTimeMs: Long?) {
+        if (session.state.value != SessionState.Paused) throw StateError.NotParked()
+        val store = momentStore()
+        val entry = onSaveThread { store.snapshot().find(kind, id) } ?: throw StateError.Io(IOException("El momento ya no existe"))
+        if (!entry.hasState) throw StateError.NoState()
+        val data = onSaveThread { store.loadState(kind, id) }
+        val previous = try {
+            session.saveState()
+        } catch (_: SessionError.NotParked) {
+            throw StateError.NotParked()
+        } catch (error: CoreError) {
+            throw StateError.Core(error)
+        }
+        val sram = currentSram()
+        // N6A-H2: la entrada recuperada no sale del anillo; las expulsadas se borran solo si la carga se confirma.
+        val pending = onSaveThread {
+            store.pushBeforeLoadDeferred(
+                MomentStore.Capture(previous.bytes, sram, FramePng.encode(previous.pixels)), label, momentConfig, playTimeMs,
+                protect = id.takeIf { kind == MomentStore.Kind.BEFORE_LOAD },
+            )
+        }
+        try {
+            applyLoadedState(data, previous)
+        } catch (error: StateError.Core) {
+            // El núcleo rechazó el estado antes de tocar nada: la entrada nueva sobra y el anillo queda como estaba (H8).
+            try { onSaveThread { pending.rollback() } } catch (_: Exception) {}
+            throw error
+        }
+        // H8: si el commit falla, las expulsadas siguen en el índice (nada se pierde) y el siguiente push recorta el anillo.
+        try { onSaveThread { pending.commit() } } catch (_: Exception) {}
+    }
+
+    fun deleteMoment(kind: MomentStore.Kind, id: String) = onSaveThread { momentStore().delete(kind, id) }
+
+    fun updateMoment(id: String, name: String, tags: List<String>, collection: String?, note: String) =
+        onSaveThread { momentStore().update(id, name, tags, collection, note) }
+
     fun deleteState(slot: StateSlot) {
         try {
             coordinator.runOnSaveThread { states.delete(slot) }
@@ -542,14 +688,36 @@ class GameSession(
         }
         if (session.state.value == SessionState.Paused) {
             if (flushSafe) {
-                // AUTO al salir: la continuación exacta (su fallo no impide salir).
-                try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
+                // AUTO al salir: la continuación exacta (su fallo no impide salir). Nunca desde un núcleo dudoso (A9-H4).
+                if (coreTrusted) try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
             } else {
                 saveRescueState() // J6: ranura de rescate aparte, que nunca pisa nada en silencio
             }
         }
         tryClose()
         return ExitResult.Clean
+    }
+
+    /**
+     * Segundo plano (`ON_STOP`, A9; iOS `enterBackground`, D81-H4/D81V2-H3): con la sesión YA aparcada, vacía la SRAM y,
+     * solo si quedó a salvo, guarda el estado AUTO, en ese orden (la fecha del estado queda posterior a la de la
+     * partida). Así «Continuar» retoma la posición aunque el sistema mate la app sin pasar por Salir. No pausa ni
+     * reanuda nada (eso lo hace el ciclo de vida en el hilo principal) y su fallo nunca toca la partida. Sin guardado
+     * de confianza (persistencia desactivada tras un rollback fallido) no se escribe: el núcleo no es de fiar. Tampoco
+     * mientras el AUTO sea el «deshacer» de un «Guardar actual y cargar» ([autoHoldsLoadUndo], A9-H3).
+     * Bloquea: llamar fuera del hilo principal. @return `true` si se escribió el AUTO.
+     */
+    fun saveAutoStateIfParked(): Boolean {
+        if (isClosed || session.state.value != SessionState.Paused) return false
+        if (!coreTrusted) return false
+        if (autoHoldsLoadUndo) return false // A9-H3: no pisar el «deshacer» de una carga hasta salir
+        if (coordinator.hasTarget && !flushNow().isSafe) return false
+        return try {
+            saveState(StateSlot.AUTO)
+            true
+        } catch (_: Exception) {
+            false // reanudada a la vez (no aparcada) o disco: la partida ya está a salvo igualmente
+        }
     }
 
     /** Estado de rescate (J6) en su ranura propia, directo (no depende del hilo de guardado, que pudo atascarse). */
@@ -573,7 +741,7 @@ class GameSession(
             if (isClosed) return RescueOutcome.Closed
             val safe = !coordinator.hasTarget || flushNow().isSafe
             if (safe) {
-                if (session.state.value == SessionState.Paused) {
+                if (session.state.value == SessionState.Paused && coreTrusted) {
                     try { saveState(StateSlot.AUTO) } catch (_: Exception) {}
                 }
                 tryClose()
@@ -644,6 +812,11 @@ class GameSession(
         return result
     }
 
+    /** N5: el fotograma actual si la sesión está en pausa («Usar como portada»); `null` si no. Nunca lanza. */
+    fun pausedFrame(): IntArray? = runCatching {
+        if (session.state.value == SessionState.Paused) session.copyFrame() else null
+    }.getOrNull()
+
     /** K9: entrega el último fotograma a [parkedFrameCallback]. Envuelto en `runCatching`: nunca cambia el cierre. */
     private fun captureParkedFrame() {
         val callback = parkedFrameCallback ?: return
@@ -666,5 +839,8 @@ class GameSession(
         const val REPAIR_BACKOFF_START_MS = 200L
         const val REPAIR_BACKOFF_MAX_MS = 5_000L
         const val RECENT_TIMEOUT_NS = 10_000_000_000L
+
+        /** Desplazamiento de la secuencia de guardado cuando cambia el tamaño del `.sav` (EEPROM 512 B → 8 KiB, N8). */
+        const val SIZE_CHANGE_SEQ = 1L shl 40
     }
 }

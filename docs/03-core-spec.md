@@ -164,6 +164,64 @@ Formato binario little-endian:
 - Además de los rangos por campo, se validan relaciones entre campos: DMA activo ⇒ `index < 160`; `dot` par (pasos de 4, o de 2 en doble velocidad) y `mode3_end ∈ [252, 319]`; hora Unix del RTC en `[0, 2^40)`; fuera de CGB nativo, bancos a 0 y sin doble velocidad ni HDMA; origen y destino del HDMA alineados a 16. El modo de la PPU y su próximo evento **no** se toman del archivo: se recalculan desde LY/dot/LCDC (un modo incoherente permitía escribir fuera del framebuffer; auditoría M3, H1). `render_line` además ignora LY ≥ 144.
 - Toda la memoria de estado de `struct gb` se serializa campo por campo (sin `memcpy` de structs con punteros). Los offsets de banco no se guardan: se recalculan al cargar.
 
+## Lector de progreso Pokémon (`pgb_progress_read`, N6-C)
+Función pura de **solo lectura** (`core/include/pocketgb_progress.h`, `core/src/progress_pokemon.c`): con la cabecera del ROM y la partida (`.sav`) devuelve el nombre del jugador, las medallas, la Pokédex (capturados y vistos), el tiempo de juego y el dinero de los Pokémon oficiales. Alimenta el panel de progreso de N6 (ND5). No usa `gb *`: no necesita un ROM cargado ni una instancia, no hace I/O ni `malloc`, no tiene estado global y su salida solo depende de los argumentos.
+
+```c
+pgb_prog_game pgb_progress_identify(const uint8_t *rom_header, size_t header_len);
+bool pgb_progress_read(const uint8_t *rom_header, size_t header_len,
+                       const uint8_t *sram, size_t sram_len, pgb_progress *out);
+```
+- `rom_header`: al menos `PGB_PROG_HEADER_MIN` (0x150) bytes del ROM. `sram`: exactamente 32 KiB, o 32 KiB + un bloque RTC de 16, 44 o 48 bytes (se ignora); cualquier otra longitud → `false`.
+- Devuelve `true` y rellena `*out` **solo** si el juego está soportado y la partida es coherente; si no, `false` y `*out` queda a cero (`game = PGB_PROG_NONE`). `pgb_progress_identify` mira solo la cabecera (sirve para elegir la plantilla de hitos sin tener la partida).
+- `pgb_progress`: `game` (`GEN1` = Rojo/Azul/Amarillo, `GEN2_GS` = Oro/Plata, `GEN2_C` = Cristal), `player_name[32]` (UTF-8 con NUL; 32 y no 24 porque 10 glifos como ♂ ocupan 30 bytes), `badges_mask`/`badges_count` (1.ª gen: 8 bits; 2.ª gen: Johto en los bits 0–7 y Kanto en 8–15), `pokedex_owned`/`pokedex_seen` (solo cuentan los 151 / 251 bits válidos), `play_hours` (1.ª gen 0–255; 2.ª gen 0–999)/`play_minutes`/`play_seconds` y `money` (Pokédólares).
+
+**Identificación (cabecera).** Criterio (decisión del orquestador tras la auditoría de N6-C, H2; enmienda el texto original de ND5 «por título de cabecera y checksum global»): **título de la cabecera + destino no japonés + idioma no coreano + las validaciones internas de la partida** (checksum, bytes de validación, rangos; más abajo). No se consulta el checksum global del ROM (`0x14E–0x14F`). Se exige `rom[0x14A] == 0x01` (Rojo/Azul/Amarillo japoneses comparten título con los internacionales pero guardan en otra disposición) y el título de `0x134`, sensible a mayúsculas:
+
+| Título (`0x134`…) | Juego | Notas |
+|---|---|---|
+| `POKEMON RED`, `POKEMON BLUE`, `POKEMON YELLOW` + `0x00` | `GEN1` | Los pret los compilan con `rgbfix -t "POKEMON RED"` etc. y `-j` (destino 1). Rojo/Azul de las ediciones DE/FR/ES/IT usan estos mismos títulos (`-t "POKEMON RED"`/`"POKEMON BLUE"` en `einstein95/pokered-de/-fr/-es/-it`). El Amarillo en inglés (EE. UU./Europa) es `POKEMON YELLOW`. |
+| `POKEMON YELAPS` + `D`, `F`, `I` o `S` en `0x142` | `GEN1` | Amarillo europeo alemán, francés, italiano y español: el título es `POKEMON YEL` y `0x13F–0x142` el código `APS` + idioma, así que `0x134–0x142` queda `POKEMON YELAPS?` (`Brianum/pokeyellow-de`: `-t "POKEMON YELAPSD"`; `Narishma-gb/pokeyellow-fr`: `-i APSF -t "POKEMON YEL"`). **D y F están en desensamblados; I y S se deducen** de los códigos de cartucho `DMG-APSI-ITA` (Game Boy Hardware Database) y `DMG-APSS-ESP` (solo por un resultado de búsqueda; no se abrió su página) y de que el último carácter del código es el idioma (p. ej. `-i BYTD`/`AAUD` en `metuk/pokecrystal-de`/`pokegold-de`); ningún ROM de esas ediciones se tuvo a mano. La lista de títulos de `Staacks/gbinterceptor` (`games.csv`) los agrupa como `POKEMON YELAPS` (su campo de título corta a 14 caracteres). |
+| `POKEMON_GLD`, `POKEMON_SLV` | `GEN2_GS` | `0x13F–0x142` es el código del juego (`AAUE`…): no se mira salvo la `K` final (abajo). |
+| `PM_CRYSTAL` + `0x00` | `GEN2_C` | Ídem (`BYTE`…). |
+
+Japonés (destino 0) y coreano → `false`. Oro/Plata coreano (`Narishma-gb/pokegold-kr`: `-t POKEMON_GLD -i AAUK`, `-i AAXK`, **con `-j`**, destino 1, y el mismo título internacional) guarda en otra disposición (checksum en `0x2DAB`, dinero en `0x23D3`, tiempo en `0x204D`: confirmado evaluando ese desensamblado y con PKHeX); por eso se rechaza explícitamente un `0x142` = `K` (en Oro, Plata y Cristal; no existe Cristal coreano) en vez de fiarlo solo al checksum.
+
+**Riesgo asumido (H2):** al no mirar el checksum global del ROM, un hack que conserve el título, el destino y la disposición del `.sav` oficial, con su checksum interno correcto, **sí muestra datos** (p. ej. un hack de Cristal que no cambie la RAM de guardado). Un hack con otra disposición da `false` por el checksum. El lector es de solo lectura y su resultado es informativo (el panel de progreso de N6 propone hitos que el jugador confirma), así que mostrar datos de un hack compatible no daña nada; la alternativa (lista blanca del checksum global de cada edición oficial) habría rechazado también las versiones oficiales que no estén en la lista (revisiones, ediciones sin dumpear) y exige mantenerla.
+
+**Validación de la partida** (todo debe cumplirse; solo se lee la copia principal, no la de respaldo que usa el juego si la principal está corrupta):
+- 1.ª gen: `0xFF − suma de 8 bits` (`CalcCheckSum`: complemento de la suma) de `[0x2598, 0x3523)` igual al byte de `0x3523`.
+- 2.ª gen: `sCheckValue1` (`0x2008`) = 99 y `sCheckValue2` = 127 (`CheckPrimarySaveFile`), y suma de 16 bits de `[0x2009, fin)` igual al `u16` little-endian guardado en la posición del checksum (`VerifyChecksum`).
+- Nombre con terminador `0x50` dentro de sus 11 bytes; minutos y segundos < 60 (el contador del juego nunca los pasa).
+- 1.ª gen: dinero BCD con todos los nibbles ≤ 9. 2.ª gen: horas ≤ 999 (`GameTimer` se detiene en 999:59:59 y no vuelve a escribir las horas) y dinero ≤ 999999 (`MAX_MONEY` de pret).
+
+**Posiciones en el `.sav`** (SRAM banco 1 = archivo + `0x2000`; versiones internacionales). Cada una se calculó evaluando `ram/sram.asm`, `ram/wram.asm` y `constants/*.asm` de pret con `docs/auditorias/N6-C-verificar-offsets.py` (66 comprobaciones sobre pret y 0 diferencias frente a las constantes de `progress_pokemon.c`; el mismo script repetido con los desensamblados europeos —Rojo/Azul DE/FR/ES, Amarillo DE/FR, Oro/Plata DE y Cristal DE— tampoco da diferencias, y con el coreano sí, como era de esperar) y se contrastó con las direcciones internacionales de Data Crystal («RAM map» de Red/Blue, Gold/Silver y Crystal) y con PKHeX (`Gen12/SAV1Offsets.cs`, `SAV2Offsets.cs`; solo los números: PKHeX es GPLv3).
+
+| Dato | Rojo/Azul/Amarillo | Oro/Plata | Cristal | Etiqueta de pret |
+|---|---|---|---|---|
+| Rango del checksum | `0x2598..0x3522` | `0x2009..0x2D68` | `0x2009..0x2B82` | `sGameData`…`sGameDataEnd` |
+| Checksum | `0x3523` (1 B) | `0x2D69` (2 B LE) | `0x2D0D` (2 B LE) | `sMainDataCheckSum` / `sChecksum` |
+| Bytes de validación | — | `0x2008`, `0x2D6B` | `0x2008`, `0x2D0F` | `sCheckValue1/2` |
+| Nombre (11 B) | `0x2598` | `0x200B` | `0x200B` | `sPlayerName` / `wPlayerName` |
+| Pokédex capturados | `0x25A3` (19 B, 151 bits) | `0x2A4C` (32 B, 251 bits) | `0x2A27` | `wPokedexOwned` / `wPokedexCaught` |
+| Pokédex vistos | `0x25B6` | `0x2A6C` | `0x2A47` | `wPokedexSeen` |
+| Dinero | `0x25F3` (3 B BCD) | `0x23DB` (3 B big-endian) | `0x23DC` | `wPlayerMoney` / `wMoney` |
+| Medallas | `0x2602` (1 B) | `0x23E4` Johto, `0x23E5` Kanto | `0x23E5`, `0x23E6` | `wObtainedBadges` / `wJohtoBadges`, `wKantoBadges` |
+| Tiempo | `0x2CED`: horas, «máximo» (0xFF al llegar a 255 h), minutos, segundos, fotogramas (1 B c/u) | `0x2053`: horas (2 B big-endian), minutos, segundos, fotogramas | `0x2052` | `wPlayTimeHours…` / `wGameTimeHours…` |
+
+En Cristal el checksum no está pegado a los datos (`sGameDataEnd` = `0x2B83`; `ds $18a` de relleno hasta `0x2D0D`); en Oro/Plata sí. Pokédex: el bit *n−1* es el Pokémon *n* (bit 0 del primer byte = n.º 1); los bits sobrantes (151 en la 1.ª gen; 251–255 en la 2.ª) no cuentan.
+
+**Texto.** Tabla de caracteres de pret (`constants/charmap.asm`, inglés y ediciones europeas), subconjunto a UTF-8: `0x80–0x99` A–Z, `0xA0–0xB9` a–z, `0xF6–0xFF` 0–9, `0x7F` espacio, `0x9A–0x9F` `( ) : ; [ ]`, `0xC0–0xC5` Ä Ö Ü ä ö ü, `0xE0` `'`, `0xE3` `-`, `0xE6` `?`, `0xE7` `!`, `0xE8`/`0xF2` `.`, `0xEF` ♂, `0xF5` ♀, `0xF0` ¥, `0xF1` ×, `0xF3` `/`, `0xF4` `,`, `0xE1` `<PK>` → «PK» y `0xE2` `<MN>` → «MN» (están en el teclado del nombre de las dos generaciones); solo 2.ª gen: `0xE9` `&`, `0xEA` é. Cualquier otro valor (katakana, control, marcos, acentos que dependen del idioma) → `?`.
+- **0xC0–0xC5** valen igual en DE/FR/ES/IT (`einstein95/pokered-de/-fr/-es/-it`), el teclado alemán e italiano los ofrece y en inglés no tienen glifo: se leen en las dos generaciones.
+- **0xBA (1.ª gen) es ambiguo y se lee como `?`:** en la tabla inglesa es «é», pero en DE/FR/ES/IT es «à» (y 0xBB–0xBF cambian de una edición a otra: è é ù ß ç en DE/FR, è é ù À Á en ES), y la cabecera no distingue las ediciones de Rojo/Azul. Ningún teclado de nombre ofrece esos códigos (ni el inglés ni los europeos, ver `data/text/alphabets.asm`), así que solo aparecerían en un nombre alterado. En la 2.ª gen `0xBA–0xD6` también dependen del idioma (p. ej. en Cristal español `0xBA` = à y `0xD2` = ñ; en el inglés son kana sin uso) y quedan como `?`.
+
+**Fuentes** (hechos: posiciones, tamaños y fórmulas; el código es propio y no copia nada de pret —sin licencia declarada— ni de PKHeX —GPLv3—): pret/pokered, pokeyellow, pokegold y pokecrystal (`ram/wram.asm`, `ram/sram.asm`, `engine/menus/save.asm`, `engine/play_time.asm`, `home/game_time.asm`, `constants/charmap.asm`, `Makefile` para los títulos); desensamblados de las ediciones europeas y coreana (`einstein95/pokered-de/-fr/-es/-it`, `Brianum/pokeyellow-de`, `Narishma-gb/pokeyellow-fr`, `metuk/pokegold-de`, `metuk/pokecrystal-de`, `erosunica/pokecrystal-es`, `Narishma-gb/pokegold-kr`); Data Crystal; PKHeX; Game Boy Hardware Database (códigos de cartucho). Evidencia y lo no verificado (nunca se probó con una partida real): [auditorias/N6-C-evidencia.md](auditorias/N6-C-evidencia.md).
+
+**Pruebas:** `core/tests/unit_progress.c` (partidas sintéticas construidas byte a byte: valores, límites exactos del checksum, rechazos, glifos, tamaños y copias de tamaño exacto para ASan; nunca `.sav` reales), `core/fuzz/fuzz_progress.c` (libFuzzer; ver [06-testing](06-testing.md)).
+
+## Contenedor de partidas que viajan (`pgbm_parse` / `pgbm_encode`, N7-C)
+Archivo único `.pgbm` para exportar un momento o enviar la partida a otro dispositivo (iPhone ↔ Android sin red). `core/src/pgbm.c` + [`pocketgb_pgbm.h`](../core/include/pocketgb_pgbm.h): API pura (sin I/O, sin `malloc`, sin estado global, determinista) que empaqueta y valida secciones opacas (`META` JSON, `SAVE`, `STAT`, `THMB`, `ROMF`) con topes, CRC-32 (el de `state.c`) y compatibilidad hacia delante a la manera de PNG (tipo desconocido con mayúscula inicial = crítico, se rechaza; el resto se ignora). El contenido de `META` (huellas, linaje, equipo, núcleo, configuración, hitos…) lo fija el esquema normativo `META v1` del mismo documento. El archivo es entrada no confiable: `pgbm_parse` acota todo y no copia. Formato byte a byte, orden de las comprobaciones, vectores dorados y lo que debe hacer el importador: [12-formato-pgbm](12-formato-pgbm.md). Pruebas: `core/tests/unit_pgbm.c`, `core/fuzz/fuzz_pgbm.c`; evidencia: [auditorias/N7-C-evidencia.md](auditorias/N7-C-evidencia.md).
+
 ## Seguridad (resumen de reglas verificables)
 1. Ningún índice derivado de datos del ROM o de registros llega a un array sin `%` o `min()` contra su tamaño real.
 2. `gb_load_rom` y `gb_state_load` están cubiertos por fuzzers ([06](06-testing.md)).

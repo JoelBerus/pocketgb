@@ -278,8 +278,8 @@ Settings/
 ### 6.1 Límites reales de las APIs
 
 - No existe una API pública de Liquid Glass que permita indicar blur, saturación, brillo, borde o refracción numéricos. Los valores CSS de la propuesta no se trasladan a SwiftUI.
-- `Glass.clear` sí existe, pero no ofrece contraste adaptativo suficiente en todos los fondos. Requiere un scrim oscuro localizado bajo cada control.
-- No existe un parámetro público `glassOpacity`. El ajuste 30/50/70/100 modifica el alpha de la superficie UIKit de vidrio y del scrim, nunca el contenedor táctil.
+- `Glass.clear` sí existe, pero no ofrece contraste adaptativo suficiente en todos los fondos. Requiere oscurecer localmente cada control: desde N2, un velo con la forma exacta **encima** del vidrio y una sombra suave centrada debajo (un scrim expandido **debajo** del vidrio se refracta en su borde y se ve como un doble anillo).
+- No existe un parámetro público `glassOpacity`. El ajuste 30/50/70/100 modifica el alpha de la superficie UIKit de vidrio, del velo y de la sombra, nunca el contenedor táctil.
 - No existe `glass.modal`. Sheets, alerts, menus y context menus deben usar su material nativo.
 - `glassEffectID` no transforma cualquier vista arbitraria: coordina formas Liquid Glass dentro de un `GlassEffectContainer`.
 - No existe una API pública que entregue la geometría de Dynamic Island. Solo se usan safe-area insets.
@@ -375,7 +375,7 @@ No existe una variante pixel de SF. No se incorpora Silkscreen ni otra fuente ex
 
 | Token | Valor |
 |---|---|
-| `controlPress` | 70 ms, ease-out, scale 0.90 |
+| `controlPress` | 70 ms, ease-out, scale 0.90 (A, B, Start, Select, L, R). La cruceta no se escala: solo se marca el brazo o la flecha pulsada (N2) |
 | `controlRelease` | 90 ms, ease-out |
 | `hudMorph` | 220 ms, spring |
 | `toast` | entrada 180 ms, visible 2.5 s, salida 180 ms |
@@ -390,7 +390,7 @@ Ninguna animación bloquea input, flush o cambio de orientación.
 | Evento | Feedback |
 |---|---|
 | A/B/Start/Select | `UIImpactFeedbackGenerator(style: .light)`, una vez al entrar en pressed |
-| Cambio de sector D-pad | `UISelectionFeedbackGenerator` |
+| Dirección nueva en la cruceta | `UISelectionFeedbackGenerator` cuando se activa una dirección que no estaba activa, tras la histéresis (regla común con Android, N2, `DpadHapticGate`): ↑ → ↑→ vibra; ↑→ → ↑ no; ↑ → nada → ↑ sí |
 | Guardar estado | `UINotificationFeedbackGenerator(.success)` |
 | Error de carga/guardado | `.error` |
 | Confirmación destructiva | `.warning` |
@@ -415,9 +415,9 @@ Se respeta el toggle global `Haptic Feedback`. No se dispara háptica por cada f
 | `GameplayHUD` | SwiftUI | L2 | collapsed/expanded | visible, auto-hide, saving | `GlassEffectContainer`, `glassEffectID` |
 | `ControlsOverlay` | SwiftUI wrapper | L2 | portrait/landscape/editor | active, hidden, controller, RT | `UIViewRepresentable` |
 | `ControlsOverlayView` | UIKit | L2 | GB/GBC | idle, pressed, editing, hidden | `UIGlassEffect`, `UIGlassContainerEffect` |
-| `DPadControl` | UIKit layer/view | L2 | cruz | zona muerta, 8 direcciones, editing | vidrio nativo; cálculo propio |
-| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + scrim |
-| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + scrim |
+| `DPadControl` | UIKit layer/view | L2 | cruz o flechas separadas | zona muerta 30 % con histéresis, diagonales normales/reducidas/desactivadas, brazo o flecha pulsada, editing (tamaño y separación) | vidrio nativo; cálculo propio |
+| `FaceButtonControl` | UIKit layer/view | L2 | A/B | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2); el anillo de color es el borde |
+| `StartSelectControl` | UIKit layer/view | L2 | Start/Select | idle, pressed, editing | vidrio clear + velo y sombra centrada (N2) |
 | `GameViewport` | SwiftUI/UIKit | L1 | fit/integer/fill | loading, running, paused, error | `MTKView` |
 | `PauseView` | SwiftUI | L3 | medium/large | paused, saving, error | `sheet`, `presentationDetents` |
 | `SaveStateCard` | SwiftUI | L1 | manual/auto/empty | default, selected, corrupt | sin vidrio |
@@ -457,7 +457,7 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 21 | `gameplay-portrait` | Juego vertical | portrait | dark | Viewport 10:9 arriba y controles sólidos/claros debajo | Controles sobre Dynamic Island o viewport estirado |
 | 22 | ~~`gameplay-portrait-hud`~~ | Sustituida (decisión de Joel, 2026-09-30) | portrait | dark | El botón de pausa abre directamente la sheet de opciones: ver `gameplay-pause`. El avance rápido está junto a él (`gameplay-fast-forward`) | — |
 | 23 | `gameplay-landscape` | Juego horizontal | landscape | dark | Viewport a máxima altura, controles dentro del safe area | Controles bajo Island o Home Indicator |
-| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias a scrim | Controles blancos desaparecidos |
+| 24 | `gameplay-landscape-clear` | Controles clear al 30 % | landscape | dark | Silueta y labels legibles sobre frame claro gracias al velo y la sombra (N2) | Controles blancos desaparecidos |
 | 25 | `gameplay-landscape-hidden` | Show On Touch oculto | landscape | dark | Solo juego y pista temporal | Áreas invisibles bloqueando HUD o gestos |
 | 26 | `gameplay-pause` | Pause sheet | portrait | dark | Frame atenuado, Resume dominante y Exit separado | Pausa como botón aislado sin contexto |
 | 27 | `save-states` | 4 manuales + auto | portrait | dark | Capturas, timestamps, selección y slot vacío | Estados mezclados con SRAM |
@@ -486,6 +486,17 @@ Cada ID es estable y se usa como primer campo de `ios/PocketGBUITests/screens.tx
 | 50 | `link-partner-picker-ax5` | Selector con AX5 | portrait | light | Filas y pie con reflow, títulos completos | Texto recortado |
 | 51 | `link-open-refused` | Cable rechazado | portrait | ambos | Alerta con el motivo («Elige otro juego…») | Abrir igualmente o error genérico |
 | 52 | `link-continue-warning` | Aviso de continuación | portrait | light | Alerta «¿Conectar sin continuar?» con «Conectar igualmente» y «Cancelar» | Perder el punto de continuación sin avisar |
+| 53 | `gameplay-dpad-up` | Cruz con ↑ pulsado (N2) | ambas | ambos | Solo el brazo ↑ hundido (gris oscuro, triángulo blanco, ≥ 3:1 frente a la cruz); el resto de la cruz, el círculo y los botones sin cambios; un solo borde fino | Toda la cruceta iluminada o encogida; doble anillo; brazo pulsado tenue |
+| 54 | `gameplay-dpad-upright` | Cruz en diagonal | portrait | dark | Brazos ↑ y → hundidos | Toda la cruz o un solo brazo |
+| 55 | `gameplay-dpad-up-clear` | Cruz ↑ al 30 % | landscape | dark | Start/Select y cruz legibles sobre el blanco del juego, sin anillo oscuro exterior | Etiquetas perdidas o scrim desplazado |
+| 56 | `gameplay-dpad-up-reduce-transparency` | Cruz ↑ sin transparencia | ambas | dark | Superficies sólidas, borde de 1,5 pt, solo ↑ marcado | Vidrio persistente |
+| 57 | `gameplay-arrows-up` | Flechas con ↑ pulsado | ambas | ambos | Solo el disco ↑ casi blanco con el triángulo oscuro (≥ 3:1); flechas `arrowtriangle` proporcionales | Las cuatro flechas iluminadas |
+| 58 | `gameplay-arrows-upright` | Flechas en diagonal | portrait | dark | Círculos ↑ y → iluminados | — |
+| 59 | `gameplay-arrows-up-reduce-transparency` | Flechas sin transparencia | ambas | dark | Cuatro círculos sólidos, ↑ casi blanco | Vidrio persistente |
+| 60 | `gameplay-arrows-spacing-70` / `-150` | Separación 0,7 y 1,5 | portrait (y landscape en 1,5) | dark | Flechas más juntas (sin tocarse ni cambiar de tamaño) o más separadas, dentro del área segura | Flechas que se solapan o se salen |
+| 61 | `gameplay-gba-dpad-up` / `gameplay-gba-arrows-up` | GBA horizontal, cruceta al 60 % | landscape | dark | Flechas visibles a tamaño pequeño, solo ↑ marcado | Flechas de tamaño fijo desbordadas |
+| 62 | `customize-controls-dpad` / `customize-controls-arrows` | Editor con la cruceta elegida | ambas | dark | Tamaño − / +; con flechas, además «Separación» − / + | Separación con la cruz o sin restablecer |
+| 63 | `settings-controls-ax5` | Ajustes › Controles con AX5 | portrait | light | «Diagonales» con reflow | Texto recortado |
 
 La pantalla real del launch de iOS termina antes de que el UI test pueda capturarla de forma fiable. `launch` es una ruta DEBUG que renderiza la misma composición para revisión; el launch asset real se valida en dispositivo.
 
@@ -517,22 +528,26 @@ La pantalla real del launch de iOS termina antes de que el UI test pueda captura
 
 ### 10.3 Vidrio claro y contraste
 
-Cada control landscape tiene tres capas independientes:
+Cada control landscape tiene estas capas (N2: sin el scrim expandido de antes, que el vidrio refractaba en su borde y se veía como un doble anillo oscuro desplazado):
 
 ```text
-área táctil UIKit — siempre del mismo tamaño
-└─ scrim localizado oscuro — forma del control, expandida 2–4 pt
-   └─ UIVisualEffectView + UIGlassEffect clear
-      └─ label/símbolo vibrante
+área táctil UIKit — siempre del mismo tamaño (sigue a la geometría, también la separación de flechas)
+└─ sombra suave centrada — `shadowPath` con la forma exacta, sin desplazamiento (radio 4 pt)
+   └─ UIVisualEffectView + UIGlassEffect clear — `cornerConfiguration = .capsule()`, sin recortar su borde
+      └─ velo oscuro con la forma exacta, encima del vidrio (contraste sin refracción)
+         └─ un solo trazo fino y uniforme (1 pt; en A/B el anillo de color es el borde)
+            └─ label/símbolo
 ```
 
 Reglas:
 
-- El scrim se mantiene incluso si el frame es blanco.
+- La sombra y el velo se mantienen incluso si el frame es blanco.
 - Opacidad seleccionable: 30, 50, 70 o 100 %.
-- Cambia el alpha del scrim y de la superficie visual, no el alpha de `ControlsOverlayView`.
+- Cambia el alpha del vidrio, del velo y de la sombra, no el alpha de `ControlsOverlayView`.
 - El label no baja de 70 %.
-- En pressed, la superficie aumenta contraste y hace scale 0.90; el hit frame no cambia.
+- En pressed, A/B/Start/Select/L/R aclaran su superficie y hacen scale 0.90; el hit frame no cambia.
+- La cruceta nunca se escala ni se ilumina entera: el motor le pasa su máscara de direcciones y solo se marca el brazo de la cruz o la flecha separada pulsada (dos en diagonal). Brazo pulsado: gris oscuro opaco (`ControlPalette.crossPressed`, sin atenuar por la opacidad) con el triángulo blanco; flecha pulsada: disco blanco al 90 % con el triángulo oscuro. Contraste pulsado/neutro ≥ 3:1 en vertical, en horizontal (30–100 %) y con Reduce Transparency, calculado en `DpadContrastTests` y medido en las capturas (N2-H1).
+- Flechas: `arrowtriangle.{up,right,down,left}.fill` con tamaño proporcional al control (0,42 × el grosor del brazo en la cruz; 0,36 × el diámetro de cada flecha separada). La cruz conserva su forma Game Boy con un hundido central sutil.
 - A y B se distinguen por label, posición y anillo cálido/frío.
 - Reduce Transparency reemplaza el vidrio por relleno sólido oscuro ≥90 %, borde de 1.5 pt y texto al 100 %.
 - No se mezcla `.regular` y `.clear` dentro del mismo conjunto de controles.
@@ -548,9 +563,11 @@ Reglas:
 - Zona A+B invisible.
 - Deslizamiento B→A sin levantar.
 - D-pad capturado hasta `touchesEnded`.
-- Zona muerta del 25 %.
-- Ocho sectores de 45°.
-- Prohibición de direcciones opuestas.
+- Zona muerta del 30 % del radio; un dedo que ya pulsa se suelta por debajo del 24 % (histéresis radial).
+- Diagonales según Ajustes › Controles (N2): «Normales» (ocho sectores de 45°), «Reducidas» (por defecto: diagonal solo a ±15° de 45°, rectas de 60°) o «Desactivadas» (cuatro rectas).
+- Histéresis angular: la dirección de un dedo se mantiene hasta 8° más allá del borde de su sector.
+- Prohibición de direcciones opuestas: también con dos dedos en la cruceta (se quitan en la máscara táctil) y con dedo y mando a la vez (se quitan tras el OR, `EmulatorSession.combinedButtons`).
+- Flechas separadas: separación k de 0,7 a 1,5 por disposición (fórmula común con Android): diámetro fijo 0,36 W; centro de cada flecha a 0,32 W × k del centro con k ≥ 1 y, por debajo, en línea recta hasta 0,265 W con k = 0,7 (nunca se solapan). El marco y la zona táctil crecen o encogen con ella. Todo el disco de cada flecha pulsa su dirección (sin diagonal; el dedo la mantiene hasta 4 pt fuera del disco) y la zona muerta acaba 2 pt antes del borde interior de las flechas; entre flechas decide el ángulo.
 - Máscara táctil combinada por OR con la del mando físico.
 
 El efecto visual nunca decide qué control está pulsado; solo representa el estado calculado por el motor de input.
@@ -687,3 +704,84 @@ Antes de aceptar una pantalla:
 - Los estados DEBUG no se compilan en Release.
 - Ninguna captura o placeholder contiene material protegido.
 - La UI no introduce red, ATS, `URLSession`, `Network` ni paquetes runtime.
+
+## 15. Biblioteca y detalle adaptables (N3)
+
+Plan: [hitos/N-README.md](../hitos/N-README.md) §4 N3. Todo se decide por el **espacio disponible** (tamaño del área segura o `verticalSizeClass`), nunca por el modelo de iPhone (ND8: sin iPad).
+
+### 15.1 Título legible (N3a)
+- Altura compacta (horizontal): `navigationBarTitleDisplayMode(.inline)` y `scrollEdgeEffectStyle(.hard, for: .top)` en Biblioteca y Favoritos. En vertical, título grande y borde `.soft` como antes.
+- Texto sobre una captura: el botón «Continuar» del carril lleva debajo un velo inferior (`ControlScrim` al 45 %, degradado de 64 pt). Las insignias de estado de las tarjetas ya iban sobre un círculo oscuro.
+- En horizontal, el título de sección («Todos los juegos», el filtro o la categoría) queda fijado bajo la barra (`LazyVStack(pinnedViews: .sectionHeaders)`) con el fondo opaco del contenido, sin vidrio.
+
+### 15.2 Biblioteca en horizontal (N3b)
+- Sin segmentado ni buscador arriba. `.searchable` (bajo el título, `.searchToolbarBehavior(.minimize)`) solo existe mientras se busca (también si se gira con la búsqueda abierta): lo abre la lupa y se quita después de la animación de cierre.
+- **Dónde van las herramientas** (`LibraryToolsPlacement`, decisión común con Android tras la auditoría de N3): en reposo (sin desplazar, barra de pestañas desplegada) Buscar, Filtros, Categorías y Vista son botones de la barra de navegación junto a «…», con sus paneles **hacia abajo**; al desplazar (barra encogida en burbuja) desaparecen de la barra y aparece el **grupo flotante propio** a la derecha, en la fila de la burbuja, con sus paneles **hacia arriba**; al volver arriba, al revés. El estado de la barra se reinicia al cambiar de pestaña, de ruta, de orientación o de carpeta y al cerrar la búsqueda, así que el grupo nunca coincide con la barra desplegada.
+- **Grupo flotante propio** (`LibraryToolsGroup`): cuatro botones redondos de 48 pt en un `GlassEffectContainer` («Herramientas de la biblioteca» para VoiceOver; visor de contenido grande con texto grande). Vive encima del `TabView` (coordenadas de la ventana; dentro de la pestaña no recibía toques a la altura de la barra). La barra no publica si está encogida: se deduce como ella misma decide (`onScrollDown`), con la distancia de la burbuja medida en iOS 26.5 (`LibraryToolsPosition`).
+- En vertical, el modo del título no se fija (con `.automatic` explícito desaparecía el buscador bajo el título grande); solo en altura compacta pasa a `.inline`.
+- Paneles: popover de 400 pt (`presentationCompactAdaptation(.popover)`) anclado al botón, con opciones en cápsulas que fluyen en filas. Desde el grupo se abre hacia arriba (`arrowEdge: .bottom`) y su alto máximo acaba en la **cabecera de sección entera** (título y carpeta), fijada bajo la barra al desplazar: nunca la tapa (con más opciones, se desplaza dentro). Desde la barra se abre hacia abajo (`arrowEdge: .top`) hasta encima de la barra de pestañas; en reposo puede tapar parte del contenido de la derecha mientras está abierto.
+- `tabViewBottomAccessory(isEnabled:)` se probó y se descartó (capturas en la evidencia de N3): desplegado añade una barra a todo el ancho encima de la tab bar (≈ 50 pt de los ≈ 400 del horizontal), encogido es una cápsula larga casi vacía sobre el contenido, y en la prueba el popover de un botón dentro del accesorio no se abrió.
+- En vertical solo se añade la lupa en la barra («como una opción más»); el menú «…» gana «Categoría».
+- Categorías: carpetas de primer nivel de `folderPath` más «Sin categoría» (raíz), con su número de juegos; «Todas» quita el filtro.
+
+### 15.3 Detalle (N3a)
+- `DetailLayout`: dos columnas si ancho > alto o ancho ≥ 600 pt. Izquierda: la imagen entera, con la proporción de la consola, como mucho la mitad del ancho útil y el alto disponible. Derecha: cabecera, Jugar/Continuar (visible sin desplazar), estadísticas, cable, acciones, información técnica y ocultar, con su propio scroll.
+- Una columna (vertical): la imagen ocupa como máximo el 45 % del alto, centrada.
+- Favorito/Estados/Ajustes pasan a columna si no caben en una fila (AX5, columna estrecha).
+- «Información técnica» (`DisclosureGroup`, plegada): título de cabecera, cartucho (GB) o tipo de partida y código del juego (GBA), ROM, partida guardada (RAM · batería · reloj), checksums (el global solo en GB) y SHA-256 completo seleccionable con «Copiar huella». Una advertencia lleva símbolo y texto.
+
+### 15.4 Proporción de las imágenes (N3a)
+- `ArtworkStyle.console` (detalle, vista previa del menú contextual): marco 10:9 o 3:2 y la captura entera.
+- `ArtworkStyle.card` (cuadrícula, lista, carriles): marco 10:9 común y la captura lo rellena centrada sin deformarse (una de GBA pierde algo de los lados), como el «Encaje» de N5.
+- `SaveStateCard`: la proporción de su miniatura (240×160 en GBA) o, vacía, la de la consola del juego abierto.
+
+| # | ID | Pantalla/estado | Orientación | Apariencia | Debe verse | Error visual |
+|---:|---|---|---|---|---|---|
+| N3-1 | `library-landscape` | Biblioteca horizontal arriba | landscape | ambos | Título en línea con Buscar, Filtros, Categorías, Vista y «…» en la barra; carril con tarjetas del ancho de una columna; sin grupo flotante | Buscador o segmentado arriba; grupo sobre la tab bar |
+| N3-2 | `library-landscape-scrolled` | Con scroll | landscape | light | Burbuja a la izquierda y el grupo a la derecha en su misma fila; en la barra solo «…»; cabecera de sección fijada | Grupo flotando lejos de la burbuja o botones repetidos |
+| N3-3 | `library-landscape-search` | Lupa de la barra | landscape | light | Campo de búsqueda activo arriba; sin grupo | Búsqueda que no se abre |
+| N3-4 | `library-landscape-filters` / `-categories` / `-view` | Paneles del grupo | landscape | ambos | Popover hacia arriba anclado al botón, cápsulas, opción elegida con marca; cabecera de sección visible | Panel que tapa la cabecera o se corta |
+| N3-4b | `library-landscape-bar-filters` / `-bar-categories` / `-bar-view` | Paneles de la barra | landscape | ambos | Popover hacia abajo anclado al botón de la barra | Panel cortado o bajo la tab bar |
+| N3-4c | `library-landscape-panel-ax5` / `-panel-reduce-transparency` | Paneles con AX5 y sin transparencia | landscape | ambos | Cápsulas en más filas sin recortes; superficies sólidas | Texto recortado o vidrio persistente |
+| N3-5 | `library-landscape-category` | Categoría elegida | landscape | light | Título de sección «Blargg» y solo sus juegos | Título genérico |
+| N3-6 | `library-landscape-white` | Portada casi blanca bajo el título | landscape | ambos | «Biblioteca» legible sobre el borde duro | Título perdido sobre blanco |
+| N3-7 | `library-landscape-ax5` | AX5 en horizontal | landscape | light | Una columna, textos completos, grupo accesible | Texto recortado |
+| N3-8 | `game-details-gb` / `-gba` | Detalle | ambas | ambos | Horizontal: dos columnas, imagen entera 10:9 o 3:2 y Jugar visible; vertical: imagen ≤ 45 % | Imagen gigante, estirada o recortada |
+| N3-9 | `game-details-technical` / `-gba-technical` | Información técnica | ambas | ambos | Filas con datos reales del ROM de prueba y SHA-256 completo | Valores cortados |
+| N3-10 | `game-details-ax5` | Detalle AX5 | ambas | light | Reflow sin cortes, acciones en columna | Texto recortado |
+| N3-11 | `save-states-gba` | Estados de un juego GBA | portrait | dark | Miniatura 3:2 y ranuras vacías 3:2, sin «Dañado» | Miniatura estirada a 10:9 |
+| N3-12 | `favorites-landscape` | Favoritos horizontal | landscape | dark | Título en línea con borde duro | Título grande perdido |
+
+Las capturas N3 se toman en iPhone SE (3.ª gen), iPhone 17 Pro y iPhone 17 Pro Max (`SIM_DEVICE`).
+
+## 16. Categorías, etiquetas, inicio y centro de ajustes del juego (N4)
+
+Plan: [hitos/N-README.md](../hitos/N-README.md) §4 N4 (ND3, ND12). Reglas para Joel: [11-biblioteca-carpetas](../11-biblioteca-carpetas.md); guía: [guia/categorias.md](../guia/categorias.md). Mismo comportamiento que Android (decisiones N4A-1…N4A-11 de su evidencia).
+
+### 16.1 Inicio
+- Pestaña Biblioteca sin búsqueda, filtro ni etiqueta: «Continuar jugando» (N3), **Favoritos** (hasta 10, con el total; «Ver todo» → pestaña Favoritos) y una **estantería por categoría de primer nivel** («Sin categoría» al final; sin carpetas no hay estanterías), y debajo «Todos los juegos». Contenido L1: tarjetas del ancho de una columna de la cuadrícula, sin vidrio; desplazamiento horizontal con ajuste al soltar (`.viewAligned`).
+- Cabecera de cada fila: título (encabezado para VoiceOver) con su número de juegos y «Ver todo» (etiqueta accesible «Ver todo Pokémon, 3 juegos»). Con tamaños de accesibilidad, el número bajo el título y «Ver todo» debajo.
+- En horizontal sigue §15.2: las filas van antes del título de sección fijado; el grupo flotante aparece al desplazar y sus paneles no tapan el título.
+
+### 16.2 Pantalla de categoría
+- `NavigationStack` de la pestaña (`LibraryRoute.category`, restaurable con `@SceneStorage`): migas tocables (separadores ocultos para VoiceOver; el nivel actual no es botón), subcategorías en cápsulas con su número de juegos, «Juegos · N» (del subárbol) y cuadrícula o lista (botón de la barra, recordado por categoría).
+- Las categorías del panel (horizontal) y de «…» › Categorías (vertical) **abren** su pantalla; ya no filtran en el sitio.
+
+### 16.3 Centro de ajustes del juego
+- Hoja del sistema (L3, `Form`) con su propia pila: identidad, Nombre, **Organización** (Categoría con la insignia «Movido en la app» y «Su carpeta: …», botones de vidrio «Cambiar» y «Volver a su carpeta» juntos; Etiquetas como texto), **Próximamente** (Portada, Progreso y momentos: deshabilitadas, «No disponible todavía» para VoiceOver), **Partida** (copias del juego), color/paleta o GBA y **Ocultar** (confirmación).
+- «Mostrar en categoría»: lista de categorías existentes (sangrada por nivel, «Su carpeta», «Ahora» y marca) y campo «Nueva categoría» con aviso en vivo si coincide con una existente sin mayúsculas ni acentos.
+- Insignia «Movido en la app»: cápsula de contorno fino con `arrow.turn.up.right`; en tarjetas solo el símbolo (el texto va en la etiqueta de VoiceOver de la tarjeta). Las etiquetas no van en las tarjetas.
+
+| # | ID | Pantalla/estado | Orientación | Apariencia | Debe verse | Error visual |
+|---:|---|---|---|---|---|---|
+| N4-1 | `n4-home` / `-scrolled` | Inicio vertical | portrait | ambos | Continuar, Favoritos (3 juegos), estanterías con su número y «Ver todo»; al desplazar, «Todos los juegos» | Filas recortadas o «Ver todo» cortado |
+| N4-2 | `n4-home-landscape` / `-scrolled` | Inicio horizontal | landscape | ambos | En reposo, herramientas en la barra; desplazado, «Todos los juegos» fijado y grupo flotante | Grupo sobre la barra desplegada |
+| N4-3 | `n4-home-ax5` / `n4-home-customized` | AX5 y ajustes del inicio aplicados | portrait | light | Títulos enteros; Pruebas fijada primero, GBA oculta, sin Favoritos | Títulos partidos |
+| N4-4 | `n4-category` / `-nested` / `-nested-list` / `-virtual` / `-ax5` | Pantalla de categoría | ambas | ambos | Migas, subcategorías con conteo, juegos del subárbol; lista recordada; categoría virtual «Para jugar» | Migas cortadas o juegos de otra categoría |
+| N4-5 | `n4-game-center` / `-gba` / `-ax5` | Centro de ajustes | ambas | ambos | Categoría con insignia y «Su carpeta», Cambiar y Volver juntos, etiquetas, Próximamente, Partida, emulación | Información repetida o botones partidos |
+| N4-6 | `n4-tag-editor` / `n4-move-category` / `-ax5` | Etiquetas y «Mostrar en categoría» | portrait | ambos | Añadir, quitar, sugerencias; categorías existentes con «Su carpeta»/«Ahora» y campo nuevo | Texto azul de botón o chips vacíos |
+| N4-7 | `n4-details-moved` / `n4-filter-tag` | Detalle movido y filtro por etiqueta | portrait | light | «Se ve en «Para jugar»» y etiquetas; título «Etiqueta «pendiente»» con Quitar | Ruta real oculta |
+| N4-8 | `n4-landscape-filters` / `-categories` | Paneles con etiquetas y categorías | landscape | ambos | Etiquetas con su número; categorías que abren su pantalla | Panel cortado |
+| N4-9 | `n4-settings-home` / `-ax5` | Ajustes › Biblioteca › Inicio | portrait | ambos | Fila de Favoritos; chincheta, flechas y «En el inicio» por categoría | Controles sin texto accesible |
+
+Las capturas N4 se toman en iPhone SE (3.ª gen), iPhone 17 Pro y iPhone 17 Pro Max (`SIM_DEVICE`).

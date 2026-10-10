@@ -29,7 +29,17 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
         /** Tope de lectura de un estado (entrada no confiable): el real ronda las centenas de KiB. */
         const val MAX_STATE_BYTES = 4 shl 20
         const val MAX_THUMBNAIL_BYTES = 1 shl 20
-        private val MAGIC = "PGBS".toByteArray(Charsets.US_ASCII)
+        /** Bytes de la firma del núcleo al principio del estado. */
+        private const val MAGIC_BYTES = 4
+
+        /**
+         * Firmas de estado válidas (= iOS `StateStore.signatures`): `PGBS` (Game Boy, `core/`) y, desde N8, `PGBA`
+         * (Game Boy Advance, `gba/`). Sin la segunda, todo estado de GBA se vería «Dañado» y nunca se continuaría.
+         */
+        private val SIGNATURES = listOf("PGBS", "PGBA").map { it.toByteArray(Charsets.US_ASCII) }
+
+        fun isKnownSignature(head: ByteArray): Boolean = SIGNATURES.any { it.contentEquals(head) }
+        private const val OBSOLETE_PREFIX = "auto.obsolete-"
     }
 
     class Entry(val slot: StateSlot, val dateMs: Long, val thumbnail: ByteArray?, val corrupt: Boolean) {
@@ -43,21 +53,42 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
     fun stateFile(slot: StateSlot) = File(directory, "${slot.fileStem}.state")
     fun thumbnailFile(slot: StateSlot) = File(directory, "${slot.fileStem}.png")
 
-    /** Ranuras ocupadas. `corrupt` si la firma no es `PGBS` (solo se lee la cabecera). */
+    /** Ranuras ocupadas. `corrupt` si la firma no es `PGBS` ni `PGBA` (solo se lee la cabecera). */
     fun entries(): Map<StateSlot, Entry> {
         val result = linkedMapOf<StateSlot, Entry>()
         for (slot in StateSlot.entries) {
-            val file = stateFile(slot)
-            if (!ops.exists(file)) continue
-            val head = try { ops.readPrefix(file, MAGIC.size) } catch (_: IOException) { ByteArray(0) }
-            val thumb = try {
+            entry(slot, withThumbnail = true)?.let { result[slot] = it }
+        }
+        return result
+    }
+
+    /** Una ranura: fecha y firma de 4 bytes; la miniatura PNG solo si se pide. `null` si no existe. */
+    fun entry(slot: StateSlot, withThumbnail: Boolean): Entry? {
+        val file = stateFile(slot)
+        if (!ops.exists(file)) return null
+        val head = try { ops.readPrefix(file, MAGIC_BYTES) } catch (_: IOException) { ByteArray(0) }
+        val thumb = if (!withThumbnail) {
+            null
+        } else {
+            try {
                 if (ops.exists(thumbnailFile(slot))) ops.readBytes(thumbnailFile(slot), MAX_THUMBNAIL_BYTES) else null
             } catch (_: IOException) {
                 null
             }
-            result[slot] = Entry(slot, ops.lastModified(file) ?: 0L, thumb, !head.contentEquals(MAGIC))
         }
-        return result
+        return Entry(slot, ops.lastModified(file) ?: 0L, thumb, !isKnownSignature(head))
+    }
+
+    /**
+     * Estado automático que «Continuar» puede ofrecer (A9, iOS `automaticEntry(newerThan:)`): existe, su firma es
+     * `PGBS` o `PGBA` (N8) y no es anterior a la partida local ([saveDateMs], `null` si no hay `.sav`). Una partida guardada después
+     * lo invalida: restaurar un backup nunca debe quedar revertido al continuar. Solo lee la fecha y 4 bytes (la
+     * biblioteca lo consulta por cada juego); el contenido se valida al abrir ([ExactContinuation.apply]).
+     */
+    fun automaticEntry(saveDateMs: Long?): Entry? {
+        val entry = entry(StateSlot.AUTO, withThumbnail = false) ?: return null
+        if (entry.corrupt || !ExactContinuation.isFreshByDate(entry.dateMs, saveDateMs)) return null
+        return entry
     }
 
     /** Escribe el estado (atómico) y después su captura. Si la captura falla, el estado vale igual. */
@@ -90,6 +121,32 @@ class StateStore(val directory: File, private val ops: SaveFileOps = PosixSaveFi
             }
         }
         save(state, thumbnail, StateSlot.RESCUE)
+    }
+
+    /** Estados automáticos apartados ([setAsideAuto]), por nombre (fecha de apartado). Ninguna ranura los usa. */
+    fun obsoleteAutoFiles(): List<File> =
+        ops.list(directory).filter { it.startsWith(OBSOLETE_PREFIX) && it.endsWith(".state") }.sorted().map { File(directory, it) }
+
+    /**
+     * A9: retira el estado automático de su ranura sin borrarlo: se aparta como `auto.obsolete-<fecha>-<rand>.state`,
+     * un nombre único que nunca pisa otro apartado (A9-H2). Puede llevar la única copia de un progreso que no se pudo
+     * guardar (sesión sin destino por un `.sav` de tamaño incorrecto, J10). No se borran nunca: son raros (un AUTO
+     * obsoleto al continuar, o el anterior a la primera escritura de una sesión que no guarda) y pesan poco.
+     * La miniatura sí se borra.
+     */
+    fun setAsideAuto(
+        nowMs: Long = System.currentTimeMillis(),
+        rand: String = java.util.UUID.randomUUID().toString().replace("-", "").take(6),
+    ) {
+        val current = stateFile(StateSlot.AUTO)
+        if (!ops.exists(current)) return
+        var target = File(directory, "$OBSOLETE_PREFIX$nowMs-$rand.state")
+        while (ops.exists(target)) {
+            target = File(directory, "$OBSOLETE_PREFIX$nowMs-${java.util.UUID.randomUUID().toString().replace("-", "").take(6)}.state")
+        }
+        ops.atomicReplace(current, target)
+        ops.syncDirectory(directory)
+        try { ops.delete(thumbnailFile(StateSlot.AUTO)) } catch (_: IOException) {}
     }
 
     /** Borra los temporales huérfanos (`*.state.tmp`, `*.png.tmp`) de una escritura interrumpida. */

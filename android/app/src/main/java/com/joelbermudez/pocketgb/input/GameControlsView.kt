@@ -16,8 +16,9 @@ import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.DpadStyle
 
 /**
- * Controles táctiles del juego, dibujados con colores fijos sobre una capa oscura localizada (K12): no dependen del
- * tema ni del color dinámico, así que se leen sobre cualquier fotograma. Con [editing] se convierte en el lienzo del
+ * Controles táctiles del juego, dibujados sobre una capa oscura localizada (K12) con los roles tonales del esquema
+ * Material del juego (N2, [ControlsPalette]): el juego es siempre oscuro y sin color dinámico, así que la paleta es la
+ * misma en cualquier tema de la app y se lee sobre cualquier fotograma. Con [editing] se convierte en el lienzo del
  * editor: arrastrar mueve un control, tocar lo elige, y no manda nada al juego.
  */
 class GameControlsView(
@@ -60,15 +61,28 @@ class GameControlsView(
     /** Impacto al pulsar A/B/Start/Select. */
     var hapticFeedback: () -> Unit = { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
 
-    /** Selección al cambiar de sector de la cruceta. */
+    /** Selección al activarse una dirección nueva de la cruceta (no en cada cambio de sector). */
     var sectorFeedback: () -> Unit = { performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
 
     var renderOptions: ControlsRenderOptions = ControlsRenderOptions()
         set(value) {
             if (field == value) return
-            val menuChanged = field.showMenu != value.showMenu
+            // La geometría depende del menú, del estilo de cruceta (flechas separadas miden otra cosa) y de las diagonales.
+            val geometryChanged = field.showMenu != value.showMenu || field.dpadStyle != value.dpadStyle ||
+                field.diagonals != value.diagonals
             field = value
-            if (menuChanged) rebuild() else invalidate()
+            if (geometryChanged) rebuild() else invalidate()
+        }
+
+    /**
+     * Direcciones de la cruceta dibujadas como pulsadas sin que nadie toque: solo para las capturas del catálogo debug
+     * (no manda nada al juego).
+     */
+    var previewDpadMask: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
         }
 
     var controlsVisibility: ControlsVisibility
@@ -100,6 +114,15 @@ class GameControlsView(
         set(value) {
             if (field == value) return
             field = value
+            rebuild()
+        }
+
+    /** N8: L y R de Game Boy Advance (se dibujan y se atienden solo con esto). */
+    var shoulders: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            dragPreview = null
             rebuild()
         }
 
@@ -200,7 +223,7 @@ class GameControlsView(
         a11yHelper.invalidateRoot()
         val orientation = orientationOverride
             ?: if (width > height) ControlsOrientation.LANDSCAPE else ControlsOrientation.PORTRAIT
-        var layout = controlLayout ?: ControlLayout.defaults(orientation)
+        var layout = controlLayout ?: ControlLayout.defaults(orientation, shoulders)
         dragPreview?.let { (id, point) -> layout = layout.copy(centers = layout.centers + (id to point)) }
         val insets = safeInsets
         controlGeometry = ControlGeometry(
@@ -215,6 +238,9 @@ class GameControlsView(
             density = density,
             sizeScale = sizeScale,
             showMenu = renderOptions.showMenu,
+            dpadStyle = renderOptions.dpadStyle,
+            diagonals = renderOptions.diagonals,
+            shoulders = shoulders,
         )
         inputEngine = TouchInputEngine(controlGeometry)
         updateGestureExclusion()
@@ -293,7 +319,7 @@ class GameControlsView(
     }
 
     /** El control tocado en el editor: el más pequeño bajo el dedo, para poder elegir uno que tape a otro. */
-    private fun pickControl(point: ControlPoint): ControlId? = ControlId.entries
+    private fun pickControl(point: ControlPoint): ControlId? = controlGeometry.controls
         .filter { (it != ControlId.MENU || renderOptions.showMenu) && controlGeometry.touchFrame(it).contains(point) }
         .minByOrNull { controlGeometry.touchFrame(it).let { frame -> frame.width * frame.height } }
 
@@ -309,10 +335,10 @@ class GameControlsView(
         if (fadeAlpha > 0f) {
             // En el editor los controles se ven siempre al 100 %: la opacidad elegida no se aplica.
             val options = if (editing) renderOptions.copy(opacity = 100) else renderOptions
-            ControlId.entries.forEach { id ->
-                if (id == ControlId.MENU && !renderOptions.showMenu) return@forEach
-                drawControl(canvas, id, engine, options, fadeAlpha)
-            }
+            val drawn = controlGeometry.controls.filter { it != ControlId.MENU || renderOptions.showMenu }
+            // Primero todas las capas oscuras y después los controles: la capa de un control nunca tapa a su vecino.
+            drawn.forEach { id -> drawScrim(canvas, id, options, fadeAlpha) }
+            drawn.forEach { id -> drawControl(canvas, id, engine, options, fadeAlpha) }
         }
         if (!editing) drawHint(canvas)
         if (editing) selected?.let { drawSelection(canvas, it) }
@@ -360,116 +386,155 @@ class GameControlsView(
         val pressed = id in engine.pressed
         val rect = RectF(b.left, b.top, b.right, b.bottom)
         when (id) {
-            ControlId.DPAD -> drawDpad(canvas, b, engine.dpadMask, o, fade)
+            ControlId.DPAD -> drawDpad(canvas, b, engine.dpadMask or previewDpadMask, o, fade)
             ControlId.START, ControlId.SELECT -> {
                 val radius = b.height / 2f
-                scrim(canvas, rect, radius, o, fade)
                 paint.style = Paint.Style.FILL
                 paint.color = fill(pressed, o, fade)
                 canvas.drawRoundRect(rect, radius, radius, paint)
-                ring(canvas, rect, radius, RING_NEUTRAL, o, fade)
-                label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, o, fade)
+                ring(canvas, rect, radius, null, o, fade)
+                label(canvas, label(id), b, b.height.coerceAtMost(b.width) * 0.34f, pressed, o, fade)
+            }
+            ControlId.L, ControlId.R -> {
+                // Cápsulas de los gatillos de GBA (como iOS): la letra grande, contorno neutro.
+                val radius = b.height / 2f
+                paint.style = Paint.Style.FILL
+                paint.color = fill(pressed, o, fade)
+                canvas.drawRoundRect(rect, radius, radius, paint)
+                ring(canvas, rect, radius, null, o, fade)
+                label(canvas, label(id), b, b.height * 0.5f, pressed, o, fade)
             }
             else -> {
-                scrim(canvas, rect, b.width / 2f, o, fade)
                 paint.style = Paint.Style.FILL
                 paint.color = fill(pressed, o, fade)
                 canvas.drawOval(rect, paint)
-                ring(canvas, rect, b.width / 2f, if (id == ControlId.A) RING_A else if (id == ControlId.B) RING_B else RING_NEUTRAL, o, fade)
-                label(canvas, label(id), b, b.height * 0.42f, o, fade)
+                ring(canvas, rect, b.width / 2f, if (id == ControlId.A) RING_A else if (id == ControlId.B) RING_B else null, o, fade)
+                label(canvas, label(id), b, b.height * 0.42f, pressed, o, fade)
             }
         }
     }
 
+    /**
+     * Cruceta con la estructura de la de iOS (N2) y el tema Material propio: una cruz de una pieza dentro de un disco, o
+     * cuatro círculos en rombo. Solo se ilumina lo pulsado: el brazo o el círculo de [mask] (dos en diagonal).
+     */
     private fun drawDpad(canvas: Canvas, frame: ControlBounds, mask: Int, o: ControlsRenderOptions, fade: Float) {
-        val arms = ControlGeometry.dpadArms(frame)
-        val third = frame.width / 3f
-        val round = third * 0.28f
-        val arrows = renderOptions.dpadStyle == DpadStyle.ARROWS
-        paint.style = Paint.Style.FILL
-        if (arrows) {
-            arms.forEach { (button, arm) ->
-                val gap = third * 0.12f
-                val rect = RectF(arm.left + gap, arm.top + gap, arm.right - gap, arm.bottom - gap)
-                scrim(canvas, rect, round, o, fade)
-                paint.style = Paint.Style.FILL
-                paint.color = fill(mask and button.mask != 0, o, fade)
-                canvas.drawRoundRect(rect, round, round, paint)
-                ring(canvas, rect, round, RING_NEUTRAL, o, fade)
-                arrowIn(canvas, button, rect, o, fade)
-            }
-        } else {
-            // Cruz de una pieza: oscurece y rellena los brazos y el centro; el brazo pulsado se ilumina.
-            val horizontal = RectF(frame.left, frame.top + third, frame.right, frame.bottom - third)
-            val vertical = RectF(frame.left + third, frame.top, frame.right - third, frame.bottom)
-            scrim(canvas, horizontal, round, o, fade)
-            scrim(canvas, vertical, round, o, fade)
-            paint.style = Paint.Style.FILL
-            paint.color = fill(false, o, fade)
-            canvas.drawRoundRect(horizontal, round, round, paint)
-            canvas.drawRoundRect(vertical, round, round, paint)
-            arms.forEach { (button, arm) ->
-                if (mask and button.mask != 0) {
-                    paint.color = fill(true, o, fade)
-                    canvas.drawRoundRect(RectF(arm.left, arm.top, arm.right, arm.bottom), round, round, paint)
-                }
-                arrow(canvas, button, arm, o, fade)
-            }
-            val cross = Path().apply {
-                addRoundRect(horizontal, round, round, Path.Direction.CW)
-                addRoundRect(vertical, round, round, Path.Direction.CW)
-            }
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f * density
-            paint.color = argb(o.ringAlpha(accent = false, fade = fade), RING_NEUTRAL)
-            canvas.drawPath(cross, paint)
-            paint.style = Paint.Style.FILL
-        }
+        if (controlGeometry.dpadStyle == DpadStyle.ARROWS) drawArrows(canvas, frame, mask, o, fade) else drawCross(canvas, frame, mask, o, fade)
     }
 
-    private fun arrowIn(canvas: Canvas, button: GameBoyButton, rect: RectF, o: ControlsRenderOptions, fade: Float) = arrow(
-        canvas, button, ControlBounds(rect.left, rect.top, rect.right, rect.bottom), o, fade,
-    )
-
-    private fun arrow(canvas: Canvas, button: GameBoyButton, arm: ControlBounds, o: ControlsRenderOptions, fade: Float) {
-        val size = arm.width.coerceAtMost(arm.height) * 0.26f
-        val cx = arm.centerX
-        val cy = arm.centerY
-        val path = Path()
-        when (button) {
-            GameBoyButton.UP -> { path.moveTo(cx, cy - size); path.lineTo(cx - size, cy + size * 0.7f); path.lineTo(cx + size, cy + size * 0.7f) }
-            GameBoyButton.DOWN -> { path.moveTo(cx, cy + size); path.lineTo(cx - size, cy - size * 0.7f); path.lineTo(cx + size, cy - size * 0.7f) }
-            GameBoyButton.LEFT -> { path.moveTo(cx - size, cy); path.lineTo(cx + size * 0.7f, cy - size); path.lineTo(cx + size * 0.7f, cy + size) }
-            else -> { path.moveTo(cx + size, cy); path.lineTo(cx - size * 0.7f, cy - size); path.lineTo(cx - size * 0.7f, cy + size) }
-        }
-        path.close()
+    private fun drawCross(canvas: Canvas, frame: ControlBounds, mask: Int, o: ControlsRenderOptions, fade: Float) {
+        val w = frame.width
+        val radius = w / 2f
+        val palette = o.palette
+        // Disco de fondo: superficie y contorno (la capa oscura ya se dibujó en [drawScrim]).
         paint.style = Paint.Style.FILL
-        paint.color = argb(o.labelAlpha(fade), 0xFFFFFF)
-        canvas.drawPath(path, paint)
-    }
-
-    /** Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. */
-    private fun scrim(canvas: Canvas, rect: RectF, radius: Float, o: ControlsRenderOptions, fade: Float) {
-        val pad = 5f * density
-        paint.style = Paint.Style.FILL
-        paint.color = argb(o.scrimAlpha(fade), 0)
-        canvas.drawRoundRect(RectF(rect.left - pad, rect.top - pad, rect.right + pad, rect.bottom + pad), radius + pad, radius + pad, paint)
-    }
-
-    private fun ring(canvas: Canvas, rect: RectF, radius: Float, color: Int, o: ControlsRenderOptions, fade: Float) {
+        paint.color = argb(o.fillAlpha(false, fade), palette.base)
+        canvas.drawCircle(frame.centerX, frame.centerY, radius, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = o.ringWidthDp * density
-        paint.color = argb(o.ringAlpha(accent = color != RING_NEUTRAL, fade = fade), color)
+        paint.color = argb(o.ringAlpha(accent = false, fade = fade), palette.outline)
+        canvas.drawCircle(frame.centerX, frame.centerY, radius - paint.strokeWidth / 2f, paint)
+
+        // La cruz es la unión de dos rectángulos redondeados: un solo trazo y un solo relleno, sin alfa doble en el centro.
+        val length = DpadShape.CROSS_LENGTH * w
+        val thickness = DpadShape.CROSS_THICKNESS * w
+        val corner = DpadShape.CROSS_CORNER * thickness
+        val horizontal = RectF(frame.centerX - length / 2f, frame.centerY - thickness / 2f, frame.centerX + length / 2f, frame.centerY + thickness / 2f)
+        val vertical = RectF(frame.centerX - thickness / 2f, frame.centerY - length / 2f, frame.centerX + thickness / 2f, frame.centerY + length / 2f)
+        val cross = Path().apply { addRoundRect(horizontal, corner, corner, Path.Direction.CW) }
+        cross.op(Path().apply { addRoundRect(vertical, corner, corner, Path.Direction.CW) }, Path.Op.UNION)
+        paint.style = Paint.Style.FILL
+        paint.color = fill(false, o, fade)
+        canvas.drawPath(cross, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f * density
+        paint.color = argb(o.ringAlpha(accent = false, fade = fade), palette.outline)
+        canvas.drawPath(cross, paint)
+
+        val arms = DpadShape.crossArms(frame)
+        arms.forEach { (button, arm) ->
+            val pressed = mask and button.mask != 0
+            if (pressed) {
+                // Solo el brazo: redondeado por fuera y recto contra el centro, que no se resalta.
+                paint.style = Paint.Style.FILL
+                paint.color = fill(true, o, fade)
+                canvas.drawPath(armPath(button, arm, corner), paint)
+            }
+            val glyph = DpadShape.CROSS_THICKNESS * w * 0.5f
+            DpadIcons.draw(canvas, paint, button, arm.centerX, arm.centerY, glyph, symbolColor(pressed, o, fade))
+        }
+    }
+
+    private fun drawArrows(canvas: Canvas, frame: ControlBounds, mask: Int, o: ControlsRenderOptions, fade: Float) {
+        DpadShape.arrowCircles(frame, controlGeometry.dpadSeparation).forEach { (button, circle) ->
+            val pressed = mask and button.mask != 0
+            paint.style = Paint.Style.FILL
+            paint.color = fill(pressed, o, fade)
+            canvas.drawCircle(circle.centerX, circle.centerY, circle.radius, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = o.ringWidthDp * density
+            paint.color = argb(o.ringAlpha(accent = false, fade = fade), o.palette.outline)
+            canvas.drawCircle(circle.centerX, circle.centerY, circle.radius - paint.strokeWidth / 2f, paint)
+            DpadIcons.draw(canvas, paint, button, circle.centerX, circle.centerY, circle.radius * 0.95f, symbolColor(pressed, o, fade))
+        }
+        paint.style = Paint.Style.FILL
+    }
+
+    /** Un brazo de la cruz: esquinas redondeadas solo en el extremo exterior. */
+    private fun armPath(button: GameBoyButton, arm: ControlBounds, corner: Float): Path {
+        val c = corner
+        // Orden de Android: arriba-izquierda, arriba-derecha, abajo-derecha, abajo-izquierda (x, y por esquina).
+        val radii = when (button) {
+            GameBoyButton.UP -> floatArrayOf(c, c, c, c, 0f, 0f, 0f, 0f)
+            GameBoyButton.DOWN -> floatArrayOf(0f, 0f, 0f, 0f, c, c, c, c)
+            GameBoyButton.LEFT -> floatArrayOf(c, c, 0f, 0f, 0f, 0f, c, c)
+            else -> floatArrayOf(0f, 0f, c, c, c, c, 0f, 0f)
+        }
+        return Path().apply { addRoundRect(RectF(arm.left, arm.top, arm.right, arm.bottom), radii, Path.Direction.CW) }
+    }
+
+    private fun symbolColor(pressed: Boolean, o: ControlsRenderOptions, fade: Float): Int =
+        argb(o.labelAlpha(fade), if (pressed) o.palette.onPressed else o.palette.onSurface)
+
+    /**
+     * Capa oscura localizada detrás de cada control: lo separa de fotogramas claros sin oscurecer toda la pantalla. Tiene
+     * la forma del control con 1 dp de margen (lo que cubre el contorno): una capa más holgada dejaba un anillo gris
+     * separado del borde sobre escenas claras.
+     */
+    private fun drawScrim(canvas: Canvas, id: ControlId, o: ControlsRenderOptions, fade: Float) {
+        val b = controlGeometry.frames.getValue(id)
+        val pad = SCRIM_PAD_DP * density
+        paint.style = Paint.Style.FILL
+        paint.color = argb(o.scrimAlpha(fade), 0)
+        when {
+            id == ControlId.DPAD && controlGeometry.dpadStyle == DpadStyle.ARROWS ->
+                DpadShape.arrowCircles(b, controlGeometry.dpadSeparation).values.forEach {
+                    canvas.drawCircle(it.centerX, it.centerY, it.radius + pad, paint)
+                }
+            id == ControlId.DPAD -> canvas.drawCircle(b.centerX, b.centerY, b.width / 2f + pad, paint)
+            id == ControlId.START || id == ControlId.SELECT || id.isShoulder -> {
+                val radius = b.height / 2f + pad
+                canvas.drawRoundRect(RectF(b.left - pad, b.top - pad, b.right + pad, b.bottom + pad), radius, radius, paint)
+            }
+            else -> canvas.drawCircle(b.centerX, b.centerY, b.width / 2f + pad, paint)
+        }
+    }
+
+    /** Contorno del control: [accent] (A, B) casi opaco; `null` = el neutro del tema. */
+    private fun ring(canvas: Canvas, rect: RectF, radius: Float, accent: Int?, o: ControlsRenderOptions, fade: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = o.ringWidthDp * density
+        paint.color = argb(o.ringAlpha(accent = accent != null, fade = fade), accent ?: o.palette.outline)
         canvas.drawRoundRect(rect, radius, radius, paint)
         paint.style = Paint.Style.FILL
     }
 
     private fun fill(pressed: Boolean, o: ControlsRenderOptions, fade: Float): Int =
-        argb(o.fillAlpha(pressed, fade), if (pressed) FILL_PRESSED else FILL_NEUTRAL)
+        argb(o.fillAlpha(pressed, fade), if (pressed) o.palette.pressed else o.palette.surface)
 
-    private fun label(canvas: Canvas, text: String, bounds: ControlBounds, size: Float, o: ControlsRenderOptions, fade: Float) {
+    private fun label(canvas: Canvas, text: String, bounds: ControlBounds, size: Float, pressed: Boolean, o: ControlsRenderOptions, fade: Float) {
         paint.style = Paint.Style.FILL
-        paint.color = argb(o.labelAlpha(fade), 0xFFFFFF)
+        paint.color = symbolColor(pressed, o, fade)
         paint.textSize = size
         canvas.drawText(text, bounds.centerX, bounds.centerY - (paint.ascent() + paint.descent()) / 2f, paint)
     }
@@ -493,7 +558,7 @@ class GameControlsView(
         val dpad = engine.dpadMask
         if (hapticsEnabled) {
             if ((pressed - lastPressed - ControlId.DPAD).isNotEmpty()) hapticFeedback()
-            if (dpad != 0 && dpad != lastDpad) sectorFeedback()
+            if (DpadHaptics.shouldTick(lastDpad, dpad)) sectorFeedback()
         }
         lastPressed = pressed
         lastDpad = dpad
@@ -521,15 +586,15 @@ class GameControlsView(
         ControlId.START -> "START"
         ControlId.SELECT -> "SELECT"
         ControlId.MENU -> "MENÚ"
+        ControlId.L -> "L"
+        ControlId.R -> "R"
     }
 
     private fun argb(alpha: Float, rgb: Int): Int =
         Color.argb((alpha.coerceIn(0f, 1f) * 255f).toInt(), Color.red(rgb), Color.green(rgb), Color.blue(rgb))
 
     private companion object {
-        const val FILL_NEUTRAL = 0x1F2024
-        const val FILL_PRESSED = 0x4A4D57
-        const val RING_NEUTRAL = 0xC9CDD6
+        const val SCRIM_PAD_DP = 1f
         const val RING_A = 0xFFA04D
         const val RING_B = 0x6CB4FF
     }

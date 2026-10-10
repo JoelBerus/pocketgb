@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N9: Ajustes › Guía (contenido empaquetado, sin red) y consejos descartables. -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="n9_settings_guide">Guía</string>
+    <string name="n9_guide_title">Guía</string>
+    <string name="n9_guide_intro">Cómo usar PocketGB en Android. Está dentro de la app: funciona sin conexión.</string>
+    <string name="n9_guide_search">Buscar en la guía</string>
+    <string name="n9_guide_search_clear">Borrar la búsqueda</string>
+    <string name="n9_guide_sections">Secciones</string>
+    <plurals name="n9_guide_results_count">
+        <item quantity="one">%1$d resultado</item>
+        <item quantity="other">%1$d resultados</item>
+    </plurals>
+    <string name="n9_guide_no_results">Nada en la guía con «%1$s». Prueba con otra palabra.</string>
+    <string name="n9_guide_unavailable">No se pudo leer la guía.</string>
+    <string name="n9_guide_tips_header">Consejos</string>
+    <string name="n9_guide_tips_reset">Volver a mostrar los consejos</string>
+    <string name="n9_guide_tips_reset_summary">Las tarjetas de consejo que descartaste vuelven a salir en la app.</string>
+    <string name="n9_guide_tips_reset_done">Los consejos volverán a salir.</string>
+
+    <string name="n9_tip_dismiss">Entendido</string>
+    <string name="n9_tip_dismiss_description">Descartar el consejo «%1$s»</string>
+    <string name="n9_tip_moments_title">Prueba sin miedo</string>
+    <string name="n9_tip_moments_body" tools:ignore="Typos">Crea un momento antes de una decisión difícil. Si luego cargas uno, tu posición de ahora queda en «Antes de cargar» y puedes volver.</string>
+    <string name="n9_tip_category_title">Ordena sin tocar archivos</string>
+    <string name="n9_tip_category_body">«Cambiar» muestra el juego en otra categoría solo en la app: el archivo y su partida se quedan en su carpeta. «Volver a su carpeta» lo deshace.</string>
+    <string name="n9_tip_send_title">Sigue en otro equipo</string>
+    <string name="n9_tip_send_body">⋮ › Enviar a otro dispositivo deja tu partida en PocketGB/Intercambio. Lo que llegue a esa carpeta desde el iPhone se ofrece para importar al abrir la biblioteca.</string>
+    <string name="n9_tip_arrows_title">Ajusta las flechas</string>
+    <string name="n9_tip_arrows_body">En el juego, Pausa › Personalizar controles: toca la cruceta y usa la segunda fila para acercar o separar las flechas, o arrástralas para moverlas.</string>
+</resources>

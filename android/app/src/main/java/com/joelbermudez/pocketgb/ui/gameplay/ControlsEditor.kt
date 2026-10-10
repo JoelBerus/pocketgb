@@ -34,10 +34,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ButtonDefaults
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.emulator.Console
 import com.joelbermudez.pocketgb.input.ControlId
 import com.joelbermudez.pocketgb.input.ControlsOrientation
 import com.joelbermudez.pocketgb.settings.MAX_CONTROL_SCALE
+import com.joelbermudez.pocketgb.settings.MAX_DPAD_SEPARATION
 import com.joelbermudez.pocketgb.settings.MIN_CONTROL_SCALE
+import com.joelbermudez.pocketgb.settings.MIN_DPAD_SEPARATION
 import kotlin.math.roundToInt
 
 private val EditorScrim = Color(0x99000000)
@@ -51,13 +54,17 @@ fun controlName(id: ControlId): String = stringResource(
         ControlId.START -> R.string.editor_control_start
         ControlId.SELECT -> R.string.editor_control_select
         ControlId.MENU -> R.string.editor_control_menu
+        ControlId.L -> R.string.n8_editor_control_l
+        ControlId.R -> R.string.n8_editor_control_r
     },
 )
 
 /**
  * Barra del editor de controles (K12, `customize-controls-*`): orientación que se edita, Restablecer, Listo y, con un
- * control elegido, − / + de su tamaño en pasos del 10 %. Arrastrar y tocar los controles lo resuelve el lienzo
- * ([com.joelbermudez.pocketgb.input.GameControlsView] en modo edición); el juego sigue en pausa.
+ * control elegido, − / + de su tamaño en pasos del 10 %. Con la cruceta elegida y el estilo de flechas separadas
+ * ([showSeparation]) añade − / + de la separación entre las flechas, de 70 % a 150 % (N2, ND10). Arrastrar y tocar los
+ * controles lo resuelve el lienzo ([com.joelbermudez.pocketgb.input.GameControlsView] en modo edición); el juego sigue
+ * en pausa.
  */
 @Composable
 fun ControlsEditorBar(
@@ -69,6 +76,12 @@ fun ControlsEditorBar(
     onSmaller: () -> Unit,
     onLarger: () -> Unit,
     modifier: Modifier = Modifier,
+    showSeparation: Boolean = false,
+    separation: Float = 1f,
+    onCloser: () -> Unit = {},
+    onFarther: () -> Unit = {},
+    /** N8: la disposición que se edita es la de esta consola (GB y GBA se guardan aparte). */
+    console: Console = Console.GB,
 ) {
     val landscape = orientation == ControlsOrientation.LANDSCAPE
     Column(
@@ -76,7 +89,16 @@ fun ControlsEditorBar(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Pill(stringResource(if (landscape) R.string.editor_title_landscape else R.string.editor_title_portrait))
+        Pill(
+            stringResource(
+                when {
+                    console == Console.GBA && landscape -> R.string.n8_editor_title_gba_landscape
+                    console == Console.GBA -> R.string.n8_editor_title_gba_portrait
+                    landscape -> R.string.editor_title_landscape
+                    else -> R.string.editor_title_portrait
+                },
+            ),
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = onReset,
@@ -113,6 +135,30 @@ fun ControlsEditorBar(
                     enabled = selectedScale < MAX_CONTROL_SCALE - 0.001f,
                     onClick = onLarger,
                     tag = "editor-larger",
+                )
+            }
+        }
+        if (selected == ControlId.DPAD && showSeparation) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                StepButton(
+                    Icons.Filled.Remove,
+                    stringResource(R.string.editor_separation_closer),
+                    enabled = separation > MIN_DPAD_SEPARATION + 0.001f,
+                    onClick = onCloser,
+                    tag = "editor-closer",
+                )
+                Pill(
+                    stringResource(R.string.editor_separation, (separation * 100f).roundToInt()),
+                    modifier = Modifier
+                        .semantics { contentDescription = "" }
+                        .testTag("editor-separation"),
+                )
+                StepButton(
+                    Icons.Filled.Add,
+                    stringResource(R.string.editor_separation_farther),
+                    enabled = separation < MAX_DPAD_SEPARATION - 0.001f,
+                    onClick = onFarther,
+                    tag = "editor-farther",
                 )
             }
         }

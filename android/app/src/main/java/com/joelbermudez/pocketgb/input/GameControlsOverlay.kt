@@ -1,6 +1,9 @@
 package com.joelbermudez.pocketgb.input
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.joelbermudez.pocketgb.emulator.EmulatorSession
@@ -8,6 +11,12 @@ import com.joelbermudez.pocketgb.settings.ControlsVisibility
 import com.joelbermudez.pocketgb.settings.GameplaySettingsData
 import com.joelbermudez.pocketgb.ui.a11y.LocalHighContrast
 import com.joelbermudez.pocketgb.ui.a11y.LocalReduceMotion
+
+/**
+ * Direcciones de la cruceta que se dibujan como pulsadas sin tocar nada: solo lo usa el catálogo debug de capturas
+ * (N2); en la app es siempre 0.
+ */
+val LocalPreviewDpadMask = compositionLocalOf { 0 }
 
 /**
  * Controles táctiles sobre la sesión. [settings] decide opacidad, visibilidad, estilo de cruceta, escala y disposición
@@ -24,8 +33,13 @@ fun GameControlsOverlay(
     safeInsets: SafeInsets = SafeInsets.NONE,
     editor: ControlsEditorBinding? = null,
 ) {
+    // N8: la consola de la sesión decide si hay L/R y qué disposición (GB o GBA) se usa.
+    val console = session.console
     val highContrast = LocalHighContrast.current
     val reduceMotion = LocalReduceMotion.current
+    val previewDpadMask = LocalPreviewDpadMask.current
+    val colorScheme = MaterialTheme.colorScheme
+    val palette = remember(colorScheme) { ControlsPalette.from(colorScheme) }
     AndroidView(
         factory = { context ->
             GameControlsView(
@@ -39,13 +53,15 @@ fun GameControlsOverlay(
             view.onMaskChanged = session::setTouchButtons
             view.onMenu = onMenu
             view.hapticsEnabled = settings.haptics
-            view.renderOptions = ControlsRenderOptions.from(settings).copy(highContrast = highContrast)
+            view.renderOptions = ControlsRenderOptions.from(settings).copy(highContrast = highContrast, palette = palette)
+            view.previewDpadMask = previewDpadMask
             view.reduceMotion = reduceMotion
             view.controlsVisibility = if (editor != null) ControlsVisibility.ALWAYS else settings.visibility
             view.sizeScale = settings.sizeScale
             view.safeInsets = safeInsets
+            view.shoulders = console == com.joelbermudez.pocketgb.emulator.Console.GBA
             view.orientationOverride = orientation
-            view.controlLayout = orientation?.let { ControlLayout.from(settings.layout(it), it) }
+            view.controlLayout = orientation?.let { settings.controlLayout(it, console) }
             view.editing = editor != null
             view.selected = editor?.selected
             if (editor != null) {

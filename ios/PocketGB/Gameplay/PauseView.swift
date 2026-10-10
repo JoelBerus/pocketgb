@@ -1,10 +1,13 @@
 import SwiftUI
+import TipKit
 
 /// Sheet de pausa (SPEC §9, `gameplay-pause`): la emulación ya está parada al mostrarse.
 /// "Continuar" es la acción dominante; "Salir del juego" va separada. Material del sistema,
 /// sin vidrio propio en el fondo.
 struct PauseView: View {
     @Environment(AppState.self) private var state
+    /// N5: resultado de «Usar como portada» (nil = sin tocar).
+    @State private var pinned: Bool?
 
     private var pauseTitle: String {
         if let link = state.link { return link.activeTitle }
@@ -45,7 +48,7 @@ struct PauseView: View {
                             state.resumeKeepingEditorPaused()
                         }
                     } footer: {
-                        Text("Con el cable link no hay estados guardados: cargar uno en un juego rompería la conexión con el otro. Cada juego guarda su partida sola.")
+                        Text("Con el cable link no hay momentos: cargar uno en un juego rompería la conexión con el otro. Cada juego guarda su partida sola.")
                     }
                     Section {
                         Button("Salir del cable", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -57,15 +60,27 @@ struct PauseView: View {
                     }
                 } else {
                     Section {
-                        NavigationLink(value: PauseRoute.states) {
-                            Label("Estados guardados", systemImage: "square.stack")
+                        TipView(MomentsTip())   // N9
+                        NavigationLink(value: PauseRoute.moments) {
+                            Label("Momentos", systemImage: "bookmark")
                         }
+                        .accessibilityIdentifier("pause-moments")
                         Button("Personalizar controles", systemImage: "slider.horizontal.3") {
                             state.editingControls = true
                             state.resumeKeepingEditorPaused()
                         }
+                        // N5: fija la escena en pantalla como portada (no toca la partida).
+                        Button(pinned == true ? "Portada fijada" : "Usar como portada",
+                               systemImage: pinned == true ? "checkmark.circle" : "photo.badge.checkmark") {
+                            pinned = state.pinCurrentFrameAsCover()
+                        }
+                        .accessibilityIdentifier("pause-use-as-cover")
                     } footer: {
-                        Text("La partida del juego se guarda sola; los estados son capturas completas que puedes cargar cuando quieras.")
+                        if pinned == false {
+                            Text("Esta escena es de un solo color y no sirve como portada. Prueba con otra.")
+                        } else {
+                            Text("La partida del juego se guarda sola. Los momentos guardan este instante exacto para volver a él cuando quieras. «Usar como portada» fija la escena actual como portada del juego.")
+                        }
                     }
                     Section {
                         Button("Salir del juego", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -80,7 +95,7 @@ struct PauseView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: PauseRoute.self) { route in
                 switch route {
-                case .states: SaveStatesView()
+                case .moments: MomentsView(context: .pause)
                 }
             }
         }

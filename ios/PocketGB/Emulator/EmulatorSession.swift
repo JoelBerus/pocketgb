@@ -86,6 +86,7 @@ final class EmulatorSession: @unchecked Sendable {
                      mirrorWriter: (@Sendable (Data) throws -> Void)? = nil,
                      emulation: EmulationOptions = EmulationOptions(colorForGameBoy: false, compatPalette: 0),
                      console: Console = .gameBoy, bios: Data? = nil,
+                     lineage: SaveOpening.LineageOptions = .init(),
                      onAudioInterrupted: @escaping @MainActor @Sendable () -> Void) throws {
         let now = Int64(Date().timeIntervalSince1970)
         let core: any ConsoleCore
@@ -116,7 +117,8 @@ final class EmulatorSession: @unchecked Sendable {
                 validSizes: Self.validSaveSizes(info), existingSizes: sizes)
         }
         let opened = try SRAMPersistence.open(core: core, info: info, savesDirectory: savesDirectory,
-                                              mirror: mirror, snapshot: mirrorSnapshot, mirrorWriter: mirrorWriter)
+                                              mirror: mirror, snapshot: mirrorSnapshot, mirrorWriter: mirrorWriter,
+                                              lineage: lineage)
         self.init(core: core, info: info, persisters: opened.persister.map { [$0] } ?? [],
                   loadWarning: opened.warning, gameSettingsWarning: forcedWarning,
                   onAudioInterrupted: onAudioInterrupted)
@@ -129,6 +131,12 @@ final class EmulatorSession: @unchecked Sendable {
     static func validSaveSizes(_ info: RomInfo) -> Set<Int> {
         if info.console == .gameBoyAdvance { return GBACoreBridge.validSaveSizes(info) }
         return info.hasRTC ? [info.sramBytes, info.sramBytes + 48, info.sramBytes + 44] : [info.sramBytes]
+    }
+
+    /// Botones que recibe el núcleo cada frame: táctiles OR mando, sin direcciones opuestas
+    /// (el núcleo no las filtra; N2-H3).
+    static func combinedButtons(touch: UInt16, pad: UInt16) -> UInt16 {
+        DpadDirection.withoutOpposites(touch | pad)
     }
 
     @MainActor
@@ -152,8 +160,9 @@ final class EmulatorSession: @unchecked Sendable {
             let previous = try core.stateSave()
             let sramBefore = try ramBytes()
             do { try core.stateLoad(state) } catch CoreError.stateConfig {
-                // Otra configuración (tipo de partida, reloj, BIOS): no es vigente (INT-H2).
-                throw StateError.notCurrent
+                // Otra configuración (modelo, tipo de partida, reloj, BIOS): el estado puede ser justo el de esta
+                // partida y volver a cargar al cambiar el ajuste, así que se conserva (ND21; auditoría N-final H1).
+                throw StateError.otherConfiguration
             }
             guard try ramBytes() == sramBefore else {
                 try? core.stateLoad(previous)
@@ -334,12 +343,17 @@ final class EmulatorSession: @unchecked Sendable {
         /// El estado automático no corresponde a la partida vigente (la SRAM difiere):
         /// se revirtió el núcleo y no se tocó ninguna copia de la partida.
         case notCurrent
+        /// El estado automático es de otra configuración del juego (el núcleo lo rechazó sin tocar nada). No se
+        /// retira: al volver a ese ajuste, «Continuar» lo carga (ND21).
+        case otherConfiguration
 
         var errorDescription: String? {
             switch self {
             case .notPaused: "La partida debe estar en pausa."
             case .saveFailed: "No se pudo guardar la partida del estado."
             case .notCurrent: "El estado guardado ya no corresponde a tu partida actual."
+            case .otherConfiguration:
+                "El punto para continuar es de otra configuración del juego (modelo, tipo de partida, reloj o BIOS). Se conserva: vuelve a ese ajuste en los ajustes del juego para continuar justo donde lo dejaste."
             }
         }
     }
@@ -353,6 +367,16 @@ final class EmulatorSession: @unchecked Sendable {
             var pixels = [UInt32](repeating: 0, count: frames.size.pixelCount)
             pixels.withUnsafeMutableBufferPointer { core.copyFramebuffer(to: $0.baseAddress!) }
             return (state: state, pixels: pixels)
+        }
+    }
+
+    /// N6 (ND13): la RAM del cartucho del instante (el `.sav` completo, con el pie RTC), para guardarla junto al
+    /// estado de un momento. nil si el cartucho no guarda partida.
+    @MainActor
+    func cartridgeRAM() throws -> Data? {
+        try withParkedCore { core in
+            guard info.hasBattery, core.sramSaveSize > 0 else { return nil }
+            return try core.sramSave()
         }
     }
 
@@ -468,7 +492,7 @@ final class EmulatorSession: @unchecked Sendable {
             }
 
             let frameStarted = mach_absolute_time()
-            core.setButtons(buttons.value | padButtons.value)
+            core.setButtons(Self.combinedButtons(touch: buttons.value, pad: padButtons.value))
             let speed = speedFactor.load(ordering: .relaxed)
             core.runFrame()
             drainAudio(discard: speed > 1)

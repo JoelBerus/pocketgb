@@ -13,7 +13,7 @@ Plan elaborado por un subagente Opus el 2026-10-05 sobre `codex/android-port` @ 
 | J5 | Flush en `ON_PAUSE` acotado a 3 s; si se agota: juego en pausa, guardado pendiente, reintento en `ON_STOP`/al volver, y fallo si se intenta salir. |
 | J6 | Al "salir sin guardar" tras fallo local: intentar antes el estado AUTO como rescate; doble confirmación de riesgo. |
 | J7 | Carpeta solo con lectura: importar `.sav` si existe, nunca escribirlo, avisar (`MirrorReadOnly`). |
-| J8 | "Continuar" no carga el estado AUTO (como iOS). |
+| J8 | ~~"Continuar" no carga el estado AUTO (como iOS).~~ **Cambiada por ND6 en A9 (2026-10-07):** «Continuar» retoma el estado AUTO si sigue siendo el de la partida (fecha y RAM del cartucho, como iOS D8.1) y «Jugar desde el inicio» abre solo la partida. Ver [A9-android-evidencia](../auditorias/A9-android-evidencia.md). |
 | J9 | Espejo también en proveedores en la nube; sin fecha gana la local; lectura fallida sin local impide abrir. |
 | J10 | `.sav` de tamaño incorrecto como única copia: se abre, no se guarda nada, se avisa. |
 

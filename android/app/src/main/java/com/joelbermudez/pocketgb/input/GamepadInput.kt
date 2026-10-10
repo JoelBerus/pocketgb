@@ -2,7 +2,10 @@ package com.joelbermudez.pocketgb.input
 
 import android.view.InputDevice
 import android.view.KeyEvent
+import com.joelbermudez.pocketgb.emulator.Console
+import com.joelbermudez.pocketgb.emulator.GbaButtonBits
 import com.joelbermudez.pocketgb.settings.ControllerMappingData
+import com.joelbermudez.pocketgb.settings.DiagonalMode
 import kotlin.math.hypot
 
 /** Lo que un botón del mando puede hacer: un botón de Game Boy o una acción de la app. */
@@ -27,21 +30,31 @@ fun isPadMotion(eventSource: Int, deviceSources: Int): Boolean =
  * Estado puro de un mando: traduce teclas y ejes a la máscara de Game Boy y a acciones de la app (R1–R4).
  * Botones, cruceta digital, hat y stick izquierdo se combinan con OR y después se anulan los opuestos. Las acciones
  * de la app (menú, avance rápido) solo se disparan al pasar de suelto a pulsado: una repetición no las repite.
+ *
+ * **Game Boy Advance (N8, como iOS: hombros = L/R):** con [console] = GBA, L1 y R1 son SIEMPRE L y R del juego, sea
+ * cual sea el mapeo; lo que el mapeo tenga en L1 o R1 (de fábrica, el menú y el avance rápido) pasa a L2 o R2, si
+ * están libres ([GamepadMapping.forConsole]). El botón MODE (Guía) sigue abriendo el menú.
  */
-class GamepadState(mapping: ControllerMappingData? = null) {
-    private val keys: Map<Int, PadAction> = (mapping ?: ControllerMappingData.DEFAULT).resolved()
+class GamepadState(mapping: ControllerMappingData? = null, console: Console = Console.GB) {
+    private val keys: Map<Int, PadAction> = GamepadMapping.forConsole((mapping ?: ControllerMappingData.DEFAULT).resolved(), console)
+    private val shoulders: Map<Int, Int> = if (console == Console.GBA) GamepadMapping.GBA_SHOULDERS else emptyMap()
     private val held = HashSet<Int>()
     private var dpadKeys = 0
+    private var shoulderKeys = 0
     private var hat = 0
     private var stick = 0
 
-    /** `true` si esta tecla es de cruceta o está asignada a algo. */
-    fun handles(keyCode: Int): Boolean = keyCode in keys || dpadBit(keyCode) != 0
+    /** `true` si esta tecla es de cruceta, de L/R (GBA) o está asignada a algo. */
+    fun handles(keyCode: Int): Boolean = keyCode in keys || keyCode in shoulders || dpadBit(keyCode) != 0
 
     fun onKey(keyCode: Int, down: Boolean): PadOutput {
         val bit = dpadBit(keyCode)
         if (bit != 0) {
             dpadKeys = if (down) dpadKeys or bit else dpadKeys and bit.inv()
+            return output()
+        }
+        shoulders[keyCode]?.let { shoulder ->
+            shoulderKeys = if (down) shoulderKeys or shoulder else shoulderKeys and shoulder.inv()
             return output()
         }
         val action = keys[keyCode] ?: return output()
@@ -52,8 +65,9 @@ class GamepadState(mapping: ControllerMappingData? = null) {
 
     /** [hatX]/[hatY] del hat (−1, 0, 1) y [x]/[y] del stick izquierdo (−1..1, Y crece hacia abajo). */
     fun onAxes(hatX: Float, hatY: Float, x: Float, y: Float): PadOutput {
-        hat = if (hypot(hatX, hatY) < HAT_THRESHOLD) 0 else ControlGeometry.dpadMask(hatX, hatY, 1f)
-        stick = if (hypot(x, y) < STICK_THRESHOLD) 0 else ControlGeometry.dpadMask(x, y, 1f)
+        // El ajuste «Diagonales» es de la cruceta táctil: un stick físico sigue con ocho sectores de 45° (y su propio umbral).
+        hat = if (hypot(hatX, hatY) < HAT_THRESHOLD) 0 else ControlGeometry.dpadMask(hatX, hatY, 1f, DiagonalMode.NORMAL)
+        stick = if (hypot(x, y) < STICK_THRESHOLD) 0 else ControlGeometry.dpadMask(x, y, 1f, DiagonalMode.NORMAL)
         return output()
     }
 
@@ -61,6 +75,7 @@ class GamepadState(mapping: ControllerMappingData? = null) {
     fun reset(): PadOutput {
         held.clear()
         dpadKeys = 0
+        shoulderKeys = 0
         hat = 0
         stick = 0
         return PadOutput(0)
@@ -77,7 +92,7 @@ class GamepadState(mapping: ControllerMappingData? = null) {
                 else -> Unit
             }
         }
-        return PadOutput(buttons or cancelOpposites(dpadKeys or hat or stick), actions)
+        return PadOutput(buttons or shoulderKeys or withoutOpposites(dpadKeys or hat or stick), actions)
     }
 
     private val PadAction.isAppAction get() = this == PadAction.MENU || this == PadAction.FAST_FORWARD
@@ -90,17 +105,39 @@ class GamepadState(mapping: ControllerMappingData? = null) {
         else -> 0
     }
 
-    private fun cancelOpposites(mask: Int): Int {
-        var result = mask
-        val vertical = GameBoyButton.UP.mask or GameBoyButton.DOWN.mask
-        val horizontal = GameBoyButton.LEFT.mask or GameBoyButton.RIGHT.mask
-        if (result and vertical == vertical) result = result and vertical.inv()
-        if (result and horizontal == horizontal) result = result and horizontal.inv()
-        return result
-    }
-
     private companion object {
         const val HAT_THRESHOLD = 0.5f
         const val STICK_THRESHOLD = 0.5f
+    }
+}
+
+/**
+ * Mapeo del mando por consola (N8). En Game Boy, el de [ControllerMappingData]. En Game Boy Advance los hombros L1/R1
+ * son L y R del juego (= iOS `GamepadMapping`: `leftShoulder`/`rightShoulder`), así que lo que tuvieran asignado se
+ * reasigna: L1 → L2 y R1 → R2 (de fábrica: menú en L2 y avance rápido en R2), salvo que L2/R2 ya tengan otra acción,
+ * en cuyo caso esa acción queda solo en sus otras teclas (el menú sigue en MODE).
+ */
+object GamepadMapping {
+    /** L1 → L (bit 9) y R1 → R (bit 8) en GBA. */
+    val GBA_SHOULDERS: Map<Int, Int> = mapOf(
+        KeyEvent.KEYCODE_BUTTON_L1 to GbaButtonBits.L,
+        KeyEvent.KEYCODE_BUTTON_R1 to GbaButtonBits.R,
+    )
+
+    /** Dónde va en GBA lo que estaba en un hombro. */
+    private val MOVED_TO = mapOf(
+        KeyEvent.KEYCODE_BUTTON_L1 to KeyEvent.KEYCODE_BUTTON_L2,
+        KeyEvent.KEYCODE_BUTTON_R1 to KeyEvent.KEYCODE_BUTTON_R2,
+    )
+
+    /** Tecla → acción efectiva en [console] a partir de [resolved] (el mapeo ya resuelto de Game Boy). */
+    fun forConsole(resolved: Map<Int, PadAction>, console: Console): Map<Int, PadAction> {
+        if (console != Console.GBA) return resolved
+        val result = LinkedHashMap(resolved)
+        for ((shoulder, target) in MOVED_TO) {
+            val action = result.remove(shoulder) ?: continue
+            result.putIfAbsent(target, action)
+        }
+        return result
     }
 }

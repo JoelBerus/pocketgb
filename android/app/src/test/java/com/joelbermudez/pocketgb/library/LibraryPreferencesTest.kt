@@ -16,7 +16,7 @@ class LibraryPreferencesTest {
     val tmp = TemporaryFolder()
 
     private fun rom(id: String, title: String = id, color: Boolean = false, problem: RomProblem? = null) =
-        RomEntry(id, "content://$id", "$id.gb", title, color, 32768, true, problem)
+        RomEntry(id, "content://$id", "$id.gb", title, com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color), 32768, true, problem)
 
     private val red = rom("Rojo", "POKEMON RED")
     private val yellow = rom("Amarillo", "POKEMON YELLOW", color = true)
@@ -235,29 +235,11 @@ class LibraryPreferencesTest {
     }
 
     @Test
-    fun recentKeepsAtMostFiveAndOnlyGamesWithCapturedArtwork() {
+    fun recentKeepsAtMostFive() {
         val games = (1..8).map { rom("G$it", "GAME $it") }
         var prefs = LibraryPreferencesData()
         games.forEachIndexed { i, g -> prefs = prefs.recordPlayed(g.id, "%064x".format(i + 1), at = (i + 1) * 10L) }
-        // Sin filtro de portada: los 5 más recientes.
         assertEquals(listOf("G8", "G7", "G6", "G5", "G4"), LibraryQuery.recent(games, prefs).map { it.id })
-        // Solo G2, G3, G6 y G8 tienen portada.
-        val withArt = setOf("%064x".format(2), "%064x".format(3), "%064x".format(6), "%064x".format(8))
-        assertEquals(
-            listOf("G8", "G6", "G3", "G2"),
-            LibraryQuery.recent(games, prefs, hasArtwork = { it in withArt }).map { it.id },
-        )
-        assertEquals(emptyList<String>(), LibraryQuery.recent(games, prefs, hasArtwork = { false }).map { it.id })
-    }
-
-    @Test
-    fun recentSkipsUnplayableAndHiddenGamesWhenFilteringByArtwork() {
-        val broken = rom("Roto", "ROTO", problem = RomProblem.INVALID_HEADER)
-        val prefs = LibraryPreferencesData()
-            .recordPlayed("Roto", "%064x".format(1), 10)
-            .recordPlayed("Rojo", "%064x".format(2), 5)
-        val shown = LibraryQuery.recent(listOf(broken, red), prefs, hasArtwork = { true }).map { it.id }
-        assertEquals(listOf("Rojo"), shown)
     }
 
     @Test

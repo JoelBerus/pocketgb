@@ -9,6 +9,10 @@ class SavedGameUi(
     val title: String?,
     val fileName: String?,
     val backups: List<SaveStore.BackupInfo>,
+    /** N1: partidas apartadas fuera de la rotación (perdedoras frente a un espejo ajeno); nunca se borran solas. */
+    val setAside: List<SaveStore.SetAsideInfo> = emptyList(),
+    /** N7a: copias en conflicto del proveedor vistas junto al juego (candidatas; nunca se borran). */
+    val providerConflicts: List<SaveStore.ProviderConflict> = emptyList(),
 )
 
 /**
@@ -21,14 +25,22 @@ class SavesBrowser(
     private val ops: SaveFileOps = PosixSaveFileOps,
     private val ownership: FingerprintOwnership = FingerprintOwnership.shared,
 ) {
-    fun list(): List<SavedGameUi> {
+    /**
+     * @param scannedConflicts copias en conflicto vistas en el último escaneo de la biblioteca, por huella (= iOS, que las
+     *   busca al abrir Partidas). Para una huella escaneada mandan sobre las anotadas al abrir el juego (son más recientes):
+     *   así se listan aunque el juego no se haya abierto desde que aparecieron.
+     */
+    fun list(scannedConflicts: Map<String, List<SaveStore.ProviderConflict>> = emptyMap()): List<SavedGameUi> {
         val index = SavesIndex(directory, ops)
         return index.savedGames().map { game ->
+            val store = SaveStore(directory, game.fingerprint, ops)
             SavedGameUi(
                 fingerprint = game.fingerprint,
                 title = game.record?.title,
                 fileName = game.record?.fileName,
-                backups = SaveStore(directory, game.fingerprint, ops).backups(),
+                backups = store.backups(),
+                setAside = store.setAside(),
+                providerConflicts = scannedConflicts[game.fingerprint] ?: store.providerConflicts(),
             )
         }
     }
@@ -46,6 +58,15 @@ class SavesBrowser(
             // núcleo rechazaría; si el índice no los tiene (entradas antiguas) no se puede juzgar y se permite.
             val sizes = SavesIndex(directory, ops).load()[fingerprint]?.validSizes?.toSet()
             SaveStore(directory, fingerprint, ops).restore(backup, sizes)
+        }
+    }
+
+    /** N1: restaura una partida apartada ([SaveStore.restoreSetAside]) con las mismas garantías que [restore]. */
+    fun restoreSetAside(fingerprint: String, name: String, openFingerprint: String?) {
+        check(fingerprint != openFingerprint) { "No se puede restaurar mientras el juego está abierto" }
+        ownership.withExclusive(fingerprint, "restauración") {
+            val sizes = SavesIndex(directory, ops).load()[fingerprint]?.validSizes?.toSet()
+            SaveStore(directory, fingerprint, ops).restoreSetAside(name, sizes)
         }
     }
 }

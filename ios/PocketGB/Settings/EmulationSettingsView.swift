@@ -40,74 +40,69 @@ struct EmulationSettingsView: View {
     }
 }
 
-/// Ajustes de un juego (SPEC §8, `SettingsValueBadge`): cada valor dice con texto si es
-/// "Global" o "Personalizado".
-struct GameSettingsView: View {
+/// Ajustes de emulación de un juego (SPEC §8, `SettingsValueBadge`) dentro del centro de ajustes del
+/// juego (N4, `GameCenterView`): color y paleta (GB) o tipo de partida, reloj y BIOS (GBA). Cada valor
+/// dice con texto si es "Global" o "Personalizado". Se guardan por huella (N1a): siguen al juego si se
+/// mueve de carpeta y los comparten sus duplicados.
+struct GameEmulationSections: View {
     @Environment(AppState.self) private var state
-    @Environment(\.dismiss) private var dismiss
     let entry: RomEntry
+
+    private func set(_ overrides: GameOverrides) {
+        state.libraryPrefs.setOverrides(overrides, for: entry)
+    }
 
     var body: some View {
         let gameplay = state.gameplay
-        let overrides = gameplay.data.perGame[entry.id] ?? GameOverrides()
-        let resolved = gameplay.data.emulation(for: entry.id)
-        NavigationStack {
-            Form {
-                if entry.badge != .gba {
-                    Section {
-                        Picker(selection: Binding(
-                            get: { overrides.colorForGameBoy.map { $0 ? 1 : 2 } ?? 0 },
-                            set: { v in
-                                var o = overrides
-                                o.colorForGameBoy = v == 0 ? nil : v == 1
-                                gameplay.setOverrides(o, for: entry.id)
-                            })) {
-                            Text("Global (\(gameplay.data.colorForGameBoy ? "en color" : "sin color"))").tag(0)
-                            Text("En color").tag(1)
-                            Text("Sin color").tag(2)
-                        } label: {
-                            SettingRowLabel(title: "Color", customized: overrides.colorForGameBoy != nil)
-                        }
-                        Picker(selection: Binding(
-                            get: { overrides.compatPalette.map(Int.init) ?? -1 },
-                            set: { v in
-                                var o = overrides
-                                o.compatPalette = v < 0 ? nil : UInt8(v)
-                                gameplay.setOverrides(o, for: entry.id)
-                            })) {
-                            Text("Global (\(CompatPalette.title(gameplay.data.compatPalette)))").tag(-1)
-                            ForEach(0...CompatPalette.count, id: \.self) { Text(CompatPalette.title(UInt8($0))).tag($0) }
-                        } label: {
-                            SettingRowLabel(title: "Paleta", customized: overrides.compatPalette != nil)
-                        }
-                        .disabled(!resolved.colorForGameBoy)
-                    } header: {
-                        Text(entry.isColor ? "Juego de Game Boy Color: siempre en color" : "Juego de Game Boy")
-                    } footer: {
-                        Text("Se aplica la próxima vez que abras el juego.")
-                    }
-                    .disabled(entry.badge != .gb)
+        let overrides = state.libraryPrefs.overrides(for: entry)
+        let resolved = gameplay.data.emulation(with: overrides)
+        if entry.badge != .gba {
+            Section {
+                Picker(selection: Binding(
+                    get: { overrides.colorForGameBoy.map { $0 ? 1 : 2 } ?? 0 },
+                    set: { v in
+                        var o = overrides
+                        o.colorForGameBoy = v == 0 ? nil : v == 1
+                        set(o)
+                    })) {
+                    Text("Global (\(gameplay.data.colorForGameBoy ? "en color" : "sin color"))").tag(0)
+                    Text("En color").tag(1)
+                    Text("Sin color").tag(2)
+                } label: {
+                    SettingRowLabel(title: "Color", customized: overrides.colorForGameBoy != nil)
                 }
-                if entry.badge == .gba { gbaSection(overrides, gameplay) }
-                if !overrides.isEmpty {
-                    Section {
-                        Button("Usar los ajustes globales", systemImage: "arrow.uturn.backward") {
-                            gameplay.setOverrides(GameOverrides(), for: entry.id)
-                        }
-                    }
+                Picker(selection: Binding(
+                    get: { overrides.compatPalette.map(Int.init) ?? -1 },
+                    set: { v in
+                        var o = overrides
+                        o.compatPalette = v < 0 ? nil : UInt8(v)
+                        set(o)
+                    })) {
+                    Text("Global (\(CompatPalette.title(gameplay.data.compatPalette)))").tag(-1)
+                    ForEach(0...CompatPalette.count, id: \.self) { Text(CompatPalette.title(UInt8($0))).tag($0) }
+                } label: {
+                    SettingRowLabel(title: "Paleta", customized: overrides.compatPalette != nil)
                 }
+                .disabled(!resolved.colorForGameBoy)
+            } header: {
+                Text(entry.isColor ? "Color y paleta · Game Boy Color: siempre en color" : "Color y paleta")
+            } footer: {
+                Text("Se aplica la próxima vez que abras el juego.")
             }
-            .navigationTitle(entry.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Listo") { dismiss() } }
+            .disabled(entry.badge != .gb)
+        }
+        if entry.badge == .gba { gbaSection(overrides) }
+        if !overrides.isEmpty {
+            Section {
+                Button("Usar los ajustes globales", systemImage: "arrow.uturn.backward") {
+                    set(GameOverrides())
+                }
             }
         }
-        .presentationDetents([.medium, .large])
     }
 }
 
-extension GameSettingsView {
+extension GameEmulationSections {
     /// Tipos de partida que se pueden forzar (`GBA_SAVE_*`); sin forzar, el núcleo detecta el tipo.
     static let gbaSaveTypes: [(value: UInt8, title: String)] = [
         (1, "Sin partida"), (2, "SRAM 32 KiB"), (3, "Flash 64 KiB"),
@@ -122,7 +117,7 @@ extension GameSettingsView {
         return SavesIndex(directory: dir).load()[fingerprint]
     }
 
-    @ViewBuilder func gbaSection(_ overrides: GameOverrides, _ gameplay: GameplaySettings) -> some View {
+    @ViewBuilder func gbaSection(_ overrides: GameOverrides) -> some View {
         let record = detectedRecord
         let detectedMedia = record?.gbaMedia.map { "Detectado (\($0))" } ?? "Detectado"
         let detectedRTC = record?.gbaHasRTC.map { "Detectado (\($0 ? "con reloj" : "sin reloj"))" } ?? "Detectado"
@@ -132,7 +127,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaSaveType = v < 0 ? nil : UInt8(v)
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text(detectedMedia).tag(-1)
                 ForEach(Self.gbaSaveTypes, id: \.value) { Text($0.title).tag(Int($0.value)) }
@@ -144,7 +139,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaRTC = v < 0 ? nil : UInt8(v)
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text(detectedRTC).tag(-1)
                 Text("Con reloj").tag(1)
@@ -157,7 +152,7 @@ extension GameSettingsView {
                 set: { v in
                     var o = overrides
                     o.gbaUseBIOS = v == 2 ? false : nil
-                    gameplay.setOverrides(o, for: entry.id)
+                    set(o)
                 })) {
                 Text("Global (la tuya si existe)").tag(0)
                 Text("Emulada").tag(2)

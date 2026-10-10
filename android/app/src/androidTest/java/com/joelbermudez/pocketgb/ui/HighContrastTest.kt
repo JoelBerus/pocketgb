@@ -6,8 +6,10 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.joelbermudez.pocketgb.input.ControlId
+import com.joelbermudez.pocketgb.input.ControlsPalette
 import com.joelbermudez.pocketgb.input.ControlsRenderOptions
 import com.joelbermudez.pocketgb.input.GameControlsView
+import com.joelbermudez.pocketgb.ui.theme.PocketDarkHighContrastColorScheme
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,15 +44,19 @@ class HighContrastTest {
     @Test
     fun withLowOpacityAndNormalContrastTheFillLetsTheBackgroundThrough() {
         val (bitmap, view) = drawn(ControlsRenderOptions(opacity = 30))
-        assertTrue("luminancia ${luminance(fillPixel(bitmap, view))}", luminance(fillPixel(bitmap, view)) > 150f)
+        // N2: la capa oscura de cada control (0,3 + 0,3 × opacidad) oscurece algo el fotograma blanco, pero el relleno sigue
+        // siendo translúcido: queda muy por encima del ≈ 40 del relleno sólido de contraste alto.
+        assertTrue("luminancia ${luminance(fillPixel(bitmap, view))}", luminance(fillPixel(bitmap, view)) > 100f)
     }
 
     @Test
     fun withHighContrastTheFillIsSolidWhateverTheOpacity() {
         listOf(30, 50, 70, 100).forEach { opacity ->
-            val (bitmap, view) = drawn(ControlsRenderOptions(opacity = opacity, highContrast = true))
+            // En la app el contraste alto trae su esquema (superficie 0x21281F): el relleno al 95 % queda ≈ (40, 46, 38).
+            val palette = ControlsPalette.from(PocketDarkHighContrastColorScheme)
+            val (bitmap, view) = drawn(ControlsRenderOptions(opacity = opacity, highContrast = true, palette = palette))
             val pixel = fillPixel(bitmap, view)
-            // Relleno 0x1F2024 al 95 % sobre blanco: ≈ (42, 43, 44). Si fuera translúcido sería claro.
+            // Si fuera translúcido sería claro.
             assertTrue("opacidad $opacity: luminancia ${luminance(pixel)}", luminance(pixel) < 70f)
         }
     }

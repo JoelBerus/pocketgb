@@ -89,32 +89,46 @@ struct GamePlaceholderView: View {
     }
 }
 
-/// Portada de un juego (SPEC §8, `GameArtworkView`): la captura local si existe o el
-/// placeholder. Siempre 10:9 y con muestreo nearest para los píxeles del Game Boy.
+/// Portada de un juego (SPEC §8, `GameArtworkView`). N5: la fuente que toque (`CoverStore.shown`: imagen
+/// importada, imagen de la carpeta, captura o generada). N3a: nunca se deforma. Con `.card` (cuadrícula,
+/// lista, carriles) el marco es 10:9 para todas y la imagen lo rellena centrada; con `.console` (detalle) el
+/// marco tiene la proporción de la consola (10:9 GB/GBC, 3:2 GBA) y la imagen se ve entera (con bandas si
+/// hace falta). Las capturas sin suavizar (pixel art); las imágenes, suavizadas.
 struct GameArtworkView: View {
     @Environment(AppState.self) private var state
     let entry: RomEntry
     var cornerRadius: CGFloat = PocketRadius.cover
     var compact = false
+    var style: ArtworkStyle = .card
 
     var body: some View {
         let fingerprint = state.libraryPrefs.fingerprint(of: entry)
         let title = state.libraryPrefs.displayTitle(entry)
-        Group {
-            if let image = state.artwork.image(for: fingerprint) {
-                Image(uiImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .accessibilityLabel("Captura de \(title)")
-            } else {
-                GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
-                                    badge: entry.badge, compact: compact)
+        let shown = state.covers.shown(entry, fingerprint: fingerprint)
+        Color.clear
+            .aspectRatio(style.frameAspectRatio(for: entry.console), contentMode: .fit)
+            .overlay {
+                if let image = shown.image {
+                    let isCapture = shown.kind == .capture
+                    ZStack {
+                        if !isCapture && style == .console { Color(.secondarySystemFill) }
+                        Image(uiImage: image)
+                            .resizable()
+                            .interpolation(isCapture ? .none : .high)
+                            .aspectRatio(contentMode: isCapture || style == .card ? .fill : .fit)
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel(isCapture ? "Captura de \(title)" : "Portada de \(title)")
+                    .accessibilityIdentifier("cover-\(shown.kind.rawValue)")
+                } else {
+                    GamePlaceholderView(seed: fingerprint ?? entry.id, title: title,
+                                        badge: entry.badge, compact: compact)
+                        .accessibilityIdentifier("cover-generated")
+                }
             }
-        }
-        .aspectRatio(10.0 / 9.0, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .task(id: fingerprint) {
-            if let fingerprint { state.artwork.load(fingerprint) }
-        }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .task(id: "\(fingerprint ?? entry.id)|\(entry.coverStamp ?? "")|\(state.covers.choice(for: fingerprint).rawValue)|\(state.covers.settings.preference.rawValue)|\(shown.kind.rawValue)|\(shown.image == nil)") {
+                state.covers.load(entry, fingerprint: fingerprint)
+            }
     }
 }

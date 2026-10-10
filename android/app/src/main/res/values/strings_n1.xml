@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N1 · Identidad y carpetas (Android): duplicados y ruta del juego en el detalle. Solo cadenas de este lote. -->
+<resources>
+    <!-- Insignia discreta en la tarjeta y la fila cuando hay otra copia con la misma huella. -->
+    <string name="n1_duplicate">Duplicado</string>
+    <!-- Detalle: dónde están las otras copias. -->
+    <string name="n1_also_in">También en</string>
+    <!-- «Pokémon › 2ª generación · Pokemon Gold.gbc» -->
+    <string name="n1_location">%1$s · %2$s</string>
+    <!-- Una copia que está en la carpeta elegida, sin subcarpeta. -->
+    <string name="n1_root_folder">Carpeta principal</string>
+    <string name="n1_also_in_footer">Las copias comparten la partida del teléfono, los estados, los ajustes y la portada. Cada una tiene su .sav junto al ROM: se pone al día al abrir esa copia y, si no coincide, el que pierde queda en Ajustes › Partidas › Apartadas.</string>
+    <!-- TalkBack: la ruta del juego en el detalle. -->
+    <string name="n1_location_description">Ubicación: %1$s</string>
+    <!-- Ajustes › Partidas: partidas apartadas fuera de la rotación de copias (perdedoras frente a un .sav ajeno). -->
+    <string name="n1_saves_set_aside">Apartadas (no se borran solas)</string>
+    <string name="n1_saves_set_aside_item">Apartada · %1$s</string>
+    <string name="n1_saves_set_aside_footer">Partidas que perdieron frente a otro .sav junto al juego: una copia repetida del juego o un .sav de otro juego con el mismo nombre. No cuentan entre las 5 copias.</string>
+    <string name="n1_saves_restore_set_aside_title">¿Restaurar la partida apartada?</string>
+    <!-- N1-H5: aviso al abrir cuando el .sav junto al juego sustituyó a la partida local. -->
+    <string name="n1_warning_local_set_aside">Se usó el .sav que está junto a este juego, que es más nuevo. Tu partida anterior quedó en Ajustes › Partidas › Apartadas.</string>
+    <!-- N1-H2: preferences.json de otra versión de la app. -->
+    <string name="n1_prefs_read_only">Tus datos de la biblioteca son de otra versión de PocketGB. Esta versión no los modificará: los cambios de favoritos, nombres u ocultos de ahora no se guardarán.</string>
+</resources>

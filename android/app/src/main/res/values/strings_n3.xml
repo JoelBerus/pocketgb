@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N3 Android: biblioteca y detalle adaptables. Textos nuevos de este lote, solo aquí. -->
+<resources>
+    <!-- Biblioteca en horizontal: barra flotante de herramientas (N3b) -->
+    <string name="n3_tools_search">Buscar</string>
+    <string name="n3_tools_filters">Filtros</string>
+    <string name="n3_tools_categories">Categorías</string>
+    <string name="n3_tools_view">Vista y orden</string>
+    <string name="n3_tools_filter_state">Filtro: %1$s</string>
+    <string name="n3_tools_view_state">%1$s, por %2$s</string>
+    <string name="n3_panel_view">Vista</string>
+    <string name="n3_panel_sort">Orden</string>
+    <string name="n3_panel_categories_hint">Las categorías son las carpetas de tu carpeta de juegos. Crea una (por ejemplo «Pokémon»), mueve allí sus juegos y aparecerá aquí.</string>
+
+    <!-- Categorías -->
+    <string name="n3_category_all">Todas</string>
+    <string name="n3_category_root">Sin categoría</string>
+    <string name="n3_category_option">%1$s (%2$d)</string>
+    <string name="n3_section_with_filter">%1$s · %2$s</string>
+
+    <!-- Búsqueda en horizontal -->
+    <string name="n3_search_placeholder">Buscar juegos</string>
+    <string name="n3_search_close">Cerrar la búsqueda</string>
+
+    <!-- Detalle (N3a) -->
+    <string name="n3_details_technical">Información técnica</string>
+    <string name="n3_details_technical_expanded">Desplegada</string>
+    <string name="n3_details_technical_collapsed">Plegada</string>
+    <string name="n3_details_technical_expand">Mostrar la información técnica</string>
+    <string name="n3_details_technical_collapse">Ocultar la información técnica</string>
+</resources>

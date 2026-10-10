@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Ajustes › Controles (SPEC §9, `settings-controls`): opacidad, tamaño, visibilidad,
 /// háptica y disposición. La opacidad es solo visual: el área táctil no cambia.
@@ -8,6 +9,24 @@ struct ControlsSettingsView: View {
     private var gameplay: GameplaySettings { state.gameplay }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                .onChange(of: gameplay.data.dpadStyle) { _, style in
+                    if style == .separated { SeparateArrowsTip().invalidate(reason: .actionPerformed) }   // N9
+                }
+                #if DEBUG
+                .task {
+                    // `-scrollTo <id>`: desplazamiento programático y determinista para las capturas
+                    // (`settings-controls-ax5`, auditoría N2-H5).
+                    guard let target = DebugArguments.value("-scrollTo") else { return }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                #endif
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 Picker("Opacidad", selection: binding(\.opacity)) {
@@ -20,14 +39,23 @@ struct ControlsSettingsView: View {
                 Text("Cambia solo el aspecto sobre el juego: cada control conserva su área táctil y su sombra para leerse sobre escenas claras.")
             }
             Section {
+                if gameplay.data.dpadStyle != .separated {
+                    TipView(SeparateArrowsTip())   // N9
+                        .id("settings-tip-arrows")
+                }
                 Picker("Cruceta", selection: binding(\.dpadStyle)) {
                     ForEach(DpadStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Picker("Diagonales", selection: binding(\.dpadDiagonals)) {
+                    ForEach(DpadDiagonals.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("settings-dpad-diagonals")
+                .id("settings-dpad-diagonals")
             } header: {
                 Text("Cruceta")
             } footer: {
-                Text("Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de PlayStation. Ambas admiten diagonales.")
+                Text("Game Boy: una cruz. Flechas separadas: cuatro botones con espacio entre ellos, como un mando de PlayStation. Diagonales reducidas: solo cuentan si apuntas casi a la esquina, así arriba no se convierte en arriba‑derecha sin querer. Desactivadas: solo las cuatro direcciones.")
             }
             Section("Controles") {
                 Picker("Tamaño", selection: binding(\.sizeScale)) {

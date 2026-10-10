@@ -25,6 +25,12 @@ interface SaveMirror {
     fun snapshot(): Snapshot
 
     /**
+     * ND20 (m): dónde vive este espejo (carpeta + nombre), para el historial de escrituras propias. Un espejo en otra
+     * ubicación (un duplicado del mismo ROM) no hereda el linaje. `null` = desconocida.
+     */
+    val location: String? get() = null
+
+    /**
      * Escribe el espejo (no se declara atómico). Devuelve la fecha de modificación observada justo
      * después de escribir, para el historial de escrituras propias (`SaveStore.recordSuccessfulMirror`),
      * o `null` si el proveedor no la da. Lanza ante cualquier fallo.

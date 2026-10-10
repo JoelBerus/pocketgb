@@ -1,10 +1,24 @@
 import SwiftUI
 
 /// Detalle del juego (SPEC §9, `game-details`): captura o placeholder, metadatos y la
-/// acción dominante para jugar. Estados y ajustes por juego llegan en D5/D6.
+/// acción dominante para jugar. N3a: se adapta al espacio disponible (`DetailLayout`): en
+/// horizontal, o con ≥ 600 pt de ancho, la imagen entera a la izquierda y la información con su
+/// propio scroll a la derecha («Jugar»/«Continuar» visible sin desplazar); en vertical, la imagen
+/// ocupa como máximo el 45 % del alto. Incluye la «Información técnica» plegable (paridad con Android).
 struct GameDetailsView: View {
     @Environment(AppState.self) private var state
+    @Environment(\.dynamicTypeSize) private var typeSize
     let entryID: String
+    @State private var technical: TechnicalLoad = .idle
+    @State private var technicalExpanded = GameDetailsView.expandsTechnicalInfoByDefault
+    @State private var copiedSHA = false
+
+    /// Estado de la «Información técnica»: se lee al desplegarla (no lee el ROM si no se mira).
+    enum TechnicalLoad: Equatable {
+        case idle, loading
+        case loaded(GameTechnicalInfo)
+        case failed(String)
+    }
 
     var body: some View {
         if let entry = state.library.entries.first(where: { $0.id == entryID }),
@@ -17,44 +31,14 @@ struct GameDetailsView: View {
     }
 
     private func content(_ entry: RomEntry) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PocketSpacing.md) {
-                GameArtworkView(entry: entry)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("game-details-artwork")
-                VStack(alignment: .leading, spacing: PocketSpacing.xs) {
-                    HStack(spacing: PocketSpacing.xs) {
-                        ConsoleChip(badge: entry.badge)
-                        Text(entry.subfolder.isEmpty ? entry.fileName : "\(entry.subfolder) · \(entry.fileName)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Text(state.libraryPrefs.displayTitle(entry))
-                        .font(.title2.bold())
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                stats(entry)
-                primaryAction(entry)
-                linkAction(entry)
-                secondaryActions(entry)
-                Button(role: .destructive) {
-                    state.hideCandidate = entry
-                } label: {
-                    Label("Ocultar de PocketGB", systemImage: "eye.slash")
-                        .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
-                }
-                .pocketGlassButton()
-                Text("Ocultar no borra el ROM ni la partida.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+        GeometryReader { proxy in
+            let layout = DetailLayout.make(available: proxy.size,
+                                           aspectRatio: ArtworkStyle.console.frameAspectRatio(for: entry.console))
+            switch layout.kind {
+            case .twoColumns: twoColumns(entry, layout)
+            case .singleColumn: singleColumn(entry, layout)
             }
-            .padding(.horizontal, PocketSpacing.md)
-            .padding(.bottom, PocketSpacing.xl)
         }
-        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(PocketColor.backgroundBase.ignoresSafeArea())
         .navigationTitle(state.libraryPrefs.displayTitle(entry))
         .navigationBarTitleDisplayMode(.inline)
@@ -72,16 +56,330 @@ struct GameDetailsView: View {
                 }
             }
         }
+        .task(id: TechnicalKey(id: entry.id, cloud: entry.cloud, expanded: technicalExpanded)) {
+            await loadTechnicalInfo(entry)
+        }
     }
 
-    /// Última vez jugado, partida junto al ROM y tamaño, en tres columnas.
+    /// Vertical: una columna con la imagen limitada al 45 % del alto, centrada.
+    private func singleColumn(_ entry: RomEntry, _ layout: DetailLayout) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: PocketSpacing.md) {
+                artwork(entry, layout)
+                    .frame(maxWidth: .infinity)
+                header(entry)
+                stats(entry)
+                primaryAction(entry)
+                linkAction(entry)
+                secondaryActions(entry)
+                progressSection(entry)
+                technicalSection(entry)
+                hideAction()
+            }
+            .padding(.horizontal, DetailLayout.margin)
+            .padding(.bottom, PocketSpacing.xl)
+        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .accessibilityIdentifier("game-details-single-column")
+    }
+
+    /// Horizontal o ancho: la imagen entera a la izquierda (no se desplaza) y la información a la
+    /// derecha con su propio scroll; la acción principal va justo bajo el título.
+    private func twoColumns(_ entry: RomEntry, _ layout: DetailLayout) -> some View {
+        HStack(alignment: .top, spacing: DetailLayout.columnSpacing) {
+            artwork(entry, layout)
+                .padding(.top, PocketSpacing.xs)
+            ScrollView {
+                VStack(alignment: .leading, spacing: PocketSpacing.md) {
+                    header(entry)
+                    primaryAction(entry)
+                    stats(entry)
+                    linkAction(entry)
+                    secondaryActions(entry)
+                    progressSection(entry)
+                    technicalSection(entry)
+                    hideAction()
+                }
+                .padding(.top, PocketSpacing.xs)
+                .padding(.bottom, PocketSpacing.xl)
+                .padding(.trailing, PocketSpacing.xs)   // el indicador de scroll no pisa los valores
+            }
+            // Suave: el duro dibujaba una banda opaca rectangular solo sobre esta columna (H10).
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollIndicators(.automatic)
+        }
+        .padding(.horizontal, DetailLayout.margin)
+        .accessibilityIdentifier("game-details-two-columns")
+    }
+
+    private func artwork(_ entry: RomEntry, _ layout: DetailLayout) -> some View {
+        GameArtworkView(entry: entry, style: .console)
+            .frame(width: layout.artwork.width, height: layout.artwork.height)
+            .accessibilityIdentifier("game-details-artwork")
+    }
+
+    private func header(_ entry: RomEntry) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.xs) {
+            // Carpetas y archivo (N1b): «Pokémon › 2ª generación · archivo.gb». Si no cabe en
+            // una línea junto a las insignias, va debajo y entera (nunca recortada).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PocketSpacing.xs) {
+                    badges(entry)
+                    location(entry).lineLimit(1).fixedSize()
+                }
+                VStack(alignment: .leading, spacing: PocketSpacing.xxs) {
+                    HStack(spacing: PocketSpacing.xs) { badges(entry) }
+                    location(entry).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text(state.libraryPrefs.displayTitle(entry))
+                .font(.title2.bold())
+                .fixedSize(horizontal: false, vertical: true)
+            if entry.isDuplicate { alsoIn(entry) }
+            organization(entry)
+        }
+    }
+
+    /// N4: dónde se ve si se movió en la app (además de la ruta real de arriba) y sus etiquetas
+    /// (en el detalle y el centro, no en las tarjetas: N4A-8).
+    @ViewBuilder private func organization(_ entry: RomEntry) -> some View {
+        let prefs = state.libraryPrefs
+        if prefs.isMovedInApp(entry) {
+            Label {
+                Text("Se ve en «\(CategoryPaths.display(prefs.categoryPath(entry)))»")
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: MovedBadge.systemImage)
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Movido en la app. Se ve en \(CategoryPaths.display(prefs.categoryPath(entry)))")
+            .accessibilityIdentifier("game-details-shown-in")
+        }
+        let tags = prefs.tags(entry)
+        if !tags.isEmpty {
+            Label {
+                Text(tags.joined(separator: " · "))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "tag")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Etiquetas: \(tags.joined(separator: ", "))")
+            .accessibilityIdentifier("game-details-tags")
+        }
+    }
+
+    private func hideAction() -> some View {
+        VStack(spacing: PocketSpacing.md) {
+            Button(role: .destructive) {
+                if let entry = state.library.entries.first(where: { $0.id == entryID }) {
+                    state.hideCandidate = entry
+                }
+            } label: {
+                Label("Ocultar de PocketGB", systemImage: "eye.slash")
+                    .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+            }
+            .pocketGlassButton()
+            Text("Ocultar no borra el ROM ni la partida.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: Información técnica
+
+    private struct TechnicalKey: Hashable {
+        let id: String
+        let cloud: RomEntry.CloudState
+        let expanded: Bool
+    }
+
+    static var expandsTechnicalInfoByDefault: Bool {
+        #if DEBUG
+        return DebugArguments.arguments.contains("-expandTechnicalInfo")
+        #else
+        return false
+        #endif
+    }
+
+    /// Lee la cabecera con el núcleo fuera del hilo principal, solo con la sección desplegada y
+    /// una vez por juego (no vuelve a leer al plegar y desplegar).
+    private func loadTechnicalInfo(_ entry: RomEntry) async {
+        guard technicalExpanded else { return }
+        if case .loaded = technical { return }
+        if let problem = entry.problem {
+            technical = .failed(problem.message)
+            return
+        }
+        guard entry.cloud == .current else {
+            technical = .failed(GameTechnicalInfoLoader.Failure.notDownloaded.message)
+            return
+        }
+        technical = .loading
+        let url = Self.technicalURL(entry)
+        let console = entry.console
+        // Plegar (o salir) cancela esta tarea y, con ella, la lectura en segundo plano: no quedan
+        // lecturas de hasta 32 MiB en paralelo ni la sección en «Leyendo…» (auditoría N3, H5).
+        let result = await GameTechnicalInfoLoader.loadCancellable(url: url, console: console)
+        guard !Task.isCancelled, result != .failure(.cancelled) else {
+            if technical == .loading { technical = .idle }
+            return
+        }
+        switch result {
+        case .success(let info): technical = .loaded(info)
+        case .failure(let failure): technical = .failed(failure.message)
+        }
+    }
+
+    /// El ROM del juego. En DEBUG, `-demoROMDir <carpeta>` hace que la biblioteca de
+    /// demostración lea los ROMs de prueba libres de esa carpeta (capturas con datos reales).
+    static func technicalURL(_ entry: RomEntry) -> URL {
+        #if DEBUG
+        if let dir = DebugArguments.value("-demoROMDir"), entry.url.path.hasPrefix("/demo/") {
+            return URL(fileURLWithPath: dir).appendingPathComponent(entry.fileName)
+        }
+        #endif
+        return entry.url
+    }
+
+    private func technicalSection(_ entry: RomEntry) -> some View {
+        DisclosureGroup(isExpanded: $technicalExpanded) {
+            VStack(alignment: .leading, spacing: 0) {
+                switch technical {
+                case .idle, .loading:
+                    HStack(spacing: PocketSpacing.sm) {
+                        ProgressView()
+                        Text("Leyendo la cabecera…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minHeight: PocketSpacing.minTouch)
+                case .failed(let message):
+                    Label(message, systemImage: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, PocketSpacing.xs)
+                case .loaded(let info):
+                    ForEach(info.rows) { row in
+                        technicalRow(row)
+                        Divider()
+                    }
+                    shaRow(info.sha256)
+                }
+            }
+            .padding(.top, PocketSpacing.xs)
+        } label: {
+            Label("Información técnica", systemImage: "cpu")
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .frame(minHeight: PocketSpacing.minTouch)
+        }
+        .accessibilityIdentifier("game-details-technical")
+    }
+
+    /// Etiqueta y valor en una línea; si no caben (AX5, columna estrecha), uno debajo de otro.
+    private func technicalRow(_ row: GameTechnicalInfo.Row) -> some View {
+        let value = HStack(spacing: PocketSpacing.xxs) {
+            if row.warning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(PocketColor.danger)
+                    .accessibilityHidden(true)
+            }
+            Text(row.value)
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: PocketSpacing.md) {
+                Text(row.label).foregroundStyle(.secondary)
+                Spacer(minLength: PocketSpacing.xs)
+                value.multilineTextAlignment(.trailing)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.label).foregroundStyle(.secondary)
+                value.fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.label): \(row.warning ? "aviso, " : "")\(row.value)")
+    }
+
+    /// SHA-256 completo, seleccionable y con un botón para copiarlo.
+    private func shaRow(_ sha: String) -> some View {
+        VStack(alignment: .leading, spacing: PocketSpacing.xs) {
+            Text("Huella SHA-256")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(sha)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("game-details-sha256")
+            Button {
+                UIPasteboard.general.string = sha
+                copiedSHA = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    copiedSHA = false
+                }
+            } label: {
+                Label(copiedSHA ? "Copiada" : "Copiar huella", systemImage: copiedSHA ? "checkmark" : "doc.on.doc")
+                    .font(.subheadline)
+                    .frame(minHeight: PocketSpacing.minTouch)
+            }
+            .pocketGlassButton()
+            .accessibilityIdentifier("game-details-copy-sha256")
+        }
+        .padding(.vertical, PocketSpacing.sm)
+    }
+
+    @ViewBuilder private func badges(_ entry: RomEntry) -> some View {
+        ConsoleChip(badge: entry.badge)
+        if entry.isDuplicate { DuplicateBadge() }
+        if state.libraryPrefs.isMovedInApp(entry) { MovedBadge() }
+    }
+
+    private func location(_ entry: RomEntry) -> some View {
+        Text(entry.locationText)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Ubicación: \(entry.locationText)")
+            .accessibilityIdentifier("game-details-location")
+    }
+
+    /// Duplicados (N1a): las otras rutas con el mismo ROM. Comparten partida, estados y ajustes.
+    private func alsoIn(_ entry: RomEntry) -> some View {
+        let paths = entry.duplicatePaths.map(RomEntry.displayPath)
+        return Label {
+            Text("También en: \(paths.joined(separator: "; "))")
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "doc.on.doc")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("game-details-also-in")
+    }
+
+    /// Última vez jugado, partida junto al ROM y tamaño, en tres columnas (en una sola columna con
+    /// tamaños de accesibilidad, como Android con fuente grande: N3a).
     private func stats(_ entry: RomEntry) -> some View {
         let lastPlayed = state.libraryPrefs.lastPlayed(entry)
-        return HStack(alignment: .top, spacing: 0) {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: PocketSpacing.xs))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+        return layout {
             stat("Jugado", lastPlayed.map(GameStatus.relative) ?? "Nunca")
-            Divider()
+            if !typeSize.isAccessibilitySize { Divider() }
             stat("Partida", entry.mirrorSaveDate.map(GameStatus.relative) ?? "—")
-            Divider()
+            if !typeSize.isAccessibilitySize { Divider() }
             stat("Tamaño", ByteCountFormatter.string(fromByteCount: Int64(entry.sizeBytes), countStyle: .file))
         }
         .padding(.vertical, PocketSpacing.sm)
@@ -114,7 +412,7 @@ struct GameDetailsView: View {
                 Button {
                     state.open(entry: entry, mode: resumable ? .resumeAutomatic : .fresh)
                 } label: {
-                    Label(resumable ? "Continuar" : "Jugar", systemImage: "play.fill")
+                    Label(resumable ? state.continueTitle(entry) : "Jugar", systemImage: "play.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
                 }
@@ -166,36 +464,61 @@ struct GameDetailsView: View {
         }
     }
 
-    /// Favorito, estados y ajustes: estos dos últimos llegan en D5/D6.
+    /// N6 · progreso (tiempo, hitos, lector Pokémon), con la huella confirmada.
+    @ViewBuilder private func progressSection(_ entry: RomEntry) -> some View {
+        if let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry) {
+            GameProgressSection(entry: entry, fingerprint: fingerprint)
+            // N7b · exportar e importar la partida.
+            if entry.isPlayable { GameSaveTravelSection(entry: entry, fingerprint: fingerprint) }
+        }
+    }
+
+    /// Favorito, momentos y ajustes. Si no caben en una fila (AX5 o la columna estrecha del
+    /// horizontal), van en columna: nunca se recortan.
     private func secondaryActions(_ entry: RomEntry) -> some View {
         GlassEffectContainer(spacing: PocketSpacing.xs) {
-            HStack(spacing: PocketSpacing.xs) {
-                let favorite = state.libraryPrefs.isFavorite(entry)
-                Button {
-                    state.libraryPrefs.toggleFavorite(entry)
-                } label: {
-                    Label("Favorito", systemImage: favorite ? "star.fill" : "star")
-                        .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
-                }
-                .accessibilityLabel(favorite ? "Quitar de favoritos" : "Añadir a favoritos")
-                Button {} label: {
-                    Label("Estados", systemImage: "square.stack")
-                        .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
-                }
-                .disabled(true)
-                .accessibilityHint("Próximamente")
-                Button {
-                    state.gameSettingsEntry = entry
-                } label: {
-                    Label("Ajustes", systemImage: "slider.horizontal.3")
-                        .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
-                }
-                .accessibilityLabel("Ajustes del juego")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PocketSpacing.xs) { secondaryButtons(entry) }
+                VStack(spacing: PocketSpacing.xs) { secondaryButtons(entry) }
             }
             .labelStyle(.titleAndIcon)
             .font(.subheadline)
             .pocketGlassButton()
         }
+    }
+
+    @ViewBuilder private func secondaryButtons(_ entry: RomEntry) -> some View {
+        let favorite = state.libraryPrefs.isFavorite(entry)
+        Button {
+            state.libraryPrefs.toggleFavorite(entry)
+        } label: {
+            Label("Favorito", systemImage: favorite ? "star.fill" : "star")
+                .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
+                .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+        }
+        .accessibilityLabel(favorite ? "Quitar de favoritos" : "Añadir a favoritos")
+        let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry)
+        Button {
+            if let fingerprint { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
+        } label: {
+            Label("Momentos", systemImage: "bookmark")
+                .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
+                .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+        }
+        .disabled(fingerprint == nil)
+        .accessibilityHint(fingerprint == nil ? "Disponible cuando se haya leído el juego" : "")
+        .accessibilityIdentifier("game-details-moments-button")
+        Button {
+            state.gameSettingsEntry = entry
+        } label: {
+            Label("Ajustes", systemImage: "slider.horizontal.3")
+                .lineLimit(1)
+                .fixedSize()   // nunca «Moment…»: si no cabe la fila, ViewThatFits pasa a columna
+                .frame(maxWidth: .infinity, minHeight: PocketSpacing.minTouch)
+        }
+        .accessibilityLabel("Ajustes del juego")
     }
 }
 
@@ -227,8 +550,9 @@ struct GameContextMenu: View {
             state.libraryPrefs.toggleFavorite(entry)
         }
         Button("Renombrar", systemImage: "pencil") { state.renamingEntry = entry }
-        Button("Estados (próximamente)", systemImage: "square.stack") {}
-            .disabled(true)
+        if let fingerprint = state.libraryPrefs.confirmedFingerprint(of: entry) {
+            Button("Momentos", systemImage: "bookmark") { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
+        }
         Button("Ajustes del juego", systemImage: "slider.horizontal.3") { state.gameSettingsEntry = entry }
         Divider()
         Button("Ocultar de PocketGB", systemImage: "eye.slash", role: .destructive) {

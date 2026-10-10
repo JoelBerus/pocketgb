@@ -180,15 +180,22 @@ struct GBATests {
     }
 
     @Test func perGameOverridesForceSaveTypeAndRTC() throws {
-        var data = GameplaySettingsData()
-        data.perGame["x.gba"] = GameOverrides(gbaSaveType: 3, gbaRTC: 2, gbaUseBIOS: false)
-        let o = data.emulation(for: "x.gba")
+        let data = GameplaySettingsData()
+        // N1a: los ajustes van por huella en LibraryPreferences; aquí solo se resuelven.
+        let forced = GameOverrides(gbaSaveType: 3, gbaRTC: 2, gbaUseBIOS: false)
+        let o = data.emulation(with: forced)
         #expect(o.gbaSaveType == 3 && o.gbaRTC == 2 && !o.gbaUseBIOS)
-        let global = data.emulation(for: "otro.gba")
+        let global = data.emulation(with: nil)
         #expect(global.gbaSaveType == 0 && global.gbaRTC == 0 && global.gbaUseBIOS)
-        // Se guardan y se leen; un juego sin ajustes nunca deja una entrada vacía.
-        let decoded = try JSONDecoder().decode(GameplaySettingsData.self, from: JSONEncoder().encode(data))
-        #expect(decoded.perGame["x.gba"]?.gbaSaveType == 3)
+        // Se guardan y se leen por huella; un juego sin ajustes nunca deja una entrada vacía.
+        let prefs = LibraryPreferences(fileURL: nil)
+        var game = LibraryPreferencesTests.entry("x.gba", "X", color: false)
+        game.fingerprint = "fp-x"
+        prefs.setOverrides(forced, for: game)
+        let decoded = try JSONDecoder().decode(LibraryPreferencesData.self, from: JSONEncoder().encode(prefs.data))
+        #expect(decoded.games["fp-x"]?.overrides.gbaSaveType == 3)
+        prefs.setOverrides(GameOverrides(), for: game)
+        #expect(prefs.data.games["fp-x"] == nil)
         #expect(GameOverrides().isEmpty && !GameOverrides(gbaRTC: 1).isEmpty)
 
         // El tipo forzado cambia el tamaño de la partida que el núcleo espera: Flash de 64 KiB
@@ -238,15 +245,16 @@ struct GBATests {
         #expect(try diskState() == before)
     }
 
-    /// INT-H2: un `.auto` de otra configuración (aquí, con BIOS real) se trata como no vigente.
-    @Test func automaticStateOfAnotherConfigurationIsNotCurrent() throws {
+    /// INT-H2 / N-final H1: un `.auto` de otra configuración (aquí, con BIOS real) no carga y se distingue de uno
+    /// obsoleto: se conserva (ND21).
+    @Test func automaticStateOfAnotherConfigurationIsRejectedAsOtherConfiguration() throws {
         let rom = Self.rom()
         let bios = Data(count: GBACoreBridge.biosBytes)
         let other = try GBACoreBridge()
         _ = try other.loadROM(rom, bios: bios, unixTime: 0)
         let state = try other.stateSave()
         let session = try EmulatorSession(romData: rom, savesDirectory: dir, console: .gameBoyAdvance, onAudioInterrupted: {})
-        #expect(throws: EmulatorSession.StateError.notCurrent) { try session.start(restoring: state) }
+        #expect(throws: EmulatorSession.StateError.otherConfiguration) { try session.start(restoring: state) }
     }
 
     // MARK: - Tipo de partida forzado, de extremo a extremo (G8-H2, G8-H3)
@@ -363,7 +371,8 @@ struct GBATests {
         #expect(data.perGame["a.gba"]?.isEmpty == true)
         #expect(data.perGame["b.gba"]?.isEmpty == true)
         #expect(data.perGame["c.gba"] == GameOverrides(gbaSaveType: 6, gbaRTC: 2, gbaUseBIOS: false))
-        #expect(data.emulation(for: "a.gba").gbaSaveType == 0 && data.emulation(for: "a.gba").gbaRTC == 0)
+        let a = data.emulation(with: data.perGame["a.gba"])
+        #expect(a.gbaSaveType == 0 && a.gbaRTC == 0)
     }
 
     /// Caso de G8-H2: EEPROM 512 B forzada, local de 512 B y espejo de 8 KiB más reciente. Antes
@@ -390,5 +399,57 @@ struct GBATests {
         let fingerprint = result.session.info.fingerprint
         let saved = try #require(try SaveStore(directory: dir, fingerprint: fingerprint).load())
         #expect(saved.count == 32 * 1024 && saved[0] == 0x42)
+    }
+
+    // MARK: Auditoría N-final, H1 (ND21)
+
+    /// H1: un `.pgbm` jugado con BIOS real se importa con su punto para continuar; aquí no hay BIOS, «Continuar» lo
+    /// rechaza por configuración y **el AUTO sigue en disco, en su ranura** (antes se borraba sin copia).
+    @Test func importedStateOfAnotherConfigurationSurvivesContinue() throws {
+        let rom = Self.rom()
+        let bios = Data(count: GBACoreBridge.biosBytes)
+        let probe = try GBACoreBridge()
+        let info = try probe.loadROM(rom, bios: nil, unixTime: 0)
+        let save = pat(0x5A, 32_768)
+        // Equipo de origen: juega con BIOS y exporta el paquete con su estado automático.
+        let a = dir.appendingPathComponent("A", isDirectory: true)
+        let savesA = a.appendingPathComponent("Saves", isDirectory: true)
+        try FileManager.default.createDirectory(at: savesA, withIntermediateDirectories: true)
+        let storeA = SaveStore(directory: savesA, fingerprint: info.fingerprint)
+        try storeA.save(save)
+        let origin = try EmulatorSession(romData: rom, savesDirectory: savesA, console: .gameBoyAdvance, bios: bios,
+                                         onAudioInterrupted: {})
+        origin.start(); origin.pause()
+        let state = try origin.saveState().state
+        origin.stop()
+        let played = try #require(try storeA.load())
+        let statesA = StateStore(root: a.appendingPathComponent("States"), fingerprint: info.fingerprint)
+        try statesA.save(state, thumbnail: nil, to: .auto)
+        let digest = Data((0..<32).map { i in
+            UInt8(info.sha256.dropFirst(2 * i).prefix(2), radix: 16)!
+        })
+        let package = try SaveExport.package(.init(fingerprint: info.fingerprint, romDigest: digest, console: .gameBoyAdvance),
+                                             store: storeA, states: statesA, deviceName: "iPhone A")
+        // Este equipo: importa.
+        let b = dir.appendingPathComponent("B", isDirectory: true)
+        let savesB = b.appendingPathComponent("Saves", isDirectory: true)
+        try FileManager.default.createDirectory(at: savesB, withIntermediateDirectories: true)
+        let storeB = SaveStore(directory: savesB, fingerprint: info.fingerprint)
+        let statesB = StateStore(root: b.appendingPathComponent("States"), fingerprint: info.fingerprint)
+        let plan = try SaveImport.evaluate(package, cartridge: .init(info: info, validSizes: EmulatorSession.validSaveSizes(info)),
+                                           local: nil, known: [])
+        #expect(try SaveImport.apply(plan, choice: nil, store: storeB, states: statesB,
+                                     moments: MomentStore(root: b.appendingPathComponent("Moments"), fingerprint: info.fingerprint),
+                                     ownership: FingerprintOwnership()) == .installed(continuation: true))
+        let auto = try statesB.load(.auto)
+        // «Continuar» sin BIOS: el núcleo lo rechaza por configuración y el AUTO no se toca.
+        let session = try EmulatorSession(romData: rom, savesDirectory: savesB, console: .gameBoyAdvance, onAudioInterrupted: {})
+        var refusal: EmulatorSession.StateError?
+        do { try session.start(restoring: auto) } catch let e as EmulatorSession.StateError { refusal = e }
+        #expect(refusal == .otherConfiguration)
+        #expect(AppState.retireAutomaticState(after: try #require(refusal), in: statesB) == false)
+        #expect(try statesB.load(.auto) == auto)
+        #expect(statesB.setAsideAutos().isEmpty)
+        #expect(try storeB.load() == played)
     }
 }

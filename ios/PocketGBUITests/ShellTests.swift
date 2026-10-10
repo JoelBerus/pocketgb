@@ -74,8 +74,11 @@ final class ShellFolderPickerTests: XCTestCase {
 final class ShellLibraryTests: XCTestCase {
     @MainActor
     func testDetailsAndHideGame() throws {
+        // N3: en horizontal no hay filtro segmentado; el catálogo puede acabar en horizontal.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard"]
+        // N4: sin estanterías (`-demoHome off`): la tarjeta de «Todos los juegos» queda arriba.
+        app.launchArguments = ["-uiStyle", "light", "-demoLibrary", "standard", "-demoHome", "off"]
         app.launch()
 
         let card = app.buttons["game-card-Pruebas/rtc3test.gb"]
@@ -128,5 +131,49 @@ final class ShellLinkTests: XCTestCase {
         XCTAssertFalse(app.buttons["Estados guardados"].exists)
         app.buttons["pause-link-exit"].tap()
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "No volvió a las tabs")
+    }
+}
+
+/// N2: la cruceta conserva su elemento de VoiceOver y el editor ajusta la separación de las
+/// flechas separadas (ND10), que «Restablecer» devuelve al 100 % (necesita `FIXTURE_DIR`).
+final class ShellControlsTests: XCTestCase {
+    @MainActor
+    func testDpadAccessibilityAndArrowSpacingEditor() throws {
+        let fixtures = ProcessInfo.processInfo.environment["FIXTURE_DIR"] ?? ""
+        try XCTSkipIf(fixtures.isEmpty, "Sin FIXTURE_DIR")
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        // `-dpadStyle` deja los ajustes de controles solo en memoria.
+        app.launchArguments = ["-uiStyle", "dark", "-rom", "\(fixtures)/dmg-acid2.gb", "-dpadStyle", "separated"]
+        app.launch()
+
+        let dpad = app.descendants(matching: .any)["control-dpad"]
+        XCTAssertTrue(dpad.waitForExistence(timeout: 15), "La cruceta no tiene elemento accesible")
+        XCTAssertEqual(dpad.label, "Cruceta")
+        for id in ["control-a", "control-b", "control-start", "control-select"] {
+            XCTAssertTrue(app.descendants(matching: .any)[id].exists, "Falta \(id)")
+        }
+        let before = dpad.frame.width
+        XCTAssertGreaterThanOrEqual(before, 44)
+
+        app.buttons["hud-menu"].tap()
+        let customize = app.buttons["Personalizar controles"]
+        XCTAssertTrue(customize.waitForExistence(timeout: 5))
+        customize.tap()
+        // Elegir la cruceta en el editor muestra el tamaño y la separación.
+        XCTAssertTrue(dpad.waitForExistence(timeout: 5))
+        dpad.tap()
+        let farther = app.buttons["editor-arrows-farther"]
+        XCTAssertTrue(farther.waitForExistence(timeout: 5), "Sin control de separación")
+        XCTAssertTrue(app.staticTexts["Separación de las flechas: 100 por ciento"].exists)
+        farther.tap()
+        XCTAssertTrue(app.staticTexts["Separación de las flechas: 110 por ciento"].waitForExistence(timeout: 5))
+        // La zona táctil sigue a la geometría: el marco de la cruceta crece con la separación.
+        XCTAssertGreaterThan(dpad.frame.width, before + 4, "\(dpad.frame.width) vs \(before)")
+        app.buttons["Restablecer"].tap()
+        XCTAssertTrue(app.staticTexts["Separación de las flechas: 100 por ciento"].waitForExistence(timeout: 5))
+        XCTAssertEqual(dpad.frame.width, before, accuracy: 0.5)
+        app.buttons["Listo"].tap()
+        XCTAssertFalse(farther.waitForExistence(timeout: 2))
     }
 }

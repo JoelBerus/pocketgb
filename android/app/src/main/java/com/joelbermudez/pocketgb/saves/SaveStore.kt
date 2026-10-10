@@ -120,6 +120,63 @@ class SaveStore(
         ops.syncDirectory(backupsDirectory)
     }
 
+    /** Una partida apartada fuera de la rotación ([setAsideMirrorLoser]): nombre del archivo en `backups/` y fecha. */
+    class SetAsideInfo(val name: String, val dateMs: Long?)
+
+    private fun isSetAsideName(name: String) = name.startsWith("$fingerprint.mirror-") && name.endsWith(".sav")
+
+    /**
+     * N1 · aparta [data] **fuera de la rotación** de backups: `backups/<huella>.mirror-<unix>-<rand8>.sav`. Es el perdedor
+     * de una resolución entre la local y un espejo que no es una escritura propia (un duplicado con su propio `.sav`, un
+     * `.sav` de otro juego con el mismo nombre…): en la rotación desaparecería tras cinco guardados. Nunca se pisa (nombre
+     * único) ni se borra; si ese mismo contenido ya está apartado no se repite. Temporal + `fsync` + rename.
+     */
+    fun setAsideMirrorLoser(
+        data: ByteArray,
+        unixSeconds: Long = System.currentTimeMillis() / 1000,
+        rand8: () -> String = { UUID.randomUUID().toString().replace("-", "").take(8) },
+    ) = lock.withLock {
+        for (name in ops.list(backupsDirectory)) {
+            if (!isSetAsideName(name)) continue
+            val same = try {
+                ops.readBytes(File(backupsDirectory, name), MAX_SAVE_BYTES).contentEquals(data)
+            } catch (_: IOException) {
+                false
+            }
+            if (same) return@withLock
+        }
+        if (!ops.exists(backupsDirectory)) ops.mkdirs(backupsDirectory)
+        var target: File
+        do {
+            target = File(backupsDirectory, "$fingerprint.mirror-$unixSeconds-${rand8()}.sav")
+        } while (ops.exists(target))
+        val tmp = File(target.path + ".tmp")
+        ops.writeSynced(tmp, data)
+        ops.atomicReplace(tmp, target)
+        ops.syncDirectory(backupsDirectory)
+    }
+
+    /** Partidas apartadas por [setAsideMirrorLoser], la más reciente primero. */
+    fun setAside(): List<SetAsideInfo> =
+        ops.list(backupsDirectory).filter(::isSetAsideName)
+            .map { SetAsideInfo(it, ops.lastModified(File(backupsDirectory, it))) }
+            .sortedWith(compareByDescending<SetAsideInfo> { it.dateMs ?: Long.MIN_VALUE }.thenByDescending { it.name })
+
+    /**
+     * Restaura una partida apartada como [restore]: la actual pasa antes a `.1`. La apartada no se borra (sigue
+     * restaurable). Rechaza nombres que no sean de esta huella y tamaños que el cartucho no acepta.
+     */
+    fun restoreSetAside(name: String, validSizes: Set<Int>? = null): Unit = lock.withLock {
+        require(isSetAsideName(name) && '/' !in name) { "No es una partida apartada de este juego: $name" }
+        val data = ops.readBytes(File(backupsDirectory, name), MAX_SAVE_BYTES)
+        if (validSizes != null) {
+            if (data.size !in validSizes) throw InvalidBackupException(data.size, validSizes)
+            knownSizes = validSizes
+        }
+        save(data)
+        Unit
+    }
+
     /**
      * Aparta la partida actual (tamaño incorrecto) fuera de la rotación de backups:
      * `backups/<huella>.wrong-size-<unix>-<rand8>.sav`. Nunca se rota ni se borra. El sufijo único evita que
@@ -159,8 +216,8 @@ class SaveStore(
     /**
      * Paso 6 de SPEC §5.2: un `.sav.tmp` huérfano se instala si no hay `.sav` y su tamaño es uno de
      * [validSizes]; si no, se borra. Se borran también todos los temporales huérfanos de esta partida:
-     * `.1.tmp` (formato antiguo) y `.1.<rand>.tmp` de los backups, `wrong-size-*.sav.tmp` de la cuarentena y el
-     * temporal del historial. Fija [validSizes] como los tamaños conocidos de esta partida.
+     * `.1.tmp` (formato antiguo) y `.1.<rand>.tmp` de los backups, `wrong-size-*.sav.tmp` de la cuarentena,
+     * `mirror-*.sav.tmp` de las apartadas (N1) y el temporal del historial. Fija [validSizes] como los tamaños conocidos de esta partida.
      */
     fun recoverOrphans(validSizes: Set<Int>) = lock.withLock {
         knownSizes = validSizes
@@ -177,7 +234,8 @@ class SaveStore(
         for (name in ops.list(backupsDirectory)) {
             val orphanBackup = name.startsWith("$fingerprint.1.") && name.endsWith(".tmp")
             val orphanQuarantine = name.startsWith("$fingerprint.wrong-size-") && name.endsWith(".sav.tmp")
-            if (orphanBackup || orphanQuarantine) ops.delete(File(backupsDirectory, name))
+            val orphanSetAside = name.startsWith("$fingerprint.mirror-") && name.endsWith(".sav.tmp")
+            if (orphanBackup || orphanQuarantine || orphanSetAside) ops.delete(File(backupsDirectory, name))
         }
         ops.delete(File(mirrorHistoryFile.path + ".tmp"))
     }
@@ -187,7 +245,13 @@ class SaveStore(
     /** Escritura confirmada: contenido (hash) y fecha del espejo observada justo tras escribirlo. */
     private class Written(val hash: String, val dateMs: Long?)
 
-    private class MirrorHistory(val successful: List<Written>, val pending: List<String>)
+    private class MirrorHistory(
+        val successful: List<Written>,
+        val pending: List<String>,
+        val received: List<String> = emptyList(),
+        /** ND20 (m): ubicación del espejo de la última escritura confirmada. */
+        val location: String? = null,
+    )
 
     /**
      * ¿Es este espejo (contenido + fecha) una escritura de PocketGB?
@@ -209,22 +273,147 @@ class SaveStore(
     fun recordMirrorAttempt(data: ByteArray) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
-        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT)))
+        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT), h.received, h.location))
     }
 
     /** @param observedDateMs fecha de modificación del espejo leída justo después de escribirlo. */
-    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?) = lock.withLock {
+    fun recordSuccessfulMirror(data: ByteArray, observedDateMs: Long?, location: String? = null) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
         writeHistory(
             MirrorHistory(
                 (listOf(Written(hash, observedDateMs)) + h.successful.filter { it.hash != hash }).take(HISTORY_LIMIT),
                 h.pending.filter { it != hash },
+                h.received,
+                location ?: h.location,
             ),
         )
     }
 
     internal fun mirrorHistoryPending(): List<String> = readHistory().pending
+
+    // MARK: N7a · linaje (N-README §3.4)
+
+    /**
+     * Huellas que cuentan como historial propio del linaje: escrituras del espejo (write-ahead y confirmadas) y, ND20 (b′)
+     * como iOS, las partidas recibidas de fuera e instaladas (importación, cambio externo). Así un espejo que es una
+     * recibida anterior es OWN_OLDER (gana la local) y un historial con solo recibidas decide por linaje, no por fecha.
+     * Cada lista va acotada a las últimas [HISTORY_LIMIT].
+     */
+    fun ownMirrorHashes(): List<String> =
+        readHistory().let { (it.pending + it.successful.map { w -> w.hash } + it.received).distinct() }
+
+    /**
+     * La última partida «nuestra»: la última escritura intentada, la última confirmada y (ND20 b, H1) la última recibida de
+     * fuera. Si la local es una de ellas, no cambió desde entonces: abrir y cerrar sin jugar no crea una divergencia.
+     */
+    fun lastOwnMirrorHashes(): Set<String> =
+        readHistory().let { setOfNotNull(it.pending.firstOrNull(), it.successful.firstOrNull()?.hash, it.received.firstOrNull()) }
+
+    /** ND20 (m): ubicación del espejo de la última escritura confirmada (`null` = historial antiguo o sin escrituras). */
+    fun mirrorLocation(): String? = readHistory().location
+
+    /**
+     * ND20 (d): huellas que este equipo ya tuvo: historial de escrituras, recibidas, copias de seguridad y apartadas. Un
+     * paquete o `.sav` con una de ellas «ya se conoce» y se pregunta antes de instalarlo.
+     */
+    fun knownHashes(): Set<String> {
+        val h = readHistory()
+        val files = backups().map { backupFile(it.index) } + setAside().map { File(backupsDirectory, it.name) }
+        val stored = files.mapNotNull { f -> try { contentHash(ops.readBytes(f, MAX_SAVE_BYTES)) } catch (_: IOException) { null } }
+        return (h.pending + h.successful.map { it.hash } + h.received + stored).toSet()
+    }
+
+    /**
+     * `base_sav_sha256` de un paquete que sale de aquí: la última partida que este equipo instaló o recibió de fuera
+     * (cambio externo del espejo, importación). `null` si nunca recibió ninguna.
+     */
+    fun lineageBase(): String? = readHistory().received.firstOrNull()
+
+    /** Anota que [data] llegó de fuera y se instaló (o se conservó como base): entra en el linaje. */
+    fun recordReceived(data: ByteArray) = recordReceivedHash(contentHash(data))
+
+    fun recordReceivedHash(hash: String) = lock.withLock {
+        val h = readHistory()
+        // H3: la ubicación del espejo (ND20 m) se conserva; perderla desactivaba la comprobación de duplicados.
+        writeHistory(MirrorHistory(h.successful, h.pending, (listOf(hash) + h.received.filter { it != hash }).take(HISTORY_LIMIT), h.location))
+    }
+
+    // MARK: N7b/N7c · origen de la partida («Partida: iPhone · hace 2 h»)
+
+    val originFile: File get() = File(directory, "$fingerprint.origin.json")
+
+    /**
+     * De qué equipo llegó la partida [hash] y cuándo la escribió (`created_ms` del paquete). [stateHash]: SHA-256 del estado
+     * automático que llegó con ella y se instaló (para «Continuar donde lo dejaste en <equipo>» mientras siga siendo el
+     * automático; `null` = no llegó ninguno).
+     */
+    data class Origin(val hash: String, val platform: String, val deviceName: String, val createdMs: Long, val stateHash: String? = null)
+
+    fun recordOrigin(origin: Origin) = lock.withLock {
+        val json = buildJsonObject {
+            put("hash", origin.hash)
+            put("platform", origin.platform)
+            put("name", origin.deviceName)
+            put("created", origin.createdMs)
+            origin.stateHash?.let { put("state", it) }
+        }
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val tmp = File(originFile.path + ".tmp")
+        ops.writeSynced(tmp, json.toString().toByteArray(Charsets.UTF_8))
+        ops.atomicReplace(tmp, originFile)
+    }
+
+    /** El origen anotado, solo si sigue siendo la partida actual [currentHash] (si se jugó aquí después, ya no vale). */
+    fun origin(currentHash: String?): Origin? = try {
+        if (currentHash == null || !ops.exists(originFile)) null
+        else {
+            val o = Json.parseToJsonElement(ops.readBytes(originFile, 1 shl 12).toString(Charsets.UTF_8)).jsonObject
+            val hash = (o["hash"] as? JsonPrimitive)?.contentOrNull
+            val origin = Origin(
+                hash ?: "", (o["platform"] as? JsonPrimitive)?.contentOrNull ?: "",
+                (o["name"] as? JsonPrimitive)?.contentOrNull ?: "", (o["created"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                (o["state"] as? JsonPrimitive)?.contentOrNull,
+            )
+            origin.takeIf { hash == currentHash && it.deviceName.isNotEmpty() }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    // MARK: N7a · copias en conflicto del proveedor
+
+    val providerConflictsFile: File get() = File(directory, "$fingerprint.provider-conflicts.json")
+
+    /** Una copia en conflicto del proveedor junto al juego (`X 2.sav`…): solo se lista; nunca se borra ni se lee. */
+    class ProviderConflict(val name: String, val dateMs: Long?)
+
+    /** Sustituye la lista vista en la última apertura (vacía = ya no hay). Mejor esfuerzo: un fallo no impide jugar. */
+    fun recordProviderConflicts(found: List<ProviderConflict>) = lock.withLock {
+        if (found.isEmpty() && !ops.exists(providerConflictsFile)) return@withLock
+        val json = buildJsonArray {
+            for (c in found.take(32)) add(buildJsonObject {
+                put("name", c.name)
+                if (c.dateMs != null) put("date", c.dateMs) else put("date", JsonNull)
+            })
+        }
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val tmp = File(providerConflictsFile.path + ".tmp")
+        ops.writeSynced(tmp, json.toString().toByteArray(Charsets.UTF_8))
+        ops.atomicReplace(tmp, providerConflictsFile)
+    }
+
+    fun providerConflicts(): List<ProviderConflict> = try {
+        if (!ops.exists(providerConflictsFile)) emptyList()
+        else (Json.parseToJsonElement(ops.readBytes(providerConflictsFile, 1 shl 16).toString(Charsets.UTF_8)) as? JsonArray).orEmpty()
+            .mapNotNull { e ->
+                val o = e as? JsonObject ?: return@mapNotNull null
+                val name = (o["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                ProviderConflict(name, (o["date"] as? JsonPrimitive)?.longOrNull)
+            }
+    } catch (_: Exception) {
+        emptyList()
+    }
 
     private fun writeHistory(history: MirrorHistory) {
         val json = buildJsonObject {
@@ -235,6 +424,8 @@ class SaveStore(
                 })
             })
             put("pending", buildJsonArray { history.pending.forEach { add(JsonPrimitive(it)) } })
+            put("received", buildJsonArray { history.received.forEach { add(JsonPrimitive(it)) } })
+            if (history.location != null) put("location", history.location)
         }
         if (!ops.exists(directory)) ops.mkdirs(directory)
         val tmp = File(mirrorHistoryFile.path + ".tmp")
@@ -257,12 +448,13 @@ class SaveStore(
                 }
             }
             val pending = (root["pending"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            MirrorHistory(successful, pending)
+            val received = (root["received"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            MirrorHistory(successful, pending, received, (root["location"] as? JsonPrimitive)?.contentOrNull)
         }
     } catch (_: Exception) {
         MirrorHistory(emptyList(), emptyList())
     }
 
-    private fun contentHash(data: ByteArray): String =
+    fun contentHash(data: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
 }

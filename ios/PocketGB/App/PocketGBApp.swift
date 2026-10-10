@@ -7,6 +7,10 @@ struct PocketGBApp: App {
     @State private var state = AppState()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        PocketTips.configure()   // N9: consejos locales, sin red
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -93,6 +97,60 @@ struct RootView: View {
             }
         } message: {
             Text(state.alertMessage ?? "")
+        }
+        // N7a · divergencia: se pregunta antes de cargar nada; las dos partidas se conservan.
+        // Alerta (no hoja de acciones) para que «Cancelar» se vea siempre, como en Android: no abre el juego.
+        .alert("Dos partidas distintas", isPresented: Binding(
+            get: { state.divergencePrompt != nil }, set: { if !$0 { state.divergencePrompt = nil } })) {
+            Button("Seguir con la de este iPhone") { state.resolveDivergence(.keepLocal) }
+            Button("Usar la del otro equipo") { state.resolveDivergence(.useOther) }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text(state.divergencePrompt?.message ?? "")
+        }
+        // N7b · importar: «Abrir con PocketGB» y la elección ante una divergencia.
+        .onOpenURL { url in state.handleIncomingFile(url) }
+        .confirmationDialog(state.importPrompt?.title ?? "", isPresented: Binding(
+            get: { state.importPrompt != nil }, set: { if !$0 { state.importPrompt = nil } }),
+                            titleVisibility: .visible) {
+            if state.importPrompt?.stateOnly == true {
+                Button("Continuar donde lo dejaste\(state.importPrompt?.plan.origin.map { " en \($0)" } ?? "")") {
+                    state.resolveImport(.useOther)
+                }
+                Button("Mantener el de este iPhone") { state.resolveImport(.keepLocal) }
+            } else if state.importPrompt?.plan.raw == true {
+                Button("Usar este .sav") { state.resolveImport(.useOther) }
+            } else {
+                Button("Usar la\(state.importPrompt?.plan.origin.map { " de \($0)" } ?? " del paquete")") {
+                    state.resolveImport(.useOther)
+                }
+                Button("Seguir con la de este iPhone") { state.resolveImport(.keepLocal) }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text(state.importPrompt?.message ?? "")
+        }
+        .confirmationDialog("¿De qué juego es «\(state.saveTargetChoice?.fileName ?? "")»?", isPresented: Binding(
+            get: { state.saveTargetChoice != nil }, set: { if !$0 { state.saveTargetChoice = nil } }),
+                            titleVisibility: .visible) {
+            ForEach(state.saveTargetChoice?.candidates ?? [], id: \.id) { entry in
+                Button("\(state.libraryPrefs.displayTitle(entry)) · \(entry.locationText)") {
+                    if let choice = state.saveTargetChoice {
+                        state.saveTargetChoice = nil
+                        state.importSave(choice.data, into: entry)
+                    }
+                }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Hay varios juegos con ese nombre. Elige en cuál importar la partida; se te pedirá confirmación.")
+        }
+        .overlay {
+            if state.travelBusy {
+                ProgressView("Preparando la partida…")
+                    .padding(PocketSpacing.lg)
+                    .pocketGlass(in: RoundedRectangle(cornerRadius: PocketRadius.group))
+            }
         }
     }
 }

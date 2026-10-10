@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -37,15 +38,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.joelbermudez.pocketgb.R
+import com.joelbermudez.pocketgb.library.RomConsole
 import com.joelbermudez.pocketgb.library.RomEntry
 import com.joelbermudez.pocketgb.ui.a11y.LocalLargeFont
 
-/** Chip GB/GBC: texto, nunca solo color. */
+/** Nombre de la consola para lectores de pantalla y textos: «Game Boy», «Game Boy Color» o «Game Boy Advance». */
 @Composable
-fun ConsoleChip(isColor: Boolean, modifier: Modifier = Modifier, announce: Boolean = true) {
-    val description = stringResource(if (isColor) R.string.game_system_gbc else R.string.game_system_gb)
+fun consoleName(console: RomConsole): String = stringResource(
+    when (console) {
+        RomConsole.GB -> R.string.game_system_gb
+        RomConsole.GBC -> R.string.game_system_gbc
+        RomConsole.GBA -> R.string.n8_game_system_gba
+    },
+)
+
+/** Chip GB/GBC/GBA: texto, nunca solo color. */
+@Composable
+fun ConsoleChip(console: RomConsole, modifier: Modifier = Modifier, announce: Boolean = true) {
+    val description = consoleName(console)
     Text(
-        text = if (isColor) "GBC" else "GB",
+        text = console.shortName,
         modifier = modifier
             .width(38.dp)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
@@ -78,9 +90,11 @@ fun GameMetaLine(
     modifier: Modifier = Modifier,
     /** `false` dentro de una tarjeta con etiqueta combinada (R8): chip y favorito no se anuncian aparte. */
     announce: Boolean = true,
+    /** N4: insignias solo con icono (tarjetas estrechas de la cuadrícula y de las estanterías). */
+    compactBadges: Boolean = false,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ConsoleChip(entry.isColor, announce = announce)
+        ConsoleChip(entry.console, announce = announce)
         if (favorite) {
             Icon(
                 Icons.Filled.Star,
@@ -97,6 +111,8 @@ fun GameMetaLine(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+        if (entry.isDuplicate) DuplicateBadge()
+        if (entry.isMovedInApp) MovedBadge(compact = compactBadges, announce = announce)
         Text(
             gameDetailText(entry, lastPlayedAt),
             modifier = Modifier.weight(1f, fill = false),
@@ -108,13 +124,62 @@ fun GameMetaLine(
     }
 }
 
-/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, problema y última partida. */
+/** N1a: otra copia con la misma huella en la carpeta. Discreta: contorno fino y texto, sin color de alerta. */
+@Composable
+fun DuplicateBadge(modifier: Modifier = Modifier) {
+    Text(
+        stringResource(R.string.n1_duplicate),
+        modifier = modifier
+            .testTag("game-duplicate-badge")
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 1,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * N4 (ND3): el juego se ve en otra categoría que la de su carpeta. Discreta, como «Duplicado»: contorno fino, icono de
+ * mover y, si cabe, el texto «Movido en la app»; [compact] = solo el icono (el texto va en la etiqueta de la tarjeta).
+ */
+@Composable
+fun MovedBadge(
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    /** `false` dentro de una tarjeta con etiqueta combinada: el texto ya va en ella (H4, no se lee dos veces). */
+    announce: Boolean = true,
+) {
+    val text = stringResource(R.string.n4_moved_badge)
+    Row(
+        modifier
+            .testTag("game-moved-badge")
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .padding(horizontal = if (compact) 4.dp else 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(
+            Icons.AutoMirrored.Outlined.DriveFileMove,
+            contentDescription = if (compact && announce) text else null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!compact) {
+            Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Texto único para lectores de pantalla: título, sistema, favorito, nuevo, duplicado, movido (N4), problema y última partida. */
 @Composable
 fun rememberGameDescription(entry: RomEntry, favorite: Boolean, lastPlayedAt: Long?): String {
-    val system = stringResource(if (entry.isColor) R.string.game_system_gbc else R.string.game_system_gb)
-    val parts = mutableListOf(entry.title, system)
+    val system = consoleName(entry.console)
+    val parts = mutableListOf(entry.displayTitle, system)
     if (favorite) parts += stringResource(R.string.game_favorite)
     if (entry.isNew) parts += stringResource(R.string.game_new)
+    if (entry.isDuplicate) parts += stringResource(R.string.n1_duplicate)
+    if (entry.isMovedInApp) parts += stringResource(R.string.n4_moved_badge)
     parts += entry.problem?.message ?: if (lastPlayedAt != null) {
         stringResource(R.string.game_status_played, relativeDateText(lastPlayedAt))
     } else {
@@ -176,14 +241,14 @@ fun GameCard(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    entry.title,
+                    entry.displayTitle,
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = titleLines,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall,
                     color = titleColor,
                 )
-                GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+                GameMetaLine(entry, favorite, lastPlayedAt, announce = false, compactBadges = true)
             }
         }
     } else {
@@ -196,14 +261,14 @@ fun GameCard(
                 if (entry.problem != null) StatusBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
             Text(
-                entry.title,
+                entry.displayTitle,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = titleLines,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall,
                 color = titleColor,
             )
-            GameMetaLine(entry, favorite, lastPlayedAt, announce = false)
+            GameMetaLine(entry, favorite, lastPlayedAt, announce = false, compactBadges = true)
         }
     }
 }
@@ -268,7 +333,7 @@ fun GameListItem(
         GameArtwork(entry, fingerprint, Modifier.width(ThumbnailWidth), compact = true, decorative = true)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                entry.title,
+                entry.displayTitle,
                 maxLines = if (LocalLargeFont.current) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,

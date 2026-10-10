@@ -47,3 +47,18 @@ Se trabajan **en orden** y de a uno. Cada hito se hace en una rama `mN-<nombre>`
 
 ☁️ = Claude en la nube (Linux: clang, make, python3). 🍎 = requiere macOS + Xcode + iPhone.
 Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5) → (núcleo de M8), mientras M4/M6/M7 esperan a una sesión en el Mac.
+
+**Siguiente nivel (A9 y N1–N9, 2026-10-07)**: plan en [N-README](N-README.md) (auditado: [Opus](../auditorias/N0-plan-opus.md), [DeepSeek](../auditorias/N0-plan-deepseek.md), [respuesta](../auditorias/N0-plan-respuesta.md)). Rama de integración `siguiente-nivel`.
+
+| Hito | Estado |
+|---|---|
+| A9 · Paridad Android (renombrar, continuación exacta) | ✅ fusionado en `siguiente-nivel` (Opus APROBAR CON CAMBIOS, respondida) |
+| N1 · Identidad y carpetas | ✅ iOS y Android fusionados (Opus: 2 vueltas cada uno, respondidas) |
+| N2 · Controles | ✅ iOS y Android fusionados (Opus APROBAR CON CAMBIOS, respondidas; reglas comunes) |
+| N3 · Biblioteca y detalle adaptables | ✅ iOS y Android fusionados (Opus, respondidas) |
+| N4 · Categorías, etiquetas e inicio | Android ✅ fusionado (Opus, respondida); iOS ✅ fusionado (Opus aprobada) |
+| N5 · Portadas | ✅ Android e iOS fusionados (auditorías Opus respondidas); sin HEIC (ND18) |
+| N6 · Momentos y progreso | lector C ✅; Android ✅ fusionado (Opus respondida); iOS ✅ fusionado (Opus respondida) |
+| N7 · Partidas que viajan | ✅ C, Android e iOS fusionados (auditorías Opus respondidas, ND20); pendiente prueba de Joel Rojo iPhone → Android → iPhone |
+| N8 · GBA en Android | ✅ nativa y Kotlin fusionadas (auditoría Opus aprobada); pendiente prueba de Joel N8-1…8 |
+| N9 · Carpetas de Joel, guía y cierre | guía iOS/Android ✅ fusionada; carpetas de Joel ✅ (iCloud reorganizada, huellas iguales; Drive renombrado); auditoría conjunta final Opus respondida (fin-ios, fin-android) ✅ |

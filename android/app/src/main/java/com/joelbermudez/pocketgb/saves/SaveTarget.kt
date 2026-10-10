@@ -29,13 +29,13 @@ class SaveTarget(
     fun persistLocal(data: ByteArray) {
         local.save(data)
         val w = writer ?: return
-        channel?.enqueue(MirrorChannel.Request(data, local, w))
+        channel?.enqueue(MirrorChannel.Request(data, local, mirror?.location, w))
     }
 
     /** Reintenta en la cola del espejo, también al abrir un juego. Si ya hay una escritura en curso, esa drenará el último valor. */
     fun retryMirrorIfNeeded(data: ByteArray) {
         val w = writer ?: return
-        channel?.retryIfNeeded(MirrorChannel.Request(data, local, w))
+        channel?.retryIfNeeded(MirrorChannel.Request(data, local, mirror?.location, w))
     }
 
     /** Se invoca cuando no queda una escritura de espejo en vuelo (un fallo también libera). */

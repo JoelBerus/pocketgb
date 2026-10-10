@@ -24,6 +24,18 @@ sealed interface LibraryRoute : AppRoute {
 
     @Serializable
     data class Details(val gameId: String) : LibraryRoute
+
+    /** N4: pantalla de una categoría; [path] desde la raíz (vacía = «Sin categoría»). */
+    @Serializable
+    data class Category(val path: List<String>) : LibraryRoute
+
+    /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
+    @Serializable
+    data class GameSaves(val fingerprint: String) : LibraryRoute
+
+    /** N6: momentos de un juego, desde su detalle. */
+    @Serializable
+    data class Moments(val gameId: String) : LibraryRoute
 }
 
 @Serializable
@@ -36,6 +48,14 @@ sealed interface FavoritesRoute : AppRoute {
 
     @Serializable
     data class Details(val gameId: String) : FavoritesRoute
+
+    /** N4: Ajustes › Partidas de una huella, desde el centro de ajustes del juego. */
+    @Serializable
+    data class GameSaves(val fingerprint: String) : FavoritesRoute
+
+    /** N6: momentos de un juego, desde su detalle. */
+    @Serializable
+    data class Moments(val gameId: String) : FavoritesRoute
 }
 
 @Serializable
@@ -51,6 +71,10 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object Library : SettingsRoute
+
+    /** N4: Ajustes › Biblioteca › Inicio. */
+    @Serializable
+    data object LibraryHome : SettingsRoute
 
     @Serializable
     data object Saves : SettingsRoute
@@ -78,4 +102,12 @@ sealed interface SettingsRoute : AppRoute {
 
     @Serializable
     data object SettingsLicenses : SettingsRoute
+
+    /** N9: Ajustes › Guía (buscador y secciones). */
+    @Serializable
+    data object Guide : SettingsRoute
+
+    /** N9: una sección de la guía; [anchor] = apartado al que abrir desplazada. */
+    @Serializable
+    data class GuideSection(val sectionId: String, val anchor: String? = null) : SettingsRoute
 }

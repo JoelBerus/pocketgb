@@ -2,10 +2,11 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-10-06 · PR abierta: https://github.com/JoelBerus/pocketgb/pull/18 · rama `cierre-integracion` lista para la PR a `main`: D8.1, GBA G0–G9, M9 UI del cable y Android A1–A8, cada bloque con auditoría Opus (y DeepSeek en A6/A7) respondida; auditoría conjunta de cierre APROBAR CON CAMBIOS (documental) respondida ([CIERRE-opus](auditorias/CIERRE-opus.md), [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)). Fusiones en la rama: `4d085c9` D8.1, `94b53fa` GBA, `ad446d9` M9, `70592b2` Android. Lo único que falta son las pruebas en dispositivo de Joel y sus decisiones ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)).
+**Actualizado:** 2026-10-10 · Fase **«siguiente nivel»** (A9, N1–N9) terminada en la rama `siguiente-nivel`, con auditoría conjunta final Opus (APROBAR CON CAMBIOS, respondida). PR a `main` abierta, pendiente de la aprobación de Joel. Decisiones ND1–ND21 en [N-README](hitos/N-README.md).
 
 
 ## Hecho
+- **Siguiente nivel (2026-10-07 → 2026-10-10), rama `siguiente-nivel`:** A9 (paridad Android), N1 identidad y carpetas, N2 controles, N3 biblioteca y detalle adaptables, N4 categorías/etiquetas/inicio, N5 portadas, N6 momentos y progreso (lector Pokémon en C), N7 partidas que viajan (`.pgbm`, linaje, vectores cruzados X1–X8), N8 GBA en Android, N9 guía en la app, consejos, documentación y carpetas de Joel (iCloud `GMRoms` reorganizada con huellas iguales antes y después; Drive renombrado; 17 portadas; LEEME). Cada lote con auditoría Opus respondida; auditoría conjunta final [N-final-opus](auditorias/N-final-opus.md) con respuestas [iOS](auditorias/N-final-respuesta-ios.md) y [Android](auditorias/N-final-respuesta-android.md). Últimas cifras: Android 835 JVM, 495 instrumentadas, kill-test 50/50, lint 0 errores, sin INTERNET; iOS 384 tests en iPhone 17 Pro y SE, Release sin red; núcleo 65/65 + ASan.
 - **Integración final (2026-10-06):** `cierre-integracion` = `main` + D8.1 + GBA G0–G9 + M9 UI + Android A1–A8. Auditoría conjunta Opus: APROBAR CON CAMBIOS, solo documentales (H1–H7 respondidos en [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)); sin hallazgos bloqueantes ni altos; reglas duras 1–7 cumplidas. Informes previos: [CIERRE-integracion](auditorias/CIERRE-integracion.md), [revisión](auditorias/CIERRE-integracion-revision.md).
 - **Android A8 (cerrado):** documentación al día (`android/README.md`, 02, 05, 06, 00, 08, nuevo [07-instalacion-android](07-instalacion-android.md)), [PRUEBAS-JOEL](PRUEBAS-JOEL.md), icono adaptativo, `versionName 1.0.0`/`versionCode 2` y literales de la interfaz extraídos a `strings.xml` (51 claves, `9fa39a9`/`f875e9b`; queda `LibraryModels.kt:75`). Release sin firma (solo documentada), sin `INTERNET`. Evidencia: [A8](auditorias/A8-android-evidencia.md).
 - **Android A7 (cerrado):** mando físico por posición, TalkBack con un nodo por control, fuente al 200 %, contraste alto, rotación sin pausa, memoria baja, rail adaptable, área segura. Auditorías Opus ([A7-opus](auditorias/A7-android-opus.md)) y DeepSeek ([A7-deepseek](auditorias/A7-android-deepseek.md)), respondidas ([A7-respuesta](auditorias/A7-android-respuesta.md)). Evidencia: [A7](auditorias/A7-android-evidencia.md). Decisiones R1–R16 provisionales (ver abajo).
@@ -31,10 +32,9 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-1. **Joel:** hacer las pruebas de [PRUEBAS-JOEL.md](PRUEBAS-JOEL.md) (iPhone I1–I10 y Android A1–A18).
-2. **Joel:** resolver las decisiones pendientes (tabla «Decisiones provisionales pendientes de ratificar por Joel», abajo, y [PRUEBAS-JOEL](PRUEBAS-JOEL.md) §Decisiones pendientes).
-3. **Joel:** aprobar la PR de `cierre-integracion` a `main`.
-4. Después: nada abierto salvo lo documentado en «Deuda y pendientes conocidos».
+1. **Joel:** revisar y fusionar la PR de `siguiente-nivel` a `main`.
+2. ✅ (2026-10-10, todas bien) **Joel, en los teléfonos** ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)): N7-1 Rojo iPhone → Android → iPhone con continuación exacta; N7-2 bandeja `PocketGB/Intercambio/` con Drive real; N8 Kirby en Android (60 fps ≥ 30 min, BIOS real); abrir la biblioteca reorganizada en los dos equipos; VoiceOver/TalkBack en la guía.
+3. Esmeralda sigue solo en `.zip` en Drive (Joel decidió no subirla descomprimida).
 
 ## Deuda y pendientes conocidos
 - `make -C gba test` completo solo corre en Linux/CI (el Mac carece de `ld.lld` y de los ROMs de SingleStepTests); en el Mac se ejecuta `--unit`, ASan manual y los homebrew.
@@ -123,7 +123,7 @@ Tomadas por el desarrollador durante la noche del 2026-10-06 para poder avanzar.
 | K4–K5 | Gameplay siempre oscuro y a pantalla completa (barras transitorias, recorte `SHORT_EDGES`, exclusión de gestos). |
 | K6–K7 | Ajustes por juego indexados por huella SHA-256, en `gameplay-settings.json` atómico. |
 | K8 | Cambiar Color/Paleta con el juego abierto se aplica en la próxima apertura (paleta en caliente solo si ya está en modo compatibilidad CGB). |
-| K9–K10 | Portada = último fotograma al cerrar la sesión; carril «Continuar jugando» de hasta 5 juegos solo con portada. |
+| K9–K10 | Portada = último fotograma al cerrar la sesión; carril «Continuar jugando» de hasta 5 juegos (K10 «solo con portada» **sustituida** por Joel el 2026-10-07, ND17: basta con ser reanudable; sin portada se ve la generada). |
 | K11–K13 | Portada generada determinista; controles con opacidad {30,50,70,100} %, escala global y por control; HUD con Pausa y avance rápido cíclico. |
 | K14–K16 | Confirmaciones de estados, aviso de cabecera dañada y almacenamiento con borrado solo de portadas. |
 | K17–K20 | Acerca de con licencias, ajustes de biblioteca duplicados en Ajustes, «Nuevo» por `knownIds` y fecha informativa del `.sav` espejo. |

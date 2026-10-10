@@ -8,22 +8,24 @@ struct SettingsTests {
         var data = GameplaySettingsData()
         data.colorForGameBoy = false
         data.compatPalette = 0
-        #expect(data.emulation(for: "rojo.gb") == EmulationOptions(colorForGameBoy: false, compatPalette: 0))
-        data.perGame["rojo.gb"] = GameOverrides(colorForGameBoy: true, compatPalette: nil)
-        #expect(data.emulation(for: "rojo.gb") == EmulationOptions(colorForGameBoy: true, compatPalette: 0))
+        #expect(data.emulation(with: nil) == EmulationOptions(colorForGameBoy: false, compatPalette: 0))
+        let rojo = GameOverrides(colorForGameBoy: true, compatPalette: nil)
+        #expect(data.emulation(with: rojo) == EmulationOptions(colorForGameBoy: true, compatPalette: 0))
         data.compatPalette = 7
-        #expect(data.emulation(for: "rojo.gb").compatPalette == 7)      // la paleta sigue siendo la global
-        #expect(data.emulation(for: "otro.gb").colorForGameBoy == false)
-        #expect(data.emulation(for: nil).colorForGameBoy == false)
+        #expect(data.emulation(with: rojo).compatPalette == 7)      // la paleta sigue siendo la global
+        #expect(data.emulation(with: GameOverrides()).colorForGameBoy == false)
+        #expect(data.emulation(with: nil).colorForGameBoy == false)
     }
 
+    /// N1a: los ajustes por juego viven en LibraryPreferences (por huella o, sin huella, por ruta).
     @MainActor
     @Test func clearingEveryOverrideRemovesTheGameEntry() throws {
-        let settings = GameplaySettings(defaults: nil)
-        settings.setOverrides(GameOverrides(colorForGameBoy: true), for: "a.gb")
-        #expect(settings.data.perGame["a.gb"] != nil)
-        settings.setOverrides(GameOverrides(), for: "a.gb")
-        #expect(settings.data.perGame["a.gb"] == nil)
+        let prefs = LibraryPreferences(fileURL: nil)
+        let game = LibraryPreferencesTests.entry("a.gb", "A", color: false)
+        prefs.setOverrides(GameOverrides(colorForGameBoy: true), for: game)
+        #expect(prefs.data.pendingByPath["a.gb"]?.overrides.colorForGameBoy == true)
+        prefs.setOverrides(GameOverrides(), for: game)
+        #expect(prefs.data.pendingByPath["a.gb"] == nil)
     }
 
     @Test func audioAndEmulationSettingsPersistAndValidate() throws {
@@ -59,7 +61,7 @@ struct SettingsTests {
         try Data(count: 1_000).write(to: saves.appendingPathComponent("a.sav"))
         try Data(count: 500).write(to: saves.appendingPathComponent("backups/a.1.sav"))
         try Data(count: 2_000).write(to: states.appendingPathComponent("s.state"))
-        let usage = StorageUsage.measure(saves: saves, states: states, artwork: root.appendingPathComponent("nada"))
+        let usage = StorageUsage.measure(saves: saves, states: states, artwork: [root.appendingPathComponent("nada")])
         #expect(usage == StorageUsage(saves: 1_500, states: 2_000, artwork: 0))
     }
 

@@ -1,6 +1,8 @@
 package com.joelbermudez.pocketgb.settings
 
 import com.joelbermudez.pocketgb.library.DefaultPreferencesFileOps
+import com.joelbermudez.pocketgb.input.ControlId
+import com.joelbermudez.pocketgb.input.NormalizedPoint
 import com.joelbermudez.pocketgb.library.PreferencesFileOps
 import java.io.File
 import java.io.IOException
@@ -92,10 +94,13 @@ class GameplaySettingsFile(
             visibility = field("visibility", ControlsVisibility.serializer(), d.visibility),
             haptics = field("haptics", Boolean.serializer(), d.haptics),
             sizeScale = field("sizeScale", Float.serializer(), d.sizeScale),
-            portraitLayout = field("portraitLayout", StoredControlLayout.serializer(), d.portraitLayout),
-            landscapeLayout = field("landscapeLayout", StoredControlLayout.serializer(), d.landscapeLayout),
+            portraitLayout = layout(root["portraitLayout"]),
+            landscapeLayout = layout(root["landscapeLayout"]),
+            gbaPortraitLayout = layout(root["gbaPortraitLayout"]),
+            gbaLandscapeLayout = layout(root["gbaLandscapeLayout"]),
             integerScaleLandscape = field("integerScaleLandscape", Boolean.serializer(), d.integerScaleLandscape),
             dpadStyle = field("dpadStyle", DpadStyle.serializer(), d.dpadStyle),
+            diagonalMode = field("diagonalMode", DiagonalMode.serializer(), d.diagonalMode),
             volume = field("volume", Float.serializer(), d.volume),
             colorForGameBoy = field("colorForGameBoy", Boolean.serializer(), d.colorForGameBoy),
             compatPalette = field("compatPalette", Int.serializer(), d.compatPalette),
@@ -105,6 +110,31 @@ class GameplaySettingsFile(
                 "showTouchControlsWithController", Boolean.serializer(), d.showTouchControlsWithController,
             ),
         ).sanitized()
+    }
+
+    /**
+     * Una disposición se decodifica campo a campo (y las posiciones y escalas, entrada a entrada): un valor dañado en la
+     * separación, en un control desconocido o en un punto pierde solo eso, no las posiciones y escalas de esa orientación.
+     */
+    private fun layout(element: JsonElement?): StoredControlLayout {
+        val obj = element as? JsonObject ?: return StoredControlLayout()
+        fun <T> decoded(serializer: KSerializer<T>, value: JsonElement): T? = try {
+            json.decodeFromJsonElement(serializer, value)
+        } catch (_: SerializationException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        fun <T> entries(name: String, serializer: KSerializer<T>): Map<ControlId, T> =
+            (obj[name] as? JsonObject)?.mapNotNull { (key, value) ->
+                val id = ControlId.entries.firstOrNull { it.name == key } ?: return@mapNotNull null
+                decoded(serializer, value)?.let { id to it }
+            }?.toMap() ?: emptyMap()
+        return StoredControlLayout(
+            positions = entries("positions", NormalizedPoint.serializer()),
+            scales = entries("scales", Float.serializer()),
+            separation = obj["separation"]?.let { decoded(Float.serializer(), it) } ?: StoredControlLayout().separation,
+        )
     }
 
     private fun recoverTemp(): GameplaySettingsData? {

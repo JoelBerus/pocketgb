@@ -71,7 +71,7 @@ class LibraryUiTest {
         uri = "content://t/$id",
         fileName = id.substringAfterLast('/'),
         title = title,
-        isColor = color,
+        console = com.joelbermudez.pocketgb.library.RomConsole.gameBoy(color),
         sizeBytes = 32L * 1024,
         headerChecksumOk = true,
         problem = problem,
@@ -94,11 +94,12 @@ class LibraryUiTest {
     private fun LibraryHarness(
         state: LibraryState,
         initial: LibraryPreferencesData = LibraryPreferencesData(),
-        artwork: Set<String> = emptySet(),
         summary: Int = 0,
         onSummaryShown: () -> Unit = {},
+        /** N3 (ND15): ids que se pueden continuar (estado automático vigente); el carril solo muestra estos. */
+        resumable: Set<String> = emptySet(),
     ) {
-        var prefs by remember { mutableStateOf(initial) }
+        var prefs by remember { mutableStateOf(initial.withoutHome(state)) }
         var query by remember { mutableStateOf("") }
         var filter by remember { mutableStateOf(LibraryFilter.ALL) }
         PocketGBTheme {
@@ -119,15 +120,28 @@ class LibraryUiTest {
                     onHide = { prefs = prefs.hide(it) },
                     onPlay = if (playFromRecent) ({ played += it.id }) else null,
                     onGameSettings = { settingsOpened = it.id },
+                    canResume = { it.id in resumable },
                 ),
                 newGamesSummary = summary,
                 onNewGamesSummaryShown = onSummaryShown,
-                artworkFingerprints = artwork,
             )
         }
     }
 
     private var playFromRecent = false
+
+    /**
+     * N4: sin estanterías del inicio ni fila de Favoritos (estas pruebas son de la cuadrícula, la lista y el carril; el
+     * inicio se prueba en HomeUiTest).
+     */
+    private fun LibraryPreferencesData.withoutHome(state: LibraryState): LibraryPreferencesData {
+        val entries = when (state) {
+            is LibraryState.Ready -> state.entries
+            is LibraryState.Scanning -> state.previous
+            else -> emptyList()
+        }
+        return copy(home = home.copy(showFavorites = false, hidden = com.joelbermudez.pocketgb.library.LibraryHome.keys(entries, this).toSet()))
+    }
 
     /** Huella sintética estable de un juego de prueba. */
     private fun fingerprintOf(entry: RomEntry) = "%064x".format(entry.id.hashCode().toLong() and 0xFFFFFFFFL)
@@ -287,7 +301,7 @@ class LibraryUiTest {
             LibraryHarness(
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha),
-                artwork = setOf(fingerprintOf(alpha)),
+                resumable = setOf(alpha.id),
             )
         }
         compose.onNodeWithText("Continuar jugando").assertIsDisplayed()
@@ -301,7 +315,7 @@ class LibraryUiTest {
             LibraryHarness(
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha),
-                artwork = setOf(fingerprintOf(alpha)),
+                resumable = setOf(alpha.id),
             )
         }
         compose.onNodeWithTag("recent-row").assertIsDisplayed()
@@ -349,7 +363,7 @@ class LibraryUiTest {
     )
 
     @Composable
-    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long? = null) {
+    private fun DetailsHarness(entry: RomEntry, load: DetailsLoad, lastPlayedAt: Long? = null, canResume: Boolean = false) {
         var favorite by remember { mutableStateOf(false) }
         var hidden by remember { mutableStateOf(false) }
         PocketGBTheme {
@@ -363,6 +377,8 @@ class LibraryUiTest {
                     onToggleFavorite = { favorite = !favorite },
                     onHide = { hidden = true },
                     onBack = {},
+                    canResume = canResume,
+                    onPlayFromStart = { played += "inicio:${entry.id}" },
                 )
                 if (hidden) Text("oculto")
             }
@@ -389,10 +405,22 @@ class LibraryUiTest {
     }
 
     @Test
-    fun playedGamesOfferContinue() {
-        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L) }
+    fun gamesWithAValidAutomaticStateOfferContinueAndPlayFromStart() {
+        // A9 (cambia J8, ND6): «Continuar» = estado automático exacto; «Jugar desde el inicio» = solo la partida.
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L, canResume = true) }
         compose.onNodeWithText("Continuar").assertIsDisplayed()
-        compose.onNodeWithTag("game-details-play").assertIsEnabled()
+        compose.onNodeWithTag("game-details-play").assertIsEnabled().performClick()
+        compose.onNodeWithTag("game-details-play-from-start").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("game-details-resume-hint").performScrollTo().assertIsDisplayed()
+        assertEquals(listOf("Red.gb", "inicio:Red.gb"), played)
+    }
+
+    @Test
+    fun aPlayedGameWithoutAValidAutomaticStateOffersOnlyPlay() {
+        compose.setContent { DetailsHarness(red, DetailsLoad.Loaded(details), lastPlayedAt = 10L, canResume = false) }
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
+        compose.onAllNodesWithTag("game-details-play-from-start").assertCountEquals(0)
+        compose.onAllNodesWithText("Continuar").assertCountEquals(0)
     }
 
     @Test
@@ -523,7 +551,7 @@ class LibraryUiTest {
             PocketGBTheme {
                 LibraryContent(
                     state = LibraryState.Ready(scanned, "Juegos"),
-                    prefs = prefs.copy(layout = layout),
+                    prefs = prefs.copy(layout = layout).withoutHome(LibraryState.Ready(scanned, "Juegos")),
                     query = "",
                     filter = LibraryFilter.ALL,
                     onQueryChange = {},
@@ -567,7 +595,7 @@ class LibraryUiTest {
             folders = folders,
             openTree = { tree },
             roms = { _, _ -> ByteArray(0) },
-            inspector = { error("no se usa") },
+            inspector = { _, _ -> error("no se usa") },
             preferencesFile = com.joelbermudez.pocketgb.library.LibraryPreferencesFile(java.io.File(dir, "p.json")),
             io = kotlinx.coroutines.Dispatchers.IO,
             scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
@@ -591,29 +619,31 @@ class LibraryUiTest {
     // ---- A6-L3: carril, menú contextual, búsqueda, progreso y detalle ----
 
     @Test
-    fun railShowsOnlyRecentGamesThatHaveCapturedArtwork() {
+    fun railShowsResumableGamesEvenWithoutArtwork() {
+        // Decisión de Joel 2026-10-07 (sustituye a K10): ningún juego tiene portada propia y los dos salen.
         compose.setContent {
             LibraryHarness(
                 LibraryState.Ready(games, "Juegos"),
                 withPlayed(alpha, red, at = 10L),
-                artwork = setOf(fingerprintOf(alpha)), // red se jugó pero no tiene captura
+                resumable = setOf(alpha.id, red.id),
             )
         }
         compose.onNodeWithTag("recent-row").assertIsDisplayed()
-        compose.onAllNodesWithTag("continue-card").assertCountEquals(1)
-        compose.onNodeWithText("Continuar", substring = false).assertIsDisplayed()
+        compose.onAllNodesWithTag("continue-card").assertCountEquals(2)
     }
 
     @Test
-    fun railDoesNotAppearWhenNoPlayedGameHasArtwork() {
-        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha)) }
+    fun railDoesNotAppearWhenNoPlayedGameIsResumable() {
+        compose.setContent { LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), resumable = emptySet()) }
         compose.onAllNodesWithTag("recent-row").assertCountEquals(0)
     }
 
     @Test
     fun railIsHiddenOutsideTheAllFilter() {
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"), withPlayed(alpha), resumable = setOf(alpha.id),
+            )
         }
         compose.onAllNodesWithTag("recent-row").assertCountEquals(1)
         compose.onNodeWithTag("filter-GB").performClick()
@@ -624,7 +654,9 @@ class LibraryUiTest {
     fun tappingTheRailCoverOpensTheDetailsAndTheButtonOpensTheGame() {
         playFromRecent = true
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(games, "Juegos"), withPlayed(alpha), artwork = setOf(fingerprintOf(alpha)))
+            LibraryHarness(
+                LibraryState.Ready(games, "Juegos"), withPlayed(alpha), resumable = setOf(alpha.id),
+            )
         }
         compose.onNodeWithTag("continue-cover").performClick()
         assertEquals("Alpha.gb", opened)
@@ -634,14 +666,14 @@ class LibraryUiTest {
     }
 
     @Test
-    fun contextMenuOffersEveryActionAndStatesAreDisabled() {
+    fun contextMenuOffersEveryActionIncludingMoments() {
         playFromRecent = true
         compose.setContent { LibraryHarness(LibraryState.Ready(listOf(red), "Juegos")) }
         compose.onNodeWithTag("game-card").performTouchInput { longClick() }
         compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithText("Ver detalle").assertIsDisplayed()
         compose.onNodeWithText("Añadir a favoritos").assertIsDisplayed()
-        compose.onNodeWithText("Estados (próximamente)").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithTag("menu-moments").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Ajustes del juego").assertIsDisplayed()
         compose.onNodeWithText("Ocultar de PocketGB").assertIsDisplayed()
         compose.onNodeWithText("Jugar").performClick()
@@ -775,7 +807,8 @@ class LibraryUiTest {
     @Test
     fun detailsShowStatsContinueFromTheSaveAndOpenGameSettings() {
         var settings = 0
-        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 2 * 3_600_000)
+        // Minutos y no horas: «hace 2 h» pasa a «ayer» entre las 00:00 y las 02:00 (fallo de frontera de fecha).
+        val saved = red.copy(mirrorSaveDate = System.currentTimeMillis() - 5 * 60_000)
         compose.setContent {
             PocketGBTheme {
                 GameDetailsContent(
@@ -791,9 +824,10 @@ class LibraryUiTest {
                 )
             }
         }
-        compose.onNodeWithText("Continuar").assertIsDisplayed() // hay partida junto al ROM aunque no se haya jugado aquí
+        // A9 (cambia J8): sin estado automático la acción es «Jugar», que abre la partida junto al ROM igualmente.
+        compose.onNodeWithText("Jugar").assertIsDisplayed()
         compose.onNodeWithTag("game-details-stats").assertIsDisplayed()
-        compose.onNodeWithText("hace 2 h").assertIsDisplayed()
+        compose.onNodeWithText("hace 5 min").assertIsDisplayed()
         compose.onNodeWithText("Nunca").assertIsDisplayed()
         compose.onNodeWithTag("game-details-states").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("game-details-settings").performScrollTo().performClick()
@@ -884,7 +918,10 @@ class LibraryUiTest {
         val prefs = withPlayed(*recent.toTypedArray())
         compose.setContent {
             WithFontScale(2.0f) {
-                LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+                LibraryHarness(
+                    LibraryState.Ready(recent, "Juegos"), initial = prefs,
+                    resumable = recent.map { it.id }.toSet(),
+                )
             }
         }
         compose.waitForIdle()
@@ -900,7 +937,10 @@ class LibraryUiTest {
         val recent = listOf(red, yellow, alpha)
         val prefs = withPlayed(*recent.toTypedArray())
         compose.setContent {
-            LibraryHarness(LibraryState.Ready(recent, "Juegos"), initial = prefs, artwork = recent.map { fingerprintOf(it) }.toSet())
+            LibraryHarness(
+                LibraryState.Ready(recent, "Juegos"), initial = prefs,
+                resumable = recent.map { it.id }.toSet(),
+            )
         }
         compose.waitForIdle()
         val rows = compose.onAllNodesWithTag("continue-card").fetchSemanticsNodes()
