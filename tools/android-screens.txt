@@ -339,7 +339,7 @@ n7-warning-mirror-older portrait light
 n7-known portrait light
 n7-raw-confirm portrait light
 n7-config-mismatch portrait light
-n9-settings portrait light
+n9-settings portrait light swipe=up
 n9-guide portrait light
 n9-guide portrait dark
 n9-guide-ax5 portrait light fontScale=2.0
