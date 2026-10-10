@@ -105,6 +105,9 @@ object SaveOpening {
         if (lineage == SaveLineage.Mirror.EXTERNAL_CHANGE && localValid != null && mirrorValid != null) {
             // Cambio externo: la local no cambió desde nuestra última escritura. Se instala con backup (la escritura
             // atómica deja la local en `.1`) y aviso, sea cual sea la fecha (reloj desfasado).
+            // Además la local se aparta fuera de la rotación (N1): el historial es por huella, no por espejo, así que
+            // un duplicado con su propio `.sav` también cae aquí, y cinco guardados no deben poder borrarla.
+            store.setAsideMirrorLoser(localValid)
             store.save(mirrorValid)
             store.recordReceived(mirrorValid)
             return Outcome(mirrorValid, makeTarget(usableMirror), SaveLoadWarning.ExternalChange)

@@ -85,6 +85,7 @@ class SaveLineageTest {
         assertArrayEquals(version(5), s.load())
         assertEquals(SaveLoadWarning.ExternalChange, o.warning)
         assertArrayEquals("la anterior queda en backup", version(1), s.backupFile(1).readBytes())
+        assertArrayEquals("…y apartada fuera de la rotación", version(1), File(s.backupsDirectory, s.setAside().single().name).readBytes())
         assertEquals("pasa a ser la base del linaje", h(version(5)), s.lineageBase())
     }
 
