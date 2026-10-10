@@ -62,8 +62,26 @@ Paletas para comparar con las referencias de acid2 (según el howto de c-sp):
 - **Limitación en el Mac de Joel:** `make -C gba test`/`asan` completos necesitan `ld.lld` (homebrew de la suite) y los ROMs de SingleStepTests, que no están en este Mac; ahí se ejecutan `gbatest --unit`, la variante ASan compilada con el `EXTRA` del Makefile y los ROMs de jsmolka con el runner. `check-symbols`/`check-globals` dan falsos positivos con el `nm` de macOS (prefijo `_`, símbolos locales `s` de datos constantes de Mach-O); la suite completa corre en la nube (Linux) y en el CI.
 - `make -C core test` usa `HITO=M1` por defecto: la regresión completa del núcleo GB es `make -C core test HITO=M8` (157/157 requeridos).
 
-## Tests de la app (G7–G8)
-Suite unitaria de Swift (`GBATests`, ajustes por juego, L/R, saves GBA con RTC, estados por configuración) y de UI con capturas (`tools/ios-screenshots.sh`; en G8: 117 tests y 94 capturas). Las pruebas con temporizadores cortos (`SaveMirrorTests`, `StateSRAMTests`) esperan 2 s y pueden fallar si el Mac está muy cargado: repetirlas con la máquina libre.
+## Tests de la app iOS (G7–G8, N1–N9)
+Suite unitaria de Swift Testing en `ios/PocketGBTests` y de UI con XCTest en `ios/PocketGBUITests`. Se ejecutan con `tools/ios-screenshots.sh` (todo: unitarias, UI, catálogo de capturas y build Release sin firma) en el iPhone 17 Pro y, solo las unitarias, en el iPhone SE (3.ª gen.) con `-only-testing:PocketGBTests`. Cifra al cerrar N9 iOS: ver [auditorias/N9-ios-evidencia.md](auditorias/N9-ios-evidencia.md).
+
+| Hito | Suites (`PocketGBTests`) | Qué cubren |
+|---|---|---|
+| G7–G8 | `GBATests` | Ajustes por juego, L/R, saves GBA con RTC, estados por configuración |
+| N1 | `RomFingerprintTests`, `LibraryIdentityTests`, `LibraryPreferencesTests`, `LibraryFoldersTests`, `LibraryScannerTests` | Huella igual a la del núcleo, caché (ruta, tamaño, fechas), migración por huella, duplicados, preferencias dañadas apartadas, carpetas anidadas y nombres reservados |
+| N2 | `DpadInputTests`, `DpadContrastTests`, `ControlsLayoutTests`, `GamepadMappingTests` | Sectores, histéresis y zona muerta; sin direcciones opuestas; contraste pulsado ≥ 3:1; separación de las flechas; cuatro disposiciones |
+| N3 | `AdaptiveLibraryTests` | Detalle a dos columnas por espacio, proporción de capturas 10:9 / 3:2 |
+| N4 | `LibraryOrganizationTests`, `LibraryFormatV3Tests` | Árbol de categorías, categoría virtual, etiquetas, inicio, `preferences.json` formato 3 y migración desde el 2 |
+| N5 | `CoversTests` | Prioridad de fuentes, imagen junto al ROM, imágenes hostiles (firma, tamaño, dimensiones, truncadas), reducción, caché y borrado |
+| N6 | `MomentsTests` (y `ProgressTests` dentro) | Momentos, anillo «Antes de cargar», migración de ranuras, índice dañado, fallos inyectados a mitad, exclusión por huella, tiempo de juego, lector Pokémon con partida sintética |
+| N7 | `SaveLineageTests`, `PGBMTests`, `SaveMirrorTests` | Tabla de linaje (latencia, conflicto, reloj desfasado), vectores dorados y cruzados X1–X7/G1–G4 de `core/tests/unit_pgbm_cross.c`, importar sin tocar nada si no vale |
+| N9 | `GuideTests` | Las 9 secciones de la guía están en el bundle y solo enlazan a `guia:<id>` (nada remoto); lector de Markdown (títulos, listas anidadas, tablas, código); búsqueda sin acentos, con todas las palabras y sin duplicar títulos |
+
+- **UI:** `ShellTests`, `AccessibilityTests` (VoiceOver y tamaños), `CategoriesUITests`, `AdaptiveLibraryUITests` y `ScreenshotTests`, que recorre `ios/PocketGBUITests/screens.txt` (cada hito añade sus líneas al final) y falla si la app cae o el router DEBUG no conoce la pantalla. Argumentos de las capturas: `-screen`, `-demo*`, `-contentSizeCategory accessibility5`, `-uiDrag`/`-uiTap`/`-uiSwipeUp`, `-scrollTo`; en N9, `-guideSection`, `-guideSearch` y `-showTips` (las demás capturas ocultan los consejos de TipKit). `TEST_RUNNER_SCREEN_FILTER` limita el catálogo para iterar.
+- **Guía (N9):** `tools/ios-screenshots.sh` empieza con `tools/ios-guide-sync.py --check`: falla si la guía empaquetada no coincide con `docs/guia`.
+- **Red:** el build Release para `generic/platform=iOS` se revisa con `nm -u` (sin `URLSession`, `nw_connection`, CFNetwork ni CloudKit) y el Info.plist sin claves ATS.
+- Las pruebas con temporizadores cortos (`SaveMirrorTests`, `StateSRAMTests`) esperan 2 s y pueden fallar si el Mac está muy cargado: repetirlas con la máquina libre.
+- **Simulador compartido:** si varios agentes usan el Mac a la vez, cada uno envuelve `xcodebuild test` en el candado del simulador y escribe las capturas en una carpeta propia.
 
 ## Sanitizers y fuzzing
 - `make asan`: todo lo anterior compilado con `-fsanitize=address,undefined -fno-omit-frame-pointer`.
@@ -100,7 +118,9 @@ Comandos en [android/README.md](../android/README.md). Última cifra registrada 
 - [ ] Reinstalar desde Xcode → la partida sigue.
 - [ ] Horizontal: botones translúcidos, A+B simultáneos y deslizar sobre el D-pad funcionan.
 - [ ] Vertical: layout correcto.
-- [ ] Modo avión activado: todo funciona (confirma que la app no necesita red).
+- [ ] Modo avión activado: todo funciona (confirma que la app no necesita red), también Ajustes › Guía y su búsqueda.
+- [ ] Con texto muy grande (Ajustes › Accesibilidad › Texto más grande, al máximo): la guía, el detalle y la pausa se leen sin palabras partidas por sílabas.
+- [ ] Los consejos aparecen como mucho uno al día y desaparecen al usar lo que explican (crear un momento, cambiar de categoría, enviar la partida, elegir flechas separadas).
 
 ## Núcleo GBA (`gba/`)
 - **Pruebas libres:** `tools/fetch-gba-test-roms.sh` descarga [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests) (MIT) y [SingleStepTests/ARM7TDMI](https://github.com/SingleStepTests/ARM7TDMI) (MIT, ~1 GB) en `gba/tests/roms/` (ignorado por git), cada repo fijado a un commit (git verifica cada objeto por su hash). No corre en el arranque de sesión por su tamaño.
