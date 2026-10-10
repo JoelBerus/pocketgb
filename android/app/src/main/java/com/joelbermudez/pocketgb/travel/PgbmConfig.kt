@@ -27,14 +27,20 @@ data class PgbmConfig(
         gbaBios?.let { put("gba_bios", it) }
     }
 
+    /** Un ajuste que cambia la máquina: un estado tomado con otro valor puede no cargar (ND20 h, ND21). */
+    enum class Key { MODEL, GBA_SAVE_TYPE, GBA_RTC, GBA_BIOS }
+
     /**
-     * ¿Un estado tomado con [other] es incompatible con esta configuración? Solo cuentan las claves que cambian la
-     * máquina (modelo de GB; tipo de partida, reloj y BIOS de GBA) y que están en las dos; la paleta no.
+     * ND21 · qué ajustes de esta configuración (la del paquete) difieren de [local] (la del juego aquí), igual que
+     * `PackageConfig.differences(from:)` de iOS: solo cuentan las claves que cambian la máquina y que están en los dos
+     * lados; un «auto» del paquete no cuenta (no fija nada) y la paleta tampoco.
      */
-    fun conflictsWith(other: PgbmConfig): Boolean {
-        fun differ(a: Any?, b: Any?) = a != null && b != null && a != b
-        return differ(model, other.model) || differ(gbaSaveType, other.gbaSaveType) || differ(gbaRtc, other.gbaRtc) ||
-            differ(gbaBios, other.gbaBios)
+    fun differences(local: PgbmConfig): List<Key> = buildList {
+        fun differ(pkg: Any?, here: Any?) = pkg != null && pkg != "auto" && here != null && pkg != here
+        if (differ(model, local.model)) add(Key.MODEL)
+        if (differ(gbaSaveType, local.gbaSaveType)) add(Key.GBA_SAVE_TYPE)
+        if (differ(gbaRtc, local.gbaRtc)) add(Key.GBA_RTC)
+        if (differ(gbaBios, local.gbaBios)) add(Key.GBA_BIOS)
     }
 
     companion object {

@@ -13,8 +13,8 @@ import java.io.IOException
 
 /**
  * El juego al que va la partida. [validSizes]: tamaños de `.sav` del cartucho (los del índice o, si el juego nunca se
- * abrió, los de la cabecera del ROM, ND20 j). [config]: configuración actual del juego en este equipo (para avisar si el
- * estado del paquete es de otra, ND20 h).
+ * abrió, los de la cabecera del ROM, ND20 j). [config]: configuración actual del juego en este equipo (para avisar de qué
+ * ajuste cambiar si el estado del paquete es de otra, ND20 h, ND21).
  */
 class ImportTarget(
     /** Huella SHA-256 completa del ROM, 64 hex en minúsculas (Android compara los 32 bytes). */
@@ -89,9 +89,6 @@ class SaveImporter(
 
         /** ND20 (f): el paquete trae un estado automático que sustituiría al de aquí sin cambiar la partida. */
         REPLACE_STATE,
-
-        /** ND20 (h): el estado del paquete es de otra configuración del juego: se descartará. */
-        CONFIG_MISMATCH,
     }
 
     sealed interface Result {
@@ -109,7 +106,9 @@ class SaveImporter(
         /**
          * Hecho. [lineage] dice qué pasó con la partida; [continueFrom] = nombre del equipo si quedó el estado automático
          * exacto del paquete («Continuar donde lo dejaste en <equipo>», ND6); [conflictMomentId] = la otra partida;
-         * [meta] = los metadatos del paquete, para fusionarlos con los de aquí (ND20 i).
+         * [meta] = los metadatos del paquete, para fusionarlos con los de aquí (ND20 i); [configDifferences] = ajustes del
+         * juego que difieren de los del equipo de origen cuando se instaló su estado (ND21: se avisa de cuál cambiar; si
+         * aun así no carga al continuar, se conserva y se juega desde la partida).
          */
         data class Done(
             val lineage: SaveLineage.Incoming,
@@ -117,6 +116,7 @@ class SaveImporter(
             val continueFrom: String?,
             val conflictMomentId: String? = null,
             val meta: PgbmMeta? = null,
+            val configDifferences: List<PgbmConfig.Key> = emptyList(),
         ) : Result
     }
 
@@ -175,12 +175,13 @@ class SaveImporter(
         val sizes = target.validSizes
         if (target.hasBattery && sizes == null) return Result.Rejected(Rejection.UNKNOWN_SIZES)
         val device = v.meta.deviceName
-        // ND20 (h): estado de otra configuración → se avisa antes de descartarlo.
-        var state = v.pkg.state?.takeIf { v.meta.stateMatchesSave }
-        if (state != null && target.config != null && v.meta.config.conflictsWith(target.config)) {
-            if (Ask.CONFIG_MISMATCH !in confirmed) return Result.NeedsChoice(Ask.CONFIG_MISMATCH, device)
-            state = null
-        }
+        val state = v.pkg.state?.takeIf { v.meta.stateMatchesSave }
+        // ND21 (como iOS): un estado de otra configuración NO se descarta; se instala igual (con las protecciones de
+        // ND20 f) y el resultado dice qué ajuste cambiar. Si al continuar no carga, el núcleo lo rechaza sin tocar la
+        // partida, el estado se conserva y se juega desde la partida (ExactContinuation, INCOMPATIBLE).
+        val differences = target.config?.let(v.meta.config::differences).orEmpty()
+        fun Result.withDifferences(): Result =
+            if (this is Result.Done && continueFrom != null && differences.isNotEmpty()) copy(configDifferences = differences) else this
         return ownership.withExclusive(target.fingerprint, "importación") {
             val store = SaveStore(savesDirectory, target.fingerprint, ops)
             if (sizes != null) store.recoverOrphans(sizes)
@@ -202,7 +203,7 @@ class SaveImporter(
                 return@withExclusive Result.SaveSizeMismatch
             }
             apply(store, target, sav, v.meta.baseSavSha256, device, choice, confirmed, v.meta, state)
-        }
+        }.withDifferences()
     }
 
     /**

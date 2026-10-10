@@ -200,7 +200,7 @@ fun rememberTravelActions(
                     is SaveImporter.Result.Done -> {
                         if (result.installed || result.continueFrom != null) env.onSaveChanged(fingerprint)
                         onImported()
-                        TravelDialog.Imported(res.getString(doneText(result)), result.continueFrom)
+                        TravelDialog.Imported(importedText(res, result), result.continueFrom)
                     }
                 }
             }, ::failure)
@@ -339,6 +339,25 @@ internal fun doneText(r: SaveImporter.Result.Done): Int = when (r.lineage) {
     SaveLineage.Incoming.DIVERGENCE -> if (r.installed) R.string.n7_import_used_incoming else R.string.n7_import_kept_local
 }
 
+/**
+ * Texto del resultado de una importación. ND21 (como iOS): si se instaló un estado jugado con otra configuración, se añade
+ * qué ajuste cambiar para continuar justo donde lo dejó.
+ */
+internal fun importedText(res: android.content.res.Resources, r: SaveImporter.Result.Done): String {
+    val text = res.getString(doneText(r))
+    val device = r.continueFrom ?: return text
+    if (r.configDifferences.isEmpty()) return text
+    val keys = r.configDifferences.joinToString(", ") { res.getString(configKeyText(it)) }
+    return text + " " + res.getString(R.string.n7_config_note, device, keys)
+}
+
+internal fun configKeyText(key: com.joelbermudez.pocketgb.travel.PgbmConfig.Key): Int = when (key) {
+    com.joelbermudez.pocketgb.travel.PgbmConfig.Key.MODEL -> R.string.n7_config_key_model
+    com.joelbermudez.pocketgb.travel.PgbmConfig.Key.GBA_SAVE_TYPE -> R.string.n7_config_key_save_type
+    com.joelbermudez.pocketgb.travel.PgbmConfig.Key.GBA_RTC -> R.string.n7_config_key_rtc
+    com.joelbermudez.pocketgb.travel.PgbmConfig.Key.GBA_BIOS -> R.string.n7_config_key_bios
+}
+
 /** Resultado de una importación; con [continueFrom] ofrece «Continuar donde lo dejaste en <equipo>» (ND6). */
 @Composable
 internal fun ImportedDialog(text: String, continueFrom: String?, onContinue: () -> Unit, onDismiss: () -> Unit) {
@@ -405,13 +424,12 @@ internal fun InboxDialog(device: String, game: String, onImport: () -> Unit, onL
     )
 }
 
-/** ND20 (e, f, h): confirmaciones antes de importar (sin tocar nada hasta «Importar»). */
+/** ND20 (e, f): confirmaciones antes de importar (sin tocar nada hasta «Importar»). */
 @Composable
 internal fun ConfirmImportDialog(ask: SaveImporter.Ask, device: String, game: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val (title, body, confirm) = when (ask) {
         SaveImporter.Ask.RAW_CONFIRM -> Triple(R.string.n7_raw_confirm_title, stringResource(R.string.n7_raw_confirm_body, game), R.string.n7_raw_import)
-        SaveImporter.Ask.REPLACE_STATE -> Triple(R.string.n7_replace_state_title, stringResource(R.string.n7_replace_state_body, device), R.string.n7_replace_state_confirm)
-        else -> Triple(R.string.n7_config_mismatch_title, stringResource(R.string.n7_config_mismatch_body, device), R.string.n7_config_mismatch_confirm)
+        else -> Triple(R.string.n7_replace_state_title, stringResource(R.string.n7_replace_state_body, device), R.string.n7_replace_state_confirm)
     }
     AlertDialog(
         onDismissRequest = onDismiss,

@@ -289,18 +289,67 @@ class SaveTravelTest {
         assertEquals(PgbmConfig(model = "dmg", compatPalette = "3"), meta.config)
     }
 
-    @Test fun aStateFromAnotherConfigurationIsAnnouncedBeforeBeingDiscarded() {
+    /** ND21: un estado de otra configuración no se descarta: se instala (protecciones de ND20 f) y se dice qué cambiar. */
+    @Test fun aStateFromAnotherConfigurationIsInstalledAndTheSettingToChangeIsNamed() {
+        val a = File(root, "a")
+        val incomingState = byteArrayOf(0x50, 0x47, 0x42, 0x53, 1)
+        SaveStore(File(a, "saves"), TARGET.fingerprint).save(S1)
+        StateStore(File(a, "states"), TARGET.fingerprint).save(incomingState, null, StateSlot.AUTO)
+        val pkg = SaveExporter(File(a, "saves"), File(a, "states"), codec)
+            .buildPackage(SaveExporter.Info(TARGET.fingerprint, "gb", "iPhone", "1", config = PgbmConfig(model = "cgb", compatPalette = "2")))
+        // Aquí: otra partida con su AUTO, y el juego en DMG con otra paleta (la paleta no cuenta).
+        store().save(B)
+        val st = StateStore(states, TARGET.fingerprint)
+        val localAuto = byteArrayOf(0x50, 0x47, 0x42, 0x53, 9)
+        st.save(localAuto, byteArrayOf(1, 2, 3), StateSlot.AUTO)
+        val dmg = ImportTarget(TARGET.fingerprint, "gb", true, TARGET.validSizes, config = PgbmConfig(model = "dmg", compatPalette = "0"))
+        val done = importer().importPackage(pkg, dmg, SaveImporter.Choice.USE_INCOMING) as SaveImporter.Result.Done
+        assertTrue(done.installed)
+        assertEquals("se ofrece continuar igual", "iPhone", done.continueFrom)
+        assertEquals(listOf(PgbmConfig.Key.MODEL), done.configDifferences)
+        assertArrayEquals(S1, store().load())
+        assertArrayEquals("el estado del paquete se instala", incomingState, st.load(StateSlot.AUTO))
+        // ND20 (f): la partida de aquí, con su AUTO, a «Antes de importar» y a una copia apartada.
+        val entry = MomentStore(moments, TARGET.fingerprint).snapshot().beforeLoad.single { it.name == "Antes de importar" }
+        assertTrue(entry.hasState && entry.hasSram)
+        assertArrayEquals(B, MomentStore(moments, TARGET.fingerprint).loadSram(MomentStore.Kind.BEFORE_LOAD, entry.id))
+        assertTrue(store().setAside().any { File(store().backupsDirectory, it.name).readBytes().contentEquals(B) })
+    }
+
+    @Test fun withTheSameConfigurationThereIsNothingToChange() {
+        val pkg = build("X1", codec)
+        val cfg = PgbmMeta.parse(codec.parse(pkg).meta!!).config
+        val done = importer().importPackage(pkg, ImportTarget(TARGET.fingerprint, "gb", true, TARGET.validSizes, config = cfg)) as SaveImporter.Result.Done
+        assertEquals("Pixel de prueba", done.continueFrom)
+        assertEquals(emptyList<PgbmConfig.Key>(), done.configDifferences)
+    }
+
+    @Test fun withoutAnInstalledStateTheDifferencesAreNotAnnounced() {
+        // Sin estado en el paquete no hay nada que continuar: no se avisa aunque la configuración difiera.
         val a = File(root, "a")
         SaveStore(File(a, "saves"), TARGET.fingerprint).save(S1)
-        StateStore(File(a, "states"), TARGET.fingerprint).save(byteArrayOf(0x50, 0x47, 0x42, 0x53), null, StateSlot.AUTO)
         val pkg = SaveExporter(File(a, "saves"), File(a, "states"), codec)
             .buildPackage(SaveExporter.Info(TARGET.fingerprint, "gb", "iPhone", "1", config = PgbmConfig(model = "cgb")))
         val dmg = ImportTarget(TARGET.fingerprint, "gb", true, TARGET.validSizes, config = PgbmConfig(model = "dmg"))
-        assertEquals(SaveImporter.Result.NeedsChoice(SaveImporter.Ask.CONFIG_MISMATCH, "iPhone"), importer().importPackage(pkg, dmg))
-        assertNull(store().load())
-        val done = importer().importPackage(pkg, dmg, confirmed = setOf(SaveImporter.Ask.CONFIG_MISMATCH)) as SaveImporter.Result.Done
-        assertNull("sin estado", done.continueFrom)
-        assertArrayEquals(S1, store().load())
+        val done = importer().importPackage(pkg, dmg) as SaveImporter.Result.Done
+        assertNull(done.continueFrom)
+        assertEquals(emptyList<PgbmConfig.Key>(), done.configDifferences)
+    }
+
+    /** ND21: mismas reglas que `PackageConfig.differences(from:)` de iOS. */
+    @Test fun configDifferencesFollowIos() {
+        assertEquals(listOf(PgbmConfig.Key.MODEL), PgbmConfig(model = "cgb").differences(PgbmConfig(model = "dmg")))
+        assertEquals("«auto» del paquete no fija nada", emptyList<PgbmConfig.Key>(), PgbmConfig(model = "auto").differences(PgbmConfig(model = "dmg")))
+        assertEquals("la paleta no cuenta", emptyList<PgbmConfig.Key>(), PgbmConfig(model = "cgb", compatPalette = "1").differences(PgbmConfig(model = "cgb", compatPalette = "4")))
+        assertEquals("falta en un lado", emptyList<PgbmConfig.Key>(), PgbmConfig(model = "cgb").differences(PgbmConfig()))
+        assertEquals(emptyList<PgbmConfig.Key>(), PgbmConfig().differences(PgbmConfig(model = "dmg")))
+        val gba = PgbmConfig(gbaSaveType = "flash128", gbaRtc = "on", gbaBios = true)
+        assertEquals(
+            listOf(PgbmConfig.Key.GBA_SAVE_TYPE, PgbmConfig.Key.GBA_RTC, PgbmConfig.Key.GBA_BIOS),
+            gba.differences(PgbmConfig(gbaSaveType = "sram", gbaRtc = "off", gbaBios = false)),
+        )
+        assertEquals(emptyList<PgbmConfig.Key>(), PgbmConfig(gbaSaveType = "auto", gbaRtc = "auto", gbaBios = true).differences(PgbmConfig(gbaSaveType = "sram", gbaRtc = "off", gbaBios = true)))
+        assertEquals(emptyList<PgbmConfig.Key>(), gba.differences(gba))
     }
 
     @Test fun aKnownSaveAsksAndKeepingLocalLeavesItInTheCopies() {

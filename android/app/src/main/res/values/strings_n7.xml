@@ -66,9 +66,12 @@
     <string name="n7_replace_state_title">¿Sustituir el punto de «Continuar»?</string>
     <string name="n7_replace_state_body">El paquete de %1$s trae el sitio exacto donde lo dejó. Si lo usas, el de este teléfono pasa a «Antes de importar» (Momentos).</string>
     <string name="n7_replace_state_confirm">Usar el del paquete</string>
-    <string name="n7_config_mismatch_title">Configuración distinta</string>
-    <string name="n7_config_mismatch_body">El paquete de %1$s se jugó con otra configuración de este juego (modelo de consola, tipo de partida, reloj o BIOS). Se importará la partida, pero no el sitio exacto donde lo dejó.</string>
-    <string name="n7_config_mismatch_confirm">Importar sin el estado</string>
+    <!-- ND21 · estado de otra configuración: se instala y se avisa de qué ajuste cambiar (como iOS) -->
+    <string name="n7_config_note">Ojo: en %1$s se jugó con otra configuración (%2$s). Cámbiala en los ajustes del juego para continuar justo donde lo dejaste; si no, puede que no cargue y se jugará desde tu partida, que queda intacta.</string>
+    <string name="n7_config_key_model">el color de Game Boy</string>
+    <string name="n7_config_key_save_type">el tipo de partida</string>
+    <string name="n7_config_key_rtc">el reloj</string>
+    <string name="n7_config_key_bios">la BIOS</string>
     <string name="n7_reject_local_unreadable">No se puede leer la partida que hay en este teléfono: no se importa nada encima. Revisa Ajustes › Partidas.</string>
     <string name="n7_open_choose_game">¿De qué juego es este .sav?</string>
 </resources>
