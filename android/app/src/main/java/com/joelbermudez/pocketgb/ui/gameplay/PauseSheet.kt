@@ -140,6 +140,7 @@ fun PauseMenuContent(
             Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(stringResource(R.string.n6_pause_moments), modifier = Modifier.padding(start = 8.dp))
         }
+        com.joelbermudez.pocketgb.ui.tips.TipCard(com.joelbermudez.pocketgb.tips.Tip.MOMENTS)
         OutlinedButton(
             onClick = onCustomize,
             enabled = !busy,

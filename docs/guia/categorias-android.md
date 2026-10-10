@@ -11,8 +11,8 @@ La pestaña **Biblioteca** empieza así, de arriba abajo:
 
 - Toca una tarjeta para ver su detalle; mantenla pulsada para su menú (jugar, favorito, renombrar, ajustes del juego, ocultar).
 - Si tu carpeta no tiene subcarpetas no hay estanterías: repetirían «Todos los juegos».
-- **Al buscar o filtrar** (GB, GBC, Favoritos o una etiqueta) el inicio deja sitio a los resultados; al quitar el filtro vuelve.
-- **En horizontal** funciona igual que en N3: los iconos Buscar, Filtros, Categorías y Vista están arriba y, al bajar hasta «Todos los juegos», aparecen flotando abajo a la derecha.
+- **Al buscar o filtrar** (GB, GBC, GBA, Favoritos o una etiqueta) el inicio deja sitio a los resultados; al quitar el filtro vuelve.
+- **En horizontal** los iconos Buscar, Filtros, Categorías y Vista están arriba y, al bajar hasta «Todos los juegos», aparecen flotando abajo a la derecha.
 
 ## Categorías y subcategorías
 Se abren desde **Ver todo** de su estantería, desde el botón **Categorías** (en horizontal) o desde **«⋮» › Categorías** (en vertical).

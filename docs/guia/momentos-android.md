@@ -1,6 +1,6 @@
 # Momentos y progreso en Android
 
-Un **momento** es una foto completa del juego en un instante: la posición exacta (el estado del emulador), **la partida del cartucho de ese instante**, una miniatura y la configuración con la que jugabas. Sirve para experimentar sin miedo («¿y si capturo al legendario con otra Ball?») y para no perder progreso en juegos que no dejan guardar donde quieres. Los momentos son **de este teléfono**: no viajan solos a otros equipos (eso llegará con la exportación).
+Un **momento** es una foto completa del juego en un instante: la posición exacta (el estado del emulador), **la partida del cartucho de ese instante**, una miniatura y la configuración con la que jugabas. Sirve para experimentar sin miedo («¿y si capturo al legendario con otra Ball?») y para no perder progreso en juegos que no dejan guardar donde quieres. Los momentos son **de este teléfono**: «Enviar a otro dispositivo» lleva la partida y el punto de «Continuar», no los momentos (ver [viajar-android.md](viajar-android.md)).
 
 ## Crear un momento
 

@@ -25,8 +25,8 @@ Las carpetas de primer nivel (aquí «Pokémon») son **categorías** y las de d
 - **Hasta 5 niveles de carpetas** dentro de la que elegiste. `Roms/A/B/C/D/E/juego.gb` se ve; un nivel más hondo, no.
 - **Lo que empieza por `.`** (punto) se ignora: son archivos y carpetas ocultos del sistema.
 - **Las carpetas que empiezan por `_`** (guion bajo) quedan **apartadas**: PocketGB no mira dentro. Sirven para dejar a un lado lo que no quieres ver, por ejemplo `_Revisar/` o `_Repetidos/`. Un archivo que empieza por `_` sí se lee.
-- **`PocketGB/`** en la carpeta principal es de la app (más adelante guardará ahí lo que envíes a otro equipo y lo que exportes). No se mira como biblioteca, así que no pongas juegos dentro. Una carpeta `PocketGB` dentro de otra carpeta sí se mira.
-- Solo se leen archivos **`.gb` y `.gbc`** de hasta 8 MiB. Los **`.zip` no se leen**: descomprímelos antes.
+- **`PocketGB/`** en la carpeta principal es de la app: guarda en `PocketGB/Intercambio/` lo que envías a otro equipo (ver [viajar-android.md](viajar-android.md)). No se mira como biblioteca, así que no pongas juegos dentro. Una carpeta `PocketGB` dentro de otra carpeta sí se mira.
+- Solo se leen archivos **`.gb` y `.gbc`** de hasta 8 MiB y **`.gba`** de hasta 32 MiB (ver [gba-android.md](gba-android.md)). Los **`.zip` no se leen**: descomprímelos antes.
 - Como mucho se miran **5 000 archivos y carpetas** en total. Si tu carpeta tiene más, algunos juegos no aparecerán.
 
 ## La partida va junto al juego

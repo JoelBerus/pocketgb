@@ -319,6 +319,7 @@ fun GameDetailsContent(
                     onOpenMoments = onOpenMoments,
                     progress = progress,
                     saveStatus = saveStatus,
+                    showSendTip = travel != null,
                     // «Jugar» siempre justo bajo el título (H3): con un nombre o una ruta largos, la ruta y «También en» lo
                     // empujaban fuera de la pantalla (en dos columnas y también en vertical). En dos columnas el título
                     // ocupa como mucho 2 líneas (completo en la barra superior y en «Renombrar»).
@@ -388,6 +389,8 @@ private fun DetailsInfo(
     onOpenMoments: (() -> Unit)? = null,
     progress: (@Composable () -> Unit)? = null,
     saveStatus: com.joelbermudez.pocketgb.travel.SaveStatus? = null,
+    /** N9: consejo «Enviar a otro dispositivo» (solo con el menú de viajar). */
+    showSendTip: Boolean = false,
 ) {
     val title: @Composable () -> Unit = {
         Text(
@@ -439,6 +442,7 @@ private fun DetailsInfo(
     if (!playFirst) PlayActions(entry, load, canResume, onPlay, onPlayFromStart)
 
     Stats(entry, lastPlayedAt, saveStatus)
+    if (showSendTip) com.joelbermudez.pocketgb.ui.tips.TipCard(com.joelbermudez.pocketgb.tips.Tip.SEND)
     SecondaryActions(favorite, onToggleFavorite, onOpenSettings, onOpenMoments)
     progress?.invoke()
     TechnicalInfo(entry, load)

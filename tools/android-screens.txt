@@ -339,3 +339,22 @@ n7-warning-mirror-older portrait light
 n7-known portrait light
 n7-raw-confirm portrait light
 n7-config-mismatch portrait light
+n9-settings portrait light swipe=up
+n9-guide portrait light
+n9-guide portrait dark
+n9-guide-ax5 portrait light fontScale=2.0
+n9-guide-search portrait light
+n9-guide-search portrait dark
+n9-guide-search-empty portrait light
+n9-guide-section portrait light
+n9-guide-section portrait dark
+n9-guide-section-ax5 portrait light fontScale=2.0
+n9-guide-section-anchor portrait light
+n9-guide-section-table portrait light
+n9-guide-section-landscape landscape light
+n9-tip-pause portrait dark
+n9-tip-category portrait light
+n9-tip-send portrait light
+n9-tip-send portrait dark
+n9-tip-arrows portrait light
+n9-tip-arrows-ax5 portrait light fontScale=2.0
