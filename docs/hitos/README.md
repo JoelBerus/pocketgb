@@ -61,4 +61,4 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 | N6 · Momentos y progreso | lector C ✅; Android ✅ fusionado (Opus respondida); iOS ✅ fusionado (Opus respondida) |
 | N7 · Partidas que viajan | ✅ C, Android e iOS fusionados (auditorías Opus respondidas, ND20); pendiente prueba de Joel Rojo iPhone → Android → iPhone |
 | N8 · GBA en Android | ✅ nativa y Kotlin fusionadas (auditoría Opus aprobada); pendiente prueba de Joel N8-1…8 |
-| N9 · Carpetas de Joel, guía y cierre | guía iOS/Android ✅ fusionada; carpetas de Joel ✅ (iCloud reorganizada, huellas iguales; Drive renombrado); auditoría conjunta final APROBAR CON CAMBIOS, correcciones en curso |
+| N9 · Carpetas de Joel, guía y cierre | guía iOS/Android ✅ fusionada; carpetas de Joel ✅ (iCloud reorganizada, huellas iguales; Drive renombrado); auditoría conjunta final Opus respondida (fin-ios, fin-android) ✅ |
