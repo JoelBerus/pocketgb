@@ -16,7 +16,7 @@
 #include "pocketgb_pgbm.h"
 #include "unit.h"
 
-enum { X_SAV = 32768, X_STAT = 4096, X_SHORT = 8000, X_COUNT = 7 };
+enum { X_SAV = 32768, X_STAT = 4096, X_SHORT = 8000, X_COUNT = 8 };
 
 static void xpat(uint8_t *p, size_t n, unsigned seed)
 {
@@ -112,7 +112,22 @@ static size_t build_cross(unsigned which, uint8_t *out, size_t cap, char *meta_o
         xpat(sav, X_SAV, 0x21);
         v.sav.len = X_SAV;
         break;
-    default: /* X7: sav_sha256 no corresponde a SAVE. */
+    case 7: /* X8 (ND20 h): clave repetida («created_ms» dos veces) → META inválida. */
+        xpat(sav, X_SAV, 0x21);
+        v.sav.len = X_SAV;
+        xmeta(meta_out, meta_cap, 1, romhex, s1, NULL, "android", "Pixel de prueba", 1790000000000ULL, NULL, NULL);
+        {
+            /* Se inserta la clave repetida justo después del primer «created_ms». */
+            char *p = strstr(meta_out, ",\"core\":");
+            const char *dup = ",\"created_ms\":1790000000001";
+            size_t tail = strlen(p), dl = strlen(dup);
+            if (strlen(meta_out) + dl < meta_cap) {
+                memmove(p + dl, p, tail + 1);
+                memcpy(p, dup, dl);
+            }
+        }
+        break;
+    case 6: /* X7: sav_sha256 no corresponde a SAVE. */
         xpat(sav, X_SAV, 0x21);
         v.sav.len = X_SAV;
         xmeta(meta_out, meta_cap, 1, romhex, b22, NULL, "android", "Pixel de prueba", 1790000000000ULL, NULL, NULL);
@@ -144,6 +159,7 @@ static const struct {
     { 33158, 318, "8b1fb567aa21ffd5c907b59111c93eb4f67d7dba91bb57aff5e4b5804f30718a" },
     { 32832, 0, "c7f5650966a804b620f8d29a63766b2583d53a2a30384b030ceafe224b236a2e" },
     { 33158, 318, "6d8b3af30e6fe76adf7fef36fc21f80a3db0a86d4df1a8faa00d573b07a39880" },
+    { 33185, 345, "08c1ad1b5c7422765a54d1e2d0bc19276c5feeb9db8d1fe49f7aadc0ebf7c95b" },
 };
 
 void unit_pgbm_cross(struct ut *t)
