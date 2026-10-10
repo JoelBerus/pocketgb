@@ -57,8 +57,8 @@ Orden recomendado si se trabaja en la nube: M1 → M2 → M3 → (núcleo de M5)
 | N2 · Controles | ✅ iOS y Android fusionados (Opus APROBAR CON CAMBIOS, respondidas; reglas comunes) |
 | N3 · Biblioteca y detalle adaptables | ✅ iOS y Android fusionados (Opus, respondidas) |
 | N4 · Categorías, etiquetas e inicio | Android ✅ fusionado (Opus, respondida); iOS ✅ fusionado (Opus aprobada) |
-| N5 · Portadas | ✅ Android e iOS fusionados (auditorías Opus respondidas); pendiente ratificar HEIC al importar en iOS |
+| N5 · Portadas | ✅ Android e iOS fusionados (auditorías Opus respondidas); sin HEIC (ND18) |
 | N6 · Momentos y progreso | lector C ✅; Android ✅ fusionado (Opus respondida); iOS ✅ fusionado (Opus respondida) |
 | N7 · Partidas que viajan | ✅ C, Android e iOS fusionados (auditorías Opus respondidas, ND20); pendiente prueba de Joel Rojo iPhone → Android → iPhone |
 | N8 · GBA en Android | ✅ nativa y Kotlin fusionadas (auditoría Opus aprobada); pendiente prueba de Joel N8-1…8 |
-| N9 · Carpetas de Joel, guía y cierre | pendiente |
+| N9 · Carpetas de Joel, guía y cierre | guía iOS/Android ✅ fusionada; carpetas de Joel ✅ (iCloud reorganizada, huellas iguales; Drive renombrado); auditoría conjunta final APROBAR CON CAMBIOS, correcciones en curso |

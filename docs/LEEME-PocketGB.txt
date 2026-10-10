@@ -24,13 +24,12 @@ Reglas
 - Lo que empieza por «.» se ignora. Las carpetas que empiezan por «_» quedan
   apartadas (PocketGB no mira dentro): úsalas para copias o juegos por revisar.
 - «PocketGB/» en la raíz es de la app: no pongas juegos dentro.
-- Solo .gb, .gbc (hasta 8 MiB) y .gba (hasta 32 MiB; .gba: iPhone, Android
-  cuando llegue). Los .zip no se leen:
-  descomprímelos antes.
+- Solo .gb, .gbc (hasta 8 MiB) y .gba (hasta 32 MiB), en iPhone y Android.
+  Los .zip no se leen: descomprímelos antes (guárdalos en «_Comprimidos/»).
 - La partida es el .sav con el mismo nombre que el juego, en su misma carpeta.
   Si mueves un juego, mueve también su .sav.
 - Portadas: una imagen con el mismo nombre que el juego (.png, .jpg o .webp)
-  junto a él (llegará en una próxima versión).
+  junto a él. En la app también puedes importar una o usar una captura.
 
 En la app (no cambia esta carpeta)
 - «Mostrar en categoría…» (ajustes del juego) enseña un juego en otra categoría
@@ -38,4 +37,12 @@ En la app (no cambia esta carpeta)
 - Etiquetas libres por juego para buscar y filtrar.
 - Ajustes › Biblioteca › Inicio: orden, fijadas y ocultas del inicio.
 
+Partidas entre equipos
+- iPhone y Android no comparten carpeta: para seguir en el otro equipo usa
+  «Enviar a otro dispositivo» (paquete .pgbm). En Android llegan a
+  «PocketGB/Intercambio/». Antes de instalar nada, la app guarda una copia.
+- Si las dos partidas se separaron, la app te pregunta con cuál seguir y la
+  otra queda como momento «Conflicto».
+
+Guía completa: Ajustes › Guía, dentro de la app.
 Más detalles: docs/11-biblioteca-carpetas.md en el proyecto PocketGB.
