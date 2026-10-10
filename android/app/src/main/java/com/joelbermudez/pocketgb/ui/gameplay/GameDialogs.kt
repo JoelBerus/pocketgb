@@ -50,6 +50,8 @@ fun saveLoadWarningText(warning: SaveLoadWarning): String = when (warning) {
     SaveLoadWarning.MirrorReadOnly -> stringResource(R.string.warning_mirror_read_only)
     SaveLoadWarning.LocalSetAside -> stringResource(R.string.n1_warning_local_set_aside)
     is SaveLoadWarning.Unreadable -> stringResource(R.string.warning_unreadable, warning.detail)
+    SaveLoadWarning.ExternalChange -> stringResource(R.string.n7_warning_external_change)
+    is SaveLoadWarning.Divergence -> stringResource(R.string.n7_warning_divergence)
     is SaveLoadWarning.GameSettingsMismatch ->
         stringResource(if (warning.noSave) R.string.n8_warning_settings_no_save else R.string.n8_warning_settings_mismatch)
 }
@@ -166,6 +168,7 @@ fun SaveLoadWarningDialog(warning: SaveLoadWarning, onDismiss: () -> Unit) {
                     when {
                         warning is SaveLoadWarning.GameSettingsMismatch && warning.noSave -> R.string.n8_warning_settings_no_save_title
                         warning is SaveLoadWarning.GameSettingsMismatch -> R.string.n8_warning_settings_mismatch_title
+                        warning is SaveLoadWarning.Divergence -> R.string.n7_warning_divergence_title
                         else -> R.string.warning_title
                     },
                 ),

@@ -245,7 +245,7 @@ class SaveStore(
     /** Escritura confirmada: contenido (hash) y fecha del espejo observada justo tras escribirlo. */
     private class Written(val hash: String, val dateMs: Long?)
 
-    private class MirrorHistory(val successful: List<Written>, val pending: List<String>)
+    private class MirrorHistory(val successful: List<Written>, val pending: List<String>, val received: List<String> = emptyList())
 
     /**
      * ¿Es este espejo (contenido + fecha) una escritura de PocketGB?
@@ -267,7 +267,7 @@ class SaveStore(
     fun recordMirrorAttempt(data: ByteArray) = lock.withLock {
         val hash = contentHash(data)
         val h = readHistory()
-        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT)))
+        writeHistory(MirrorHistory(h.successful, (listOf(hash) + h.pending.filter { it != hash }).take(HISTORY_LIMIT), h.received))
     }
 
     /** @param observedDateMs fecha de modificación del espejo leída justo después de escribirlo. */
@@ -278,11 +278,107 @@ class SaveStore(
             MirrorHistory(
                 (listOf(Written(hash, observedDateMs)) + h.successful.filter { it.hash != hash }).take(HISTORY_LIMIT),
                 h.pending.filter { it != hash },
+                h.received,
             ),
         )
     }
 
     internal fun mirrorHistoryPending(): List<String> = readHistory().pending
+
+    // MARK: N7a · linaje (N-README §3.4)
+
+    /** Huellas de nuestras escrituras del espejo (write-ahead y confirmadas), acotadas a las últimas [HISTORY_LIMIT]. */
+    fun ownMirrorHashes(): List<String> = readHistory().let { (it.pending + it.successful.map { w -> w.hash }).distinct() }
+
+    /** La última escritura propia: la última intentada y la última confirmada (la local es una de ellas si no cambió). */
+    fun lastOwnMirrorHashes(): Set<String> = readHistory().let { setOfNotNull(it.pending.firstOrNull(), it.successful.firstOrNull()?.hash) }
+
+    /** Huellas que este equipo ya tuvo: propias y recibidas (cambio externo, importación). */
+    fun knownHashes(): Set<String> = readHistory().let { h -> (h.pending + h.successful.map { it.hash } + h.received).toSet() }
+
+    /**
+     * `base_sav_sha256` de un paquete que sale de aquí: la última partida que este equipo instaló o recibió de fuera
+     * (cambio externo del espejo, importación). `null` si nunca recibió ninguna.
+     */
+    fun lineageBase(): String? = readHistory().received.firstOrNull()
+
+    /** Anota que [data] llegó de fuera y se instaló (o se conservó como base): entra en el linaje. */
+    fun recordReceived(data: ByteArray) = recordReceivedHash(contentHash(data))
+
+    fun recordReceivedHash(hash: String) = lock.withLock {
+        val h = readHistory()
+        writeHistory(MirrorHistory(h.successful, h.pending, (listOf(hash) + h.received.filter { it != hash }).take(HISTORY_LIMIT)))
+    }
+
+    // MARK: N7b/N7c · origen de la partida («Partida: iPhone · hace 2 h»)
+
+    val originFile: File get() = File(directory, "$fingerprint.origin.json")
+
+    /** De qué equipo llegó la partida [hash] y cuándo la escribió (`created_ms` del paquete). */
+    data class Origin(val hash: String, val platform: String, val deviceName: String, val createdMs: Long)
+
+    fun recordOrigin(origin: Origin) = lock.withLock {
+        val json = buildJsonObject {
+            put("hash", origin.hash)
+            put("platform", origin.platform)
+            put("name", origin.deviceName)
+            put("created", origin.createdMs)
+        }
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val tmp = File(originFile.path + ".tmp")
+        ops.writeSynced(tmp, json.toString().toByteArray(Charsets.UTF_8))
+        ops.atomicReplace(tmp, originFile)
+    }
+
+    /** El origen anotado, solo si sigue siendo la partida actual [currentHash] (si se jugó aquí después, ya no vale). */
+    fun origin(currentHash: String?): Origin? = try {
+        if (currentHash == null || !ops.exists(originFile)) null
+        else {
+            val o = Json.parseToJsonElement(ops.readBytes(originFile, 1 shl 12).toString(Charsets.UTF_8)).jsonObject
+            val hash = (o["hash"] as? JsonPrimitive)?.contentOrNull
+            val origin = Origin(
+                hash ?: "", (o["platform"] as? JsonPrimitive)?.contentOrNull ?: "",
+                (o["name"] as? JsonPrimitive)?.contentOrNull ?: "", (o["created"] as? JsonPrimitive)?.longOrNull ?: 0L,
+            )
+            origin.takeIf { hash == currentHash && it.deviceName.isNotEmpty() }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    // MARK: N7a · copias en conflicto del proveedor
+
+    val providerConflictsFile: File get() = File(directory, "$fingerprint.provider-conflicts.json")
+
+    /** Una copia en conflicto del proveedor junto al juego (`X 2.sav`…): solo se lista; nunca se borra ni se lee. */
+    class ProviderConflict(val name: String, val dateMs: Long?)
+
+    /** Sustituye la lista vista en la última apertura (vacía = ya no hay). Mejor esfuerzo: un fallo no impide jugar. */
+    fun recordProviderConflicts(found: List<ProviderConflict>) = lock.withLock {
+        if (found.isEmpty() && !ops.exists(providerConflictsFile)) return@withLock
+        val json = buildJsonArray {
+            for (c in found.take(32)) add(buildJsonObject {
+                put("name", c.name)
+                if (c.dateMs != null) put("date", c.dateMs) else put("date", JsonNull)
+            })
+        }
+        if (!ops.exists(directory)) ops.mkdirs(directory)
+        val tmp = File(providerConflictsFile.path + ".tmp")
+        ops.writeSynced(tmp, json.toString().toByteArray(Charsets.UTF_8))
+        ops.atomicReplace(tmp, providerConflictsFile)
+    }
+
+    fun providerConflicts(): List<ProviderConflict> = try {
+        if (!ops.exists(providerConflictsFile)) emptyList()
+        else (Json.parseToJsonElement(ops.readBytes(providerConflictsFile, 1 shl 16).toString(Charsets.UTF_8)) as? JsonArray).orEmpty()
+            .mapNotNull { e ->
+                val o = e as? JsonObject ?: return@mapNotNull null
+                val name = (o["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                ProviderConflict(name, (o["date"] as? JsonPrimitive)?.longOrNull)
+            }
+    } catch (_: Exception) {
+        emptyList()
+    }
 
     private fun writeHistory(history: MirrorHistory) {
         val json = buildJsonObject {
@@ -293,6 +389,7 @@ class SaveStore(
                 })
             })
             put("pending", buildJsonArray { history.pending.forEach { add(JsonPrimitive(it)) } })
+            put("received", buildJsonArray { history.received.forEach { add(JsonPrimitive(it)) } })
         }
         if (!ops.exists(directory)) ops.mkdirs(directory)
         val tmp = File(mirrorHistoryFile.path + ".tmp")
@@ -315,12 +412,13 @@ class SaveStore(
                 }
             }
             val pending = (root["pending"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            MirrorHistory(successful, pending)
+            val received = (root["received"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            MirrorHistory(successful, pending, received)
         }
     } catch (_: Exception) {
         MirrorHistory(emptyList(), emptyList())
     }
 
-    private fun contentHash(data: ByteArray): String =
+    fun contentHash(data: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
 }

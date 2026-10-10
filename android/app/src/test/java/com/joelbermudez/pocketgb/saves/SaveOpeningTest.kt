@@ -207,8 +207,12 @@ class SaveOpeningTest {
         assertArrayEquals(d2, (mirror.snapshot() as SaveMirror.Snapshot.Read).data)
     }
 
-    /** Un contenido que PocketGB escribió antes, restaurado a mano (fecha nueva), gana por fecha y la local se respalda. */
-    @Test fun restoredHistoricalMirrorWithNewDateWinsAndBacksUpLocal() {
+    /**
+     * N7a (§3.4, «espejo = una escritura nuestra anterior»): un contenido que PocketGB escribió antes, aunque vuelva con
+     * fecha nueva (restaurado a mano, o una nube que reaplica una versión vieja), NO gana: gana la local y se reescribe el
+     * espejo. Sustituye a la regla anterior por fecha (se respaldaba la local y ganaba el espejo).
+     */
+    @Test fun restoredHistoricalMirrorWithNewDateLosesToLocalAndIsRewritten() {
         val s = store()
         val mirror = FakeSaveMirror(dateOnWrite = 5_000_000L)
         val target = SaveTarget(s, mirror)
@@ -218,20 +222,18 @@ class SaveOpeningTest {
             target.persistLocal(d)
             awaitIdle(target)
         }
-        assertArrayEquals(d2, (mirror.snapshot() as SaveMirror.Snapshot.Read).data)
-
-        // Joel restaura d1 (ya visto por PocketGB) junto a la ROM, con otra fecha; la local queda más antigua.
         mirror.snapshotValue = read(d1, 9_000_000L)
         assertTrue(s.saveFile.setLastModified(1_000_000L))
 
         val reopened = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
-        assertArrayEquals(d1, reopened.data)
-        assertArrayEquals(d1, s.load())
-        assertArrayEquals(d2, s.backupFile(1).readBytes()) // la local no se pierde
-        assertArrayEquals(d1, (mirror.snapshot() as SaveMirror.Snapshot.Read).data) // el espejo no se toca
+        assertArrayEquals(d2, reopened.data)
+        assertArrayEquals(d2, s.load())
+        assertNull(reopened.warning)
+        assertTrue(reopened.target!!.mirrorPending)
     }
 
-    @Test fun newerExternalMirrorWinsAndBacksUpLocal() {
+    /** N7a (§3.4, divergencia): la local cambió desde nuestra última escritura y el espejo trae otra desconocida. */
+    @Test fun unknownMirrorWhenLocalAlsoChangedIsADivergenceAndNothingIsLost() {
         val s = store()
         val mirror = FakeSaveMirror()
         val own = version(1)
@@ -244,11 +246,14 @@ class SaveOpeningTest {
         s.save(local)
         assertTrue(s.saveFile.setLastModified(old))
         mirror.snapshotValue = read(external, new)
-
-        val reopened = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes)
-        assertArrayEquals(external, reopened.data)
-        assertArrayEquals(external, s.load())
-        assertArrayEquals(local, s.backupFile(1).readBytes())
+        val conflicts = ArrayList<ByteArray>()
+        val reopened = SaveOpening.prepare(s, mirror, mirror.snapshot(), sizes, recordConflict = { conflicts += it; "c1" })
+        assertArrayEquals("sigue la local", local, reopened.data)
+        assertArrayEquals(local, s.load())
+        assertEquals(SaveLoadWarning.Divergence("c1"), reopened.warning)
+        assertArrayEquals("la otra queda como momento «Conflicto»", external, conflicts.single())
+        assertArrayEquals("…en backup", external, s.backupFile(1).readBytes())
+        assertTrue("…y apartada", s.setAside().any { File(s.backupsDirectory, it.name).readBytes().contentEquals(external) })
     }
 
     @Test fun mirrorOnlyIsImportedAndMirrorKeptByTheInstall() {

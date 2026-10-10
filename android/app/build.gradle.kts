@@ -99,3 +99,7 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// N7b: vectores cruzados y códec de referencia del `.pgbm`, compartidos por los tests JVM y los instrumentados.
+android.sourceSets.getByName("test").kotlin.srcDir("src/sharedTest/java")
+android.sourceSets.getByName("androidTest").kotlin.srcDir("src/sharedTest/java")

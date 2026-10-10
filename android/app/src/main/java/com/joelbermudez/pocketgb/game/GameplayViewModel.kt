@@ -636,6 +636,12 @@ class GameplayViewModelFactory(
             momentsRoot = File(appContext.filesDir, "moments"),
             progress = progress,
             migratedName = { origin -> migratedMomentName(appContext, origin) },
+            conflictName = { ms ->
+                appContext.getString(
+                    com.joelbermudez.pocketgb.R.string.n7_conflict_moment,
+                    java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(ms)),
+                )
+            },
         )
         val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(

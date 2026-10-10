@@ -100,4 +100,25 @@ class ManifestPolicyTest {
     fun manifestAddsNoPermissions() {
         assertFalse(manifest.contains("<uses-permission"))
     }
+
+    /** N7b: el FileProvider no se exporta, solo da permisos temporales y solo expone `cache/exports/`. */
+    @Test
+    fun exportsProviderIsPrivateAndLimitedToTheExportsCache() {
+        val provider = manifest.substringAfter("<provider").substringBefore("</provider>")
+        assertTrue(provider.contains("androidx.core.content.FileProvider"))
+        assertTrue(provider.contains("android:exported=\"false\""))
+        assertTrue(provider.contains("android:grantUriPermissions=\"true\""))
+        val paths = rules("file_paths_exports.xml")
+        assertTrue(paths.contains("""<cache-path name="exports" path="exports/" />"""))
+        assertFalse(paths.contains("files-path") || paths.contains("external") || paths.contains("root-path"))
+    }
+
+    /** N7b: «Abrir con» acepta tipos genéricos (se valida por cabecera), solo `content://`. */
+    @Test
+    fun genericOpenIntentsAreContentOnly() {
+        assertTrue(manifest.contains("android.intent.action.VIEW"))
+        assertTrue(manifest.contains("android.intent.action.SEND"))
+        assertFalse(manifest.contains("android:scheme=\"file\""))
+        assertFalse(manifest.contains("android:scheme=\"http"))
+    }
 }

@@ -13,10 +13,10 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 | A3 | Cambiar la paleta en Ajustes › Emulación (global) y después una paleta distinta solo para un juego | La global afecta a los juegos sin ajuste propio; el juego con paleta propia conserva la suya |
 | A4 | Jugar 10 min con auriculares y con altavoz | Audio continuo, sin chasquidos ni cortes; sin desfase perceptible |
 | A5 | Multitoque: A+B a la vez, deslizar sobre la cruceta, D-pad diagonal | Todas las pulsaciones se registran; el pulgar que resbala no suelta la dirección; háptica al pulsar |
-| A6 | Guardar en el juego, cerrar forzado desde el selector de apps (J11), reabrir | La partida está; Continuar retoma donde se guardó |
+| A6 | Guardar en el juego, cerrar forzado desde el selector de apps (J11), reabrir | La partida está; Continuar retoma donde se guardó | ✅ **Hecha** (Joel, 2026-10-08): bien.
 | A7 | Reinstalar la app (`installDebug` sobre la anterior, no desinstalar) y abrir el juego | Partida intacta |
-| A8 | Recuperación desde el espejo: haz copia, desinstala, instala y reconecta la misma carpeta | La partida se recupera desde `<rom>.sav` junto a la ROM |
-| A9 | Ajustes › Partidas › restaurar un backup | Pide confirmación, respalda lo actual antes y el juego carga la partida restaurada |
+| A8 | Recuperación desde el espejo: haz copia, desinstala, instala y reconecta la misma carpeta | La partida se recupera desde `<rom>.sav` junto a la ROM | ✅ **Hecha** (Joel, 2026-10-08): bien.
+| A9 | Ajustes › Partidas › restaurar un backup | Pide confirmación, respalda lo actual antes y el juego carga la partida restaurada | ✅ **Hecha** (Joel, 2026-10-08): bien.
 | A10 | Mando Bluetooth: conectar y jugar; probar el mapeo por posición (A/B según la posición física), hat y stick izquierdo | Funciona sin tocar la pantalla; los opuestos no se activan a la vez |
 | A11 | Con mando: R1 | Velocidad rápida mientras se mantiene o según el ajuste |
 | A12 | Con mando: Mode/Select y L1 | Abre el menú de pausa (L1 si así está asignado) |
@@ -76,7 +76,7 @@ Preparación: `cd android && ./gradlew :app:installDebug` con el teléfono por U
 
 | # | Prueba | Resultado esperado |
 |---|---|---|
-| I1 | D8.1: con un `.sav` más nuevo junto al ROM, abrir el juego desde Continuar y desde Jugar desde el inicio | Continuar retoma el estado automático; Jugar desde el inicio usa la partida del `.sav` más nuevo sin pisarla |
+| I1 | D8.1: con un `.sav` más nuevo junto al ROM, abrir el juego desde Continuar y desde Jugar desde el inicio | Continuar retoma el estado automático; Jugar desde el inicio usa la partida del `.sav` más nuevo sin pisarla | ✅ **Hecha** (Joel, 2026-10-08): bien.
 | I2 | Icono de la app y pantalla de launch | Icono nuevo y launch con el glifo, sin parpadeos |
 | I3 | GBA: Kirby durante al menos 30 min | Sin cortes, sin deriva de audio |
 | I4 | GBA: L y R | Responden; sin entradas fantasma |

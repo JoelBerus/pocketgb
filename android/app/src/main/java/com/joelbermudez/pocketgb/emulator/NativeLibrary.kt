@@ -223,4 +223,19 @@ internal object NativeLibrary {
     /** N6: lector de progreso Pokémon (`pgb_progress_read`); `null` = sin datos. Formato en `pocketgb_jni.c`. */
     @JvmStatic
     external fun nativeProgressRead(header: ByteArray, sram: ByteArray): IntArray?
+
+    /** N7b: `pgbm_parse`. [spans] (8): desplazamiento y longitud de META, SAVE, STAT, THMB; [romFp] (32). */
+    @JvmStatic
+    external fun nativePgbmParse(pkg: ByteArray, spans: IntArray, romFp: ByteArray): Int
+
+    /** N7b: `pgbm_encode`. [result] (1) recibe el código; devuelve el paquete o `null`. */
+    @JvmStatic
+    external fun nativePgbmEncode(
+        romFp: ByteArray,
+        meta: ByteArray?,
+        sav: ByteArray?,
+        state: ByteArray?,
+        thumb: ByteArray?,
+        result: IntArray,
+    ): ByteArray?
 }

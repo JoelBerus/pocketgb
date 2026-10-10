@@ -1,0 +1,226 @@
+package com.joelbermudez.pocketgb.saves
+
+import java.io.File
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+/**
+ * N7a · la tabla de linaje de N-README §3.4 completa, con E/S real (directorios temporales) y casos de latencia, copias
+ * en conflicto del proveedor y reloj desfasado. Cargas sintéticas (`version`), nunca partidas reales.
+ */
+class SaveLineageTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private lateinit var dir: File
+    private val sizes = setOf(4)
+
+    @Before fun setUp() { dir = File(tmp.newFolder(), "saves") }
+
+    private fun store() = SaveStore(dir, java.util.UUID.randomUUID().toString().take(12))
+    private fun read(d: ByteArray, date: Long?) = SaveMirror.Snapshot.Read(d, date)
+    private fun h(d: ByteArray) = SaveStore(dir, "x").contentHash(d)
+
+    private fun awaitIdle(target: SaveTarget?) {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        target!!.whenMirrorIdle { latch.countDown() }
+        assertTrue(latch.await(3, java.util.concurrent.TimeUnit.SECONDS))
+    }
+
+    /** Juega [d] y deja que PocketGB lo escriba en el espejo: entra en el historial de escrituras propias. */
+    private fun playAndMirror(s: SaveStore, mirror: FakeSaveMirror, vararg d: ByteArray) {
+        val target = SaveTarget(s, mirror)
+        for (x in d) {
+            target.persistLocal(x)
+            awaitIdle(target)
+        }
+    }
+
+    // MARK: tabla pura
+
+    @Test fun pureTableRows() {
+        val a = "a"; val b = "b"; val c = "c"
+        assertEquals(SaveLineage.Mirror.SAME, SaveLineage.classifyMirror(a, a, listOf(a), setOf(a)))
+        assertEquals(SaveLineage.Mirror.OWN_OLDER, SaveLineage.classifyMirror(b, a, listOf(b, a), setOf(b)))
+        assertEquals(SaveLineage.Mirror.EXTERNAL_CHANGE, SaveLineage.classifyMirror(a, c, listOf(a), setOf(a)))
+        assertEquals(SaveLineage.Mirror.DIVERGENCE, SaveLineage.classifyMirror(b, c, listOf(a), setOf(a)))
+        assertEquals(SaveLineage.Mirror.NO_HISTORY, SaveLineage.classifyMirror(a, c, emptyList(), emptySet()))
+        assertEquals(SaveLineage.Mirror.MIRROR_MISSING, SaveLineage.classifyMirror(a, null, listOf(a), setOf(a)))
+    }
+
+    // MARK: tabla con E/S
+
+    @Test fun mirrorEqualToLocalDoesNothing() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        val writes = m.writes.size
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(1), o.data)
+        assertNull(o.warning)
+        assertTrue(s.backups().isEmpty())
+        assertEquals(writes, m.writes.size)
+    }
+
+    @Test fun ownOlderWriteLosesAndIsRewrittenWithoutBackup() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        s.save(version(2)) // la escritura del espejo de la 2 no llegó
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(2), o.data)
+        assertTrue(o.target!!.mirrorPending)
+        assertTrue(s.setAside().isEmpty())
+    }
+
+    @Test fun externalChangeIsInstalledWithBackupAndWarning() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        m.snapshotValue = read(version(5), 1L) // el otro equipo escribió; la local no cambió
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(5), o.data)
+        assertArrayEquals(version(5), s.load())
+        assertEquals(SaveLoadWarning.ExternalChange, o.warning)
+        assertArrayEquals("la anterior queda en backup", version(1), s.backupFile(1).readBytes())
+        assertArrayEquals("…y apartada fuera de la rotación", version(1), File(s.backupsDirectory, s.setAside().single().name).readBytes())
+        assertEquals("pasa a ser la base del linaje", h(version(5)), s.lineageBase())
+    }
+
+    @Test fun divergenceAsksAndKeepsTheOtherAsConflictMomentAndBackup() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        s.save(version(2))
+        m.snapshotValue = read(version(6), Long.MAX_VALUE)
+        var conflict: ByteArray? = null
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes, recordConflict = { conflict = it; "id" })
+        assertArrayEquals(version(2), o.data)
+        assertTrue(o.warning is SaveLoadWarning.Divergence)
+        assertArrayEquals(version(6), conflict)
+        assertArrayEquals(version(6), s.backupFile(1).readBytes())
+        assertEquals(1, s.setAside().size)
+    }
+
+    @Test fun divergenceWithoutMomentsStillKeepsTheOther() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        s.save(version(2))
+        m.snapshotValue = read(version(6), 1L)
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes, recordConflict = { throw java.io.IOException("lleno") })
+        assertEquals(SaveLoadWarning.Divergence(null), o.warning)
+        assertArrayEquals(version(6), s.backupFile(1).readBytes())
+    }
+
+    @Test fun firstTimeWithoutHistoryUsesTheDateRuleWithBackup() {
+        val s = store()
+        s.save(version(1))
+        assertTrue(s.saveFile.setLastModified(1_000L))
+        val m = FakeSaveMirror(read(version(2), 2_000L))
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(2), o.data)
+        assertEquals(SaveLoadWarning.LocalSetAside, o.warning)
+        assertEquals(h(version(2)), s.lineageBase())
+    }
+
+    @Test fun deletedMirrorIsRecreatedFromLocal() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        m.snapshotValue = SaveMirror.Snapshot.Absent
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(1), o.data)
+        assertTrue(o.target!!.mirrorPending)
+        o.target!!.retryMirrorIfNeeded(version(1))
+        awaitIdle(o.target)
+        assertArrayEquals(version(1), m.writes.last())
+    }
+
+    // MARK: reloj desfasado
+
+    @Test fun skewedClockCannotMakeAnOwnOldWriteWin() {
+        val s = store(); val m = FakeSaveMirror(dateOnWrite = 10L)
+        playAndMirror(s, m, version(1), version(2))
+        assertTrue(s.saveFile.setLastModified(1_000L))
+        m.snapshotValue = read(version(1), 99_999_999_999L) // la nube «del futuro» reaplica la versión vieja
+        assertArrayEquals(version(2), SaveOpening.prepare(s, m, m.snapshot(), sizes).data)
+    }
+
+    @Test fun skewedClockCannotHideAnExternalChange() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        assertTrue(s.saveFile.setLastModified(99_999_999_000L))
+        m.snapshotValue = read(version(7), 1_000L) // el otro equipo tiene el reloj atrasado
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(7), o.data)
+        assertEquals(SaveLoadWarning.ExternalChange, o.warning)
+    }
+
+    // MARK: latencia (paquete que anuncia un sha que aún no llegó)
+
+    @Test fun incomingTable() {
+        val known = setOf("k1", "k2")
+        assertEquals(SaveLineage.Incoming.INSTALL, SaveLineage.classifyIncoming(null, "n", null, known))
+        assertEquals(SaveLineage.Incoming.ALREADY_CURRENT, SaveLineage.classifyIncoming("n", "N", null, known))
+        assertEquals(SaveLineage.Incoming.ADVANCE, SaveLineage.classifyIncoming("l", "n", "L", known))
+        assertEquals(SaveLineage.Incoming.STALE, SaveLineage.classifyIncoming("l", "k1", "k2", known))
+        assertEquals(SaveLineage.Incoming.DIVERGENCE, SaveLineage.classifyIncoming("l", "n", "k1", known))
+        assertEquals("sin base no se prueba el avance", SaveLineage.Incoming.DIVERGENCE, SaveLineage.classifyIncoming("l", "n", null, known))
+    }
+
+    @Test fun aPackageWhoseBaseHasNotArrivedYetIsNeverInstalledSilently() {
+        // El iPhone avanzó desde «s2», que este teléfono aún no recibió (la nube va con retraso): la local es «s1».
+        assertEquals(
+            SaveLineage.Incoming.DIVERGENCE,
+            SaveLineage.classifyIncoming(h(version(1)), h(version(3)), h(version(2)), setOf(h(version(1)))),
+        )
+    }
+
+    @Test fun aLateMirrorAfterAnImportIsRecognisedAndNeverUndoesIt() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, version(1))
+        // Llega un paquete con la 4 (avance desde la 1): se instala y se anota como recibida.
+        s.save(version(4)); s.recordReceived(version(4))
+        // El espejo aún tiene la 1 (nuestra): gana la local.
+        assertArrayEquals(version(4), SaveOpening.prepare(s, m, m.snapshot(), sizes).data)
+        // Y si la nube por fin trae la 4 del otro equipo: es la misma, nada.
+        m.snapshotValue = read(version(4), 5L)
+        val o = SaveOpening.prepare(s, m, m.snapshot(), sizes)
+        assertArrayEquals(version(4), o.data)
+        assertNull(o.warning)
+    }
+
+    // MARK: copias en conflicto del proveedor
+
+    @Test fun providerConflictCopiesAreRecognised() {
+        val yes = listOf(
+            "Pokemon Rojo 2.sav", "Pokemon Rojo (1).sav", "pokemon rojo (12).SAV",
+            "Pokemon Rojo.sync-conflict-20261008-101010-ABCDEFG.sav",
+            "Pokemon Rojo (conflicted copy 2026-10-08).sav", "Pokemon Rojo (Joel's conflicted copy 2026-10-08).sav",
+        )
+        val no = listOf("Pokemon Rojo.sav", "Pokemon Rojo 2.gb", "Pokemon Rojo Azul.sav", "Pokemon 2.sav", "Pokemon Rojo2.sav")
+        for (n in yes) assertTrue(n, SaveLineage.isProviderConflictCopy("Pokemon Rojo", n))
+        for (n in no) assertFalse(n, SaveLineage.isProviderConflictCopy("Pokemon Rojo", n))
+    }
+
+    @Test fun providerConflictsAreListedAndNeverTouchTheSave() {
+        val s = store()
+        s.save(version(1))
+        s.recordProviderConflicts(listOf(SaveStore.ProviderConflict("X 2.sav", 5L), SaveStore.ProviderConflict("X (1).sav", null)))
+        assertEquals(listOf("X 2.sav", "X (1).sav"), s.providerConflicts().map { it.name })
+        assertEquals(listOf("X 2.sav", "X (1).sav"), SavesBrowser(dir).list().single().providerConflicts.map { it.name })
+        assertArrayEquals(version(1), s.load())
+        s.recordProviderConflicts(emptyList())
+        assertTrue(s.providerConflicts().isEmpty())
+    }
+
+    @Test fun historyIsBoundedAndSurvivesTheOldFormat() {
+        val s = store(); val m = FakeSaveMirror()
+        playAndMirror(s, m, *(1..12).map { version(it) }.toTypedArray())
+        assertTrue(s.ownMirrorHashes().size <= 16)
+        assertTrue(h(version(12)) in s.lastOwnMirrorHashes())
+        s.mirrorHistoryFile.writeText("""{"successful":["abc"],"pending":[]}""")
+        assertEquals(listOf("abc"), s.ownMirrorHashes())
+        assertNull(s.lineageBase())
+    }
+}

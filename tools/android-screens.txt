@@ -321,3 +321,15 @@ n6-details-progress portrait dark
 n6-game-center portrait light
 n6-progress-editor portrait light
 n6-progress-editor portrait dark
+n7-details-menu portrait light
+n7-details-menu portrait dark
+n7-details-status portrait light
+n7-details-status-here portrait light
+n7-imported-continue portrait light
+n7-choose portrait light
+n7-choose portrait dark
+n7-inbox portrait light
+n7-warning-divergence portrait light
+n7-warning-external portrait light
+n7-saves-conflicts portrait light
+n7-saves-conflicts portrait dark

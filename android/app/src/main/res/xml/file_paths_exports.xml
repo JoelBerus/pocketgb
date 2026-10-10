@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N7b: solo cache/exports/ (paquetes .pgbm y .sav que el usuario comparte). Nada más es accesible. -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>
