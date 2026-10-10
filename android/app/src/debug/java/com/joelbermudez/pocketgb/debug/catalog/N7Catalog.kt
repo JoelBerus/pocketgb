@@ -97,7 +97,13 @@ internal val n7CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
     }
     put("n7-config-mismatch") { _ ->
         GameBackdrop {
-            com.joelbermudez.pocketgb.ui.travel.ConfirmImportDialog(com.joelbermudez.pocketgb.travel.SaveImporter.Ask.CONFIG_MISMATCH, "iPhone de Joel", "", {}, {})
+            // ND21: ya no se pregunta ni se descarta el estado; el resultado dice qué ajuste cambiar.
+            val res = androidx.compose.ui.platform.LocalResources.current
+            val done = com.joelbermudez.pocketgb.travel.SaveImporter.Result.Done(
+                com.joelbermudez.pocketgb.saves.SaveLineage.Incoming.ADVANCE, installed = true, continueFrom = "iPhone de Joel",
+                configDifferences = listOf(com.joelbermudez.pocketgb.travel.PgbmConfig.Key.MODEL),
+            )
+            com.joelbermudez.pocketgb.ui.travel.ImportedDialog(com.joelbermudez.pocketgb.ui.travel.importedText(res, done), done.continueFrom, {}, {})
         }
     }
 }

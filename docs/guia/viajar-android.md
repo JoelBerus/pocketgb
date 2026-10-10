@@ -47,7 +47,7 @@ Nunca se pierde nada: **antes de instalar, la partida que tenías (con su punto 
 
 Un `.sav` suelto siempre se confirma: **«¿Importar este .sav? Se usará como partida de «Rojo»»**. Si lo abres con **Abrir con › PocketGB**, se busca el juego por el nombre del archivo (`Rojo (1).sav` vale para `Rojo.gb`); si hay varios con ese nombre, eliges.
 
-El alias, las etiquetas, los hitos y el tiempo de juego del otro equipo **se suman** a los tuyos: se juntan las etiquetas y los hitos (un hito marcado en cualquiera de los dos queda marcado), se conserva tu alias si ya tenías uno y el tiempo de juego es el mayor de los dos. Si el otro equipo jugaba con otra configuración (modelo de consola, tipo de partida, reloj o BIOS), te avisa de que la partida se importa pero el sitio exacto no.
+El alias, las etiquetas, los hitos y el tiempo de juego del otro equipo **se suman** a los tuyos: se juntan las etiquetas y los hitos (un hito marcado en cualquiera de los dos queda marcado), se conserva tu alias si ya tenías uno y el tiempo de juego es el mayor de los dos. Si el otro equipo jugaba con otra configuración (color de Game Boy, tipo de partida, reloj o BIOS), la partida y el sitio exacto se importan igual y el aviso te dice qué ajuste del juego cambiar (por ejemplo, «el color de Game Boy») para continuar justo donde lo dejaste. Si no lo cambias y el sitio exacto no carga, no pasa nada: tu partida queda intacta y se juega desde ella; el sitio exacto se conserva por si cambias el ajuste después.
 
 Puedes importar la partida de un juego que aún no has abierto en este teléfono: PocketGB mira su cabecera para saber qué tamaño de partida le corresponde.
 

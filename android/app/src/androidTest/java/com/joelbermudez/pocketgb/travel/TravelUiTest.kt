@@ -14,6 +14,11 @@ import com.joelbermudez.pocketgb.ui.theme.PocketGBTheme
 import com.joelbermudez.pocketgb.ui.travel.ChooseDialog
 import com.joelbermudez.pocketgb.ui.travel.ImportedDialog
 import com.joelbermudez.pocketgb.ui.travel.TravelActions
+import com.joelbermudez.pocketgb.ui.travel.importedText
+import androidx.test.platform.app.InstrumentationRegistry
+import com.joelbermudez.pocketgb.saves.SaveLineage
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -66,6 +71,22 @@ class TravelUiTest {
         compose.onNodeWithText("Continuar donde lo dejaste en iPhone de Joel").assertIsDisplayed()
         compose.onNodeWithTag("travel-continue").performClick()
         assertEquals(1, continued)
+    }
+
+    /** ND21: el estado de otra configuración se instala y el resultado nombra los ajustes a cambiar. */
+    @Test fun aStateFromAnotherConfigurationNamesTheSettingsToChange() {
+        val res = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val done = SaveImporter.Result.Done(
+            SaveLineage.Incoming.INSTALL, installed = true, continueFrom = "iPhone de Joel",
+            configDifferences = listOf(PgbmConfig.Key.MODEL, PgbmConfig.Key.GBA_BIOS),
+        )
+        val text = importedText(res, done)
+        assertTrue(text, text.contains("en iPhone de Joel se jugó con otra configuración (el color de Game Boy, la BIOS)"))
+        assertFalse(importedText(res, done.copy(configDifferences = emptyList())).contains("Ojo"))
+        assertFalse("sin estado instalado no se avisa", importedText(res, done.copy(continueFrom = null)).contains("Ojo"))
+        compose.setContent { PocketGBTheme { ImportedDialog(text, done.continueFrom, onContinue = {}, onDismiss = {}) } }
+        compose.onNodeWithText("el color de Game Boy", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("travel-continue").assertIsDisplayed()
     }
 
     @Test fun divergenceAsksWhichSaveToKeep() {
