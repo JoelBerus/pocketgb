@@ -96,6 +96,23 @@ class NFinalTravelTest {
         assertArrayEquals(S1, store().load())
     }
 
+    /** Paridad con iOS: si el AUTO de aquí es idéntico (mismo SHA-256) al estado del paquete, no se pregunta. */
+    @Test fun anIdenticalAutoIsNotAskedAbout() {
+        importer().importPackage(build("X1", codec), TARGET) // el AUTO de aquí ya es T1
+        val r = importer().importPackage(build("X1", codec), TARGET)
+        assertTrue("no pregunta: $r", r is SaveImporter.Result.Done)
+        assertEquals(SaveLineage.Incoming.ALREADY_CURRENT, (r as SaveImporter.Result.Done).lineage)
+        assertEquals("Pixel de prueba", r.continueFrom)
+        assertArrayEquals(T1, autoStore().load(StateSlot.AUTO))
+        assertTrue("no se duplica en el anillo", momentStore().snapshot().beforeLoad.none { it.hasState })
+        // Con uno distinto sí se pregunta.
+        autoStore().save(ownAuto, null, StateSlot.AUTO)
+        assertEquals(
+            SaveImporter.Result.NeedsChoice(SaveImporter.Ask.REPLACE_STATE, "Pixel de prueba"),
+            importer().importPackage(build("X1", codec), TARGET),
+        )
+    }
+
     // MARK: H8 · si el anillo falla, no se instala
 
     @Test fun aRingFailureAbortsTheInstall() {

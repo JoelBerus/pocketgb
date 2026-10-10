@@ -25,9 +25,10 @@ Regla 6 (perder una partida es el peor bug): cada cambio de la ruta de partidas 
 | Detalle: «Continuar donde lo dejaste en <equipo>» | `SaveStore.Origin` anota la huella del estado automático instalado del paquete; `SaveStatus.continueFrom` es el equipo mientras el AUTO de aquí sea ese mismo estado (si se juega aquí, deja de valer). El botón principal del detalle lo muestra cuando hay «Continuar». | `NFinalTravelTest.detailContinuesFromTheOtherDeviceWhileItsStateIsTheAuto` |
 | Copias en conflicto: Dropbox en inglés y al escanear | `stripConflictSuffix` reconoce `X (Joel's conflicted copy …)`. El escáner anota en cada `RomEntry` las copias en conflicto de su `.sav` (`conflictCopies`, ND20 l para `X 2.gb`); Ajustes › Partidas las usa por huella (`scannedConflictsByFingerprint`, `SavesBrowser.list(scanned)`), así salen aunque el juego no se haya abierto desde que aparecieron. | `LibraryScannerTest.scanListsProviderConflictCopiesNextToEachRom`, `SavesBrowserTest.scannedConflictCopiesWinOverTheOnesRecordedAtOpening`, `NFinalSavesTest.rawSaveLooksForTheExactNameFirst` |
 | ALREADY_CURRENT | La actual queda apartada, entra como recibida en el linaje y se anota el origen (si hay META), como iOS. | `NFinalTravelTest.alreadyCurrentSetsTheCurrentAsideAndRecordsItAsReceived` |
+| «Sustituir el punto de Continuar» solo si es distinto | `SaveImporter.autoDiffers`: si el AUTO de aquí es idéntico (mismo SHA-256) al estado del paquete no se pregunta, y no se vuelve a copiar al anillo (= iOS `ownAuto != state`). Un AUTO ilegible cuenta como distinto (se pregunta). | `NFinalTravelTest.anIdenticalAutoIsNotAskedAbout` (mutantes `AutoIgual` y `AnilloIgual`, muertos) |
 | ND20 (j) tamaños | `ImportTarget.sizing`: la cabecera del ROM manda (vacía = sin batería); el índice solo si no se puede leer. `TravelService.target` lo usa. | `NFinalTravelTest.headerSizesWinOverTheIndex` |
 
-El carril ND17 (orden filtrar/tomar) que cita el informe no estaba en el encargo de Android.
+El carril ND17 (orden filtrar/tomar) que cita el informe ya estaba bien en Android (era de iOS).
 
 ## Mutación
 

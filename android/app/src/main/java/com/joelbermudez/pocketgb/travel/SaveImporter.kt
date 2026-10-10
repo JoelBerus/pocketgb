@@ -205,7 +205,7 @@ class SaveImporter(
             if (!target.hasBattery) {
                 // Sin batería no hay partida que instalar: la SAVE debe ir vacía; el estado se puede continuar igual.
                 if (sav.isNotEmpty()) return@withExclusive Result.SaveSizeMismatch
-                if (state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
+                if (state != null && autoDiffers(target, state) && Ask.REPLACE_STATE !in confirmed) {
                     if (choice != Choice.KEEP_LOCAL) return@withExclusive Result.NeedsChoice(Ask.REPLACE_STATE, device)
                     // H6: no se sustituye el estado de aquí, pero el del paquete tampoco se descarta.
                     val kept = keepIncomingState(target, null, state, thumbnail, device)
@@ -278,7 +278,7 @@ class SaveImporter(
         }
         val saveIsIncoming = install || lineage == SaveLineage.Incoming.ALREADY_CURRENT
         // ND20 (f): el estado del paquete sustituiría al AUTO de aquí sin cambiar la partida → confirmar.
-        if (!install && saveIsIncoming && state != null && hasAuto(target) && Ask.REPLACE_STATE !in confirmed) {
+        if (!install && saveIsIncoming && state != null && autoDiffers(target, state) && Ask.REPLACE_STATE !in confirmed) {
             if (choice != Choice.KEEP_LOCAL) return Result.NeedsChoice(Ask.REPLACE_STATE, device)
             // H6 (= iOS): se rechaza sustituir el estado con la misma partida. El de aquí se queda, pero el del paquete no
             // se descarta: queda como momento «Conflicto» (con su miniatura) y la partida actual, apartada.
@@ -360,7 +360,16 @@ class SaveImporter(
         }
     }
 
-    private fun hasAuto(target: ImportTarget) = ops.exists(StateStore(statesRoot, target.fingerprint, ops).stateFile(StateSlot.AUTO))
+    /**
+     * ¿Hay un estado automático aquí DISTINTO de [state]? (= iOS `ownAuto != state`). Si es idéntico (mismo SHA-256) no hay
+     * nada que sustituir y no se pregunta. Un AUTO que existe pero no se puede leer cuenta como distinto (se pregunta).
+     */
+    private fun autoDiffers(target: ImportTarget, state: ByteArray): Boolean {
+        val states = StateStore(statesRoot, target.fingerprint, ops)
+        if (!ops.exists(states.stateFile(StateSlot.AUTO))) return false
+        val auto = try { states.load(StateSlot.AUTO) } catch (_: IOException) { return true }
+        return MomentStore.sha256(auto) != MomentStore.sha256(state)
+    }
 
     private fun readAuto(states: StateStore): Pair<ByteArray, ByteArray?>? {
         if (!ops.exists(states.stateFile(StateSlot.AUTO))) return null
@@ -393,7 +402,8 @@ class SaveImporter(
         val states = StateStore(statesRoot, target.fingerprint, ops)
         return try {
             val auto = readAuto(states)
-            if (auto != null && !alreadyRinged) {
+            // Un AUTO idéntico al que llega no se copia otra vez al anillo (= iOS).
+            if (auto != null && !alreadyRinged && !auto.first.contentEquals(state)) {
                 momentsRoot?.let { MomentStore(it, target.fingerprint, ops) }
                     ?.pushBeforeLoad(MomentStore.Capture(auto.first, currentSav ?: store.load(), auto.second), beforeImportName)
             }
