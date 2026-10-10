@@ -100,15 +100,12 @@ struct GameProgressSection: View {
                     .foregroundStyle(.secondary)
             }
             if let pokemon { PokemonPanel(pokemon: pokemon).padding(.top, PocketSpacing.xxs) }
-            HStack(spacing: PocketSpacing.xs) {
-                Button("Momentos", systemImage: "bookmark") { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
-                    .accessibilityIdentifier("game-details-moments")
-                Button("Hitos", systemImage: "checklist") { state.showGameCenter(entry, at: .progress(fingerprint: fingerprint)) }
-                    .accessibilityIdentifier("game-details-progress")
+            // N9: con texto muy grande (AX5) los dos botones no caben en una fila y «Momentos» se partía por
+            // sílabas; entonces van uno debajo del otro.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PocketSpacing.xs) { progressButtons }
+                VStack(alignment: .leading, spacing: PocketSpacing.xs) { progressButtons }
             }
-            .labelStyle(.titleAndIcon)
-            .font(.subheadline)
-            .pocketGlassButton()
         }
         .padding(PocketSpacing.md)
         .background(PocketColor.backgroundElevated, in: RoundedRectangle(cornerRadius: PocketRadius.group, style: .continuous))
@@ -117,6 +114,20 @@ struct GameProgressSection: View {
                                                savesDirectory: state.storageDirectories.saves)
         }
         .accessibilityIdentifier("game-details-progress-section")
+    }
+
+    @ViewBuilder private var progressButtons: some View {
+        Group {
+            Button("Momentos", systemImage: "bookmark") { state.showGameCenter(entry, at: .moments(fingerprint: fingerprint)) }
+                .accessibilityIdentifier("game-details-moments")
+            Button("Hitos", systemImage: "checklist") { state.showGameCenter(entry, at: .progress(fingerprint: fingerprint)) }
+                .accessibilityIdentifier("game-details-progress")
+        }
+        .labelStyle(.titleAndIcon)
+        .font(.subheadline)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .pocketGlassButton()
     }
 
     @ViewBuilder private func stats(_ p: GameProgress) -> some View {

@@ -1,6 +1,5 @@
-# Guía · Categorías, etiquetas, inicio y ajustes del juego (iPhone)
-
-Tus carpetas son las categorías de PocketGB (cómo organizarlas: [Carpetas](carpetas.md)). Las reglas completas, comunes al iPhone y a Android, están en [11-biblioteca-carpetas](../11-biblioteca-carpetas.md). Esta guía explica cómo se ven y cómo ajustarlas en el iPhone.
+<!-- Generado por tools/ios-guide-sync.py desde docs/guia/categorias.md: no editar aquí. -->
+Tus carpetas son las categorías de PocketGB (cómo organizarlas: [Carpetas](guia:carpetas)). Esta guía explica cómo se ven y cómo ajustarlas en el iPhone.
 
 ## El inicio
 La pestaña **Biblioteca** empieza así, de arriba abajo:
@@ -33,8 +32,8 @@ Desde el detalle (**Ajustes**) o desde el menú de la tarjeta (**Ajustes del jue
 | **Nombre** | El nombre que ves en PocketGB (vacío = el del cartucho). |
 | **Categoría** | Dónde se ve el juego. **Cambiar** abre «Mostrar en categoría». Si lo moviste en la app, al lado sale «Movido en la app», debajo «Su carpeta: …» y, junto a Cambiar, **Volver a su carpeta**. |
 | **Etiquetas** | Las del juego. Tócala para añadir o quitar. |
-| **Portada** | Qué imagen se ve (Automática, Imagen, Captura o Generada). Ver [Portadas](portadas.md). |
-| **Momentos y progreso** | Los momentos del juego y su progreso (tiempo de juego e hitos). Ver [Momentos y progreso](momentos.md). |
+| **Portada** | Qué imagen se ve (Automática, Imagen, Captura o Generada). Ver [Portadas](guia:portadas). |
+| **Momentos y progreso** | Los momentos del juego y su progreso (tiempo de juego e hitos). Ver [Momentos y progreso](guia:momentos). |
 | **Partida › Copias de la partida** | Las copias de seguridad y las partidas apartadas de este juego (lo mismo que Ajustes › Partidas, solo con él). |
 | **Color y paleta** | En los juegos de Game Boy: en color o no y con qué paleta (Global = lo de Ajustes › Emulación). En Game Boy Advance, el tipo de partida, el reloj y la BIOS, como antes. |
 | **Ocultar de PocketGB** | Lo quita de la biblioteca (pide confirmación). No borra nada: se recupera en Ajustes › Biblioteca. |

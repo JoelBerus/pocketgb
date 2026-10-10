@@ -188,6 +188,21 @@ enum DebugScreen: String, CaseIterable {
     case n7ImportPrompt = "n7-import-prompt"
     case n7ImportDone = "n7-import-done"
     case n7SettingsConflicts = "n7-settings-conflicts"
+    // N9 (iOS): Ajustes › Guía y consejos de TipKit (`-showTips`; ver `applyN9`)
+    case n9Settings = "n9-settings"
+    case n9Guide = "n9-guide"
+    case n9GuideAX5 = "n9-guide-ax5"
+    case n9GuideSearch = "n9-guide-search"
+    case n9GuideSection = "n9-guide-section"
+    case n9GuideSectionAX5 = "n9-guide-section-ax5"
+    case n9GuideFocus = "n9-guide-focus"
+    case n9TipPause = "n9-tip-pause"
+    case n9TipGameCenter = "n9-tip-game-center"
+    case n9TipSend = "n9-tip-send"
+    case n9TipControls = "n9-tip-controls"
+    case n9TipControlsAX5 = "n9-tip-controls-ax5"
+    // N9: el bloque «Progreso» del detalle con AX5 (los botones Momentos e Hitos ya no se parten por sílabas)
+    case n9ProgressDetailsAX5 = "n9-progress-details-ax5"
 }
 
 /// Traduce `-screen <id>` y los `-demo*` a estado de la app, sin tocar disco ni red.
@@ -341,6 +356,7 @@ enum DebugScreenRouter {
         applyN5(screen, to: state)
         applyN6(screen, to: state)
         applyN7(screen, to: state)
+        applyN9(screen, to: state)
     }
 
     /// La búsqueda minimizada solo se expande con la vista ya en pantalla.
@@ -1152,6 +1168,47 @@ extension DebugScreenRouter {
             UIColor.black.withAlphaComponent(0.6).setFill()
             cg.fill(CGRect(x: 0, y: 0, width: 24, height: size.height))
             cg.fill(CGRect(x: size.width - 24, y: 0, width: 24, height: size.height))
+        }
+    }
+}
+// MARK: - N9 (iOS): guía y consejos
+
+extension DebugScreenRouter {
+    /// Ajustes › Guía (`-guideSection <id>` elige la sección; por defecto, carpetas) y las pantallas donde
+    /// aparecen los consejos de TipKit (con `-showTips`, que `PocketTips.configure` atiende al arrancar).
+    static func applyN9(_ screen: DebugScreen, to state: AppState) {
+        let section = DebugArguments.value("-guideSection") ?? "carpetas"
+        switch screen {
+        case .n9Settings:
+            state.selectedTab = .settings
+        case .n9Guide, .n9GuideAX5, .n9GuideSearch:
+            state.selectedTab = .settings
+            state.settingsPath = [.guide]
+        case .n9GuideSection, .n9GuideSectionAX5:
+            state.selectedTab = .settings
+            state.settingsPath = [.guide, .guideSection(id: section, focus: nil)]
+        case .n9GuideFocus:
+            // El resultado de buscar «recuperar» en Momentos: la sección se abre en ese bloque, resaltado.
+            let hit = GuideLibrary.shared.search("recuperar").first { $0.sectionID == "momentos" && $0.block != nil }
+            state.selectedTab = .settings
+            state.settingsPath = [.guide, .guideSection(id: "momentos", focus: hit?.block)]
+        case .n9TipGameCenter:
+            // El centro de ajustes del juego de N4 (`-demoLibrary n4`), como `n4-game-center`.
+            state.libraryPath = [.details(id: n4Moved, source: n4Moved)]
+            state.gameSettingsEntry = state.library.entries.first { $0.id == n4Moved }
+        case .n9TipSend:
+            let id = "Acid/dmg-acid2.gb"
+            state.libraryPath = [.details(id: id, source: id)]
+        case .n9TipControls, .n9TipControlsAX5:
+            state.selectedTab = .settings
+            state.settingsPath = [.controls]
+        case .n9TipPause:
+            break   // `-rom` + `-paused`
+        case .n9ProgressDetailsAX5:
+            // Mismo juego que `n6-progress-details` (lo siembra `applyN6` con `-demoLibrary n5 -demoMoments rich`).
+            state.libraryPath = [.details(id: n6Pokemon, source: n6Pokemon)]
+        default:
+            break
         }
     }
 }

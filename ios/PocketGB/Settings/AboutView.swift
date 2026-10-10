@@ -14,11 +14,11 @@ struct AboutView: View {
             Section {
                 LabeledContent("Versión", value: version)
                 LabeledContent("Núcleo", value: "PocketGB core (C11)")
-                LabeledContent("Consolas", value: "Game Boy y Game Boy Color")
+                LabeledContent("Consolas", value: "Game Boy, Game Boy Color y Game Boy Advance")
             }
             Section {
                 Label {
-                    Text("PocketGB no se conecta a internet: sin telemetría, sin anuncios y sin descargar portadas. Tus juegos y partidas se quedan en tu iPhone y en tu iCloud Drive.")
+                    Text("PocketGB no se conecta a internet: sin telemetría, sin anuncios y sin descargar portadas. La guía y los consejos van dentro de la app. Tus juegos y partidas se quedan en tu iPhone y en tu iCloud Drive.")
                 } icon: {
                     Image(systemName: "wifi.slash")
                 }

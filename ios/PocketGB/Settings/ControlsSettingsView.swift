@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Ajustes › Controles (SPEC §9, `settings-controls`): opacidad, tamaño, visibilidad,
 /// háptica y disposición. La opacidad es solo visual: el área táctil no cambia.
@@ -10,6 +11,9 @@ struct ControlsSettingsView: View {
     var body: some View {
         ScrollViewReader { proxy in
             form
+                .onChange(of: gameplay.data.dpadStyle) { _, style in
+                    if style == .separated { SeparateArrowsTip().invalidate(reason: .actionPerformed) }   // N9
+                }
                 #if DEBUG
                 .task {
                     // `-scrollTo <id>`: desplazamiento programático y determinista para las capturas
@@ -35,6 +39,10 @@ struct ControlsSettingsView: View {
                 Text("Cambia solo el aspecto sobre el juego: cada control conserva su área táctil y su sombra para leerse sobre escenas claras.")
             }
             Section {
+                if gameplay.data.dpadStyle != .separated {
+                    TipView(SeparateArrowsTip())   // N9
+                        .id("settings-tip-arrows")
+                }
                 Picker("Cruceta", selection: binding(\.dpadStyle)) {
                     ForEach(DpadStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                 }

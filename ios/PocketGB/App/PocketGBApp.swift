@@ -7,6 +7,10 @@ struct PocketGBApp: App {
     @State private var state = AppState()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        PocketTips.configure()   // N9: consejos locales, sin red
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

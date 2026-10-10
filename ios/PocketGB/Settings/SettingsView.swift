@@ -33,6 +33,12 @@ struct SettingsView: View {
                         Label("Almacenamiento", systemImage: "internaldrive")
                     }
                 }
+                Section("Ayuda") {
+                    NavigationLink(value: SettingsRoute.guide) {
+                        Label("Guía", systemImage: "book")
+                    }
+                    .accessibilityIdentifier("settings-guide")
+                }
                 Section {
                     NavigationLink(value: SettingsRoute.appearance) {
                         Label("Apariencia", systemImage: "circle.lefthalf.filled")
@@ -59,6 +65,9 @@ struct SettingsView: View {
                 case .audio: AudioSettingsView()
                 case .storage: StorageSettingsView()
                 case .backups(let fingerprint): SaveBackupsView(fingerprint: fingerprint)
+                case .guide: GuideView()
+                case .guideSection(let id, let focus):
+                    if let section = GuideLibrary.section(id) { GuideSectionView(section: section, focus: focus) }
                 }
             }
         }
