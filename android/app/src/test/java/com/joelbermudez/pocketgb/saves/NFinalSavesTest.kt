@@ -105,6 +105,11 @@ class NFinalSavesTest {
         pending.commit()
         assertEquals(listOf(pending.entry.id) + ids.drop(1).reversed(), m.snapshot().beforeLoad.map { it.id })
         assertTrue(!m.sramFile(MomentStore.Kind.BEFORE_LOAD, ids.first()).exists())
+        // Varios pushes sin commit seguidos (cierres forzados repetidos): nunca más de RING_SIZE + 1.
+        repeat(4) { m.pushBeforeLoadDeferred(MomentStore.Capture(null, version(20 + it), null), "sin confirmar $it") }
+        m.recoverOrphans()
+        assertEquals(MomentStore.RING_SIZE + 1, m.snapshot().beforeLoad.size)
+        assertTrue(m.snapshot().beforeLoad.all { m.loadSram(MomentStore.Kind.BEFORE_LOAD, it.id) != null })
         // Un push sin commit seguido de otro recorta el anillo a su tamaño.
         m.pushBeforeLoadDeferred(MomentStore.Capture(null, version(10), null), "otra")
         m.pushBeforeLoad(MomentStore.Capture(null, version(11), null), "y otra")

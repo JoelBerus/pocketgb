@@ -164,7 +164,7 @@ class MomentStore(
 
     /**
      * Push cuya expulsión espera a [commit] (tras confirmar la carga o la instalación). H8: hasta entonces las expulsadas
-     * SIGUEN en el índice (el anillo tiene una de más), así que si la operación falla o el proceso muere, nada recuperable
+     * SIGUEN en el índice (el anillo tiene una de más, como mucho RING_SIZE + 1), así que si la operación falla o el proceso muere, nada recuperable
      * se ha borrado ni [recoverOrphans] lo tomará por huérfano. [commit] reescribe el índice sin ellas y después borra sus
      * archivos (el índice es el punto de confirmación). Sin commit, el siguiente push recorta el anillo.
      */
@@ -213,8 +213,11 @@ class MomentStore(
             val ring = listOf(entry) + protected + index.beforeLoad.filter { it.id != protect }
             val keepIds = ring.take(RING_SIZE).mapTo(HashSet()) { it.id }
             val evicted = ring.filter { it.id !in keepIds }.map { it.id }
-            // H8: la nueva entra en el índice; las expulsadas no salen de él hasta commit().
-            writeIndex(index.copy(beforeLoad = listOf(entry) + index.beforeLoad))
+            // H8: la nueva entra en el índice y la que este push expulsa no sale de él hasta commit(). Las que sobraban de
+            // un push anterior sin confirmar (proceso muerto, operación fallida) ya tuvieron su oportunidad y salen ahora:
+            // así el anillo nunca pasa de RING_SIZE + 1 entradas aunque se repitan los cierres forzados.
+            val indexed = ring.take(RING_SIZE + 1).mapTo(HashSet()) { it.id }
+            writeIndex(index.copy(beforeLoad = listOf(entry) + index.beforeLoad.filter { it.id in indexed }))
             PendingPush(entry, evicted)
         }
 
