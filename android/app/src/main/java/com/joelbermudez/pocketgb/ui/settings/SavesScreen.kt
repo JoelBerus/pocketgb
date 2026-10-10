@@ -257,7 +257,7 @@ fun SavesSettingsContent(
                                             c.dateMs?.let(::formatDate) ?: stringResource(R.string.saves_backup_unknown_date),
                                         ),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.heightIn(min = 48.dp).testTag("provider-conflict-${game.fingerprint.take(8)}"),
+                                        modifier = Modifier.testTag("provider-conflict-${game.fingerprint.take(8)}"),
                                     )
                                 }
                                 Text(

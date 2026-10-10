@@ -41,6 +41,8 @@ private fun N7Details(menuOpen: Boolean, status: SaveStatus) {
             canResume = true,
             onRename = {},
             initialMenuOpen = menuOpen,
+            // Las capturas del estado bajan hasta la casilla «Partida» (bajo «Jugar desde el inicio»).
+            initialInfoScroll = if (menuOpen) 0 else 500,
             onOpenMoments = {},
             travel = noTravel,
             saveStatus = status,
