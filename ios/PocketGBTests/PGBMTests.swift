@@ -498,4 +498,47 @@ struct PGBMTests {
         let b = PackageConfig(EmulationOptions(colorForGameBoy: true, compatPalette: 5), console: .gameBoy)
         #expect(a.differences(from: b).isEmpty)
     }
+
+    // MARK: Auditoría N-final
+
+    /// H7: el aviso de otra configuración se añade también a «Listo para continuar» (antes la precedencia del ternario
+    /// solo lo ponía en la rama sin continuación).
+    @Test func configNoteReachesEveryNoticeWithContinuation() throws {
+        let note = " Ojo: otra configuración."
+        for outcome: SaveImport.Outcome in [.alreadyCurrent(continuation: true), .alreadyCurrent(continuation: false),
+                                            .installed(continuation: true), .installed(continuation: false)] {
+            let text = try #require(AppState.importNotice(outcome, origin: "Pixel", configNote: note))
+            #expect(text.message.hasSuffix(note), "\(outcome)")
+        }
+        let ready = try #require(AppState.importNotice(.alreadyCurrent(continuation: true), origin: "Pixel", configNote: ""))
+        #expect(ready.title == "Listo para continuar" && ready.message.hasSuffix("en Pixel."))
+        #expect(AppState.importNotice(.needsChoice, origin: nil, configNote: note) == nil)
+    }
+
+    /// H13: `null` solo vale en `base_sav_sha256`; en cualquier otra clave conocida opcional la META es inválida. Las
+    /// claves desconocidas se ignoran aunque lleven `null` o fracciones; las fracciones solo invalidan en claves enteras.
+    @Test func metaNullAndFractionsOnlyMatterInKnownKeys() throws {
+        let ok = meta(#"{"format":1,"rom_sha256":"R","sav_sha256":"S1","base_sav_sha256":null,"device":{"platform":"ios","name":"x"},"created_ms":1,"core":{"name":"gb","version":"1"},"moment":{"name":"m"}}"#)
+        #expect(try PackageMeta.parse(Data(ok.utf8)).baseSavSHA256 == nil)
+        func with(_ extra: String) -> String { ok.replacingOccurrences(of: #""created_ms":1,"#, with: #""created_ms":1,\#(extra),"#) }
+        let nulls = [#""state_of_sav_sha256":null"#, #""config":null"#, #""play_time_ms":null"#, #""title":null"#,
+                     #""alias":null"#, #""tags":null"#, #""milestones":null"#, #""config":{"gba_bios":null}"#,
+                     #""tags":["a",null]"#]
+        for n in nulls { #expect(throws: PackageMeta.Invalid.self, "\(n)") { try PackageMeta.parse(Data(with(n).utf8)) } }
+        for json in [ok.replacingOccurrences(of: #""version":"1""#, with: #""version":null"#),
+                     ok.replacingOccurrences(of: #""name":"m""#, with: #""name":"m","note":null"#),
+                     ok.replacingOccurrences(of: #""name":"m""#, with: #""name":"m","created_ms":null"#)] {
+            #expect(throws: PackageMeta.Invalid.self, "\(json)") { try PackageMeta.parse(Data(json.utf8)) }
+        }
+        // Desconocidas: se ignoran con `null`, fracción o exponente, también dentro de objetos conocidos y listas.
+        for extra in [#""future":null"#, #""future":1.5"#, #""future":{"x":2e3,"y":[0.5]}"#,
+                      #""config":{"future":2.5,"model":"cgb"}"#, #""device_extra":[1.0,null]"#] {
+            #expect(throws: Never.self, "\(extra)") { try PackageMeta.parse(Data(with(extra).utf8)) }
+        }
+        // Conocidas enteras: la fracción invalida.
+        for bad in [ok.replacingOccurrences(of: #""format":1"#, with: #""format":1.0"#), with(#""play_time_ms":1.5"#),
+                    ok.replacingOccurrences(of: #""name":"m""#, with: #""name":"m","created_ms":1e3"#)] {
+            #expect(throws: PackageMeta.Invalid.self, "\(bad)") { try PackageMeta.parse(Data(bad.utf8)) }
+        }
+    }
 }

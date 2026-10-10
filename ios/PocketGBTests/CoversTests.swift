@@ -425,4 +425,23 @@ struct CoversTests {
         let resumableOnly = LibraryQuery.continuePlaying(games, prefs: prefs) { $0.id == "sin.gb" }
         #expect(resumableOnly.map(\.id) == ["sin.gb"])
     }
+
+    /// Paridad con Android (auditoría N-final, ND17): se filtran los reanudables y **después** se toman 5. Seis juegos
+    /// más recientes sin continuación no dejan fuera a uno más antiguo que sí la tiene.
+    @Test func continueRailFiltersResumableBeforeTakingFive() {
+        var games: [RomEntry] = []
+        var prefs = LibraryPreferencesData()
+        for i in 0..<7 {
+            let id = "g\(i).gb", fp = "f\(i)"
+            games.append(Self.entry(id, fingerprint: fp))
+            var meta = GameMetadata()
+            meta.lastPlayed = Date(timeIntervalSince1970: Double(100 - i))   // g0 el más reciente, g6 el más antiguo
+            prefs.games[fp] = meta
+            prefs.fingerprints[id] = fp
+        }
+        let rail = LibraryQuery.continuePlaying(games, prefs: prefs) { $0.id == "g6.gb" || $0.id == "g0.gb" }
+        #expect(rail.map(\.id) == ["g0.gb", "g6.gb"])
+        let all = LibraryQuery.continuePlaying(games, prefs: prefs) { _ in true }
+        #expect(all.count == 5)
+    }
 }
