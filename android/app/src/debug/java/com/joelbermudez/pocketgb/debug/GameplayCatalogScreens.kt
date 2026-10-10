@@ -32,7 +32,7 @@ import java.io.IOException
 
 /** Fondo negro que hace de pantalla de juego detrás de las hojas y diálogos del catálogo. */
 @Composable
-private fun GameBackdrop(content: @Composable () -> Unit) {
+internal fun GameBackdrop(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black)) { content() }
 }
 

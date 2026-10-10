@@ -133,6 +133,24 @@ sealed interface SaveLoadWarning {
      */
     data object LocalSetAside : SaveLoadWarning
 
+    /**
+     * N7a: el `.sav` junto al juego cambió por fuera (otro equipo) y la partida de aquí no había cambiado desde la última
+     * vez que PocketGB lo escribió: se instaló el de fuera; la anterior quedó en las copias de seguridad.
+     */
+    data class ExternalChange(val readOnly: Boolean = false) : SaveLoadWarning
+
+    /**
+     * ND20 (c): el `.sav` junto al juego era una versión anterior escrita por PocketGB; gana la de aquí y esa versión
+     * quedó apartada en Ajustes › Partidas. [readOnly]: además la carpeta es de solo lectura (H12).
+     */
+    data class MirrorOlderSetAside(val readOnly: Boolean = false) : SaveLoadWarning
+
+    /**
+     * N7a: la partida cambió aquí y también en el otro equipo. Se sigue con la de aquí; la otra quedó en las copias,
+     * apartada y como momento «Conflicto …» ([conflictMomentId], null si no se pudo crear) para recuperarla.
+     */
+    data class Divergence(val conflictMomentId: String?, val readOnly: Boolean = false) : SaveLoadWarning
+
     /** Error al leer la partida local; [detail] viene del sistema. */
     data class Unreadable(val detail: String) : SaveLoadWarning
 }

@@ -11,6 +11,8 @@ class SavedGameUi(
     val backups: List<SaveStore.BackupInfo>,
     /** N1: partidas apartadas fuera de la rotación (perdedoras frente a un espejo ajeno); nunca se borran solas. */
     val setAside: List<SaveStore.SetAsideInfo> = emptyList(),
+    /** N7a: copias en conflicto del proveedor vistas junto al juego (candidatas; nunca se borran). */
+    val providerConflicts: List<SaveStore.ProviderConflict> = emptyList(),
 )
 
 /**
@@ -32,6 +34,7 @@ class SavesBrowser(
                 fileName = game.record?.fileName,
                 backups = SaveStore(directory, game.fingerprint, ops).backups(),
                 setAside = SaveStore(directory, game.fingerprint, ops).setAside(),
+                providerConflicts = SaveStore(directory, game.fingerprint, ops).providerConflicts(),
             )
         }
     }

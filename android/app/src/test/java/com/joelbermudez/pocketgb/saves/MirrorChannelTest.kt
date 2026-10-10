@@ -236,7 +236,7 @@ class MirrorChannelRobustnessTest {
         val mirror = FakeSaveMirror()
         val blocked = BlockingWriter(mirror)
         val channel = registry.channel(s.fingerprint)
-        channel.enqueue(MirrorChannel.Request(bytes(3, 3, 3, 3), s, blocked::write))
+        channel.enqueue(MirrorChannel.Request(bytes(3, 3, 3, 3), s, writer = blocked::write))
         assertTrue(blocked.started.tryAcquireWithin())
         assertFalse(channel.awaitIdle(100))
         assertEquals("no deja un callback muerto", 0, channel.idleCallbackCount)
@@ -250,7 +250,7 @@ class MirrorChannelRobustnessTest {
         val mirror = FakeSaveMirror(SaveMirror.Snapshot.Read(bytes(0, 0, 0, 0), 1L))
         val blocked = BlockingWriter(mirror)
         val channel = registry.channel(s.fingerprint)
-        channel.enqueue(MirrorChannel.Request(bytes(7, 7, 7, 7), s, blocked::write))
+        channel.enqueue(MirrorChannel.Request(bytes(7, 7, 7, 7), s, writer = blocked::write))
         assertTrue(blocked.started.tryAcquireWithin())
 
         var snapshotCalls = 0

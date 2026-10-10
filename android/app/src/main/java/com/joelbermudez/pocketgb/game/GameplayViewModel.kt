@@ -54,6 +54,9 @@ sealed interface GameDialog {
      * desde el inicio» (A9, como el aviso de iOS D8.1).
      */
     data class ResumeFailed(val entry: RomEntry, val reason: ResumeFailure) : GameDialog
+
+    /** ND20 (a): divergencia al abrir [entry]; no se escribió nada hasta que se elija ([GameplayViewModel.resolveDivergence]). */
+    data class SaveDivergence(val entry: RomEntry, val mode: LaunchMode, val localDateMs: Long?, val mirrorDateMs: Long?) : GameDialog
 }
 
 /** Avisos breves (snackbar), con texto en la UI. */
@@ -221,6 +224,14 @@ class GameplayViewModel(
         }
     }
 
+    /** ND20 (a): respuesta al diálogo de divergencia; vuelve a abrir con la elección (nada se escribió antes). */
+    fun resolveDivergence(choice: com.joelbermudez.pocketgb.saves.SaveOpening.DivergenceChoice) {
+        val pending = _dialog.value as? GameDialog.SaveDivergence ?: return
+        if (_opening.value || _game.value != null) return
+        _dialog.value = null
+        open(pending.entry, pending.mode, divergence = choice)
+    }
+
     /** «Jugar desde el inicio» del aviso de [GameDialog.ResumeFailed]: abre solo la partida (`.sav`), sin el estado. */
     fun playFromStartAfterResumeFailure() {
         val failed = _dialog.value as? GameDialog.ResumeFailed ?: return
@@ -236,13 +247,22 @@ class GameplayViewModel(
      * Abre [entry]. Ignora la petición si ya hay una apertura o una partida en curso (doble toque). [mode]
      * [LaunchMode.RESUME] = «Continuar» exacto (A9); [LaunchMode.FRESH] = «Jugar» o «Jugar desde el inicio».
      */
-    fun open(entry: RomEntry, mode: LaunchMode = LaunchMode.FRESH, moment: PendingMoment? = null) {
+    fun open(
+        entry: RomEntry,
+        mode: LaunchMode = LaunchMode.FRESH,
+        moment: PendingMoment? = null,
+        divergence: com.joelbermudez.pocketgb.saves.SaveOpening.DivergenceChoice? = null,
+    ) {
         if (_opening.value || _game.value != null) return
         _opening.value = true
         scope.launch {
             try {
-                when (val result = launcher.open(entry, mode = mode)) {
+                when (val result = launcher.open(entry, mode = mode, divergence = divergence)) {
                     is OpenResult.Failed -> when (val error = result.error) {
+                        is OpenError.SaveDivergence -> {
+                            _opening.value = false
+                            _dialog.value = GameDialog.SaveDivergence(entry, mode, error.localDateMs, error.mirrorDateMs)
+                        }
                         is OpenError.ResumeFailed -> {
                             // La apertura ya terminó: «Jugar desde el inicio» del aviso debe poder abrir enseguida (A9-H5).
                             _opening.value = false
@@ -636,6 +656,12 @@ class GameplayViewModelFactory(
             momentsRoot = File(appContext.filesDir, "moments"),
             progress = progress,
             migratedName = { origin -> migratedMomentName(appContext, origin) },
+            conflictName = { ms ->
+                appContext.getString(
+                    com.joelbermudez.pocketgb.R.string.n7_conflict_moment,
+                    java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(ms)),
+                )
+            },
         )
         val artwork = ArtworkStore.shared(appContext)
         return GameplayViewModel(

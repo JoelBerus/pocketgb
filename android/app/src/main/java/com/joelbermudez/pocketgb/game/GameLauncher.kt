@@ -35,6 +35,7 @@ import com.joelbermudez.pocketgb.saves.SaveSizes
 import com.joelbermudez.pocketgb.saves.SaveStore
 import com.joelbermudez.pocketgb.saves.SavesIndex
 import com.joelbermudez.pocketgb.saves.SramFlushPolicy
+import com.joelbermudez.pocketgb.saves.StateSlot
 import com.joelbermudez.pocketgb.saves.StateStore
 import com.joelbermudez.pocketgb.saves.saf.MirrorDisabledReason
 import com.joelbermudez.pocketgb.saves.saf.SafSaveMirror
@@ -93,6 +94,12 @@ sealed interface OpenError {
      * puede «Jugar desde el inicio» (A9, como iOS D8.1).
      */
     data class ResumeFailed(val reason: ResumeFailure, val fingerprint: String) : OpenError
+
+    /**
+     * ND20 (a): la partida cambió aquí y en el `.sav` junto al juego por separado. No se escribió nada: se pregunta con
+     * cuál seguir y se vuelve a abrir con esa elección. Fechas (ms) para el diálogo.
+     */
+    data class SaveDivergence(val localDateMs: Long?, val mirrorDateMs: Long?) : OpenError
 }
 
 sealed interface OpenResult {
@@ -182,20 +189,32 @@ class GameLauncher(
     private val progress: com.joelbermudez.pocketgb.progress.ProgressStore? = null,
     /** N6: nombre visible de una ranura migrada («Ranura 1», «Rescate»…) a partir de su origen (`slot1`, `rescue`…). */
     private val migratedName: (String) -> String = { it },
+    /** N7a: nombre del momento «Conflicto …» que guarda la otra partida de una divergencia (recibe la fecha en ms). */
+    private val conflictName: (Long) -> String = { "Conflicto" },
 ) {
     /**
      * Las opciones (modelo y paleta) se fijan al abrir. Si [options] es `null` se resuelven con [emulationFor] a partir
      * de la huella y del byte `0x143` del ROM leído; volumen, escala y paleta en caliente los aplica el ViewModel.
      */
-    suspend fun open(entry: RomEntry, options: EmulationOptions? = null, mode: LaunchMode = LaunchMode.FRESH): OpenResult =
-        withContext(io + NonCancellable) { openBlocking(entry, options, mode) }
+    suspend fun open(
+        entry: RomEntry,
+        options: EmulationOptions? = null,
+        mode: LaunchMode = LaunchMode.FRESH,
+        divergence: SaveOpening.DivergenceChoice? = null,
+    ): OpenResult = withContext(io + NonCancellable) { openBlocking(entry, options, mode, divergence) }
 
     /**
      * Con [mode] = [LaunchMode.RESUME] («Continuar», A9) retoma además el estado automático si sigue siendo el de esta
      * partida ([ExactContinuation]), con la partida ya abierta y la huella ya adquirida, antes de arrancar. Si no vale
      * devuelve [OpenError.ResumeFailed] y cierra la sesión sin haber escrito nada.
      */
-    fun openBlocking(entry: RomEntry, options: EmulationOptions? = null, mode: LaunchMode = LaunchMode.FRESH): OpenResult {
+    fun openBlocking(
+        entry: RomEntry,
+        options: EmulationOptions? = null,
+        mode: LaunchMode = LaunchMode.FRESH,
+        /** ND20 (a): respuesta a una divergencia al abrir; `null` = preguntar ([OpenError.SaveDivergence]). */
+        divergence: SaveOpening.DivergenceChoice? = null,
+    ): OpenResult {
         entry.problem?.let { return OpenResult.Failed(OpenError.Unplayable(it)) }
         if (!hasFolderPermission()) return OpenResult.Failed(OpenError.PermissionRevoked)
         val console = entry.core
@@ -309,7 +328,23 @@ class GameLauncher(
                         validSizes = validSizes,
                         mirrorMode = setup?.mode ?: SaveOpening.MirrorMode.ReadWrite,
                         registry = registry,
+                        recordConflict = moments?.let { m ->
+                            { other: ByteArray, isLocal: Boolean ->
+                                // ND20 (k): si la que se aparta es la local, el momento lleva también su estado automático
+                                // y su miniatura (son de esa partida); la del espejo solo trae la partida.
+                                val state = if (isLocal) runCatching { states.load(StateSlot.AUTO) }.getOrNull() else null
+                                val thumb = if (isLocal && state != null) {
+                                    runCatching { fileOps.readBytes(states.thumbnailFile(StateSlot.AUTO), StateStore.MAX_THUMBNAIL_BYTES) }.getOrNull()
+                                } else {
+                                    null
+                                }
+                                m.create(MomentStore.Capture(state, other, thumb), conflictName(now())).id
+                            }
+                        },
+                        divergence = divergence,
                     )
+                } catch (refusal: SaveOpening.Refusal.Divergence) {
+                    return OpenResult.Failed(OpenError.SaveDivergence(refusal.localDateMs, refusal.mirrorDateMs))
                 } catch (_: SaveOpening.Refusal) {
                     return OpenResult.Failed(OpenError.MirrorNotDownloaded)
                 } catch (error: IOException) {
