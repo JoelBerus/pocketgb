@@ -31,11 +31,50 @@ El carril ND17 (orden filtrar/tomar) que cita el informe no estaba en el encargo
 
 ## Mutación
 
-MUTACION_PLACEHOLDER
+Script en el scratchpad (`nfin/mutate.py`): aplica cada mutante (deshace el arreglo), ejecuta su test con `./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest --tests …` y restaura el archivo.
+
+```
+H2: MUTANTE MUERTO       [NFinalSavesTest.aGbaWithTheSameBaseNameSharesTheMirror]            (sin "gba" en las extensiones)
+H3: MUTANTE MUERTO       [NFinalSavesTest.recordReceivedKeepsTheMirrorLocation]              (sin h.location)
+H4: MUTANTE MUERTO       [NFinalSavesTest.receivedCountsAsOwnHistory]                        (sin + it.received)
+H5: MUTANTE MUERTO       [NFinalSavesTest.rawSaveLooksForTheExactNameFirst]                  (sin el nombre exacto primero)
+Dropbox: MUTANTE MUERTO  [NFinalSavesTest.rawSaveLooksForTheExactNameFirst]                  (sin el patrón «… conflicted copy …»)
+H6a: MUTANTE MUERTO      [NFinalTravelTest.keepLocalConflictMomentCarriesThePackageStateAndThumbnail]
+H6b: MUTANTE MUERTO      [NFinalTravelTest.rejectingTheStateReplacementKeepsTheIncomingState]
+H8a: MUTANTE MUERTO      [NFinalSavesTest.anUncommittedPushNeverDropsTheEvictedEntryFromTheIndex] (expulsar del índice al hacer push)
+H8c: MUTANTE MUERTO      [NFinalSavesTest.anUncommittedPushNeverDropsTheEvictedEntryFromTheIndex] (anillo sin tope RING_SIZE + 1)
+Rollback: MUTANTE MUERTO [NFinalSavesTest.rollbackRemovesOnlyTheNewEntry]
+H8b: MUTANTE MUERTO      [NFinalTravelTest.aRingFailureAbortsTheInstall]                     (volver a tragarse el fallo del anillo)
+H9: MUTANTE MUERTO       [NFinalSavesTest.aTruncatedOwnMirrorWriteIsOwnOlderNotAnExternalChange]
+H13: MUTANTE MUERTO      [NFinalTravelTest.tagsAreMeasuredInCodePoints]                      (length en vez de codePointCount)
+ALREADY_CURRENT: MUERTO  [NFinalTravelTest.alreadyCurrentSetsTheCurrentAsideAndRecordsItAsReceived]
+Continuar: MUERTO        [NFinalTravelTest.detailContinuesFromTheOtherDeviceWhileItsStateIsTheAuto]
+ND20j: MUERTO            [NFinalTravelTest.headerSizesWinOverTheIndex]                       (índice antes que cabecera)
+Escaneo: MUERTO          [LibraryScannerTest.scanListsProviderConflictCopiesNextToEachRom]
+Browser: MUERTO          [SavesBrowserTest.scannedConflictCopiesWinOverTheOnesRecordedAtOpening]
+```
+18/18 mutantes muertos. H12 no cambia comportamiento (lo cubren el compilador, lint y `GameSettingsSheetTest`/`GameSettingsConfirmTest` instrumentados).
 
 ## Verificación desde limpio
 
-VERIFICACION_PLACEHOLDER
+`git archive HEAD` (`dd095ae`) en `scratchpad/nfin/clean2`, ROMs libres enlazadas (`core/tests/roms`; `gba/tests/roms/gba-tests` y `gba/build/hb` de `pocketgb-n7-android`), `ANDROID_HOME=~/Library/Android/sdk`, Gradle dentro del candado `build`, emulador `Small_Phone_API_35` dentro del candado `emu`.
+
+```
+$ ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL in 6m 53s
+JVM: 834 tests, 0 fallos, 0 saltados (818 antes + 16 nuevos)
+lint: 0 errors, 20 warnings (22 antes: fuera los dos UnusedResources de H12; ninguno en archivos tocados)
+aapt2 dump permissions app-debug.apk / app-release-unsigned.apk → 0 permisos de red (solo DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION)
+
+$ adb shell am instrument -w com.joelbermudez.pocketgb.test/androidx.test.runner.AndroidJUnitRunner   (suite completa, sin filtro)
+OK (495 tests)   — Time: 480 s
+
+$ tools/android-save-kill-test.sh 50 gb
+Resultado (gb): OK=50 FAIL=0 sin-verificación=0 de 50 (stress listo antes de matar: 50)
+OK: 50/50 iteraciones con el invariante intacto
+```
+
+Primera pasada (`dfcaa88`, árbol limpio `nfin/clean`): JVM 834/834, lint 0 errores, instrumentadas 495/495, pero el kill-test dio **47/50**: tres «anillo con 4 entradas» tras un cierre entre el push del anillo y su commit. Es la consecuencia buscada de H8 (la expulsada sigue recuperable), pero con cierres repetidos el anillo podía crecer: se acotó a `RING_SIZE + 1` y el verificador acepta esa entrada de más (`dd095ae`). Segunda pasada completa desde limpio: lo de arriba.
 
 ## Documentación
 - [05-android-spec](../05-android-spec.md): resumen de estos cambios en «Partidas que viajan».
