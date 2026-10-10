@@ -36,6 +36,8 @@ class TravelEnvironment(
     val onSaveChanged: (fingerprint: String) -> Unit = {},
     /** N7c: abre el juego con «Continuar» (estado automático del paquete). */
     val onContinue: (RomEntry) -> Unit = {},
+    /** ND20 (i): fusiona los metadatos del paquete importado con los de aquí (se llama fuera del hilo principal). */
+    val onMergeMetadata: (RomEntry, String, com.joelbermudez.pocketgb.travel.PgbmMeta) -> Unit = { _, _, _ -> },
 )
 
 val LocalTravelEnvironment = compositionLocalOf { TravelEnvironment() }
@@ -53,8 +55,10 @@ class TravelActions(
 )
 
 /**
- * N7b · un `.pgbm` recibido por «Abrir con» o «Compartir» (intent genérico): se valida por cabecera y se busca el juego
- * por su huella (`ROMF`, los 32 bytes). Un `.sav` crudo no dice de qué juego es: se pide importarlo desde el detalle.
+ * N7b · un archivo recibido por «Abrir con» o «Compartir» (intent genérico): se valida por cabecera (H11: fuera del hilo
+ * principal). Un `.pgbm` busca su juego por la huella (`ROMF`, los 32 bytes); un `.sav` crudo, por el nombre del archivo
+ * sin el sufijo de copia en conflicto (ND20 e, l): si coincide con varios juegos, se elige. [onImported] se llama solo si
+ * la importación terminó (H6).
  */
 @Composable
 fun IncomingPackageHost(
@@ -62,32 +66,81 @@ fun IncomingPackageHost(
     entries: List<RomEntry>,
     prefs: LibraryPreferencesData,
     onDone: () -> Unit,
+    displayName: String? = null,
+    onImported: () -> Unit = {},
 ) {
     if (bytes == null) return
     val context = LocalContext.current
     val service = remember(context) { TravelService(context.applicationContext) }
-    val peek = remember(bytes) { service.importer.peek(bytes) }
+    val peek by androidx.compose.runtime.produceState<SaveImporter.Peek?>(null, bytes) {
+        value = withContext(Dispatchers.IO) { service.importer.peek(bytes) }
+    }
     val res = androidx.compose.ui.platform.LocalResources.current
-    when (peek) {
-        SaveImporter.Peek.RawSave -> InfoDialog(res.getString(R.string.n7_open_raw_sav), onDone)
-        is SaveImporter.Peek.Rejected -> InfoDialog(res.getString(rejectionText(peek.reason)), onDone)
+    when (val p = peek) {
+        null -> Unit
+        SaveImporter.Peek.RawSave -> {
+            val stem = displayName?.substringBeforeLast('.')?.let(com.joelbermudez.pocketgb.saves.SaveLineage::stripConflictSuffix)
+            val matches = if (stem == null) emptyList() else entries.filter {
+                it.isPlayable && prefs.fingerprints[it.id] != null && it.fileName.substringBeforeLast('.').equals(stem, ignoreCase = true)
+            }.distinctBy { prefs.fingerprints[it.id] }
+            var chosen by remember(bytes) { mutableStateOf(matches.singleOrNull()) }
+            val entry = chosen
+            when {
+                matches.isEmpty() -> InfoDialog(res.getString(R.string.n7_open_raw_sav), onDone)
+                entry == null -> ChooseGameDialog(matches, onChoose = { chosen = it }, onDismiss = onDone)
+                else -> {
+                    val actions = rememberTravelActions(entry, prefs.fingerprints[entry.id], prefs, onFinished = onDone, onImported = onImported)
+                    androidx.compose.runtime.LaunchedEffect(bytes, entry.id) { actions?.importBytes?.invoke(bytes) }
+                }
+            }
+        }
+        is SaveImporter.Peek.Rejected -> InfoDialog(res.getString(rejectionText(p.reason)), onDone)
         is SaveImporter.Peek.Package -> {
-            val id = prefs.fingerprints.entries.firstOrNull { it.value == peek.romFingerprint }?.key
+            val id = prefs.fingerprints.entries.firstOrNull { it.value == p.romFingerprint }?.key
             val entry = entries.firstOrNull { it.id == id }
             if (entry == null) {
                 InfoDialog(res.getString(R.string.n7_open_no_game), onDone)
             } else {
-                val actions = rememberTravelActions(entry, peek.romFingerprint, prefs, onFinished = onDone)
+                val actions = rememberTravelActions(entry, p.romFingerprint, prefs, onFinished = onDone, onImported = onImported)
                 androidx.compose.runtime.LaunchedEffect(bytes) { actions?.importBytes?.invoke(bytes) }
             }
         }
     }
 }
 
+/** ND20 (e): un `.sav` cuyo nombre coincide con varios juegos: se elige. */
+@Composable
+internal fun ChooseGameDialog(games: List<RomEntry>, onChoose: (RomEntry) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.n7_open_choose_game)) },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                games.forEach { g ->
+                    TextButton(onClick = { onChoose(g) }, modifier = Modifier.heightIn(min = 48.dp).testTag("choose-game-${g.id}")) {
+                        Text("${g.alias ?: g.title} · ${g.id}")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+        modifier = Modifier.testTag("choose-game-dialog"),
+    )
+}
+
 /** Mensaje o pregunta tras exportar o importar. */
 private sealed interface TravelDialog {
     data class Message(val text: String) : TravelDialog
-    data class Choose(val bytes: ByteArray, val raw: Boolean, val device: String?) : TravelDialog
+    data class Ask(
+        val bytes: ByteArray,
+        val raw: Boolean,
+        val ask: SaveImporter.Ask,
+        val device: String?,
+        val choice: SaveImporter.Choice?,
+        val confirmed: Set<SaveImporter.Ask>,
+    ) : TravelDialog
     data class Imported(val text: String, val continueFrom: String?) : TravelDialog
 }
 
@@ -102,6 +155,8 @@ fun rememberTravelActions(
     prefs: LibraryPreferencesData,
     /** Se llama al cerrar el último diálogo de una importación (para el intent recibido). */
     onFinished: () -> Unit = {},
+    /** H6: la importación terminó de verdad ([SaveImporter.Result.Done]). */
+    onImported: () -> Unit = {},
 ): TravelActions? {
     if (fingerprint == null) return null
     val context = LocalContext.current
@@ -120,27 +175,35 @@ fun rememberTravelActions(
         else -> message(R.string.n7_failed, error.message ?: error.javaClass.simpleName)
     }
 
-    fun show(result: SaveImporter.Result, bytes: ByteArray, raw: Boolean) {
-        dialog = when (result) {
-            is SaveImporter.Result.Rejected -> TravelDialog.Message(res.getString(rejectionText(result.reason)))
-            SaveImporter.Result.SaveSizeMismatch -> TravelDialog.Message(res.getString(R.string.n7_import_size_mismatch))
-            is SaveImporter.Result.NeedsChoice -> TravelDialog.Choose(bytes, raw, result.device())
-            is SaveImporter.Result.Done -> {
-                if (result.installed || result.continueFrom != null) env.onSaveChanged(fingerprint)
-                TravelDialog.Imported(res.getString(doneText(result)), result.continueFrom)
-            }
-        }
-    }
-
-    fun runImport(bytes: ByteArray, raw: Boolean, choice: SaveImporter.Choice?) {
+    fun runImport(
+        bytes: ByteArray,
+        raw: Boolean,
+        choice: SaveImporter.Choice? = null,
+        confirmed: Set<SaveImporter.Ask> = emptySet(),
+    ) {
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
                     val target = service.target(entry, fingerprint)
-                    if (raw) service.importer.importRawSave(bytes, target, choice) else service.importer.importPackage(bytes, target, choice)
+                    val r = if (raw) service.importer.importRawSave(bytes, target, choice, confirmed)
+                    else service.importer.importPackage(bytes, target, choice, confirmed)
+                    // ND20 (i): los metadatos del paquete se fusionan con los de aquí.
+                    if (r is SaveImporter.Result.Done && r.meta != null) runCatching { env.onMergeMetadata(entry, fingerprint, r.meta) }
+                    r
                 }
             }
-            outcome.fold({ show(it, bytes, raw) }, ::failure)
+            outcome.fold({ result ->
+                dialog = when (result) {
+                    is SaveImporter.Result.Rejected -> TravelDialog.Message(res.getString(rejectionText(result.reason)))
+                    SaveImporter.Result.SaveSizeMismatch -> TravelDialog.Message(res.getString(R.string.n7_import_size_mismatch))
+                    is SaveImporter.Result.NeedsChoice -> TravelDialog.Ask(bytes, raw, result.ask, result.otherDevice, choice, confirmed)
+                    is SaveImporter.Result.Done -> {
+                        if (result.installed || result.continueFrom != null) env.onSaveChanged(fingerprint)
+                        onImported()
+                        TravelDialog.Imported(res.getString(doneText(result)), result.continueFrom)
+                    }
+                }
+            }, ::failure)
         }
     }
 
@@ -148,7 +211,7 @@ fun rememberTravelActions(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val bytes = withContext(Dispatchers.IO) { runCatching { service.read(uri) } }
-            bytes.fold({ runImport(it, raw = !com.joelbermudez.pocketgb.travel.PgbmResult.hasMagic(it), choice = null) }, ::failure)
+            bytes.fold({ runImport(it, raw = !com.joelbermudez.pocketgb.travel.PgbmResult.hasMagic(it)) }, ::failure)
         }
     }
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(TravelService.MIME_BINARY)) { uri ->
@@ -215,7 +278,7 @@ fun rememberTravelActions(
                 }
             },
             onImport = { openDocument.launch(arrayOf("*/*")) },
-            importBytes = { bytes -> runImport(bytes, raw = !com.joelbermudez.pocketgb.travel.PgbmResult.hasMagic(bytes), choice = null) },
+            importBytes = { bytes -> runImport(bytes, raw = !com.joelbermudez.pocketgb.travel.PgbmResult.hasMagic(bytes)) },
         )
     }
 
@@ -227,17 +290,24 @@ fun rememberTravelActions(
         null -> Unit
         is TravelDialog.Message -> InfoDialog(d.text) { close() }
         is TravelDialog.Imported -> ImportedDialog(d.text, d.continueFrom, onContinue = { close(); env.onContinue(entry) }, onDismiss = { close() })
-        is TravelDialog.Choose -> ChooseDialog(
-            d.device,
-            onIncoming = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.USE_INCOMING) },
-            onLocal = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL) },
-            onDismiss = { close() },
-        )
+        is TravelDialog.Ask -> when (d.ask) {
+            SaveImporter.Ask.DIVERGENCE, SaveImporter.Ask.KNOWN -> ChooseDialog(
+                d.device,
+                known = d.ask == SaveImporter.Ask.KNOWN,
+                onIncoming = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.USE_INCOMING, d.confirmed) },
+                onLocal = { dialog = null; runImport(d.bytes, d.raw, SaveImporter.Choice.KEEP_LOCAL, d.confirmed) },
+                onDismiss = { close() },
+            )
+            else -> ConfirmImportDialog(
+                d.ask, d.device ?: res.getString(R.string.n7_other_device), entry.alias ?: entry.title,
+                onConfirm = { dialog = null; runImport(d.bytes, d.raw, d.choice, d.confirmed + d.ask) },
+                onDismiss = { close() },
+            )
+        }
     }
     return actions
 }
 
-private fun SaveImporter.Result.NeedsChoice.device() = otherDevice
 
 @Composable
 internal fun InfoDialog(text: String, onDismiss: () -> Unit) {
@@ -259,6 +329,7 @@ internal fun rejectionText(reason: SaveImporter.Rejection): Int = when (reason) 
     SaveImporter.Rejection.OTHER_GAME -> R.string.n7_reject_other_game
     SaveImporter.Rejection.UNKNOWN_SIZES -> R.string.n7_reject_unknown_sizes
     SaveImporter.Rejection.WRONG_SIZE -> R.string.n7_reject_wrong_size
+    SaveImporter.Rejection.LOCAL_UNREADABLE -> R.string.n7_reject_local_unreadable
 }
 
 internal fun doneText(r: SaveImporter.Result.Done): Int = when (r.lineage) {
@@ -297,11 +368,12 @@ internal fun ImportedDialog(text: String, continueFrom: String?, onContinue: () 
 
 /** Divergencia al importar: la que no se elige queda como momento «Conflicto» y en las copias. */
 @Composable
-internal fun ChooseDialog(device: String?, onIncoming: () -> Unit, onLocal: () -> Unit, onDismiss: () -> Unit) {
+internal fun ChooseDialog(device: String?, onIncoming: () -> Unit, onLocal: () -> Unit, onDismiss: () -> Unit, known: Boolean = false) {
+    val who = device ?: stringResource(R.string.n7_other_device)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.n7_choose_title)) },
-        text = { Text(stringResource(R.string.n7_choose_body, device ?: stringResource(R.string.n7_other_device))) },
+        title = { Text(stringResource(if (known) R.string.n7_known_title else R.string.n7_choose_title)) },
+        text = { Text(if (known) stringResource(R.string.n7_known_body, who) else stringResource(R.string.n7_choose_body, who)) },
         confirmButton = {
             TextButton(onClick = onIncoming, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-use-incoming")) {
                 Text(stringResource(R.string.n7_choose_incoming))
@@ -330,5 +402,27 @@ internal fun InboxDialog(device: String, game: String, onImport: () -> Unit, onL
             TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp).testTag("inbox-later")) { Text(stringResource(R.string.n7_not_now)) }
         },
         modifier = Modifier.testTag("inbox-dialog"),
+    )
+}
+
+/** ND20 (e, f, h): confirmaciones antes de importar (sin tocar nada hasta «Importar»). */
+@Composable
+internal fun ConfirmImportDialog(ask: SaveImporter.Ask, device: String, game: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val (title, body, confirm) = when (ask) {
+        SaveImporter.Ask.RAW_CONFIRM -> Triple(R.string.n7_raw_confirm_title, stringResource(R.string.n7_raw_confirm_body, game), R.string.n7_raw_import)
+        SaveImporter.Ask.REPLACE_STATE -> Triple(R.string.n7_replace_state_title, stringResource(R.string.n7_replace_state_body, device), R.string.n7_replace_state_confirm)
+        else -> Triple(R.string.n7_config_mismatch_title, stringResource(R.string.n7_config_mismatch_body, device), R.string.n7_config_mismatch_confirm)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(title)) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-confirm")) { Text(stringResource(confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).testTag("travel-cancel")) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+        modifier = Modifier.testTag("travel-confirm-dialog"),
     )
 }

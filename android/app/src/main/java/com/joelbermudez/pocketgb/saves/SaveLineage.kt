@@ -78,24 +78,40 @@ object SaveLineage {
         return Incoming.DIVERGENCE
     }
 
-    // MARK: copias en conflicto del proveedor
+    // MARK: copias en conflicto del proveedor (ND20 l, = iOS)
 
-    private val ORDINAL = Regex("""^(.+?)(?: \d+| \(\d+\))$""")
+    private val ORDINAL = Regex("""^(.+?)(?: (\d+)| \((\d+)\))$""")
+    private val PHRASES = listOf("conflicted copy", "copia en conflicto")
 
     /**
-     * ¿Es [name] una copia en conflicto que el proveedor creó para el espejo `<base>.sav`? Formas conocidas:
-     * `X 2.sav` (iCloud / Drive), `X (1).sav` (Drive, OneDrive), `X.sync-conflict-20261008-…sav` (Syncthing) y
-     * `X (conflicted copy …).sav` / `X (… conflicted copy …).sav` (Dropbox). Sin distinguir mayúsculas. El propio
-     * `<base>.sav` no lo es. Se listan en Ajustes › Partidas; **nunca** se borran.
+     * ¿Es [name] una copia en conflicto que el proveedor creó para el espejo `<base>.sav`? Formas: `X 2.sav` (n ≥ 2,
+     * iCloud / Drive), `X (1).sav` (n ≥ 1, Drive, OneDrive), `X.sync-conflict-…sav` (Syncthing) y `X (… conflicted copy …)`
+     * / «copia en conflicto» (Dropbox). Sin distinguir mayúsculas. No lo es el propio `<base>.sav` ni un nombre que es la
+     * partida de OTRO juego de la carpeta ([otherGameBases]: bases de los ROMs hermanos, p. ej. `X 2` si existe `X 2.gb`).
+     * Se listan en Ajustes › Partidas; **nunca** se borran.
      */
-    fun isProviderConflictCopy(base: String, name: String): Boolean {
+    fun isProviderConflictCopy(base: String, name: String, otherGameBases: Set<String> = emptySet()): Boolean {
         val lower = name.lowercase(Locale.ROOT)
         val b = base.lowercase(Locale.ROOT)
         if (!lower.endsWith(".sav") || lower == "$b.sav") return false
         val stem = lower.removeSuffix(".sav")
+        if (otherGameBases.any { it.lowercase(Locale.ROOT) == stem }) return false
         if (stem.startsWith("$b.sync-conflict-")) return true
-        if (stem.startsWith("$b ") && "conflicted copy" in stem) return true
+        if (stem.startsWith("$b ") && PHRASES.any { it in stem }) return true
         val m = ORDINAL.matchEntire(stem) ?: return false
-        return m.groupValues[1] == b
+        if (m.groupValues[1] != b) return false
+        val n = (m.groupValues[2].ifEmpty { m.groupValues[3] }).toIntOrNull() ?: return false
+        return if (m.groupValues[2].isNotEmpty()) n >= 2 else n >= 1
+    }
+
+    /** ND20 (l): el nombre de juego de una copia en conflicto (para buscar el juego de un `.sav` abierto con «Abrir con»). */
+    fun stripConflictSuffix(stem: String): String {
+        val s = stem.substringBefore(".sync-conflict-")
+        PHRASES.forEach { p ->
+            val i = s.lowercase(Locale.ROOT).indexOf(" ($p")
+            if (i > 0) return s.substring(0, i)
+        }
+        val m = ORDINAL.matchEntire(s) ?: return s
+        return m.groupValues[1]
     }
 }

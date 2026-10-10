@@ -91,4 +91,13 @@ internal val n7CatalogScreens: Map<String, @Composable (DebugIntent) -> Unit> = 
         }
     }
     put("n7-warning-mirror-older") { _ -> GameBackdrop { SaveLoadWarningDialog(SaveLoadWarning.MirrorOlderSetAside()) {} } }
+    put("n7-known") { _ -> GameBackdrop { ChooseDialog("iPhone de Joel", {}, {}, {}, known = true) } }
+    put("n7-raw-confirm") { _ ->
+        GameBackdrop { com.joelbermudez.pocketgb.ui.travel.ConfirmImportDialog(com.joelbermudez.pocketgb.travel.SaveImporter.Ask.RAW_CONFIRM, "", "POKÉMON RED", {}, {}) }
+    }
+    put("n7-config-mismatch") { _ ->
+        GameBackdrop {
+            com.joelbermudez.pocketgb.ui.travel.ConfirmImportDialog(com.joelbermudez.pocketgb.travel.SaveImporter.Ask.CONFIG_MISMATCH, "iPhone de Joel", "", {}, {})
+        }
+    }
 }

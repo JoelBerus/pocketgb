@@ -66,8 +66,8 @@ class SaveTravelTest {
     // MARK: importación de los vectores
 
     @Test fun x1InstallsAndOffersExactContinuation() {
-        val r = importer().importPackage(build("X1", codec), TARGET)
-        assertEquals(SaveImporter.Result.Done(SaveLineage.Incoming.INSTALL, installed = true, continueFrom = "Pixel de prueba"), r)
+        val r = importer().importPackage(build("X1", codec), TARGET) as SaveImporter.Result.Done
+        assertEquals(SaveImporter.Result.Done(SaveLineage.Incoming.INSTALL, installed = true, continueFrom = "Pixel de prueba"), r.copy(meta = null))
         assertArrayEquals(S1, store().load())
         assertArrayEquals(T1, StateStore(states, TARGET.fingerprint).load(StateSlot.AUTO))
         assertEquals("Pixel de prueba", store().origin(sha(S1))?.deviceName)
@@ -86,9 +86,10 @@ class SaveTravelTest {
     @Test fun x2OverAnotherLocalIsADivergenceThatTouchesNothingUntilChosen() {
         store().save(B)
         val before = snapshotTree()
-        assertEquals(SaveImporter.Result.NeedsChoice(null), importer().importPackage(build("X2", codec), TARGET).let {
-            (it as SaveImporter.Result.NeedsChoice).copy(otherDevice = null)
-        })
+        assertEquals(
+            SaveImporter.Result.NeedsChoice(SaveImporter.Ask.DIVERGENCE, "iPhone de prueba"),
+            importer().importPackage(build("X2", codec), TARGET),
+        )
         assertEquals(before, snapshotTree())
         // Se queda la de aquí: la otra va a un momento «Conflicto», a backup y apartada.
         val keep = importer().importPackage(build("X2", codec), TARGET, SaveImporter.Choice.KEEP_LOCAL) as SaveImporter.Result.Done
@@ -171,15 +172,19 @@ class SaveTravelTest {
 
     // MARK: .sav crudo
 
-    @Test fun rawSaveIsValidatedByExactSizeAndAsksOverAnotherSave() {
+    @Test fun rawSaveIsValidatedByExactSizeAndAlwaysConfirmed() {
         assertEquals(SaveImporter.Result.Rejected(SaveImporter.Rejection.WRONG_SIZE), importer().importRawSave(ByteArray(32767), TARGET))
         assertEquals(SaveImporter.Result.Rejected(SaveImporter.Rejection.NOT_A_PACKAGE), importer().importRawSave(build("X1", codec), TARGET))
-        assertEquals(SaveLineage.Incoming.INSTALL, (importer().importRawSave(B, TARGET) as SaveImporter.Result.Done).lineage)
-        assertTrue(importer().importRawSave(S1, TARGET) is SaveImporter.Result.NeedsChoice)
+        // ND20 (e): aunque no haya partida, se confirma nombrando el juego; sin confirmar no se toca nada.
+        assertEquals(SaveImporter.Result.NeedsChoice(SaveImporter.Ask.RAW_CONFIRM, null), importer().importRawSave(B, TARGET))
+        assertNull(store().load())
+        val done = importer().importRawSave(B, TARGET, confirmed = setOf(SaveImporter.Ask.RAW_CONFIRM)) as SaveImporter.Result.Done
+        assertEquals(SaveLineage.Incoming.INSTALL, done.lineage)
+        assertEquals(SaveImporter.Ask.DIVERGENCE, (importer().importRawSave(S1, TARGET) as SaveImporter.Result.NeedsChoice).ask)
         importer().importRawSave(S1, TARGET, SaveImporter.Choice.USE_INCOMING)
         assertArrayEquals(S1, store().load())
         assertArrayEquals(B, store().backupFile(1).readBytes())
-        assertEquals(1, MomentStore(moments, TARGET.fingerprint).snapshot().moments.size)
+        assertEquals("momento «Conflicto» con la de aquí", 1, MomentStore(moments, TARGET.fingerprint).snapshot().moments.size)
     }
 
     @Test fun peekValidatesByHeaderNotByName() {
@@ -250,6 +255,132 @@ class SaveTravelTest {
         // Claves desconocidas se ignoran y las huellas en mayúsculas se aceptan.
         val ok = PgbmMeta.parse(good.replace("{\"format\":1,", "{\"format\":1,\"futuro\":{\"x\":[1]},").uppercaseHashes().toByteArray())
         assertEquals(sha(S1), ok.savSha256)
+    }
+
+    // MARK: ND20 / auditoría
+
+    @Test fun x8DuplicateKeyIsRejectedWithoutTouchingAnything() {
+        store().save(B)
+        val before = snapshotTree()
+        assertEquals(SaveImporter.Result.Rejected(SaveImporter.Rejection.INVALID_META), importer().importPackage(build("X8", codec), TARGET))
+        assertEquals(before, snapshotTree())
+    }
+
+    @Test fun duplicateKeysAreDetectedAfterDecodingAndAtAnyDepth() {
+        assertTrue(PgbmMeta.hasDuplicateKeys("""{"a":1,"\u0061":2}"""))
+        assertTrue(PgbmMeta.hasDuplicateKeys("""{"x":{"b":[{"c":1,"c":2}]}}"""))
+        assertFalse(PgbmMeta.hasDuplicateKeys("""{"a":{"a":1},"b":["a","a"],"c":"{\"a\":1,\"a\":2}"}"""))
+    }
+
+    @Test fun configIsTypedAndExported() {
+        val good = String(codec.parse(build("X1", codec)).meta!!)
+        for (bad in listOf(""""config":{"model":"nes"}""", """"config":{"gba_bios":"true"}""", """"config":{"gba_rtc":1}""", """"config":[]""")) {
+            try {
+                PgbmMeta.parse(good.replace("\"core\":", "$bad,\"core\":").toByteArray())
+                fail("config inválida: $bad")
+            } catch (_: PgbmMeta.Invalid) {
+            }
+        }
+        val ok = PgbmMeta.parse(good.replace("\"core\":", "\"config\":{\"model\":\"cgb\",\"futuro\":3},\"core\":").toByteArray())
+        assertEquals(PgbmConfig(model = "cgb"), ok.config)
+        store().save(S1)
+        val info = SaveExporter.Info(TARGET.fingerprint, "gb", "Pixel", "1", config = PgbmConfig(model = "dmg", compatPalette = "3"))
+        val meta = PgbmMeta.parse(codec.parse(SaveExporter(saves, states, codec).buildPackage(info)).meta!!)
+        assertEquals(PgbmConfig(model = "dmg", compatPalette = "3"), meta.config)
+    }
+
+    @Test fun aStateFromAnotherConfigurationIsAnnouncedBeforeBeingDiscarded() {
+        val a = File(root, "a")
+        SaveStore(File(a, "saves"), TARGET.fingerprint).save(S1)
+        StateStore(File(a, "states"), TARGET.fingerprint).save(byteArrayOf(0x50, 0x47, 0x42, 0x53), null, StateSlot.AUTO)
+        val pkg = SaveExporter(File(a, "saves"), File(a, "states"), codec)
+            .buildPackage(SaveExporter.Info(TARGET.fingerprint, "gb", "iPhone", "1", config = PgbmConfig(model = "cgb")))
+        val dmg = ImportTarget(TARGET.fingerprint, "gb", true, TARGET.validSizes, config = PgbmConfig(model = "dmg"))
+        assertEquals(SaveImporter.Result.NeedsChoice(SaveImporter.Ask.CONFIG_MISMATCH, "iPhone"), importer().importPackage(pkg, dmg))
+        assertNull(store().load())
+        val done = importer().importPackage(pkg, dmg, confirmed = setOf(SaveImporter.Ask.CONFIG_MISMATCH)) as SaveImporter.Result.Done
+        assertNull("sin estado", done.continueFrom)
+        assertArrayEquals(S1, store().load())
+    }
+
+    @Test fun aKnownSaveAsksAndKeepingLocalLeavesItInTheCopies() {
+        store().save(S1)
+        store().save(B) // S1 queda en `.1`: ya conocida
+        val raw = importer().importRawSave(S1, TARGET)
+        assertEquals(SaveImporter.Ask.KNOWN, (raw as SaveImporter.Result.NeedsChoice).ask)
+        val keep = importer().importRawSave(S1, TARGET, SaveImporter.Choice.KEEP_LOCAL) as SaveImporter.Result.Done
+        assertEquals(SaveLineage.Incoming.STALE, keep.lineage)
+        assertArrayEquals(B, store().load())
+        assertTrue(store().setAside().any { File(store().backupsDirectory, it.name).readBytes().contentEquals(S1) })
+    }
+
+    @Test fun installingPutsTheCurrentSaveWithItsAutoInTheBeforeImportRingAndSetsItAside() {
+        store().save(B)
+        val st = StateStore(states, TARGET.fingerprint)
+        st.save(byteArrayOf(0x50, 0x47, 0x42, 0x53, 9), byteArrayOf(1, 2, 3), StateSlot.AUTO)
+        importer().importPackage(build("X1", codec), TARGET, SaveImporter.Choice.USE_INCOMING)
+        val ring = MomentStore(moments, TARGET.fingerprint).snapshot().beforeLoad
+        val entry = ring.single { it.name == "Antes de importar" }
+        assertTrue(entry.hasState && entry.hasSram && entry.hasThumbnail)
+        assertArrayEquals(B, MomentStore(moments, TARGET.fingerprint).loadSram(MomentStore.Kind.BEFORE_LOAD, entry.id))
+        assertTrue(store().setAside().any { File(store().backupsDirectory, it.name).readBytes().contentEquals(B) })
+        assertArrayEquals(T1, st.load(StateSlot.AUTO))
+    }
+
+    @Test fun theSameSaveWithAStateAsksBeforeReplacingTheAuto() {
+        importer().importPackage(build("X1", codec), TARGET)
+        val st = StateStore(states, TARGET.fingerprint)
+        st.save(byteArrayOf(0x50, 0x47, 0x42, 0x53, 7), null, StateSlot.AUTO) // se jugó un rato sin guardar
+        assertEquals(SaveImporter.Result.NeedsChoice(SaveImporter.Ask.REPLACE_STATE, "Pixel de prueba"), importer().importPackage(build("X1", codec), TARGET))
+        assertArrayEquals(byteArrayOf(0x50, 0x47, 0x42, 0x53, 7), st.load(StateSlot.AUTO))
+        importer().importPackage(build("X1", codec), TARGET, confirmed = setOf(SaveImporter.Ask.REPLACE_STATE))
+        assertArrayEquals(T1, st.load(StateSlot.AUTO))
+        val ring = MomentStore(moments, TARGET.fingerprint).snapshot().beforeLoad
+        assertTrue("el AUTO de aquí no se pierde", ring.any { it.hasState && it.name == "Antes de importar" })
+    }
+
+    @Test fun anUnreadableLocalIsNeverTreatedAsAbsent() {
+        store().saveFile.parentFile!!.mkdirs()
+        store().saveFile.mkdirs() // existe pero no se puede leer como archivo
+        assertEquals(
+            SaveImporter.Result.Rejected(SaveImporter.Rejection.LOCAL_UNREADABLE),
+            importer().importPackage(build("X1", codec), TARGET),
+        )
+    }
+
+    @Test fun anOversizeLocalIsQuarantinedBeforeInstalling() {
+        saves.mkdirs()
+        store().saveFile.writeBytes(ByteArray(SaveStore.MAX_SAVE_BYTES + 1))
+        val r = importer().importPackage(build("X1", codec), TARGET) as SaveImporter.Result.Done
+        assertTrue(r.installed)
+        assertArrayEquals(S1, store().load())
+        assertTrue(store().backupsDirectory.list()!!.any { it.contains("wrong-size") })
+    }
+
+    @Test fun aWrongSizedIncomingSaveIsSetAside() {
+        store().save(S1)
+        importer().importPackage(build("X4", codec), TARGET)
+        assertTrue(store().setAside().any { File(store().backupsDirectory, it.name).readBytes().contentEquals(CrossVectors.S4) })
+    }
+
+    @Test fun metadataIsMergedNotOverwritten() {
+        val local = com.joelbermudez.pocketgb.progress.GameProgress(
+            playTimeMs = 5_000,
+            milestones = listOf(
+                com.joelbermudez.pocketgb.progress.Milestone("a", "Uno", done = false),
+                com.joelbermudez.pocketgb.progress.Milestone("b", "Dos", done = true),
+            ),
+        )
+        val meta = PgbmMeta(
+            "0".repeat(64), "0".repeat(64), null, "ios", "iPhone", 1, "gb", "1", alias = "Del iPhone", tags = listOf("RPG", "nuevo"),
+            playTimeMs = 9_000, milestones = listOf(PgbmMeta.Milestone("a", "Uno", true), PgbmMeta.Milestone("c", "Tres", false)),
+        )
+        val m = MetadataMerge.merge("Mi Rojo", listOf("rpg"), local, meta)
+        assertEquals("Mi Rojo", m.alias)
+        assertEquals(listOf("rpg", "nuevo"), m.tags)
+        assertEquals(9_000, m.playTimeMs)
+        assertEquals(listOf("a" to true, "b" to true, "c" to false), m.milestones.map { it.id to it.done })
+        assertEquals("Del iPhone", MetadataMerge.merge(null, emptyList(), local, meta).alias)
     }
 
     private fun String.uppercaseHashes() = replace(sha(S1), sha(S1).uppercase())

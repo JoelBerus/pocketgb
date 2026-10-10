@@ -76,10 +76,13 @@ fun PocketGBApp(
 ) {
     // El estado de navegación vive aquí (no en el Scaffold): al salir de una partida se vuelve al mismo sitio.
     val navigationState = rememberSaveable(saver = AppNavigationState.Saver) { AppNavigationState() }
-    val travel = remember(gameplay) {
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val travel = remember(gameplay, library) {
+        val service = com.joelbermudez.pocketgb.travel.TravelService(appContext)
         com.joelbermudez.pocketgb.ui.travel.TravelEnvironment(
             onSaveChanged = gameplay::didRestoreSave,
             onContinue = { entry -> gameplay.open(entry, LaunchMode.RESUME) },
+            onMergeMetadata = { entry, fingerprint, meta -> service.mergeMetadata(entry, fingerprint, meta, library) },
         )
     }
     androidx.compose.runtime.CompositionLocalProvider(com.joelbermudez.pocketgb.ui.travel.LocalTravelEnvironment provides travel) {
@@ -104,7 +107,7 @@ private fun ExchangeInboxRoute(library: LibraryViewModel) {
     val ready = state as? com.joelbermudez.pocketgb.library.LibraryState.Ready ?: return
     class Offer(val item: com.joelbermudez.pocketgb.travel.ExchangeFolder.Item, val bytes: ByteArray, val entry: RomEntry, val device: String)
     var offer by remember { androidx.compose.runtime.mutableStateOf<Offer?>(null) }
-    var importing by remember { androidx.compose.runtime.mutableStateOf<ByteArray?>(null) }
+    var importing by remember { androidx.compose.runtime.mutableStateOf<Offer?>(null) }
     LaunchedEffect(ready) {
         offer = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
@@ -125,9 +128,9 @@ private fun ExchangeInboxRoute(library: LibraryViewModel) {
         com.joelbermudez.pocketgb.ui.travel.InboxDialog(
             o.device, o.entry.alias ?: o.entry.title,
             onImport = {
+                // H6: solo se da por visto cuando la importación termina (onImported) o con «Ahora no».
                 offer = null
-                kotlin.concurrent.thread { runCatching { service.inbox.markSeen(o.item) } }
-                importing = o.bytes
+                importing = o
             },
             onLater = {
                 offer = null
@@ -135,8 +138,18 @@ private fun ExchangeInboxRoute(library: LibraryViewModel) {
             },
         )
     }
-    com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(importing, ready.entries, prefs) { importing = null }
+    val current = importing
+    com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(
+        current?.bytes, ready.entries, prefs, onDone = { importing = null },
+        onImported = { current?.let { o -> kotlin.concurrent.thread { runCatching { service.inbox.markSeen(o.item) } } } },
+    )
 }
+
+/** Nombre visible del documento recibido (para buscar el juego de un `.sav` crudo, ND20 e). */
+private fun displayName(context: android.content.Context, uri: android.net.Uri): String? =
+    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+        if (it.moveToFirst()) it.getString(0) else null
+    }
 
 /** N7b: lee (fuera del hilo principal, con tope) el documento recibido y lo pasa al importador. */
 @Composable
@@ -156,8 +169,9 @@ private fun IncomingRoute(uri: android.net.Uri?, library: LibraryViewModel, onHa
         else -> emptyList()
     }
     val read = bytes ?: return
+    val name = remember(uri) { runCatching { displayName(context, uri) }.getOrNull() }
     read.fold(
-        { com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(it, entries, prefs, onHandled) },
+        { com.joelbermudez.pocketgb.ui.travel.IncomingPackageHost(it, entries, prefs, onHandled, displayName = name) },
         {
             com.joelbermudez.pocketgb.ui.travel.InfoDialog(
                 androidx.compose.ui.res.stringResource(com.joelbermudez.pocketgb.R.string.n7_reject_damaged), onHandled,

@@ -61,7 +61,7 @@ class PgbmNativeTest {
             )
             assertEquals(
                 SaveImporter.Result.Done(SaveLineage.Incoming.INSTALL, installed = true, continueFrom = "Pixel de prueba"),
-                importer.importPackage(build("X1", NativePgbmCodec), TARGET),
+                (importer.importPackage(build("X1", NativePgbmCodec), TARGET) as SaveImporter.Result.Done).copy(meta = null),
             )
             assertEquals(
                 SaveLineage.Incoming.ADVANCE,
@@ -72,7 +72,7 @@ class PgbmNativeTest {
             for (name in listOf("X5", "G4")) {
                 assertEquals(name, SaveImporter.Result.Rejected(SaveImporter.Rejection.NEWER_APP), importer.importPackage(build(name, NativePgbmCodec), TARGET))
             }
-            for (name in listOf("X6", "X7")) {
+            for (name in listOf("X6", "X7", "X8")) {
                 assertEquals(name, SaveImporter.Result.Rejected(SaveImporter.Rejection.INVALID_META), importer.importPackage(build(name, NativePgbmCodec), TARGET))
             }
             assertArrayEquals(CrossVectors.S2, SaveStore(File(root, "saves"), TARGET.fingerprint).load())

@@ -282,10 +282,20 @@ class SaveLineageTest {
             "Pokemon Rojo 2.sav", "Pokemon Rojo (1).sav", "pokemon rojo (12).SAV",
             "Pokemon Rojo.sync-conflict-20261008-101010-ABCDEFG.sav",
             "Pokemon Rojo (conflicted copy 2026-10-08).sav", "Pokemon Rojo (Joel's conflicted copy 2026-10-08).sav",
+            "Pokemon Rojo (copia en conflicto de Joel 2026-10-08).sav",
         )
-        val no = listOf("Pokemon Rojo.sav", "Pokemon Rojo 2.gb", "Pokemon Rojo Azul.sav", "Pokemon 2.sav", "Pokemon Rojo2.sav")
+        val no = listOf(
+            "Pokemon Rojo.sav", "Pokemon Rojo 2.gb", "Pokemon Rojo Azul.sav", "Pokemon 2.sav", "Pokemon Rojo2.sav",
+            "Pokemon Rojo 1.sav", "Pokemon Rojo 0.sav", "Pokemon Rojo (0).sav",
+        )
         for (n in yes) assertTrue(n, SaveLineage.isProviderConflictCopy("Pokemon Rojo", n))
         for (n in no) assertFalse(n, SaveLineage.isProviderConflictCopy("Pokemon Rojo", n))
+        // ND20 (l): `X 2.sav` es la partida de `X 2.gb` si ese juego existe.
+        assertFalse(SaveLineage.isProviderConflictCopy("Tetris", "Tetris 2.sav", setOf("Tetris", "Tetris 2")))
+        assertTrue(SaveLineage.isProviderConflictCopy("Tetris", "Tetris 2.sav", setOf("Tetris")))
+        assertEquals("Pokemon Rojo", SaveLineage.stripConflictSuffix("Pokemon Rojo (1)"))
+        assertEquals("Pokemon Rojo", SaveLineage.stripConflictSuffix("Pokemon Rojo (conflicted copy 2026)"))
+        assertEquals("Pokemon Rojo", SaveLineage.stripConflictSuffix("Pokemon Rojo.sync-conflict-20261008"))
     }
 
     @Test fun providerConflictsAreListedAndNeverTouchTheSave() {
