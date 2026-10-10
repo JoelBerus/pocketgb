@@ -1,5 +1,7 @@
 # Pruebas manuales para Joel
 
+> **2026-10-10 · Joel:** hizo las pruebas pendientes del nivel N en los dos teléfonos (N7-1 Rojo iPhone → Android → iPhone con continuación exacta, N7-2 bandeja de Intercambio con Drive real, N8 Kirby en Android, biblioteca reorganizada y guía) y **todas fueron bien**.
+
 Lo que no lleva ✅ no se ha verificado en dispositivo real (el emulador y el simulador no cubren audio, mando, TalkBack o VoiceOver con gestos, rendimiento, Google Drive ni iCloud reales). Marca cada punto al probarlo y anota el resultado. Si algo falla, no sigas jugando con esa partida: haz copia del `.sav`.
 
 Consolidado en N9 (2026-10-09) con lo que dejaron pendiente A9 y N1–N8 en sus evidencias (`auditorias/*-evidencia.md`). **Empieza por las dos de N7** (son las que piden datos reales en los dos equipos) y después sigue por plataforma.

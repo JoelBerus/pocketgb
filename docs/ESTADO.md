@@ -33,7 +33,7 @@
 
 ## Siguiente paso exacto
 1. **Joel:** revisar y fusionar la PR de `siguiente-nivel` a `main`.
-2. **Joel, en los teléfonos** ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)): N7-1 Rojo iPhone → Android → iPhone con continuación exacta; N7-2 bandeja `PocketGB/Intercambio/` con Drive real; N8 Kirby en Android (60 fps ≥ 30 min, BIOS real); abrir la biblioteca reorganizada en los dos equipos; VoiceOver/TalkBack en la guía.
+2. ✅ (2026-10-10, todas bien) **Joel, en los teléfonos** ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)): N7-1 Rojo iPhone → Android → iPhone con continuación exacta; N7-2 bandeja `PocketGB/Intercambio/` con Drive real; N8 Kirby en Android (60 fps ≥ 30 min, BIOS real); abrir la biblioteca reorganizada en los dos equipos; VoiceOver/TalkBack en la guía.
 3. Esmeralda sigue solo en `.zip` en Drive (Joel decidió no subirla descomprimida).
 
 ## Deuda y pendientes conocidos
