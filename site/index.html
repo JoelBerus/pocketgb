@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="es" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-i18n="meta.title">PocketGB · Emulador de Game Boy para iPhone y Android</title>
+<meta name="description" content="Emulador nativo de Game Boy, Color y Advance para iPhone y Android, con núcleo propio. Sin internet, sin anuncios y sin cuentas. Para copias de tus propios cartuchos." data-i18n-attr="content:meta.description">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ECEEF2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0D11" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://joelberus.github.io/pocketgb/">
+<link rel="alternate" hreflang="es" href="https://joelberus.github.io/pocketgb/">
+<link rel="alternate" hreflang="en" href="https://joelberus.github.io/pocketgb/?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://joelberus.github.io/pocketgb/">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="PocketGB">
+<meta property="og:title" content="PocketGB · Tus cartuchos de Game Boy, en tu bolsillo">
+<meta property="og:description" content="Emulador nativo de Game Boy, Color y Advance para iPhone y Android. Sin internet, sin anuncios y sin cuentas.">
+<meta property="og:url" content="https://joelberus.github.io/pocketgb/">
+<meta property="og:image" content="https://joelberus.github.io/pocketgb/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Icono de PocketGB junto a una partida en un iPhone">
+<meta property="og:locale" content="es_ES">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="assets/css/landing.css">
+<script src="assets/i18n/en.js" defer></script>
+<script src="assets/js/landing.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#contenido" data-i18n="ui.skip">Saltar al contenido</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="PocketGB, inicio" data-i18n-attr="aria-label:nav.home">
+      <picture>
+        <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.svg">
+        <img src="assets/icon.svg" width="32" height="32" alt="">
+      </picture>
+      PocketGB
+    </a>
+    <nav class="nav" aria-label="Secciones" data-i18n-attr="aria-label:nav.label">
+      <a href="#capturas" data-i18n="nav.shots">Capturas</a>
+      <a href="#funciones" data-i18n="nav.features">Funciones</a>
+      <a href="#instalar" data-i18n="nav.install">Instalar</a>
+      <a href="#preguntas" data-i18n="nav.faq">Preguntas</a>
+    </nav>
+    <div class="header-tools">
+      <nav class="lang" aria-label="Idioma" data-i18n-attr="aria-label:nav.lang">
+        <a href="?lang=es" hreflang="es" lang="es" data-lang-link="es" aria-current="true">ES</a>
+        <a href="?lang=en" hreflang="en" lang="en" data-lang-link="en" aria-current="false">EN</a>
+      </nav>
+      <button class="theme-toggle" type="button" aria-pressed="false" aria-label="Tema oscuro" data-i18n-attr="aria-label:ui.theme"><span aria-hidden="true"></span></button>
+    </div>
+  </div>
+</header>
+
+<main id="contenido">
+  <noscript><p class="wrap noscript">The English version needs JavaScript. Esta es la versión en español.</p></noscript>
+
+  <!-- Hero -->
+  <section class="hero" id="top">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow" data-i18n="hero.eyebrow">Para iPhone y Android</p>
+        <h1 data-i18n="hero.title">Tus cartuchos de Game Boy, en tu bolsillo.</h1>
+        <p class="lede" data-i18n="hero.lede">Un emulador nativo con núcleo propio para Game Boy, Color y Advance. Sin internet, sin anuncios y sin cuentas.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#instalar" data-i18n="cta.install">Cómo instalarlo</a>
+          <a class="btn btn-ghost" href="https://github.com/JoelBerus/pocketgb" data-i18n="cta.code">Ver el código</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <figure class="phone ios">
+          <img src="assets/shots/ios-gameplay-dark.webp" width="600" height="1304" fetchpriority="high" decoding="async"
+               alt="PocketGB en un iPhone: un juego de prueba en vertical, con la cruceta y los botones A y B debajo"
+               data-i18n-attr="alt:alt.hero.ios">
+        </figure>
+        <figure class="phone android">
+          <picture>
+            <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-library-dark.webp">
+            <img src="assets/shots/android-library-light.webp" width="600" height="1067" decoding="async"
+                 alt="PocketGB en Android: la biblioteca con «Continuar jugando» y portadas"
+                 data-i18n-attr="alt:alt.hero.android">
+          </picture>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- Principios -->
+  <section class="manifesto" aria-label="Principios" data-i18n-attr="aria-label:manifesto.label">
+    <div class="wrap" data-reveal>
+      <p class="statement" data-i18n="manifesto.text">PocketGB está escrito en Swift y en Kotlin sobre un núcleo propio en C, el mismo en los dos teléfonos. <mark>No se conecta a internet</mark>: ni telemetría, ni anuncios, ni portadas descargadas. Y está pensado para <mark>no perder nunca una partida</mark>: cada guardado se escribe de forma atómica, con cinco copias de seguridad y otra junto al juego.</p>
+      <ul class="facts">
+        <li data-i18n="facts.ios"><strong>iOS 26</strong> o posterior, en iPhone</li>
+        <li data-i18n="facts.android"><strong>Android 8.0</strong> o posterior</li>
+        <li data-i18n="facts.consoles"><strong>Game Boy</strong>, Color y Advance</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Galería -->
+  <section class="section" id="capturas" aria-labelledby="capturas-titulo">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <h2 id="capturas-titulo" data-i18n="gallery.title">Así se ve</h2>
+        <p data-i18n="gallery.note">Capturas reales del simulador de iPhone y del emulador de Android, con juegos de prueba libres y bibliotecas de demostración. La app está en español.</p>
+      </div>
+      <div class="tablist" role="tablist" aria-label="Plataforma" data-i18n-attr="aria-label:gallery.tabs">
+        <button type="button" role="tab" id="tab-g-ios" aria-controls="panel-g-ios" aria-selected="true">iPhone</button>
+        <button type="button" role="tab" id="tab-g-android" aria-controls="panel-g-android" aria-selected="false">Android</button>
+      </div>
+
+      <div class="tabpanel" role="tabpanel" id="panel-g-ios" aria-labelledby="tab-g-ios" tabindex="0">
+        <h3 class="panel-title">iPhone</h3>
+        <div class="track">
+          <figure class="shot">
+            <div class="phone ios"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-library-dark.webp">
+              <img src="assets/shots/ios-library-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Biblioteca en cuadrícula con portadas" data-i18n-attr="alt:alt.ios.library">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.library.t">Biblioteca</strong><span data-i18n="shot.library.d">Portadas tuyas, capturas o generadas.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-details-dark.webp">
+              <img src="assets/shots/ios-details-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Detalle de un juego con los botones Continuar y Jugar desde el inicio" data-i18n-attr="alt:alt.ios.details">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.details.t">Detalle del juego</strong><span data-i18n="shot.details.d">Continuar, momentos, progreso e información técnica.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios">
+              <img src="assets/shots/ios-gba-details-dark.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Detalle de un juego de prueba de Game Boy Advance, con su portada y el botón Jugar" data-i18n-attr="alt:alt.ios.gba">
+            </div>
+            <figcaption><strong data-i18n="shot.gba.t">Game Boy Advance</strong><span data-i18n="shot.igba.d">Con su pantalla 3:2 y sus botones L y R.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios">
+              <img src="assets/shots/ios-controls-editor-dark.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Editor de controles: cada botón se puede mover y cambiar de tamaño" data-i18n-attr="alt:alt.ios.editor">
+            </div>
+            <figcaption><strong data-i18n="shot.editor.t">Editor de controles</strong><span data-i18n="shot.editor.d">Mueve y cambia el tamaño de cada botón.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-moments-dark.webp">
+              <img src="assets/shots/ios-moments-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Lista de momentos guardados con miniatura, nombre y etiquetas" data-i18n-attr="alt:alt.ios.moments">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.moments.t">Momentos</strong><span data-i18n="shot.moments.d">Guarda un instante con nombre y vuelve cuando quieras.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios">
+              <img src="assets/shots/ios-link-dark.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Cable link virtual entre dos juegos de prueba en el mismo iPhone" data-i18n-attr="alt:alt.ios.link">
+            </div>
+            <figcaption><strong data-i18n="shot.link.t">Cable link</strong><span data-i18n="shot.link.d">Dos juegos conectados en el mismo iPhone.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone ios"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-guide-dark.webp">
+              <img src="assets/shots/ios-guide-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Guía de uso dentro de la app, con buscador y secciones" data-i18n-attr="alt:alt.ios.guide">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.guide.t">Guía</strong><span data-i18n="shot.guide.d">Todo explicado dentro de la app.</span></figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="tabpanel" role="tabpanel" id="panel-g-android" aria-labelledby="tab-g-android" tabindex="0">
+        <h3 class="panel-title">Android</h3>
+        <div class="track">
+          <figure class="shot">
+            <div class="phone android"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-details-dark.webp">
+              <img src="assets/shots/android-details-light.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Detalle de un juego en Android con su portada y el botón Continuar" data-i18n-attr="alt:alt.android.details">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.details.t">Detalle del juego</strong><span data-i18n="shot.adetails.d">Tu portada y «Continuar» justo donde lo dejaste.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android">
+              <img src="assets/shots/android-gameplay-dark.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Un juego de prueba de Game Boy Advance en vertical, con L, R, cruceta y botones" data-i18n-attr="alt:alt.android.gameplay">
+            </div>
+            <figcaption><strong data-i18n="shot.gba.t">Game Boy Advance</strong><span data-i18n="shot.agba.d">Con L y R, también en Android.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android landscape">
+              <img src="assets/shots/android-gameplay-landscape-dark.webp" width="1200" height="675" loading="lazy" decoding="async" alt="Juego de prueba de Game Boy Advance en horizontal en Android" data-i18n-attr="alt:alt.android.landscape">
+            </div>
+            <figcaption><strong data-i18n="shot.landscape.t">En horizontal</strong><span data-i18n="shot.landscape.d">Controles translúcidos que no tapan el juego.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-moments-dark.webp">
+              <img src="assets/shots/android-moments-light.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Momentos de un juego en Android, con «Antes de cargar» para deshacer" data-i18n-attr="alt:alt.android.moments">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.moments.t">Momentos</strong><span data-i18n="shot.amoments.d">«Antes de cargar» deshace un error en un toque.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-controls-dark.webp">
+              <img src="assets/shots/android-controls-light.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Ajustes de controles: opacidad, estilo de cruceta y diagonales" data-i18n-attr="alt:alt.android.controls">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.controls.t">Controles</strong><span data-i18n="shot.controls.d">Opacidad, estilo de cruceta y diagonales.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-controller-dark.webp">
+              <img src="assets/shots/android-controller-light.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Asignación de los botones de un mando físico" data-i18n-attr="alt:alt.android.controller">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.controller.t">Mando físico</strong><span data-i18n="shot.controller.d">Asigna cada botón de tu mando.</span></figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="phone android"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/android-guide-dark.webp">
+              <img src="assets/shots/android-guide-light.webp" width="600" height="1067" loading="lazy" decoding="async" alt="Guía de uso dentro de la app de Android" data-i18n-attr="alt:alt.android.guide">
+            </picture></div>
+            <figcaption><strong data-i18n="shot.guide.t">Guía</strong><span data-i18n="shot.guide.d">Todo explicado dentro de la app.</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Funciones -->
+  <section class="section" id="funciones" aria-labelledby="funciones-titulo">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <h2 id="funciones-titulo" data-i18n="features.title">Todo lo que hace</h2>
+        <p data-i18n="features.lede">Todo funciona sin conexión y con los archivos que eliges tú.</p>
+      </div>
+
+      <div class="feature" data-reveal>
+        <div class="feature-media">
+          <figure class="phone ios"><picture>
+            <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-home-dark.webp">
+            <img src="assets/shots/ios-home-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Inicio de la biblioteca en iPhone: Continuar jugando, favoritos y estanterías por categoría" data-i18n-attr="alt:alt.ios.home">
+          </picture></figure>
+        </div>
+        <div>
+          <h3 data-i18n="lib.title">Tu biblioteca, a tu manera</h3>
+          <p class="intro" data-i18n="lib.intro">Eliges una carpeta y PocketGB la lee tal cual: no copia, no mueve y nunca modifica tus juegos.</p>
+          <dl class="feature-list">
+            <div><dt data-i18n="lib.folders.t">Carpetas como categorías</dt><dd data-i18n="lib.folders.d">Cada subcarpeta es una categoría, hasta cinco niveles. Los juegos se reconocen por su contenido: puedes moverlos sin perder nada.</dd></div>
+            <div><dt data-i18n="lib.home.t">Un inicio útil</dt><dd data-i18n="lib.home.d">Continuar jugando, tus favoritos y una estantería por categoría.</dd></div>
+            <div><dt data-i18n="lib.covers.t">Portadas propias</dt><dd data-i18n="lib.covers.d">Una imagen tuya, una junto al juego, una captura o una generada. Nunca se descargan.</dd></div>
+            <div><dt data-i18n="lib.search.t">Buscar y etiquetar</dt><dd data-i18n="lib.search.d">Filtra por consola, favoritos o tus etiquetas, y ponle a cada juego el nombre que quieras.</dd></div>
+            <div><dt data-i18n="lib.guide.t">Guía incluida</dt><dd data-i18n="lib.guide.d">Cada función explicada dentro de la app, también sin conexión.</dd></div>
+            <div><dt data-i18n="lib.a11y.t">Accesible</dt><dd data-i18n="lib.a11y.d">VoiceOver y TalkBack, texto grande, reducir transparencia y movimiento, y contraste alto.</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div class="feature reverse wide" data-reveal>
+        <div class="feature-media">
+          <figure class="phone ios landscape">
+            <img src="assets/shots/ios-gameplay-landscape-dark.webp" width="1200" height="552" loading="lazy" decoding="async" alt="Partida en horizontal con los controles translúcidos sobre el juego" data-i18n-attr="alt:alt.ios.landscape">
+          </figure>
+        </div>
+        <div>
+          <h3 data-i18n="play.title">Al jugar</h3>
+          <p class="intro" data-i18n="play.intro">Controles debajo de la pantalla en vertical y translúcidos sobre el juego en horizontal, con háptica en cada pulsación.</p>
+          <dl class="feature-list">
+            <div><dt data-i18n="play.controls.t">Controles a tu medida</dt><dd data-i18n="play.controls.d">Cruceta clásica o flechas separadas, diagonales ajustables y cada botón movible, del 60 al 160 %.</dd></div>
+            <div><dt data-i18n="play.pad.t">Mando físico</dt><dd data-i18n="play.pad.d">Conecta uno y se asigna por posición. Los controles táctiles dejan sitio al juego.</dd></div>
+            <div><dt data-i18n="play.ff.t">Avance rápido</dt><dd data-i18n="play.ff.d">Pasa a ×2 o ×4 en los tramos lentos.</dd></div>
+            <div><dt data-i18n="play.color.t">Color en Game Boy</dt><dd data-i18n="play.color.d">Elige paleta para los juegos de la Game Boy original, para todos o solo para uno.</dd></div>
+            <div><dt data-i18n="play.gba.t">Game Boy Advance</dt><dd data-i18n="play.gba.d">Pantalla 3:2, botones L y R y, si tienes el volcado de tu consola, su BIOS.</dd></div>
+            <div><dt data-i18n="play.link.t">Cable link <span class="tag">iPhone · en pruebas</span></dt><dd data-i18n="play.link.d">Conecta dos juegos en el mismo iPhone para intercambiar o combatir.</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div class="saves" data-reveal>
+        <h3 class="saves-title" data-i18n="saves.title">Tus partidas</h3>
+        <p class="intro" data-i18n="saves.intro">Lo que guardas está a salvo y te acompaña de un teléfono a otro.</p>
+        <div class="bento">
+          <div class="cell big">
+            <div>
+              <h4 data-i18n="saves.travel.t">Del iPhone a Android, y vuelta</h4>
+              <p data-i18n="saves.travel.d">Envía tu partida con la hoja de compartir o con tu Drive y sigue en el otro teléfono justo donde la dejaste. Sin servidores.</p>
+            </div>
+            <figure class="phone ios"><picture>
+              <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/shots/ios-save-travel-dark.webp">
+              <img src="assets/shots/ios-save-travel-light.webp" width="600" height="1304" loading="lazy" decoding="async" alt="Detalle de la partida con la opción de enviarla a otro dispositivo" data-i18n-attr="alt:alt.ios.save">
+            </picture></figure>
+          </div>
+          <div class="cell tint">
+            <h4 data-i18n="saves.resume.t">Continuar al instante</h4>
+            <p data-i18n="saves.resume.d">Al salir se guarda el momento exacto: el sitio, la música y hasta el diálogo abierto.</p>
+          </div>
+          <div class="cell">
+            <h4 data-i18n="saves.moments.t">Momentos</h4>
+            <p data-i18n="saves.moments.d">Guarda instantes con nombre, etiquetas y nota. Si cargas uno por error, «Antes de cargar» lo deshace.</p>
+          </div>
+          <div class="cell">
+            <h4 data-i18n="saves.progress.t">Progreso</h4>
+            <p data-i18n="saves.progress.d">Tiempo de juego, sesiones e hitos. En los Pokémon de 1.ª y 2.ª generación, lee medallas y Pokédex de tu partida.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Núcleo -->
+  <section class="section section-core" id="nucleo" aria-labelledby="nucleo-titulo">
+    <div class="wrap core">
+      <figure class="pixel-frame" data-reveal>
+        <img src="assets/dmg-acid2.png" width="160" height="144" loading="lazy" alt="Cara sonriente de la prueba dmg-acid2 con el texto Hello World, dibujada por el núcleo de PocketGB" data-i18n-attr="alt:alt.acid2">
+        <figcaption data-i18n="core.caption">Fotograma de dmg-acid2 (Matt Currie, licencia MIT) dibujado por el núcleo de PocketGB: idéntico píxel a píxel a la imagen de referencia.</figcaption>
+      </figure>
+      <div data-reveal>
+        <h2 class="h2" id="nucleo-titulo" data-i18n="core.title">Un núcleo escrito desde cero</h2>
+        <p class="core-text" data-i18n="core.text">El emulador es código propio en C11, sin dependencias y determinista: la misma entrada da siempre la misma imagen. Se comprueba con las suites de pruebas abiertas que usa la comunidad.</p>
+        <dl class="stats">
+          <div><dt>157/157</dt><dd data-i18n="core.s1">pruebas requeridas de Game Boy y Color (Blargg, Mooneye y acid2)</dd></div>
+          <div><dt>100 %</dt><dd data-i18n="core.s2">de los casos de CPU ARM7TDMI de SingleStepTests, para Game Boy Advance</dd></div>
+          <div><dt>384</dt><dd data-i18n="core.s3">tests automáticos de la app de iPhone</dd></div>
+          <div><dt data-i18n="core.n4">1330</dt><dd data-i18n="core.s4">tests automáticos de la app de Android</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- Instalar -->
+  <section class="section section-install" id="instalar" aria-labelledby="instalar-titulo">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <h2 id="instalar-titulo" data-i18n="install.title">Instálala en tu teléfono</h2>
+        <p data-i18n="install.lede">Aún no está en las tiendas: se compila desde el código con las herramientas gratuitas de Apple y Google. Primero, descarga el código:</p>
+        <pre class="code"><code>git clone https://github.com/JoelBerus/pocketgb.git</code></pre>
+      </div>
+
+      <div class="install-grid">
+        <div>
+          <div class="tablist" role="tablist" aria-label="Plataforma" data-i18n-attr="aria-label:gallery.tabs">
+            <button type="button" role="tab" id="tab-i-ios" aria-controls="panel-i-ios" aria-selected="true">iPhone</button>
+            <button type="button" role="tab" id="tab-i-android" aria-controls="panel-i-android" aria-selected="false">Android</button>
+          </div>
+
+          <div class="tabpanel" role="tabpanel" id="panel-i-ios" aria-labelledby="tab-i-ios" tabindex="0">
+            <h3 class="panel-title">iPhone</h3>
+            <ol class="steps">
+              <li>
+                <h3 data-i18n="ios.s1.t">Prepara Xcode</h3>
+                <p data-i18n="ios.s1.d">En un Mac con Xcode, ve a <strong>Settings › Accounts</strong> y añade tu Apple ID. Basta con la cuenta gratuita: aparece «Personal Team».</p>
+              </li>
+              <li>
+                <h3 data-i18n="ios.s2.t">Conecta e instala</h3>
+                <p data-i18n="ios.s2.d">Conecta el iPhone por cable y activa el <strong>Modo Desarrollador</strong> en Ajustes › Privacidad y seguridad. Abre el proyecto, elige tu equipo en <em>Signing &amp; Capabilities</em> y pulsa <strong>Run</strong>.</p>
+                <pre class="code"><code>open ios/PocketGB.xcodeproj</code></pre>
+              </li>
+              <li>
+                <h3 data-i18n="ios.s3.t">Confía en la app</h3>
+                <p data-i18n="ios.s3.d">La primera vez, en el iPhone: <strong>Ajustes › General › VPN y gestión de dispositivos</strong>, tu Apple ID y Confiar.</p>
+              </li>
+            </ol>
+            <div class="note" data-i18n="ios.note"><p><strong>Cada 7 días caduca la firma gratuita.</strong> Vuelve a pulsar Run y se instala encima, con tus partidas intactas. No borres la app para reinstalarla.</p><p>La cuenta gratuita admite 3 apps firmadas a la vez. Con la de pago, la firma dura un año.</p></div>
+          </div>
+
+          <div class="tabpanel" role="tabpanel" id="panel-i-android" aria-labelledby="tab-i-android" tabindex="0">
+            <h3 class="panel-title">Android</h3>
+            <ol class="steps">
+              <li>
+                <h3 data-i18n="and.s1.t">Activa la depuración</h3>
+                <p data-i18n="and.s1.d">En el teléfono, con Android 8.0 o posterior: <strong>Ajustes › Acerca del teléfono</strong>, toca 7 veces «Número de compilación» y activa <strong>Depuración USB</strong> en Opciones de desarrollador.</p>
+              </li>
+              <li>
+                <h3 data-i18n="and.s2.t">Instala con Gradle</h3>
+                <p data-i18n="and.s2.d">Con Android Studio (JDK 17, SDK 37 y NDK 27.3) y el teléfono conectado por USB:</p>
+                <pre class="code"><code>cd android
+./gradlew :app:installDebug</code></pre>
+              </li>
+              <li>
+                <h3 data-i18n="and.s3.t">Elige tu carpeta</h3>
+                <p data-i18n="and.s3.d">Abre PocketGB, entra en Biblioteca y elige la carpeta con tus juegos: en el teléfono, en una tarjeta SD o en Google Drive.</p>
+              </li>
+            </ol>
+            <div class="note" data-i18n="and.note"><p><strong>La instalación no caduca.</strong> Para actualizar, repite el comando: se conservan tus datos.</p><p>No desinstales la app para «instalar limpio»: borrarías las partidas guardadas en el teléfono.</p></div>
+          </div>
+        </div>
+
+        <aside class="folder" data-reveal aria-labelledby="carpeta-titulo">
+          <h3 id="carpeta-titulo" data-i18n="folder.title">Prepara tu carpeta</h3>
+          <p data-i18n="folder.text">PocketGB lee <code>.gb</code>, <code>.gbc</code> y <code>.gba</code>. Cada subcarpeta es una categoría:</p>
+          <pre class="code tree" data-nocopy><code data-i18n="folder.tree">Juegos/             <span class="c">la carpeta que eliges</span>
+  RPG/              <span class="c">una categoría</span>
+    Mi juego.gb
+    Mi juego.sav    <span class="c">tu partida</span>
+    Mi juego.png    <span class="c">portada opcional</span>
+  Plataformas/
+    Otro juego.gba
+  gba_bios.bin      <span class="c">opcional, de tu GBA</span>
+  _Revisar/         <span class="c">apartada: no se lee</span></code></pre>
+          <p class="legal" data-i18n="folder.legal"><strong>Solo copias de tus propios cartuchos.</strong> Con un lector USB como GBxCart RW o GB Operator copias el juego y su partida. PocketGB no incluye ni enlaza juegos ni BIOS.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- Descargas -->
+  <section class="section get" id="descargas" aria-labelledby="descargas-titulo">
+    <div class="wrap" data-reveal>
+      <div class="section-head">
+        <h2 id="descargas-titulo" data-i18n="get.title">Pronto, también en las tiendas</h2>
+        <p data-i18n="get.text">Mientras tanto, la forma de tenerla es compilarla desde el código.</p>
+      </div>
+      <!-- MOCK: tiendas y descargas. No existen todavía; ver site/MOCKS.md -->
+      <div class="stores">
+        <span class="btn store" aria-disabled="true">App Store <small data-i18n="get.soon">Próximamente</small></span>
+        <span class="btn store" aria-disabled="true">Google Play <small data-i18n="get.soon2">Próximamente</small></span>
+        <span class="btn store" aria-disabled="true"><span data-i18n="get.apk">APK en GitHub</span> <small data-i18n="get.soon3">Próximamente</small></span>
+      </div>
+      <p class="price"><!-- MOCK: precio --><strong data-i18n="get.price">Gratis.</strong> <span data-i18n="get.versions">Versión actual: iOS 0.4 y Android 1.0.0.</span></p>
+      <!-- /MOCK -->
+      <div class="actions">
+        <a class="btn btn-primary" href="#instalar" data-i18n="cta.install">Cómo instalarlo</a>
+        <a class="btn btn-ghost" href="https://github.com/JoelBerus/pocketgb" data-i18n="cta.code">Ver el código</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preguntas -->
+  <section class="section section-faq" id="preguntas" aria-labelledby="preguntas-titulo">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <h2 id="preguntas-titulo" data-i18n="faq.title">Preguntas frecuentes</h2>
+      </div>
+      <div class="faq">
+        <details><summary data-i18n="faq.q1">¿Trae juegos?</summary><p data-i18n="faq.a1">No. PocketGB no incluye juegos ni enlaza a ninguno. Juegas con copias de tus propios cartuchos.</p></details>
+        <details><summary data-i18n="faq.q2">¿Cómo copio mis cartuchos?</summary><p data-i18n="faq.a2">Con un lector USB como GBxCart RW o GB Operator: guardas el juego (<code>.gb</code>, <code>.gbc</code> o <code>.gba</code>) y su partida (<code>.sav</code>), así que te traes tu partida real.</p></details>
+        <details><summary data-i18n="faq.q3">¿Necesito una BIOS?</summary><p data-i18n="faq.a3">No. El núcleo de Game Boy Advance imita sus funciones. Si tienes el volcado de tu propia consola, puedes ponerlo en la carpeta como <code>gba_bios.bin</code>.</p></details>
+        <details><summary data-i18n="faq.q4">¿Se conecta a internet?</summary><p data-i18n="faq.a4">No. No hay telemetría, anuncios ni cuentas, y las portadas nunca se descargan. Para pasar una partida a otro teléfono usas la hoja de compartir o tu propio Drive.</p></details>
+        <details><summary data-i18n="faq.q5">¿Pierdo mis partidas cuando caduca la firma del iPhone?</summary><p data-i18n="faq.a5">No. La app deja de abrirse hasta que la vuelves a instalar desde Xcode, y al instalar encima se conservan tus datos. Además, cada partida tiene una copia junto al juego.</p></details>
+        <details><summary data-i18n="faq.q6">¿Puedo jugar con otra persona?</summary><p data-i18n="faq.a6">El cable link es virtual: une dos juegos en el mismo iPhone, por ejemplo para intercambiar. No hay juego entre dos teléfonos.</p></details>
+        <details><summary data-i18n="faq.q7">¿Funciona en iPad o en tablets?</summary><p data-i18n="faq.a7">La app de iOS es solo para iPhone. La de Android se adapta a pantallas anchas y plegables.</p></details>
+        <details><summary data-i18n="faq.q8">¿Cuánto cuesta?</summary><!-- MOCK: precio --><p data-i18n="faq.a8">Nada: es gratis.</p></details>
+        <details><summary data-i18n="faq.q9">¿Es de código abierto?</summary><p data-i18n="faq.a9">El código es público en GitHub. La licencia todavía no está decidida.</p></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-top">
+      <div>
+        <a class="brand" href="#top" aria-label="PocketGB, inicio" data-i18n-attr="aria-label:nav.home">
+          <picture>
+            <source data-dark media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.svg">
+            <img src="assets/icon.svg" width="32" height="32" alt="">
+          </picture>
+          PocketGB
+        </a>
+        <p class="footer-tagline" data-i18n="footer.tagline">Emulador de Game Boy, Color y Advance para iPhone y Android.</p>
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/JoelBerus/pocketgb" data-i18n="cta.code">Ver el código</a></li>
+        <li><a href="https://github.com/JoelBerus/pocketgb/tree/main/docs/guia" data-i18n="footer.guide">Guía de uso</a></li>
+        <li><a href="https://github.com/JoelBerus/pocketgb/blob/main/docs/07-instalacion-iphone.md" data-i18n="footer.ios">Instalar en iPhone</a></li>
+        <li><a href="https://github.com/JoelBerus/pocketgb/blob/main/docs/07-instalacion-android.md" data-i18n="footer.android">Instalar en Android</a></li>
+        <li><a href="https://github.com/JoelBerus/pocketgb/blob/main/docs/08-roms-legal.md" data-i18n="footer.legal">ROMs y legalidad</a></li>
+      </ul>
+    </div>
+    <p data-i18n="footer.trademarks">Game Boy, Game Boy Color, Game Boy Advance y Pokémon son marcas de Nintendo y de sus respectivos titulares. PocketGB es un proyecto independiente, sin relación con Nintendo ni respaldo suyo, y no incluye juegos ni BIOS.</p>
+    <p data-i18n="footer.privacy">Esta página no usa cookies ni rastreadores. Solo guarda en tu navegador el idioma y el tema que elijas.</p>
+    <p data-i18n="footer.author">Un proyecto de <a href="https://github.com/JoelBerus">Joel Bermúdez</a>. Actualizado el 11 de octubre de 2026.</p>
+  </div>
+</footer>
+</body>
+</html>

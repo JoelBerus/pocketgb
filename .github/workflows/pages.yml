@@ -1,0 +1,38 @@
+# Publica la landing (site/) en GitHub Pages: https://joelberus.github.io/pocketgb/
+# Requisito, una vez: Settings › Pages › Build and deployment › Source = «GitHub Actions».
+# Solo corre si cambia site/, su script o este archivo; también se puede lanzar a mano.
+name: Pages
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'tools/landing-shots.py', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comprobaciones (sin ROMs ni partidas, claves ES/EN, referencias y peso)
+        run: |
+          if find site -type f \( -iname '*.gb' -o -iname '*.gbc' -o -iname '*.gba' -o -iname '*.sav' -o -iname '*.pgbm' -o -iname '*.zip' -o -iname '*.bin' \) | grep .; then
+            echo "site/ no puede contener ROMs, partidas ni BIOS"; exit 1
+          fi
+          python3 tools/landing-shots.py --check
+          test "$(du -sk site | cut -f1)" -lt 3500
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

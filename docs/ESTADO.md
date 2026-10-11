@@ -2,10 +2,11 @@
 
 > Fuente de verdad del estado para cualquier sesión (Mac o nube). Actualizar al cerrar cada hito.
 
-**Actualizado:** 2026-10-10 · Fase **«siguiente nivel»** (A9, N1–N9) terminada en la rama `siguiente-nivel`, con auditoría conjunta final Opus (APROBAR CON CAMBIOS, respondida). PR a `main` abierta, pendiente de la aprobación de Joel. Decisiones ND1–ND21 en [N-README](hitos/N-README.md).
+**Actualizado:** 2026-10-11 · Fase **«siguiente nivel»** (A9, N1–N9) fusionada en `main` (PR #19, `fcdcf7b`). **Landing del proyecto** en `site/` (rama `landing`), pendiente de PR y de activar GitHub Pages. Decisiones ND1–ND21 en [N-README](hitos/N-README.md).
 
 
 ## Hecho
+- **Landing (2026-10-11), rama `landing`:** página estática en `site/` (español e inglés, claro/oscuro, sin peticiones externas) con capturas reales de los catálogos de iOS y Android (ROMs de prueba libres y bibliotecas de demostración; ningún título comercial), tutorial de instalación, carpeta recomendada, descargas y preguntas. `tools/landing-shots.py` convierte las capturas a WebP y comprueba la página (`--check`: claves ES/EN, referencias, pesos, sin ROMs); `.github/workflows/pages.yml` la publica en <https://joelberus.github.io/pocketgb/>. Lo provisional (tiendas, APK, precio) está en [site/MOCKS.md](../site/MOCKS.md).
 - **Siguiente nivel (2026-10-07 → 2026-10-10), rama `siguiente-nivel`:** A9 (paridad Android), N1 identidad y carpetas, N2 controles, N3 biblioteca y detalle adaptables, N4 categorías/etiquetas/inicio, N5 portadas, N6 momentos y progreso (lector Pokémon en C), N7 partidas que viajan (`.pgbm`, linaje, vectores cruzados X1–X8), N8 GBA en Android, N9 guía en la app, consejos, documentación y carpetas de Joel (iCloud `GMRoms` reorganizada con huellas iguales antes y después; Drive renombrado; 17 portadas; LEEME). Cada lote con auditoría Opus respondida; auditoría conjunta final [N-final-opus](auditorias/N-final-opus.md) con respuestas [iOS](auditorias/N-final-respuesta-ios.md) y [Android](auditorias/N-final-respuesta-android.md). Últimas cifras: Android 835 JVM, 495 instrumentadas, kill-test 50/50, lint 0 errores, sin INTERNET; iOS 384 tests en iPhone 17 Pro y SE, Release sin red; núcleo 65/65 + ASan.
 - **Integración final (2026-10-06):** `cierre-integracion` = `main` + D8.1 + GBA G0–G9 + M9 UI + Android A1–A8. Auditoría conjunta Opus: APROBAR CON CAMBIOS, solo documentales (H1–H7 respondidos en [CIERRE-evidencia](auditorias/CIERRE-evidencia.md)); sin hallazgos bloqueantes ni altos; reglas duras 1–7 cumplidas. Informes previos: [CIERRE-integracion](auditorias/CIERRE-integracion.md), [revisión](auditorias/CIERRE-integracion-revision.md).
 - **Android A8 (cerrado):** documentación al día (`android/README.md`, 02, 05, 06, 00, 08, nuevo [07-instalacion-android](07-instalacion-android.md)), [PRUEBAS-JOEL](PRUEBAS-JOEL.md), icono adaptativo, `versionName 1.0.0`/`versionCode 2` y literales de la interfaz extraídos a `strings.xml` (51 claves, `9fa39a9`/`f875e9b`; queda `LibraryModels.kt:75`). Release sin firma (solo documentada), sin `INTERNET`. Evidencia: [A8](auditorias/A8-android-evidencia.md).
@@ -32,9 +33,10 @@
 - M4: `ios/PocketGB.xcodeproj` creado por Claude (carpetas sincronizadas; `.swift` nuevos entran solos), `CoreBridge`, hilo de emulación con pacing por reloj, Metal (shader compilado en runtime), controles multitáctiles, SRAM con `AtomicFile` + 5 backups y flush síncrono en pausa/background/salida. Flush de SRAM también en la red de 60 s sin flanco, ante memoria baja y con reintento tras fallo. dmg-acid2 y Pokémon Rojo en el iPhone de Joel. Núcleo verificado también en macOS (103/103, ASan limpio). Auditoría Codex: `docs/auditorias/M4-*`.
 
 ## Siguiente paso exacto
-1. **Joel:** revisar y fusionar la PR de `siguiente-nivel` a `main`.
-2. ✅ (2026-10-10, todas bien) **Joel, en los teléfonos** ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)): N7-1 Rojo iPhone → Android → iPhone con continuación exacta; N7-2 bandeja `PocketGB/Intercambio/` con Drive real; N8 Kirby en Android (60 fps ≥ 30 min, BIOS real); abrir la biblioteca reorganizada en los dos equipos; VoiceOver/TalkBack en la guía.
-3. Esmeralda sigue solo en `.zip` en Drive (Joel decidió no subirla descomprimida).
+1. **Joel (landing):** activar GitHub Pages (Settings › Pages › Source = «GitHub Actions») y fusionar la PR de `landing`; el push a `main` la publica. Decidir la licencia y sustituir los mocks de [site/MOCKS.md](../site/MOCKS.md) cuando existan.
+2. ✅ (2026-10-10) PR de `siguiente-nivel` fusionada en `main` (PR #19, `fcdcf7b`).
+3. ✅ (2026-10-10, todas bien) **Joel, en los teléfonos** ([PRUEBAS-JOEL](PRUEBAS-JOEL.md)): N7-1 Rojo iPhone → Android → iPhone con continuación exacta; N7-2 bandeja `PocketGB/Intercambio/` con Drive real; N8 Kirby en Android (60 fps ≥ 30 min, BIOS real); abrir la biblioteca reorganizada en los dos equipos; VoiceOver/TalkBack en la guía.
+4. Esmeralda sigue solo en `.zip` en Drive (Joel decidió no subirla descomprimida).
 
 ## Deuda y pendientes conocidos
 - `make -C gba test` completo solo corre en Linux/CI (el Mac carece de `ld.lld` y de los ROMs de SingleStepTests); en el Mac se ejecuta `--unit`, ASan manual y los homebrew.
@@ -111,6 +113,7 @@
 | 2026-09-29 | Flush síncrono de SRAM (pausa/background/salida) compara con lo último guardado en vez de depender del flanco "el juego guardó" (auditoría M4, H1). |
 | 2026-09-29 | M8: paletas de compatibilidad = tablas de la reimplementación libre del arranque CGB de SameBoy (MIT, citadas en `cgb.c`), no el boot ROM de Nintendo. `GB_MODEL_AUTO` elige CGB para ROMs con flag `0x80`/`0xC0`; un ROM DMG solo va en compatibilidad si se pide `GB_MODEL_CGB`. |
 | 2026-09-28 | Controles en horizontal superpuestos y translúcidos (0.30 en reposo / 0.60 pulsado, configurable). |
+| 2026-10-11 | Landing en `site/` publicada con GitHub Pages (workflow), en español e inglés, con capturas reales de los catálogos (solo ROMs libres) y marcas de Nintendo al mínimo: «Game Boy» como consola con aviso en el pie y «Pokémon» solo en el lector de progreso. Lo que no existe (tiendas, APK, precio) va como mock marcado. |
 
 ## Decisiones provisionales pendientes de ratificar por Joel
 Tomadas por el desarrollador durante la noche del 2026-10-06 para poder avanzar. No se reabren hasta que Joel las confirme o las cambie. Detalle en [A6-plan](diseno-android/A6-plan.md) (K), [A7-plan](diseno-android/A7-plan.md) (R) y [M9-ios-plan](hitos/M9-ios-plan.md) §0.
@@ -144,6 +147,9 @@ Tomadas por el desarrollador durante la noche del 2026-10-06 para poder avanzar.
 | A8 | Literales ya extraídos a `strings.xml` (`9fa39a9`/`f875e9b`, 51 claves); queda `LibraryModels.kt:75`. |
 
 ## Pendiente de Joel (manual)
+- [ ] Activar GitHub Pages con origen «GitHub Actions» y fusionar la PR de la landing.
+- [ ] Decidir la licencia del repositorio (hoy no hay `LICENSE`; la landing dice «licencia todavía no decidida»).
+- [ ] Sustituir los mocks de la landing ([site/MOCKS.md](../site/MOCKS.md)): tiendas, APK firmado en Releases y precio.
 - [x] ~~Crear el proyecto Xcode~~ (lo hizo Claude en M4).
 - [x] ~~Conectar el iPhone y generar el perfil de firma~~ (2026-09-29). Recordatorio: reinstalar cada 7 días ([07](07-instalacion-iphone.md)).
 - [x] ~~Activar el Modo Desarrollador en el iPhone~~.
